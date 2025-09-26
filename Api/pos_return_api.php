@@ -1,0 +1,293 @@
+<?php
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+require_once 'conn.php';
+
+$raw = file_get_contents('php://input');
+$data = json_decode($raw, true);
+if (!is_array($data)) { $data = []; }
+$action = $_GET['action'] ?? ($data['action'] ?? '');
+
+switch ($action) {
+    case 'process_customer_return':
+        error_log('POS Return API: Processing customer return with data: ' . json_encode($data));
+        try {
+            $return_number = $data['return_number'] ?? '';
+            $original_transaction_id = $data['original_transaction_id'] ?? '';
+            $return_reason = $data['return_reason'] ?? '';
+            $location_name = $data['location_name'] ?? '';
+            $terminal_name = $data['terminal_name'] ?? '';
+            $processed_by = $data['processed_by'] ?? '';
+            $items = $data['items'] ?? [];
+            
+            if (empty($return_number) || empty($original_transaction_id) || empty($return_reason) || empty($items)) {
+                echo json_encode(['success' => false, 'message' => 'Missing required fields']);
+                break;
+            }
+            
+            // Start transaction
+            $conn->beginTransaction();
+            
+            // Calculate total return amount
+            $total_return_amount = 0;
+            foreach ($items as $item) {
+                $total_return_amount += floatval($item['total_amount']);
+            }
+            
+            // For now, use the provided location_name to find the location_id
+            // This ensures we're updating stock in the correct location
+            $locationStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name = ? LIMIT 1");
+            $locationStmt->execute([$location_name]);
+            $locationResult = $locationStmt->fetch(PDO::FETCH_ASSOC);
+            
+            $returnLocationId = $locationResult ? $locationResult['location_id'] : 4; // Default to Convenience Store
+            $returnLocationName = $location_name;
+            $returnTerminalName = $terminal_name;
+            
+            error_log("Using location: ID={$returnLocationId}, Name={$returnLocationName}, Terminal={$returnTerminalName}");
+
+            // Insert return header using existing tbl_pos_returns table
+            $stmt = $conn->prepare("
+                INSERT INTO tbl_pos_returns 
+                (return_id, original_transaction_id, reason, method, item_condition, location_name, terminal_name, 
+                 user_id, username, total_refund, status)
+                VALUES (?, ?, ?, 'refund', 'good', ?, ?, ?, ?, ?, 'completed')
+            ");
+            $stmt->execute([
+                $return_number, 
+                $original_transaction_id, 
+                $return_reason, 
+                $returnLocationName, // Use original location
+                $returnTerminalName, // Use original terminal
+                $processed_by,
+                $processed_by, // username (assuming processed_by is username)
+                $total_return_amount
+            ]);
+            
+            $return_id = $conn->lastInsertId();
+
+            // Get original sales data to modify
+            $originalSalesStmt = $conn->prepare("
+                SELECT sh.sales_header_id, sh.total_amount, sh.reference_number, sh.transaction_id
+                FROM tbl_pos_sales_header sh
+                WHERE sh.reference_number = ?
+            ");
+            $originalSalesStmt->execute([$original_transaction_id]);
+            $originalSales = $originalSalesStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$originalSales) {
+                throw new Exception("Original transaction not found: {$original_transaction_id}");
+            }
+            
+            $originalSalesHeaderId = $originalSales['sales_header_id'];
+            $originalTotalAmount = $originalSales['total_amount'];
+            $originalReferenceNumber = $originalSales['reference_number'];
+            
+            // Calculate new total after returns
+            $newTotalAmount = $originalTotalAmount - $total_return_amount;
+            
+            // Insert return details and update stock
+            foreach ($items as $item) {
+                // Insert return item using existing tbl_pos_return_items table
+                $stmt = $conn->prepare("
+                    INSERT INTO tbl_pos_return_items 
+                    (return_id, product_id, quantity, price, total, item_condition)
+                    VALUES (?, ?, ?, ?, ?, 'good')
+                ");
+                $stmt->execute([
+                    $return_number, // Use return_id (string) instead of numeric ID
+                    $item['product_id'],
+                    $item['return_quantity'],
+                    $item['unit_price'],
+                    $item['total_amount']
+                ]);
+                
+                // Update product stock in the ORIGINAL location (add back the returned quantity)
+                $stmt = $conn->prepare("
+                    UPDATE tbl_product 
+                    SET quantity = quantity + ?
+                    WHERE product_id = ? AND location_id = ?
+                ");
+                $result = $stmt->execute([$item['return_quantity'], $item['product_id'], $returnLocationId]);
+                $rowsAffected = $stmt->rowCount();
+                
+                // Log the stock update for debugging
+                error_log("Stock update for product {$item['product_id']}: +{$item['return_quantity']} at location {$returnLocationId} ({$returnLocationName}). Rows affected: {$rowsAffected}");
+                
+                // Insert stock movement record with original location
+                $stmt = $conn->prepare("
+                    INSERT INTO tbl_stock_movements 
+                    (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
+                    VALUES (?, 'IN', ?, ?, NOW(), ?, ?)
+                ");
+                $stmt->execute([
+                    $item['product_id'],
+                    $item['return_quantity'],
+                    $return_number,
+                    $processed_by,
+                    "Customer return to {$returnLocationName}: " . $return_reason
+                ]);
+                
+                // Update or remove sales details based on return quantity
+                $stmt = $conn->prepare("
+                    SELECT quantity FROM tbl_pos_sales_details 
+                    WHERE sales_header_id = ? AND product_id = ?
+                ");
+                $stmt->execute([$originalSalesHeaderId, $item['product_id']]);
+                $salesDetail = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($salesDetail) {
+                    $remainingQuantity = $salesDetail['quantity'] - $item['return_quantity'];
+                    
+                    if ($remainingQuantity <= 0) {
+                        // Remove the sales detail record completely
+                        $stmt = $conn->prepare("
+                            DELETE FROM tbl_pos_sales_details 
+                            WHERE sales_header_id = ? AND product_id = ?
+                        ");
+                        $stmt->execute([$originalSalesHeaderId, $item['product_id']]);
+                        error_log("Removed sales detail for product {$item['product_id']} - fully returned");
+                    } else {
+                        // Update the quantity in sales details
+                        $stmt = $conn->prepare("
+                            UPDATE tbl_pos_sales_details 
+                            SET quantity = ?
+                            WHERE sales_header_id = ? AND product_id = ?
+                        ");
+                        $stmt->execute([$remainingQuantity, $originalSalesHeaderId, $item['product_id']]);
+                        error_log("Updated sales detail for product {$item['product_id']}: remaining quantity = {$remainingQuantity}");
+                    }
+                }
+            }
+            
+            // Update sales header total amount
+            if ($newTotalAmount <= 0) {
+                // If all items are returned, mark the transaction as fully returned
+                $stmt = $conn->prepare("
+                    UPDATE tbl_pos_sales_header 
+                    SET total_amount = 0, reference_number = CONCAT(reference_number, '_RETURNED')
+                    WHERE sales_header_id = ?
+                ");
+                $stmt->execute([$originalSalesHeaderId]);
+                error_log("Marked transaction {$original_transaction_id} as fully returned");
+            } else {
+                // Update the total amount
+                $stmt = $conn->prepare("
+                    UPDATE tbl_pos_sales_header 
+                    SET total_amount = ?
+                    WHERE sales_header_id = ?
+                ");
+                $stmt->execute([$newTotalAmount, $originalSalesHeaderId]);
+                error_log("Updated transaction {$original_transaction_id} total: {$originalTotalAmount} -> {$newTotalAmount}");
+            }
+            
+            // Commit transaction
+            $conn->commit();
+            
+            echo json_encode([
+                "success" => true,
+                "message" => "Return processed successfully",
+                "return_number" => $return_number,
+                "return_id" => $return_id,
+                "total_amount" => $total_return_amount
+            ]);
+            
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            $conn->rollback();
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'get_return_history':
+        try {
+            $limit = intval($data['limit'] ?? 50);
+            $offset = intval($data['offset'] ?? 0);
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    pr.id,
+                    pr.return_id,
+                    pr.original_transaction_id,
+                    pr.reason,
+                    pr.method,
+                    pr.item_condition,
+                    pr.location_name,
+                    pr.terminal_name,
+                    pr.username,
+                    pr.total_refund,
+                    pr.status,
+                    pr.created_at
+                FROM tbl_pos_returns pr
+                ORDER BY pr.created_at DESC
+                LIMIT ? OFFSET ?
+            ");
+            $stmt->execute([$limit, $offset]);
+            $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $returns
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'get_return_details':
+        try {
+            $return_id = $data['return_id'] ?? '';
+            
+            if (empty($return_id)) {
+                echo json_encode(['success' => false, 'message' => 'Return ID is required']);
+                break;
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    pri.product_id,
+                    p.product_name,
+                    pri.quantity,
+                    pri.price,
+                    pri.total,
+                    pri.item_condition
+                FROM tbl_pos_return_items pri
+                LEFT JOIN tbl_product p ON pri.product_id = p.product_id
+                WHERE pri.return_id = ?
+            ");
+            $stmt->execute([$return_id]);
+            $details = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $details
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    default:
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+        break;
+}
+?>
