@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Activity Logs API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-section h3 {
+            color: #333;
+            margin-top: 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .info {
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Activity Logs API Test</h1>
+        <p>This page tests the comprehensive Activity Logs functionality that tracks all system activities including POS sales, user activities, stock movements, etc.</p>
+
+        <div class="test-section">
+            <h3>📊 Test Activity Logs Report</h3>
+            <p>Test the comprehensive activity logs report that combines data from multiple sources:</p>
+            <ul>
+                <li>Activity logs from tbl_activity_log</li>
+                <li>POS sales activities</li>
+                <li>Login/logout activities</li>
+                <li>Stock adjustments</li>
+                <li>Inventory transfers</li>
+                <li>User management activities</li>
+                <li>Stock movements</li>
+            </ul>
+            <button onclick="testActivityLogs()">Test Activity Logs Report</button>
+            <button onclick="testWithDateRange()">Test with Date Range</button>
+            <button onclick="addSampleActivity()">Add Sample Activity</button>
+            <div id="activityResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Test Activity Logging</h3>
+            <p>Test adding new activity logs to the system:</p>
+            <button onclick="logLoginActivity()">Log Login Activity</button>
+            <button onclick="logPOSActivity()">Log POS Sale Activity</button>
+            <button onclick="logStockActivity()">Log Stock Adjustment Activity</button>
+            <div id="loggingResult" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔍 Test Search and Filtering</h3>
+            <p>Test search functionality in activity logs:</p>
+            <input type="text" id="searchTerm" placeholder="Enter search term..." style="padding: 8px; margin: 5px; width: 200px;">
+            <button onclick="testSearch()">Search Activities</button>
+            <div id="searchResult" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost/Enguio_Project/Api/backend.php';
+
+        async function makeRequest(action, data = {}) {
+            try {
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action, ...data })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error('Request failed:', error);
+                throw error;
+            }
+        }
+
+        async function testActivityLogs() {
+            const resultDiv = document.getElementById('activityResult');
+            resultDiv.innerHTML = '🔄 Testing Comprehensive Activity Logs Report...';
+            
+            try {
+                const result = await makeRequest('get_report_data', {
+                    report_type: 'activity_logs',
+                    start_date: '2024-01-01',
+                    end_date: '2025-12-31'
+                });
+                
+                if (result.success) {
+                    const data = result.data || [];
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ Comprehensive Activity Logs Report Test Successful!</div>
+                        <div class="info">📊 Found ${data.length} activities from tbl_system_activity_logs</div>
+                        <div class="info">📅 Date Range: 2024-01-01 to 2025-12-31</div>
+                        
+                        <h4>📋 Sample Activities (First 5):</h4>
+                        ${data.slice(0, 5).map(activity => `
+                            <div style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-left: 4px solid #007bff;">
+                                <strong>${activity.action}</strong> - ${activity.description}<br>
+                                <small>👤 ${activity.employee_name || activity.username} (${activity.role}) | 📍 ${activity.location} | 🏢 ${activity.module || 'System'} | 🕐 ${activity.date} ${activity.time}</small>
+                            </div>
+                        `).join('')}
+                        
+                        <h4>📈 Activity Summary by Module:</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px;">
+                            <div style="background: #e3f2fd; padding: 10px; border-radius: 4px;">
+                                <strong>POS Activities:</strong> ${data.filter(a => a.module === 'POS' || a.action.includes('POS')).length}
+                            </div>
+                            <div style="background: #e8f5e8; padding: 10px; border-radius: 4px;">
+                                <strong>Authentication:</strong> ${data.filter(a => a.module === 'Authentication' || a.action === 'LOGIN' || a.action === 'LOGOUT').length}
+                            </div>
+                            <div style="background: #fff3e0; padding: 10px; border-radius: 4px;">
+                                <strong>Inventory:</strong> ${data.filter(a => a.module === 'Inventory' || a.action.includes('STOCK') || a.action.includes('INVENTORY')).length}
+                            </div>
+                            <div style="background: #fce4ec; padding: 10px; border-radius: 4px;">
+                                <strong>User Management:</strong> ${data.filter(a => a.module === 'User Management' || a.action.includes('USER')).length}
+                            </div>
+                            <div style="background: #f3e5f5; padding: 10px; border-radius: 4px;">
+                                <strong>Navigation:</strong> ${data.filter(a => a.module === 'Navigation' || a.action === 'NAVIGATION').length}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Test Failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testWithDateRange() {
+            const resultDiv = document.getElementById('activityResult');
+            const today = new Date().toISOString().split('T')[0];
+            const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            
+            resultDiv.innerHTML = '🔄 Testing Activity Logs with Recent Date Range...';
+            
+            try {
+                const result = await makeRequest('get_report_data', {
+                    report_type: 'activity_logs',
+                    start_date: lastWeek,
+                    end_date: today
+                });
+                
+                if (result.success) {
+                    const data = result.data || [];
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ Recent Activity Logs Test Successful!</div>
+                        <div class="info">📊 Found ${data.length} activities in the last 7 days</div>
+                        <div class="info">📅 Date Range: ${lastWeek} to ${today}</div>
+                        
+                        ${data.length > 0 ? `
+                            <h4>📋 Recent Activities:</h4>
+                            ${data.slice(0, 10).map(activity => `
+                                <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-left: 3px solid #28a745;">
+                                    <strong>${activity.action}</strong> - ${activity.description}<br>
+                                    <small>👤 ${activity.employee_name || activity.username} | 📍 ${activity.location} | 🕐 ${activity.date} ${activity.time}</small>
+                                </div>
+                            `).join('')}
+                        ` : '<div class="info">ℹ️ No activities found in the last 7 days. Try adding some sample data!</div>'}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Test Failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function addSampleActivity() {
+            const resultDiv = document.getElementById('activityResult');
+            resultDiv.innerHTML = '🔄 Adding Sample Activity...';
+            
+            try {
+                const result = await makeRequest('log_activity', {
+                    activity_type: 'TEST_ACTIVITY',
+                    description: 'Test activity added from Activity Logs Test Page - ' + new Date().toLocaleString(),
+                    username: 'test_user',
+                    role: 'Tester'
+                });
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ Sample Activity Added Successfully!</div>
+                        <div class="info">🔄 Refreshing activity logs...</div>
+                    `;
+                    
+                    // Wait a moment then refresh the logs
+                    setTimeout(() => {
+                        testActivityLogs();
+                    }, 1000);
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Failed to add activity: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function logLoginActivity() {
+            const resultDiv = document.getElementById('loggingResult');
+            resultDiv.innerHTML = '🔄 Logging Login Activity...';
+            
+            try {
+                const result = await makeRequest('log_activity', {
+                    activity_type: 'LOGIN',
+                    description: 'User logged in from Activity Logs Test Page',
+                    username: 'test_user',
+                    role: 'Tester'
+                });
+                
+                if (result.success) {
+                    resultDiv.innerHTML = '<div class="success">✅ Login Activity Logged Successfully!</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function logPOSActivity() {
+            const resultDiv = document.getElementById('loggingResult');
+            resultDiv.innerHTML = '🔄 Logging POS Sale Activity...';
+            
+            try {
+                const result = await makeRequest('log_activity', {
+                    activity_type: 'POS_SALE_SAVED',
+                    description: 'Test POS Sale: ₱150.00 (CASH, 2 items) - Terminal: Test Terminal',
+                    username: 'test_cashier',
+                    role: 'Cashier'
+                });
+                
+                if (result.success) {
+                    resultDiv.innerHTML = '<div class="success">✅ POS Sale Activity Logged Successfully!</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function logStockActivity() {
+            const resultDiv = document.getElementById('loggingResult');
+            resultDiv.innerHTML = '🔄 Logging Stock Adjustment Activity...';
+            
+            try {
+                const result = await makeRequest('log_activity', {
+                    activity_type: 'STOCK_ADJUSTMENT_CREATED',
+                    description: 'Test Stock Adjustment: Added 50 units of Test Product (Reason: Test adjustment)',
+                    username: 'test_inventory',
+                    role: 'Inventory'
+                });
+                
+                if (result.success) {
+                    resultDiv.innerHTML = '<div class="success">✅ Stock Adjustment Activity Logged Successfully!</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testSearch() {
+            const searchTerm = document.getElementById('searchTerm').value;
+            const resultDiv = document.getElementById('searchResult');
+            
+            if (!searchTerm.trim()) {
+                resultDiv.innerHTML = '<div class="error">❌ Please enter a search term</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = `🔄 Searching for "${searchTerm}"...`;
+            
+            try {
+                const result = await makeRequest('get_activity_logs', {
+                    search: searchTerm,
+                    limit: 50
+                });
+                
+                if (result.success) {
+                    const data = result.data || [];
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ Search Completed!</div>
+                        <div class="info">🔍 Found ${data.length} activities matching "${searchTerm}"</div>
+                        
+                        ${data.length > 0 ? `
+                            <h4>📋 Search Results:</h4>
+                            ${data.map(activity => `
+                                <div style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-left: 3px solid #17a2b8;">
+                                    <strong>${activity.activity_type}</strong> - ${activity.activity_description}<br>
+                                    <small>👤 ${activity.username} (${activity.role}) | 🕐 ${activity.date_created} ${activity.time_created}</small>
+                                </div>
+                            `).join('')}
+                        ` : '<div class="info">ℹ️ No activities found matching your search term.</div>'}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Search Failed: ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-run initial test when page loads
+        window.onload = function() {
+            testActivityLogs();
+        };
+    </script>
+</body>
+</html>

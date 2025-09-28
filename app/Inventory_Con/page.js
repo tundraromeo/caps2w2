@@ -17,6 +17,7 @@ import Sidebar from "./sidebar";
 import LogoutConfirm from "./LogoutConfirm";
 import { ThemeProvider } from "./ThemeContext";
 import { NotificationProvider } from "./NotificationContext";
+import { AlertManagerProvider } from "./AlertManager";
 import ThemeToggle from "./ThemeToggle";
 
 export default function InventoryPage() {
@@ -73,7 +74,8 @@ export default function InventoryPage() {
   return (
     <ThemeProvider>
       <NotificationProvider>
-        <div className="flex h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
+        <AlertManagerProvider>
+          <div className="flex h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
         {/* Mobile top bar */}
         <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: 'var(--inventory-bg-secondary)', borderBottom: '1px solid var(--inventory-border)' }}>
           <button
@@ -136,6 +138,7 @@ export default function InventoryPage() {
           />
         )}
         </div>
+        </AlertManagerProvider>
       </NotificationProvider>
     </ThemeProvider>
   );

@@ -19,8 +19,8 @@ function check_barcode($conn, $data) {
         // Build the query to find product by barcode
         $sql = "
             SELECT 
-                p.product_id as id,
-                p.product_name as name,
+                p.product_id,
+                p.product_name,
                 p.category,
                 p.barcode,
                 p.description,

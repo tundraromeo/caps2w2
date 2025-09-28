@@ -210,6 +210,89 @@ switch ($action) {
         }
         break;
         
+    case 'get_pending_returns':
+        try {
+            $limit = intval($data['limit'] ?? 50);
+            $offset = intval($data['offset'] ?? 0);
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    pr.id,
+                    pr.return_id,
+                    pr.original_transaction_id,
+                    pr.reason,
+                    pr.method,
+                    pr.item_condition,
+                    pr.location_name,
+                    pr.terminal_name,
+                    pr.username,
+                    pr.total_refund,
+                    pr.status,
+                    pr.created_at
+                FROM tbl_pos_returns pr
+                WHERE pr.status = 'pending'
+                ORDER BY pr.created_at DESC
+                LIMIT ? OFFSET ?
+            ");
+            $stmt->execute([$limit, $offset]);
+            $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $returns
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'get_all_returns':
+        try {
+            $limit = intval($data['limit'] ?? 50);
+            $offset = intval($data['offset'] ?? 0);
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    pr.id,
+                    pr.return_id,
+                    pr.original_transaction_id,
+                    pr.reason,
+                    pr.method,
+                    pr.item_condition,
+                    pr.location_name,
+                    pr.terminal_name,
+                    pr.username,
+                    pr.total_refund,
+                    pr.status,
+                    pr.created_at,
+                    pr.approved_by,
+                    pr.approved_by_username,
+                    pr.approved_at,
+                    pr.rejection_reason
+                FROM tbl_pos_returns pr
+                ORDER BY pr.created_at DESC
+                LIMIT ? OFFSET ?
+            ");
+            $stmt->execute([$limit, $offset]);
+            $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $returns
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
     case 'get_return_history':
         try {
             $limit = intval($data['limit'] ?? 50);
@@ -276,6 +359,155 @@ switch ($action) {
             echo json_encode([
                 'success' => true,
                 'data' => $details
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'approve_return':
+        try {
+            $return_id = $data['return_id'] ?? '';
+            $approved_by = $data['approved_by'] ?? 1;
+            $approved_by_username = $data['approved_by_username'] ?? 'Admin';
+            $notes = $data['notes'] ?? '';
+            
+            if (empty($return_id)) {
+                echo json_encode(['success' => false, 'message' => 'Return ID is required']);
+                break;
+            }
+            
+            // Start transaction
+            $conn->beginTransaction();
+            
+            // Get return details
+            $stmt = $conn->prepare("
+                SELECT pr.*, pri.product_id, pri.quantity, pri.price, pri.total
+                FROM tbl_pos_returns pr
+                LEFT JOIN tbl_pos_return_items pri ON pr.return_id = pri.return_id
+                WHERE pr.return_id = ? AND pr.status = 'pending'
+            ");
+            $stmt->execute([$return_id]);
+            $returnData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            if (empty($returnData)) {
+                throw new Exception("Return not found or already processed");
+            }
+            
+            $return = $returnData[0];
+            $location_name = $return['location_name'];
+            
+            // Update return status to approved
+            $stmt = $conn->prepare("
+                UPDATE tbl_pos_returns 
+                SET status = 'approved', 
+                    approved_by = ?, 
+                    approved_by_username = ?, 
+                    approved_at = NOW(),
+                    notes = ?
+                WHERE return_id = ?
+            ");
+            $stmt->execute([$approved_by, $approved_by_username, $notes, $return_id]);
+            
+            // Restore stock for each returned item
+            $restored_items = [];
+            $total_quantity_restored = 0;
+            
+            foreach ($returnData as $item) {
+                if ($item['product_id']) {
+                    // Get location ID
+                    $locationStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name = ? LIMIT 1");
+                    $locationStmt->execute([$location_name]);
+                    $locationResult = $locationStmt->fetch(PDO::FETCH_ASSOC);
+                    $location_id = $locationResult ? $locationResult['location_id'] : 4;
+                    
+                    // Update product stock
+                    $stmt = $conn->prepare("
+                        UPDATE tbl_product 
+                        SET quantity = quantity + ?
+                        WHERE product_id = ? AND location_id = ?
+                    ");
+                    $stmt->execute([$item['quantity'], $item['product_id'], $location_id]);
+                    
+                    // Insert stock movement record
+                    $stmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements 
+                        (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
+                        VALUES (?, 'IN', ?, ?, NOW(), ?, ?)
+                    ");
+                    $stmt->execute([
+                        $item['product_id'],
+                        $item['quantity'],
+                        $return_id,
+                        $approved_by_username,
+                        "Return approved - stock restored: " . $notes
+                    ]);
+                    
+                    $restored_items[] = $item['product_id'];
+                    $total_quantity_restored += $item['quantity'];
+                }
+            }
+            
+            // Commit transaction
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Return approved successfully',
+                'location_name' => $location_name,
+                'restored_items' => implode(', ', $restored_items),
+                'total_quantity_restored' => $total_quantity_restored
+            ]);
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'reject_return':
+        try {
+            $return_id = $data['return_id'] ?? '';
+            $rejected_by = $data['rejected_by'] ?? 1;
+            $rejected_by_username = $data['rejected_by_username'] ?? 'Admin';
+            $rejection_reason = $data['rejection_reason'] ?? '';
+            
+            if (empty($return_id)) {
+                echo json_encode(['success' => false, 'message' => 'Return ID is required']);
+                break;
+            }
+            
+            if (empty($rejection_reason)) {
+                echo json_encode(['success' => false, 'message' => 'Rejection reason is required']);
+                break;
+            }
+            
+            // Update return status to rejected
+            $stmt = $conn->prepare("
+                UPDATE tbl_pos_returns 
+                SET status = 'rejected', 
+                    rejected_by = ?, 
+                    rejected_by_username = ?, 
+                    rejected_at = NOW(),
+                    rejection_reason = ?
+                WHERE return_id = ? AND status = 'pending'
+            ");
+            $result = $stmt->execute([$rejected_by, $rejected_by_username, $rejection_reason, $return_id]);
+            
+            if ($stmt->rowCount() === 0) {
+                throw new Exception("Return not found or already processed");
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Return rejected successfully'
             ]);
             
         } catch (Exception $e) {

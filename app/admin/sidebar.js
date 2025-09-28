@@ -71,13 +71,6 @@ const Sidebar = ({
       notificationCount: getTotalNotifications('users')
     },
     { 
-      label: "Supplier", 
-      icon: <FaStore />, 
-      key: "Supplier",
-      hasNotifications: getTotalNotifications('suppliers') > 0,
-      notificationCount: getTotalNotifications('suppliers')
-    },
-    { 
       label: "Return Management", 
       icon: <FaUndo />, 
       key: "Return Management",
@@ -151,6 +144,12 @@ const Sidebar = ({
           key: "Login Logs",
           hasNotifications: hasSubItemUpdates('logs', 'Login Logs')
         },
+        { 
+          label: "Activity Logs", 
+          icon: <FaHistory />, 
+          key: "Activity Logs",
+          hasNotifications: hasSubItemUpdates('logs', 'Activity Logs')
+        },
       ]
     },
     { label: "Store Settings", icon: <FaCog />, key: "Store Settings" },
@@ -177,8 +176,6 @@ const Sidebar = ({
       markNotificationAsViewed('logs');
     } else if (componentKey === 'User') {
       markNotificationAsViewed('users');
-    } else if (componentKey === 'Supplier') {
-      markNotificationAsViewed('suppliers');
     } else if (componentKey === 'Return Management') {
       markNotificationAsViewed('returns');
     }
@@ -198,6 +195,8 @@ const Sidebar = ({
       markNotificationAsViewed('reports', 'Stock Adjustment Report');
     } else if (componentKey === 'Login Logs') {
       markNotificationAsViewed('logs', 'Login Logs');
+    } else if (componentKey === 'Activity Logs') {
+      markNotificationAsViewed('logs', 'Activity Logs');
     }
     
     if (onClose) onClose();

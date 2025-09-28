@@ -30,14 +30,7 @@ $allowed = [
     'delete_transfer',
     'get_transfer_logs',
     'get_fifo_stock',
-    'create_transfer_batch_details_table',
-    'get_batch_transfer_details',
-    'create_batch_transfer_detail',
-    'update_batch_transfer_detail',
-    'delete_batch_transfer_detail',
-    'get_batch_by_product_location',
-    'consume_batch_stock',
-    'get_batch_summary'
+    'create_transfer_batch_details_table'
 ];
 
 if (!in_array($action, $allowed, true)) {

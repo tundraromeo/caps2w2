@@ -3,31 +3,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useTheme } from './ThemeContext';
 
-// Determine the correct API URL based on the current environment
-const getAPIBaseURL = () => {
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.hostname;
-    const currentPort = window.location.port;
-    
-    // If running on Next.js dev server (usually port 3000), use the proxy
-    if (currentPort === '3000') {
-      return '/api/proxy';
-    }
-    
-    // If running on localhost without port (Apache), use direct PHP
-    if (currentHost === 'localhost' && !currentPort) {
-      return 'http://localhost/Enguio_Project/Api/backend.php';
-    }
-    
-    // Otherwise use the same host/port
-    return `${window.location.protocol}//${currentHost}${currentPort ? ':' + currentPort : ''}/Enguio_Project/Api/backend.php`;
-  }
-  
-  // Fallback for server-side rendering
-  return '/api/proxy';
-};
-
-const API_BASE_URL = getAPIBaseURL();
+// Use direct API URL for better reliability
+const API_BASE_URL = 'http://localhost/Enguio_Project/Api/backend.php';
 
 function IndividualReport({ reportType, reportName, reportIcon }) {
   const { theme } = useTheme();
@@ -48,6 +25,13 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   const [debugMode, setDebugMode] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [lastDataCount, setLastDataCount] = useState(0);
+  const [currentUserData, setCurrentUserData] = useState(null);
+
+  // Get current user data on component mount
+  useEffect(() => {
+    const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+    setCurrentUserData(userData);
+  }, []);
 
   const fetchReportData = async (retryCount = 0, isAutoRefresh = false) => {
     try {
@@ -56,13 +40,25 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       }
       setReportError(null);
       
+      // Get current user data from sessionStorage
+      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+      
       const requestData = { 
         action: 'get_report_data',
         report_type: reportType,
         start_date: dateRange.startDate,
         end_date: dateRange.endDate,
-        check_for_updates: isAutoRefresh // Flag to check if there are new updates
+        check_for_updates: isAutoRefresh, // Flag to check if there are new updates
+        user_data: userData // Pass user data for role-based filtering
       };
+      
+      // Debug logging
+      console.log('🔍 Fetching report data:', {
+        reportType,
+        API_URL: API_BASE_URL,
+        requestData,
+        dateRange: `${dateRange.startDate} to ${dateRange.endDate}`
+      });
       
       let res;
       
@@ -99,15 +95,13 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         const newData = res.data.data || [];
         
         // Debug logging
-        if (debugMode) {
-          console.log(`🔍 [DEBUG] ${reportType} report data:`, {
-            dataCount: newData.length,
-            hasNewData: res.data.has_new_data,
-            isAutoRefresh,
-            dateRange: `${dateRange.startDate} to ${dateRange.endDate}`,
-            sampleData: newData[0] || 'No data'
-          });
-        }
+        console.log(`✅ ${reportType} report data received:`, {
+          dataCount: newData.length,
+          hasNewData: res.data.has_new_data,
+          isAutoRefresh,
+          dateRange: `${dateRange.startDate} to ${dateRange.endDate}`,
+          sampleData: newData[0] || 'No data'
+        });
         
         // Check if there's new data available (for auto-refresh)
         if (isAutoRefresh && res.data.has_new_data) {
@@ -132,6 +126,14 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 icon: '/enguio_logo.ico'
               });
             }
+          } else if (reportType === 'login_logs') {
+            console.log('🔐 New login activity detected!');
+            if (Notification.permission === 'granted') {
+              new Notification('Login Activity Update', {
+                body: 'New login/logout activity has been detected',
+                icon: '/enguio_logo.ico'
+              });
+            }
           }
         }
         
@@ -149,11 +151,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       } else {
         setReportData([]);
         setReportError(res.data?.message || 'Failed to fetch report data');
-        console.warn('Report data fetch failed:', res.data?.message);
-        
-        if (debugMode) {
-          console.log(`🔍 [DEBUG] API Error:`, res.data);
-        }
+        console.error(`❌ ${reportType} report data fetch failed:`, res.data?.message);
+        console.error('Full API response:', res.data);
       }
     } catch (error) {
       console.error('Error fetching report data:', error);
@@ -184,14 +183,19 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   const generateReport = async () => {
     try {
       setReportDataLoading(true);
+      
+      // Get current user data from sessionStorage
+      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+      
       const res = await axios.post(API_BASE_URL, {
         action: 'generate_report',
         report_type: reportType,
-        generated_by: 'Admin',
+        generated_by: userData.full_name || userData.username || 'Admin',
         parameters: {
           start_date: dateRange.startDate,
           end_date: dateRange.endDate
-        }
+        },
+        user_data: userData // Pass user data for role-based filtering
       });
       
       if (res.data?.success) {
@@ -207,11 +211,16 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   const fetchCashierDetails = async (cashierId) => {
     try {
       setCashierDetailsLoading(true);
+      
+      // Get current user data from sessionStorage
+      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+      
       const res = await axios.post(API_BASE_URL, {
         action: 'get_cashier_details',
         cashier_id: cashierId,
         start_date: dateRange.startDate,
-        end_date: dateRange.endDate
+        end_date: dateRange.endDate,
+        user_data: userData // Pass user data for role-based filtering
       });
       
       if (res.data?.success) {
@@ -236,7 +245,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
     fetchReportData();
     
     // Request notification permission for real-time updates
-    if (reportType === 'sales' || reportType === 'cashier_performance') {
+    if (reportType === 'sales' || reportType === 'cashier_performance' || reportType === 'login_logs') {
       if (Notification.permission === 'default') {
         Notification.requestPermission();
       }
@@ -245,7 +254,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
 
   // Auto-refresh effect for real-time updates
   useEffect(() => {
-    if (!autoRefresh || (reportType !== 'sales' && reportType !== 'cashier_performance')) {
+    if (!autoRefresh || (reportType !== 'sales' && reportType !== 'cashier_performance' && reportType !== 'login_logs')) {
       return;
     }
 
@@ -271,7 +280,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'stock_out':
         return ['Date', 'Time', 'Product Name', 'Barcode', 'Quantity', 'Unit Price', 'Total Value', 'Cashier', 'Customer Info', 'Reference No'];
       case 'sales':
-        return ['Date', 'Time', 'Transaction ID', 'Reference No', 'Total Amount', 'Items Sold', 'Products', 'Payment Type', 'Cashier', 'Terminal'];
+        return ['Date', 'Time', 'Reference No', 'Total Amount', 'Items Sold', 'Products', 'Payment Type', 'Cashier', 'Terminal'];
       case 'inventory_balance':
         return ['Product Name', 'Barcode', 'Category', 'Current Stock', 'Unit Price', 'Total Value', 'Location', 'Supplier', 'Brand', 'Expiration', 'Status'];
       case 'stock_adjustment':
@@ -279,9 +288,11 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'supplier':
         return ['Supplier Name', 'Contact', 'Email', 'Products Supplied', 'Total Stock', 'Total Value', 'Deliveries Count'];
       case 'cashier_performance':
-        return ['Cashier Name', 'Transactions Count', 'Total Sales', 'Average Transaction', 'Unique Products Sold', 'First Sale', 'Last Sale'];
+        return ['Cashier Name', 'Transactions Count', 'Total Sales', 'Average Transaction', 'Unique Products Sold'];
       case 'login_logs':
-        return ['Date', 'Time', 'Username', 'Role', 'Action', 'Description'];
+        return ['Date', 'Time', 'Employee Name', 'Username', 'Role', 'Action', 'Login Status', 'Location', 'Terminal', 'Description'];
+      case 'activity_logs':
+        return ['Date', 'Time', 'Employee Name', 'Username', 'Role', 'Action', 'Description', 'Location', 'Terminal', 'Status'];
       default:
         return [];
     }
@@ -296,16 +307,16 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'unit_price':
         return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
       case 'date':
-        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : 'N/A';
+        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : '📅 Not Available';
       case 'time':
-        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : '🕐 Not Available';
       case 'payment_method':
       case 'payment_type':
         const paymentType = row[columnKey];
         if (paymentType === 'cash') return '💵 Cash';
         if (paymentType === 'card') return '💳 Card';
         if (paymentType === 'Gcash') return '📱 GCash';
-        return paymentType || 'N/A';
+        return paymentType || '💳 Not Specified';
       case 'cashier':
       case 'cashier_name':
         if (reportType === 'cashier_performance' && row['emp_id']) {
@@ -315,13 +326,13 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               className="text-blue-600 hover:text-blue-800 underline cursor-pointer font-medium"
               style={{ color: theme.colors.accent }}
             >
-              {row[columnKey] || row['cashier_username'] || row['cashier_name'] || 'N/A'}
+              {row[columnKey] || row['cashier_username'] || row['cashier_name'] || '👤 System User'}
             </button>
           );
         }
-        return row[columnKey] || row['cashier_username'] || row['cashier_name'] || 'N/A';
+        return row[columnKey] || row['cashier_username'] || row['cashier_name'] || '👤 System User';
       case 'reference_no':
-        return row[columnKey] || 'N/A';
+        return row[columnKey] || '📋 Auto-Generated';
       case 'quantity':
         if (reportType === 'stock_in') {
           return (
@@ -346,13 +357,211 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         if (status === 'Low Stock') return '⚠️ Low Stock';
         if (status === 'Out of Stock') return '❌ Out of Stock';
         if (status === 'In Stock') return '✅ In Stock';
-        return status || 'N/A';
+        return status || '📊 Pending';
       case 'location':
-        return row[columnKey] || 'N/A';
+        return row[columnKey] || '🏢 Main Store';
       case 'supplier':
-        return row[columnKey] || 'N/A';
+        return row[columnKey] || '🏭 Direct Purchase';
+      case 'product_name':
+        return row[columnKey] || '📦 Generic Product';
+      case 'barcode':
+        return row[columnKey] || '📱 No Barcode';
+      case 'category':
+        return row[columnKey] || '📂 Uncategorized';
+      case 'brand':
+        return row[columnKey] || '🏷️ Generic Brand';
+      case 'expiration':
+        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : '📅 No Expiry';
+      case 'customer_info':
+        return row[columnKey] || '👤 Walk-in Customer';
+      case 'terminal':
+        return row[columnKey] || '💻 POS Terminal 1';
+      case 'movement_type':
+        return row[columnKey] || '📊 Stock Movement';
+      case 'reason':
+        return row[columnKey] || '📝 System Adjustment';
+      case 'adjusted_by':
+        // Priority order: employee_name, created_by, user_id, username, then specific system users
+        const employeeName = row['employee_name'] || '';
+        const createdBy = row['created_by'] || '';
+        const userId = row['user_id'] || '';
+        const username = row['username'] || '';
+        const loggedInUser = row['logged_in_user'] || '';
+        const inventoryManager = row['inventory_manager'] || '';
+        const terminalName = row['terminal_name'] || '';
+        const posTerminalName = row['pos_terminal_name'] || '';
+        const shiftName = row['shift_name'] || '';
+        const shiftStart = row['shift_start'] || '';
+        const shiftEnd = row['shift_end'] || '';
+        const assignedLocation = row['assigned_location'] || '';
+        const loginLocation = row['login_location'] || '';
+        const userRole = row['user_role'] || '';
+        const loginRole = row['login_role'] || '';
+        const displayRole = row['display_role'] || '';
+        
+        // Determine role for display
+        const getRoleDisplay = (role) => {
+          if (!role) return '';
+          const roleLower = role.toLowerCase();
+          if (roleLower.includes('inventory')) return 'Inventory';
+          if (roleLower.includes('admin')) return 'Admin';
+          if (roleLower.includes('manager')) return 'Manager';
+          if (roleLower.includes('cashier')) return 'Cashier';
+          if (roleLower.includes('supervisor')) return 'Supervisor';
+          return role;
+        };
+        
+        const rolePrefix = getRoleDisplay(displayRole) ? `${getRoleDisplay(displayRole)} ` : '';
+        
+        // Build terminal, shift, and location info
+        const terminalInfo = posTerminalName || terminalName;
+        const shiftInfo = shiftName ? ` - ${shiftName}` : '';
+        const locationInfo = loginLocation || assignedLocation;
+        const locationDisplay = locationInfo ? ` @ ${locationInfo}` : '';
+        const terminalDisplay = terminalInfo ? ` (${terminalInfo}${shiftInfo}${locationDisplay})` : '';
+        
+        // First priority: Exact employee name
+        if (employeeName && employeeName.trim() !== '') {
+          return `👤 ${rolePrefix}${employeeName.trim()}${terminalDisplay}`;
+        }
+        
+        // Second priority: Logged in user at the time
+        if (loggedInUser && loggedInUser.trim() !== '') {
+          return `👤 ${rolePrefix}${loggedInUser.trim()}${terminalDisplay}`;
+        }
+        
+        // Third priority: Inventory manager
+        if (inventoryManager && inventoryManager.trim() !== '') {
+          return `👤 Inventory ${inventoryManager.trim()}${terminalDisplay}`;
+        }
+        
+        // Fourth priority: Username
+        if (username && username.trim() !== '') {
+          return `👤 ${rolePrefix}${username.trim()}${terminalDisplay}`;
+        }
+        
+        // Fifth priority: User ID
+        if (userId && userId.trim() !== '') {
+          return `👤 ${rolePrefix}User ${userId}${terminalDisplay}`;
+        }
+        
+        // System users with specific names
+        if (createdBy === 'System Sync') {
+          return `🤖 System Auto-Sync${terminalDisplay}`;
+        } else if (createdBy === 'POS System') {
+          return `👤 POS Cashier${terminalDisplay}`;
+        } else if (createdBy === 'Pharmacy Cashier') {
+          return `👤 Pharmacy Cashier${terminalDisplay}`;
+        } else if (createdBy === 'Inventory Manager') {
+          return `👤 Inventory Manager${terminalDisplay}`;
+        } else if (createdBy === 'Admin') {
+          return `👤 Admin System${terminalDisplay}`;
+        } else if (createdBy && createdBy.trim() !== '') {
+          return `👤 ${rolePrefix}${createdBy.trim()}${terminalDisplay}`;
+        }
+        
+        // Default fallback
+        return '👤 Unknown User';
+      case 'received_by':
+        return row[columnKey] || '👤 Warehouse Staff';
+      case 'supplier_name':
+        return row[columnKey] || '🏭 Direct Supplier';
+      case 'contact':
+        return row[columnKey] || '📞 Not Available';
+      case 'email':
+        return row[columnKey] || '📧 Not Provided';
+      case 'first_sale':
+        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : '📅 No Sales Yet';
+      case 'last_sale':
+        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : '📅 No Recent Sales';
+      case 'username':
+        return row[columnKey] || '👤 System User';
+      case 'employee_name':
+        return row[columnKey] || '👤 Unknown Employee';
+      case 'role':
+        const role = row[columnKey];
+        if (role === 'admin') return '👑 Administrator';
+        if (role === 'manager') return '👔 Manager';
+        if (role === 'supervisor') return '👨‍💼 Supervisor';
+        if (role === 'cashier') return '💰 Cashier';
+        if (role === 'inventory') return '📦 Inventory Staff';
+        return role ? `👤 ${role.charAt(0).toUpperCase() + role.slice(1)}` : '👤 Staff';
+      case 'action':
+        const action = row[columnKey];
+        if (action === 'LOGIN') return '🔓 LOGIN';
+        if (action === 'LOGOUT') return '🔒 LOGOUT';
+        if (action === 'NAVIGATION') return '🧭 NAVIGATION';
+        if (action === 'POS_SALE_SAVED') return '💰 POS SALE';
+        if (action === 'STOCK_ADJUSTMENT_CREATED') return '📦 STOCK ADJUSTMENT';
+        if (action === 'INVENTORY_TRANSFER_CREATED') return '🔄 INVENTORY TRANSFER';
+        if (action === 'USER_CREATE') return '👤 USER CREATED';
+        if (action === 'USER_UPDATE') return '✏️ USER UPDATED';
+        if (action === 'USER_MANAGEMENT') return '👥 USER MANAGEMENT';
+        if (action === 'STOCK_IN') return '📥 STOCK IN';
+        if (action === 'STOCK_OUT') return '📤 STOCK OUT';
+        if (action === 'STOCK_ADJUSTMENT') return '📊 STOCK ADJUSTMENT';
+        if (action === 'STOCK_TRANSFER') return '🔄 STOCK TRANSFER';
+        return action || '📝 System Action';
+      case 'login_status':
+        const loginStatus = row[columnKey];
+        if (loginStatus === 'ONLINE') {
+          return (
+            <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>
+              🟢 ONLINE
+            </span>
+          );
+        }
+        if (loginStatus === 'OFFLINE') {
+          return (
+            <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.warningBg, color: theme.colors.warning }}>
+              🔴 OFFLINE
+            </span>
+          );
+        }
+        return loginStatus || '📊 Unknown';
+      case 'location':
+        return row[columnKey] || '🏢 Main Office';
+      case 'terminal':
+        return row[columnKey] || '💻 System Terminal';
+      case 'description':
+        const description = row[columnKey];
+        if (!description) return '📄 System Activity';
+        
+        // Truncate long descriptions for better display
+        if (description.length > 100) {
+          return (
+            <span title={description}>
+              {description.substring(0, 100)}...
+            </span>
+          );
+        }
+        return description;
+      case 'status':
+        const activityStatus = row[columnKey];
+        if (activityStatus === 'ONLINE') {
+          return (
+            <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>
+              🟢 ONLINE
+            </span>
+          );
+        }
+        if (activityStatus === 'OFFLINE') {
+          return (
+            <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.warningBg, color: theme.colors.warning }}>
+              🔴 OFFLINE
+            </span>
+          );
+        }
+        if (activityStatus === 'ACTIVE') {
+          return (
+            <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}>
+              ⚡ ACTIVE
+            </span>
+          );
+        }
+        return activityStatus || '📊 Unknown';
       default:
-        return row[columnKey] || 'N/A';
+        return row[columnKey] || '📊 Not Available';
     }
   };
 
@@ -367,6 +576,32 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               <div>
                 <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>{reportName}</h1>
                 <p className="text-lg" style={{ color: theme.text.secondary }}>Detailed Report Analysis</p>
+                {currentUserData && currentUserData.role && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" 
+                          style={{ 
+                            backgroundColor: theme.colors.accent + '20', 
+                            color: theme.colors.accent 
+                          }}>
+                      👤 {currentUserData.full_name || currentUserData.username} 
+                      <span className="ml-2 px-2 py-0.5 rounded text-xs" 
+                            style={{ 
+                              backgroundColor: theme.colors.accent, 
+                              color: 'white' 
+                            }}>
+                        {currentUserData.role.toUpperCase()}
+                      </span>
+                    </span>
+                    <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+                      {currentUserData.role.toLowerCase() === 'cashier' 
+                        ? '📊 Showing only your sales transactions'
+                        : currentUserData.role.toLowerCase() === 'admin' || currentUserData.role.toLowerCase() === 'manager'
+                        ? '📊 Showing all sales transactions'
+                        : '📊 Showing filtered data based on your role'
+                      }
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -478,8 +713,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 {reportDataLoading ? 'Generating...' : 'Generate Report'}
               </button>
               
-              {/* Auto-refresh controls for sales and cashier performance reports */}
-              {(reportType === 'sales' || reportType === 'cashier_performance') && (
+              {/* Auto-refresh controls for sales, cashier performance, and login logs reports */}
+              {(reportType === 'sales' || reportType === 'cashier_performance' || reportType === 'login_logs') && (
                 <>
                   <div className="flex items-center space-x-2">
                     <label className="flex items-center space-x-2">
@@ -535,7 +770,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         </div>
 
         {/* New Data Available Notification */}
-        {newDataAvailable && (reportType === 'sales' || reportType === 'cashier_performance') && (
+        {newDataAvailable && (reportType === 'sales' || reportType === 'cashier_performance' || reportType === 'login_logs') && (
           <div className="mb-6">
             <div
               className="rounded-lg shadow-md p-4 border-l-4 animate-pulse"
@@ -561,7 +796,9 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                     <p className="text-sm" style={{ color: theme.text.secondary }}>
                       {reportType === 'sales' 
                         ? 'New sales transactions have been recorded in the POS system.'
-                        : 'New cashier performance data is available.'
+                        : reportType === 'cashier_performance'
+                        ? 'New cashier performance data is available.'
+                        : 'New login/logout activity has been detected in the system.'
                       }
                     </p>
                     <p className="text-xs mt-1" style={{ color: theme.text.secondary }}>
@@ -653,6 +890,107 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                     Cash: {reportData.filter(item => item.payment_type === 'cash').length}<br/>
                     Card: {reportData.filter(item => item.payment_type === 'card').length}<br/>
                     GCash: {reportData.filter(item => item.payment_type === 'Gcash').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Summary Cards for Login Logs Report */}
+        {reportType === 'login_logs' && reportData.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">👥</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Activities</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{reportData.length}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">🟢</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Currently Online</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {reportData.filter(item => item.login_status === 'ONLINE').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">👑</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Administrators</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {reportData.filter(item => item.role === 'admin').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">🏢</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Unique Locations</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {new Set(reportData.map(item => item.location).filter(Boolean)).size}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Summary Cards for Activity Logs Report */}
+        {reportType === 'activity_logs' && reportData.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">📊</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Activities</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{reportData.length}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">💰</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>POS Sales</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {reportData.filter(item => item.action === 'POS_SALE_SAVED').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">🔓</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Login Activities</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {reportData.filter(item => item.action === 'LOGIN' || item.action === 'LOGOUT').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+              <div className="flex items-center">
+                <div className="text-3xl mr-3">📦</div>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Stock Activities</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {reportData.filter(item => 
+                      item.action === 'STOCK_ADJUSTMENT_CREATED' || 
+                      item.action === 'INVENTORY_TRANSFER_CREATED' ||
+                      item.action === 'STOCK_IN' ||
+                      item.action === 'STOCK_OUT'
+                    ).length}
                   </p>
                 </div>
               </div>
@@ -776,6 +1114,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                     ? 'No sales transactions found for the selected date range. Make sure there are POS transactions in the system.'
                     : reportType === 'cashier_performance'
                     ? 'No cashier performance data found. Make sure cashiers have made sales in the POS system.'
+                    : reportType === 'login_logs'
+                    ? 'No login/logout activities found for the selected date range. Make sure employees have logged into the system.'
                     : `No ${reportName.toLowerCase()} data found for the selected date range.`
                   }
                 </p>
@@ -793,6 +1133,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   <div className="text-sm">
                     {reportType === 'sales' || reportType === 'cashier_performance' ? (
                       <p>💡 <strong>Tip:</strong> Make a test sale in the POS system to see real-time updates here!</p>
+                    ) : reportType === 'login_logs' ? (
+                      <p>💡 <strong>Tip:</strong> Login/logout activities are automatically tracked. Check if employees are logging into the system!</p>
                     ) : null}
                   </div>
                 </div>
@@ -804,7 +1146,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
 
       {/* Cashier Details Modal */}
       {selectedCashier && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div 
             className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden"
             style={{ backgroundColor: theme.bg.card }}

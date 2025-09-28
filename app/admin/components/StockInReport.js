@@ -201,7 +201,141 @@ function StockInReport() {
       case 'reason':
         return row.notes || 'N/A';
       case 'adjusted_by':
-        return row.created_by || 'N/A';
+        // Get all available employee information from API response
+        const adjustedBy = row['adjusted_by'] || ''; // Complete employee name from API
+        const employeeId = row['employee_id'] || '';
+        const employeeUsername = row['employee_username'] || '';
+        const loggedInUser = row['logged_in_user'] || ''; // Who was logged in at the time
+        const loginFname = row['login_fname'] || '';
+        const loginLname = row['login_lname'] || '';
+        const loginUsername = row['login_username'] || '';
+        
+        // Get role and shift information
+        const userRole = row['user_role'] || '';
+        const loginRole = row['login_role'] || '';
+        const displayRole = row['display_role'] || '';
+        const shiftName = row['shift_name'] || '';
+        const shiftStart = row['shift_start'] || '';
+        const shiftEnd = row['shift_end'] || '';
+        
+        // Get terminal and location information
+        const terminalName = row['terminal_name'] || '';
+        const posTerminalName = row['pos_terminal_name'] || '';
+        const assignedLocation = row['assigned_location'] || '';
+        const loginLocation = row['login_location'] || '';
+        
+        // Get original created_by value for fallback
+        const createdBy = row['created_by'] || '';
+        
+        // Determine the best employee information to display
+        const getUserDisplay = () => {
+          // 1. Priority: Use adjusted_by field (complete employee name from API)
+          if (adjustedBy && adjustedBy.trim() !== '') {
+            const role = getRoleDisplay(displayRole || loginRole || userRole);
+            const shiftInfo = getShiftDisplay();
+            return `👤 ${role}${role ? ' ' : ''}${adjustedBy.trim()}${shiftInfo}`;
+          }
+          
+          // 2. Priority: Use logged_in_user (who was logged in at the time)
+          if (loggedInUser && loggedInUser.trim() !== '') {
+            const role = getRoleDisplay(loginRole || displayRole || userRole);
+            const shiftInfo = getShiftDisplay();
+            return `👤 ${role}${role ? ' ' : ''}${loggedInUser.trim()}${shiftInfo}`;
+          }
+          
+          // 3. Priority: Use login employee name parts
+          if (loginFname && loginLname) {
+            const fullName = `${loginFname} ${loginLname}`;
+            const role = getRoleDisplay(loginRole || displayRole || userRole);
+            const shiftInfo = getShiftDisplay();
+            return `👤 ${role}${role ? ' ' : ''}${fullName}${shiftInfo}`;
+          }
+          
+          // 4. Priority: Use employee username
+          if (employeeUsername && employeeUsername.trim() !== '') {
+            const role = getRoleDisplay(displayRole || loginRole || userRole);
+            const shiftInfo = getShiftDisplay();
+            return `👤 ${role}${role ? ' ' : ''}${employeeUsername.trim()}${shiftInfo}`;
+          }
+          
+          // 5. Priority: Use login username
+          if (loginUsername && loginUsername.trim() !== '') {
+            const role = getRoleDisplay(loginRole || displayRole || userRole);
+            const shiftInfo = getShiftDisplay();
+            return `👤 ${role}${role ? ' ' : ''}${loginUsername.trim()}${shiftInfo}`;
+          }
+          
+          // 6. Fallback: Map created_by to known employees
+          if (createdBy === 'admin') {
+            return `👤 Admin System`;
+          }
+          
+          if (createdBy === 'inventory') {
+            return `👤 Inventory Staff`;
+          }
+          
+          if (createdBy === 'POS System' || createdBy === 'POS') {
+            const shiftInfo = getShiftDisplay();
+            return `👤 POS Cashier${shiftInfo}`;
+          }
+          
+          if (createdBy === 'pharmacist') {
+            return `👤 Pharmacist`;
+          }
+          
+          if (createdBy === 'cashier') {
+            const shiftInfo = getShiftDisplay();
+            return `👤 Cashier${shiftInfo}`;
+          }
+          
+          // 7. Final fallback
+          if (createdBy && createdBy.trim() !== '') {
+            return `👤 ${createdBy.trim()}`;
+          }
+          
+          return '👤 Unknown User';
+        };
+        
+        // Helper function to format role display
+        const getRoleDisplay = (role) => {
+          if (!role) return '';
+          const roleLower = role.toLowerCase();
+          if (roleLower.includes('admin')) return 'Admin';
+          if (roleLower.includes('inventory')) return 'Inventory Staff';
+          if (roleLower.includes('cashier')) return 'Cashier';
+          if (roleLower.includes('pharmacist')) return 'Pharmacist';
+          if (roleLower.includes('manager')) return 'Manager';
+          if (roleLower.includes('supervisor')) return 'Supervisor';
+          return role;
+        };
+        
+        // Helper function to format shift display
+        const getShiftDisplay = () => {
+          if (shiftName) {
+            if (shiftStart && shiftEnd) {
+              // Format time nicely
+              const startTime = shiftStart.includes(':') ? shiftStart.substring(11, 16) : shiftStart;
+              const endTime = shiftEnd.includes(':') ? shiftEnd.substring(11, 16) : shiftEnd;
+              return ` - ${shiftName} (${startTime}-${endTime})`;
+            }
+            return ` - ${shiftName}`;
+          }
+          return '';
+        };
+        
+        const userDisplay = getUserDisplay();
+        
+        // Add context information (terminal and location)
+        const contextParts = [];
+        const terminalInfo = posTerminalName || terminalName;
+        if (terminalInfo) contextParts.push(terminalInfo);
+        
+        const locationInfo = loginLocation || assignedLocation;
+        if (locationInfo) contextParts.push(`@ ${locationInfo}`);
+        
+        const contextDisplay = contextParts.length > 0 ? ` (${contextParts.join(' ')})` : '';
+        
+        return `${userDisplay}${contextDisplay}`;
       case 'reference_no':
         return row.reference_no || 'N/A';
       default:

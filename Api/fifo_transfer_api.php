@@ -194,18 +194,18 @@ function handleAvailableProducts() {
             p.barcode,
             p.product_name,
             p.category,
-            SUM(btd.quantity_used) as total_quantity,
-            COUNT(DISTINCT btd.batch_id) as batch_count,
-            MIN(btd.transfer_date) as oldest_batch_date,
-            MAX(btd.transfer_date) as newest_batch_date,
-            AVG(btd.unit_cost) as unit_price
-        FROM tbl_batch_transfer_details btd
-        INNER JOIN tbl_product p ON btd.product_id = p.product_id
-        WHERE btd.location_id = :location_id 
-            AND btd.status = 'Available'
-            AND btd.quantity_used > 0
+            SUM(p.quantity) as total_quantity,
+            COUNT(DISTINCT p.batch_id) as batch_count,
+            MIN(b.entry_date) as oldest_batch_date,
+            MAX(b.entry_date) as newest_batch_date,
+            p.unit_price
+        FROM tbl_product p
+        INNER JOIN tbl_batch b ON p.batch_id = b.batch_id
+        WHERE p.location_id = :location_id 
+            AND p.status = 'active'
+            AND p.quantity > 0
             {$search_condition}
-        GROUP BY p.barcode, p.product_name, p.category
+        GROUP BY p.barcode, p.product_name, p.category, p.unit_price
         HAVING total_quantity > 0
         ORDER BY p.product_name ASC
     ");

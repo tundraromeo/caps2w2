@@ -1,0 +1,337 @@
+/**
+ * Centralized API Handler for Enguio Project
+ * Connects all PHP APIs to frontend components
+ */
+
+// API Configuration
+const API_CONFIG = {
+  BASE_URL: 'http://localhost/Enguio_Project/Api',
+  ENDPOINTS: {
+    // Main backend API
+    BACKEND: 'backend.php',
+    
+    // Specific APIs
+    SALES: 'sales_api.php',
+    TRANSFER: 'transfer_api.php',
+    CONVENIENCE: 'convenience_store_api.php',
+    PHARMACY: 'pharmacy_api.php',
+    PURCHASE_ORDER: 'purchase_order_api_simple_clean.php',
+    STOCK_ADJUSTMENT: 'stock_adjustment_consolidated.php',
+    STOCK_SUMMARY: 'stock_summary_api.php',
+    POS_RETURN: 'pos_return_api.php',
+    FIFO_TRANSFER: 'fifo_transfer_api.php',
+    BATCH_TRANSFER: 'batch_transfer_api.php'
+  }
+};
+
+/**
+ * Main API Handler Class
+ */
+class APIHandler {
+  constructor() {
+    this.baseUrl = API_CONFIG.BASE_URL;
+    this.endpoints = API_CONFIG.ENDPOINTS;
+  }
+
+  /**
+   * Generic API call method
+   * @param {string} endpoint - API endpoint
+   * @param {string} action - Action to perform
+   * @param {object} data - Data to send
+   * @param {string} method - HTTP method (POST/GET)
+   * @returns {Promise<object>} API response
+   */
+  async callAPI(endpoint, action, data = {}, method = 'POST') {
+    const url = `${this.baseUrl}/${endpoint}`;
+    
+    try {
+      console.log(`🚀 API Call: ${endpoint} - ${action}`, data);
+
+      const config = {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      };
+
+      if (method === 'POST') {
+        config.body = JSON.stringify({ action, ...data });
+      } else if (method === 'GET' && action) {
+        const urlWithAction = `${url}?action=${action}`;
+        return this.makeRequest(urlWithAction, config);
+      }
+
+      return this.makeRequest(url, config);
+    } catch (error) {
+      console.error(`❌ API Error (${endpoint} - ${action}):`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Make HTTP request
+   */
+  async makeRequest(url, config) {
+    const response = await fetch(url, config);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const text = await response.text();
+    
+    try {
+      const result = JSON.parse(text);
+      console.log(`✅ API Response:`, result);
+      return result;
+    } catch (jsonError) {
+      console.error('Invalid JSON response:', text);
+      throw new Error('Server returned invalid JSON');
+    }
+  }
+
+  // ============= BACKEND API METHODS =============
+  
+  async testConnection() {
+    return this.callAPI(this.endpoints.BACKEND, 'test_connection');
+  }
+
+  async login(credentials) {
+    return this.callAPI(this.endpoints.BACKEND, 'login', credentials);
+  }
+
+  async getCategories() {
+    return this.callAPI(this.endpoints.BACKEND, 'get_categories');
+  }
+
+  async getLocations() {
+    return this.callAPI(this.endpoints.BACKEND, 'get_locations');
+  }
+
+  async getProducts(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_products', filters);
+  }
+
+  async getSuppliers() {
+    return this.callAPI(this.endpoints.BACKEND, 'get_suppliers');
+  }
+
+  async getWarehouseData(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_data', filters);
+  }
+
+  // ============= SALES API METHODS =============
+  
+  async getPOSSales(filters = {}) {
+    return this.callAPI(this.endpoints.SALES, 'get_pos_sales', filters);
+  }
+
+  async savePOSSale(saleData) {
+    return this.callAPI(this.endpoints.SALES, 'save_pos_sale', saleData);
+  }
+
+  async checkBarcode(barcode) {
+    return this.callAPI(this.endpoints.SALES, 'check_barcode', { barcode });
+  }
+
+  async getDiscounts() {
+    return this.callAPI(this.endpoints.SALES, 'get_discounts');
+  }
+
+  async updateProductStock(productData) {
+    return this.callAPI(this.endpoints.SALES, 'update_product_stock', productData);
+  }
+
+  // ============= TRANSFER API METHODS =============
+  
+  async getTransfers(filters = {}) {
+    return this.callAPI(this.endpoints.TRANSFER, 'get_transfers_with_details', filters);
+  }
+
+  async createTransfer(transferData) {
+    return this.callAPI(this.endpoints.TRANSFER, 'create_transfer', transferData);
+  }
+
+  async getFIFOStock(productId, locationId) {
+    return this.callAPI(this.endpoints.TRANSFER, 'get_fifo_stock', { product_id: productId, location_id: locationId });
+  }
+
+  async getBatchTransferDetails(transferId) {
+    return this.callAPI(this.endpoints.TRANSFER, 'get_batch_transfer_details', { transfer_id: transferId });
+  }
+
+  // ============= CONVENIENCE STORE API METHODS =============
+  
+  async getConvenienceProducts(filters = {}) {
+    return this.callAPI(this.endpoints.CONVENIENCE, 'get_products', filters);
+  }
+
+  async updateConvenienceStock(stockData) {
+    return this.callAPI(this.endpoints.CONVENIENCE, 'update_stock', stockData);
+  }
+
+  async getConvenienceNotifications() {
+    return this.callAPI(this.endpoints.CONVENIENCE, 'get_notifications');
+  }
+
+  async archiveConvenienceProduct(productId) {
+    return this.callAPI(this.endpoints.CONVENIENCE, 'archive_product', { product_id: productId });
+  }
+
+  // ============= PHARMACY API METHODS =============
+  
+  async getPharmacyProducts(filters = {}) {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_products', filters);
+  }
+
+  async updatePharmacyStock(stockData) {
+    return this.callAPI(this.endpoints.PHARMACY, 'update_stock', stockData);
+  }
+
+  async getPharmacyNotifications() {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_notifications');
+  }
+
+  async archivePharmacyProduct(productId) {
+    return this.callAPI(this.endpoints.PHARMACY, 'archive_product', { product_id: productId });
+  }
+
+  // ============= PURCHASE ORDER API METHODS =============
+  
+  async createPurchaseOrder(orderData) {
+    return this.callAPI(this.endpoints.PURCHASE_ORDER, 'create_purchase_order', orderData);
+  }
+
+  async getPurchaseOrders(filters = {}) {
+    return this.callAPI(this.endpoints.PURCHASE_ORDER, 'purchase_orders', filters);
+  }
+
+  async getPurchaseOrderDetails(orderId) {
+    return this.callAPI(this.endpoints.PURCHASE_ORDER, 'purchase_order_details', { order_id: orderId });
+  }
+
+  async updatePOStatus(orderId, status) {
+    return this.callAPI(this.endpoints.PURCHASE_ORDER, 'update_po_status', { order_id: orderId, status });
+  }
+
+  async requestMissingItems(requestData) {
+    return this.callAPI(this.endpoints.PURCHASE_ORDER, 'request_missing_items', requestData);
+  }
+
+  async updatePartialDelivery(deliveryData) {
+    return this.callAPI(this.endpoints.PURCHASE_ORDER, 'update_partial_delivery', deliveryData);
+  }
+
+  // ============= STOCK ADJUSTMENT API METHODS =============
+  
+  async getAllStockAdjustmentData(dateRange = {}) {
+    return this.callAPI(this.endpoints.STOCK_ADJUSTMENT, 'get_all_stock_adjustment_data', dateRange);
+  }
+
+  async createStockAdjustment(adjustmentData) {
+    return this.callAPI(this.endpoints.STOCK_ADJUSTMENT, 'create_adjustment', adjustmentData);
+  }
+
+  async updateStockAdjustment(adjustmentId, updateData) {
+    return this.callAPI(this.endpoints.STOCK_ADJUSTMENT, 'update_adjustment', { adjustment_id: adjustmentId, ...updateData });
+  }
+
+  // ============= STOCK SUMMARY API METHODS =============
+  
+  async getStockSummary(filters = {}) {
+    return this.callAPI(this.endpoints.STOCK_SUMMARY, 'get_stock_summary', filters);
+  }
+
+  async getStockMovements(filters = {}) {
+    return this.callAPI(this.endpoints.STOCK_SUMMARY, 'get_stock_movements', filters);
+  }
+
+  // ============= POS RETURN API METHODS =============
+  
+  async processCustomerReturn(returnData) {
+    return this.callAPI(this.endpoints.POS_RETURN, 'process_customer_return', returnData);
+  }
+
+  async approveReturn(returnId, approvalData) {
+    return this.callAPI(this.endpoints.POS_RETURN, 'approve_return', { return_id: returnId, ...approvalData });
+  }
+
+  async rejectReturn(returnId, rejectionData) {
+    return this.callAPI(this.endpoints.POS_RETURN, 'reject_return', { return_id: returnId, ...rejectionData });
+  }
+
+  async getPendingReturns() {
+    return this.callAPI(this.endpoints.POS_RETURN, 'get_pending_returns');
+  }
+
+  // ============= FIFO TRANSFER API METHODS =============
+  
+  async executeFIFOTransfer(transferData) {
+    return this.callAPI(this.endpoints.FIFO_TRANSFER, 'transfer', transferData);
+  }
+
+  async checkFIFOStock(productId, locationId) {
+    return this.callAPI(this.endpoints.FIFO_TRANSFER, 'check_stock', { product_id: productId, location_id: locationId });
+  }
+
+  async getFIFOTransferHistory(filters = {}) {
+    return this.callAPI(this.endpoints.FIFO_TRANSFER, 'transfer_history', filters);
+  }
+
+  async getAvailableProducts() {
+    return this.callAPI(this.endpoints.FIFO_TRANSFER, 'available_products');
+  }
+
+  // ============= BATCH TRANSFER API METHODS =============
+  
+  async createBatchTransfer(batchData) {
+    return this.callAPI(this.endpoints.BATCH_TRANSFER, 'create_batch_transfer', batchData);
+  }
+
+  async getBatchTransfers(filters = {}) {
+    return this.callAPI(this.endpoints.BATCH_TRANSFER, 'get_batch_transfers', filters);
+  }
+
+  async updateBatchTransfer(transferId, updateData) {
+    return this.callAPI(this.endpoints.BATCH_TRANSFER, 'update_batch_transfer', { transfer_id: transferId, ...updateData });
+  }
+}
+
+// Create singleton instance
+const apiHandler = new APIHandler();
+
+// Export both the class and instance
+export { APIHandler, apiHandler as default };
+
+// Additional utility functions for common patterns
+export const handleApiError = (error, defaultMessage = 'An error occurred') => {
+  console.error('API Error:', error);
+  return {
+    success: false,
+    message: error.message || defaultMessage,
+    error: error
+  };
+};
+
+export const validateApiResponse = (response) => {
+  if (!response) {
+    throw new Error('No response received');
+  }
+  
+  if (!response.success) {
+    throw new Error(response.message || 'API call failed');
+  }
+  
+  return response;
+};
+
+// Toast notification helper (optional)
+export const showApiNotification = (response, successMessage = 'Operation successful') => {
+  if (typeof window !== 'undefined' && window.toast) {
+    if (response.success) {
+      window.toast.success(successMessage);
+    } else {
+      window.toast.error(response.message || 'Operation failed');
+    }
+  }
+};

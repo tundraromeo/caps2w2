@@ -134,6 +134,155 @@ try {
             get_discounts($conn, $data);
             break;
             
+        // Warehouse Management - Product Operations
+        case 'get_products':
+            require_once 'modules/inventory.php';
+            get_products($conn, $data);
+            break;
+            
+        case 'get_product_batches':
+            require_once 'modules/batch_functions.php';
+            get_product_batches($conn, $data);
+            break;
+            
+        case 'get_fifo_stock':
+            require_once 'modules/batch_functions.php';
+            get_fifo_stock($conn, $data);
+            break;
+            
+        case 'get_products_oldest_batch':
+            require_once 'modules/batch_functions.php';
+            get_products_oldest_batch($conn, $data);
+            break;
+            
+        case 'get_product_quantities':
+            require_once 'modules/inventory.php';
+            get_product_quantities($conn, $data);
+            break;
+            
+        case 'get_expiring_products':
+            require_once 'modules/inventory.php';
+            get_expiring_products($conn, $data);
+            break;
+            
+        case 'consume_stock_fifo':
+            require_once 'modules/batch_functions.php';
+            consume_stock_fifo($conn, $data);
+            break;
+            
+        case 'get_quantity_history':
+            require_once 'modules/inventory.php';
+            get_quantity_history($conn, $data);
+            break;
+            
+        case 'add_quantity_to_product':
+            require_once 'modules/inventory.php';
+            add_quantity_to_product($conn, $data);
+            break;
+            
+        // Warehouse Management - Supplier Operations
+        case 'get_suppliers':
+            require_once 'modules/inventory.php';
+            get_suppliers($conn, $data);
+            break;
+            
+        case 'add_supplier':
+            require_once 'modules/inventory.php';
+            add_supplier($conn, $data);
+            break;
+            
+        case 'update_supplier':
+            require_once 'modules/inventory.php';
+            update_supplier($conn, $data);
+            break;
+            
+        case 'delete_supplier':
+            require_once 'modules/inventory.php';
+            delete_supplier($conn, $data);
+            break;
+            
+        // Warehouse Management - Brand Operations
+        case 'get_brands':
+            require_once 'modules/inventory.php';
+            get_brands($conn, $data);
+            break;
+            
+        case 'add_brand':
+            require_once 'modules/inventory.php';
+            add_brand($conn, $data);
+            break;
+            
+        // Warehouse Management - Category Operations
+        case 'get_categories':
+            require_once 'modules/inventory.php';
+            get_categories($conn, $data);
+            break;
+            
+        // Warehouse Management - Batch Operations
+        case 'get_batches':
+            require_once 'modules/batch_functions.php';
+            get_batches($conn, $data);
+            break;
+            
+        case 'add_batch_entry':
+            require_once 'modules/batch_functions.php';
+            add_batch_entry($conn, $data);
+            break;
+            
+        case 'duplicate_product_batches':
+            require_once 'modules/batch_functions.php';
+            duplicate_product_batches($conn, $data);
+            break;
+            
+        // Warehouse Management - Product CRUD Operations
+        case 'add_product':
+            require_once 'modules/inventory.php';
+            add_product($conn, $data);
+            break;
+            
+        case 'update_product':
+            require_once 'modules/inventory.php';
+            update_product($conn, $data);
+            break;
+            
+        case 'delete_product':
+            require_once 'modules/inventory.php';
+            delete_product($conn, $data);
+            break;
+            
+        // Warehouse Management - System Operations
+        case 'sync_fifo_stock':
+            require_once 'modules/batch_functions.php';
+            sync_fifo_stock($conn, $data);
+            break;
+            
+        case 'force_sync_all_products':
+            require_once 'modules/batch_functions.php';
+            force_sync_all_products($conn, $data);
+            break;
+            
+        case 'cleanup_duplicate_transfer_products':
+            require_once 'modules/batch_functions.php';
+            cleanup_duplicate_transfer_products($conn, $data);
+            break;
+            
+        case 'create_transfer_batch_details_table':
+            require_once 'modules/batch_functions.php';
+            create_transfer_batch_details_table($conn, $data);
+            break;
+            
+        // Warehouse Management - KPI Operations
+        case 'get_warehouse_kpis':
+            require_once 'modules/reports.php';
+            get_warehouse_kpis($conn, $data);
+            break;
+            
+        // Activity Logging
+        case 'log_activity':
+            require_once 'modules/inventory.php';
+            log_activity($conn, $data);
+            break;
+            
         // Default case for unknown actions
         default:
             echo json_encode([

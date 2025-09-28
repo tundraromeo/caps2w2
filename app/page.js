@@ -42,32 +42,20 @@ export default function LoginForm() {
       if (response.data.success) {
         setCaptchaQuestion(response.data.question);
         setCaptchaAnswer(response.data.answer.toString());
-        
-        console.log("Captcha generated from API:", response.data.question, "Answer:", response.data.answer);
-        
         if (debugMode) {
           setDebugInfo(`Generated: ${response.data.question} | Answer: ${response.data.answer} | Type: ${typeof response.data.answer}`);
         }
-      } else {
-        console.error("API returned unsuccessful response:", response.data);
-        throw new Error("API returned unsuccessful response");
       }
     } catch (err) {
       console.error("Error generating captcha:", err);
       // Fallback captcha if API fails
       const num1 = Math.floor(Math.random() * 10) + 1;
       const num2 = Math.floor(Math.random() * 10) + 1;
-      const question = `What is ${num1} + ${num2}?`;
-      const answer = (num1 + num2).toString();
-      
-      setCaptchaQuestion(question);
-      setCaptchaAnswer(answer);
-      
+      setCaptchaQuestion(`What is ${num1} + ${num2}?`);
+      setCaptchaAnswer((num1 + num2).toString());
       if (debugMode) {
-        setDebugInfo(`Fallback captcha generated: ${question} | Answer: ${answer}`);
+        setDebugInfo(`Fallback: ${num1} + ${num2} = ${num1 + num2}`);
       }
-      
-      console.log("Fallback captcha generated:", question, "Answer:", answer);
     }
   };
 

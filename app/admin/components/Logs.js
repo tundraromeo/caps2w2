@@ -11,12 +11,15 @@ function Logs() {
   const [movementHistory, setMovementHistory] = useState([]);
   const [transferHistory, setTransferHistory] = useState([]);
   const [loginLogs, setLoginLogs] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [movementLoading, setMovementLoading] = useState(false);
   const [transferLoading, setTransferLoading] = useState(false);
   const [loginLogsLoading, setLoginLogsLoading] = useState(false);
+  const [activityLogsLoading, setActivityLogsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [transferPage, setTransferPage] = useState(1);
   const [loginLogsPage, setLoginLogsPage] = useState(1);
+  const [activityLogsPage, setActivityLogsPage] = useState(1);
   const itemsPerPage = 10;
 
   const fetchMovementHistory = async () => {
@@ -70,6 +73,23 @@ function Logs() {
     }
   };
 
+  const fetchActivityLogs = async () => {
+    try {
+      setActivityLogsLoading(true);
+      const res = await axios.post(API_BASE_URL, { action: 'get_activity_logs' });
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setActivityLogs(res.data.data);
+        setActivityLogsPage(1);
+      } else {
+        setActivityLogs([]);
+      }
+    } catch (_) {
+      setActivityLogs([]);
+    } finally {
+      setActivityLogsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedTab === 'Movement History') {
       fetchMovementHistory();
@@ -77,6 +97,8 @@ function Logs() {
       fetchTransferHistory();
     } else if (selectedTab === 'Login Logs') {
       fetchLoginLogs();
+    } else if (selectedTab === 'Activity Logs') {
+      fetchActivityLogs();
     }
   }, [selectedTab]);
 
@@ -100,7 +122,7 @@ function Logs() {
       <div className="p-6">
         {/* Tabs */}
         <div className="flex items-center gap-2 mb-6">
-          {['Movement History','Transfer History','Login Logs'].map(tab => (
+          {['Movement History','Transfer History','Login Logs','Activity Logs'].map(tab => (
             <button
               key={tab}
               onClick={() => { 
@@ -108,6 +130,7 @@ function Logs() {
                 setCurrentPage(1); 
                 setTransferPage(1);
                 setLoginLogsPage(1);
+                setActivityLogsPage(1);
               }}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                 selectedTab === tab 
@@ -278,7 +301,7 @@ function Logs() {
                 </div>
               )}
             </>
-          ) : (
+          ) : selectedTab === 'Login Logs' ? (
             <>
               <div className="max-h-[520px] overflow-y-auto">
                 <table className="w-full caption-bottom text-sm">
@@ -351,7 +374,90 @@ function Logs() {
                 </div>
               )}
             </>
-          )}
+          ) : selectedTab === 'Activity Logs' ? (
+            <>
+              <div className="max-h-[520px] overflow-y-auto">
+                <table className="w-full caption-bottom text-sm">
+                  <thead className="[&_tr]:border-b">
+                    <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">#</th>
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">User</th>
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Role</th>
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Activity Type</th>
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Description</th>
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Table</th>
+                      <th className="h-10 px-2 text-left align-middle font-medium text-muted-foreground">Date & Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="[&_tr:last-child]:border-0">
+                    {activityLogsLoading ? (
+                      <tr><td colSpan="7" className="p-4 text-center text-muted-foreground">Loading activity logs...</td></tr>
+                    ) : activityLogs.length === 0 ? (
+                      <tr><td colSpan="7" className="p-4 text-center text-muted-foreground">No activity logs</td></tr>
+                    ) : (
+                      activityLogs
+                        .slice((activityLogsPage - 1) * itemsPerPage, activityLogsPage * itemsPerPage)
+                        .map((log, idx) => (
+                          <tr key={`${log.id || idx}`} className="border-b transition-colors hover:bg-muted/50">
+                            <td className="p-2">{(activityLogsPage - 1) * itemsPerPage + idx + 1}</td>
+                            <td className="p-2">{log.username || '-'}</td>
+                            <td className="p-2">{log.role || '-'}</td>
+                            <td className="p-2">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                log.activity_type === 'LOGIN' ? 'bg-green-100 text-green-800' :
+                                log.activity_type === 'LOGOUT' ? 'bg-red-100 text-red-800' :
+                                log.activity_type === 'USER_CREATE' ? 'bg-blue-100 text-blue-800' :
+                                log.activity_type === 'USER_UPDATE' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {log.activity_type || '-'}
+                              </span>
+                            </td>
+                            <td className="p-2 max-w-xs truncate" title={log.activity_description}>
+                              {log.activity_description || '-'}
+                            </td>
+                            <td className="p-2">{log.table_name || '-'}</td>
+                            <td className="p-2">{log.created_at || '-'}</td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {activityLogs.length > itemsPerPage && (
+                <div className="flex items-center justify-between p-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {(activityLogsPage - 1) * itemsPerPage + 1} – {Math.min(activityLogsPage * itemsPerPage, activityLogs.length)} of {activityLogs.length}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 ${activityLogsPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={activityLogsPage === 1}
+                      onClick={() => setActivityLogsPage(p => Math.max(1, p - 1))}
+                    >
+                      ← Prev
+                    </button>
+                    {Array.from({ length: Math.max(1, Math.ceil(activityLogs.length / itemsPerPage)) }, (_, i) => i + 1).map(page => (
+                      <button
+                        key={page}
+                        onClick={() => setActivityLogsPage(page)}
+                        className={`inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input h-8 px-3 ${activityLogsPage === page ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-background hover:bg-accent hover:text-accent-foreground'}`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      className={`inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 px-3 ${activityLogsPage === Math.max(1, Math.ceil(activityLogs.length / itemsPerPage)) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={activityLogsPage === Math.max(1, Math.ceil(activityLogs.length / itemsPerPage))}
+                      onClick={() => setActivityLogsPage(p => Math.min(Math.max(1, Math.ceil(activityLogs.length / itemsPerPage)), p + 1))}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
         </div>
       </div>
     </div>

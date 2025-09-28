@@ -18,7 +18,6 @@ import RealtimeNotificationService from './components/RealtimeNotificationServic
 import Dashboard from './components/Dashboard';
 import Warehouse from './components/Warehouse';
 import UserManagement from './components/UserManagement';
-import Supplier from './components/Supplier';
 import Reports from './components/Reports';
 import Logs from './components/Logs';
 import StoreSettings from './components/StoreSettings';
@@ -31,6 +30,7 @@ import InventoryBalanceReport from './components/InventoryBalanceReport';
 import SupplierReport from './components/SupplierReport';
 import CashierPerformanceReport from './components/CashierPerformanceReport';
 import LoginLogsReport from './components/LoginLogsReport';
+import ActivityLogsReport from './components/ActivityLogsReport';
 import ReturnManagement from './components/ReturnManagement';
 
 const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
@@ -135,7 +135,6 @@ function AdminContent() {
     Dashboard: <Dashboard />,
     products: <Warehouse />,
     User: <UserManagement />,
-    Supplier: <Supplier />,
     "Return Management": <ReturnManagement />,
     Reports: <Reports />,
     Logs: <Logs />,
@@ -149,7 +148,12 @@ function AdminContent() {
     "Supplier Report": <SupplierReport />,
     "Cashier Performance Report": <CashierPerformanceReport />,
     "Login Logs": <LoginLogsReport />,
+    "Activity Logs": <ActivityLogsReport />,
   };
+
+  // Debug: Log current active component
+  console.log('Current active component:', activeComponent);
+  console.log('Available components:', Object.keys(componentMap));
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -236,6 +240,13 @@ function AdminContent() {
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pt-16 md:pt-6" style={{ backgroundColor: 'var(--inventory-bg-secondary)' }}>
           <div className="w-full min-w-0 overflow-x-auto md:overflow-visible">
+            {/* Debug info */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="mb-4 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm">
+                <strong>Debug:</strong> Rendering component: "{activeComponent}" | 
+                Available: {Object.keys(componentMap).join(', ')}
+              </div>
+            )}
             {componentMap[activeComponent] || <Dashboard />}
           </div>
         </main>

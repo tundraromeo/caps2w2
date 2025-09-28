@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Optimize CSS loading to prevent preload warnings
+  experimental: {
+    optimizeCss: true,
+  },
   webpack: (config, { isServer }) => {
     // Only on server-side
     if (isServer) {
