@@ -1,8 +1,10 @@
 // pages/pos.js
 "use client";
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function POS() {
+  const router = useRouter();
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -55,6 +57,9 @@ export default function POS() {
   const returnReasonRef = useRef(null);
   const transactionIdRef = useRef(null);
   const [returnQuantities, setReturnQuantities] = useState({});
+
+  // Logout state
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Auto-focus Transaction ID field when modal opens
   useEffect(() => {
@@ -1011,6 +1016,13 @@ export default function POS() {
         return;
       }
 
+      // Global logout via Alt+L
+      if (e.altKey && (e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        handleLogout();
+        return;
+      }
+
       // Global toggle for Today's Total Sales modal via Alt+T
       if (e.altKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
@@ -1044,7 +1056,7 @@ export default function POS() {
       }
 
       // Quick add barcode scanned product to cart with 'B' key
-      if (e.key === 'b' || e.key === 'B') {
+      if (e.key === 'b' || e.key === 'B'){
         if (barcodeScannedProduct && navigationIndex === 1) {
           e.preventDefault();
           const product = products.find(p => p.id === barcodeScannedProduct.id || p.id === barcodeScannedProduct.product_id);
@@ -1564,12 +1576,33 @@ export default function POS() {
       const empId = userData.emp_id || userData.user_id || null;
       const username = userData.username || null;
       const terminalToUse = (String(locationName || '').toLowerCase().includes('convenience')) ? 'Convenience POS' : (terminalName || 'Convenience POS');
-      // Use convenience store API with FIFO consumption
-      const res1 = await fetch('http://localhost/Enguio_Project/Api/convenience_store_api.php', {
+      
+      // Determine which API to use based on location/terminal
+      const isPharmacy = String(locationName || '').toLowerCase().includes('pharmacy') || 
+                        String(terminalName || '').toLowerCase().includes('pharmacy');
+      
+      const apiUrl = isPharmacy 
+        ? 'http://localhost/Enguio_Project/Api/pharmacy_api.php'
+        : 'http://localhost/Enguio_Project/Api/convenience_store_api.php';
+      
+      const action = isPharmacy 
+        ? 'process_pharmacy_sale'
+        : 'process_convenience_sale';
+      
+      console.log(`🔄 Processing ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale via ${apiUrl}`);
+      console.log(`📦 Sale data:`, {
+        action: action,
+        transaction_id: transactionId,
+        total_amount: payableTotal,
+        items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
+      });
+      
+      // Use appropriate API based on location/terminal
+      const res1 = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'process_convenience_sale',
+          action: action,
           transaction_id: transactionId,
           total_amount: payableTotal,
           reference_number: paymentMethod === 'gcash' ? referenceNumber : null,
@@ -1582,7 +1615,12 @@ export default function POS() {
         })
       });
       const json1 = await res1.json().catch(() => ({}));
-      console.log('save_pos_sale:', json1);
+      console.log(`✅ ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale processed:`, json1);
+      
+      if (!json1.success) {
+        console.error(`❌ ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale failed:`, json1.message);
+        throw new Error(json1.message || 'Sale processing failed');
+      }
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
         await fetch('http://localhost/Enguio_Project/Api/backend.php', {
@@ -2029,6 +2067,51 @@ export default function POS() {
     }
   };
 
+  // Logout functions
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = async () => {
+    try {
+      // Get user data from sessionStorage
+      const userData = sessionStorage.getItem('user_data');
+      const empId = userData ? JSON.parse(userData).user_id : null;
+      
+      console.log('POS Logout attempt - User data:', userData);
+      console.log('POS Logout attempt - Emp ID:', empId);
+      
+      // Call logout API
+      const response = await fetch('http://localhost/Enguio_Project/Api/login.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'logout',
+          emp_id: empId 
+        })
+      });
+      
+      const result = await response.json();
+      console.log('POS Logout API response:', result);
+      
+      if (result.success) {
+        console.log('POS logout successful');
+      } else {
+        console.error('POS logout failed:', result.message);
+      }
+    } catch (error) {
+      console.error('POS logout error:', error);
+    } finally {
+      // Always clear session and redirect
+      sessionStorage.removeItem('user_data');
+      router.push('/');
+    }
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutConfirm(false);
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     
@@ -2076,70 +2159,26 @@ export default function POS() {
     // Persist to backend regardless of print success
     try {
       await persistSale({ transactionId: printResult?.transactionId, payableTotal, referenceNumber, terminalName, cart, paymentMethod });
-    } catch (_) {}
-
-      // Decrement product stock for each item sold - Update both local state and database
-    console.log(`🔄 Updating stock for ${cart.length} items...`);
-    
-    for (const item of cart) {
-      const quantity = Number(item.quantity || 0);
-      console.log(`📦 Processing: ${item.product.name} x${quantity} (ID: ${item.product.id})`);
       
-      // Update database stock
-      try {
-        console.log(`🌐 Sending stock update to backend for ${item.product.name}...`);
+      // Update local product quantities after successful sale
+      console.log(`🔄 Updating local stock for ${cart.length} items...`);
+      
+      for (const item of cart) {
+        const quantity = Number(item.quantity || 0);
+        console.log(`📦 Updating local stock: ${item.product.name} x${quantity} (ID: ${item.product.id})`);
         
-        // Get current logged-in user
-        const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        const currentUser = userData.username || userData.Fname || 'POS Cashier';
+        // Update local product quantity
+        updateLocalStock(item.product.id, -quantity);
         
-        const stockResponse = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'reduce_product_stock',
-            product_id: item.product.id,
-            quantity: quantity,
-            transaction_id: printResult?.transactionId || 'TXN' + Date.now().toString().slice(-6),
-            location_name: locationName,
-            entry_by: currentUser
-          })
-        });
-        
-        const stockResult = await stockResponse.json();
-        if (stockResult.success) {
-          console.log(`✅ Stock updated for ${item.product.name}: -${quantity} units in ${locationName}`);
-          console.log(`📊 New stock data:`, stockResult.data);
-          
-          // Show detailed success notification
-          const stockType = stockResult.data?.stock_type || 'unknown';
-          const newQty = stockResult.data?.new_quantity || 0;
-          console.log(`📦 Stock type: ${stockType}, New quantity: ${newQty}`);
-          
-          if (typeof window !== 'undefined' && window.toast) {
-            window.toast.success(`Stock updated in ${locationName}: ${item.product.name} -${quantity} units (${stockType})`);
-          }
-        } else {
-          console.warn(`⚠️ Failed to update stock for ${item.product.name}:`, stockResult.message);
-          
-          // Check if it's a location-specific error
-          if (stockResult.message.includes('not found in') || stockResult.message.includes('different location')) {
-            console.error(`🚨 Location error: Product ${item.product.name} may not be available in ${locationName}`);
-            if (typeof window !== 'undefined' && window.toast) {
-              window.toast.error(`Product ${item.product.name} not available in ${locationName}. Please check inventory.`);
-            }
-          } else {
-            if (typeof window !== 'undefined' && window.toast) {
-              window.toast.error(`Failed to update stock: ${item.product.name} - ${stockResult.message}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`❌ Error updating stock for ${item.product.name}:`, error);
+        console.log(`✅ Local stock updated for ${item.product.name}: -${quantity} units`);
       }
+      
+      console.log(`✅ All stock updates completed successfully`);
+      
+    } catch (error) {
+      console.error('❌ Failed to persist sale:', error);
+      alert('Sale completed but failed to update inventory. Please check stock levels manually.');
     }
-    
-    console.log(`✅ Stock update process completed for all items`);
     
     // Always proceed with checkout regardless of print success
     // Clear cart and reset state
@@ -2844,13 +2883,10 @@ export default function POS() {
             </button>
             <button
               type="button"
-              className="px-5 py-3 rounded bg-orange-600 text-white hover:bg-orange-700 text-base"
-              onClick={() => {
-                const product = filteredProducts[selectedIndex];
-                if (product) { openAdjustmentModal(product.id); } else { alert('No product selected to adjust.'); }
-              }}
+              className="px-5 py-3 rounded bg-red-600 text-white hover:bg-red-700 text-base"
+              onClick={handleLogout}
             >
-              Adjustment (Alt+A)
+              Logout (Alt+L)
             </button>
             <button
               type="button"
@@ -3833,6 +3869,76 @@ export default function POS() {
                 Clear Cart
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/60 max-w-md w-full mx-4 transform transition-all duration-300 scale-100 animate-fade-in-up">
+            {/* Header */}
+            <div className="relative p-6 border-b border-slate-200/60 bg-gradient-to-r from-red-50 to-orange-50 rounded-t-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg shadow-red-500/25">
+                  <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </div>
+              </div>
+              
+              <h3 className="text-2xl font-bold text-center text-slate-800 mb-2">
+                Confirm Logout
+              </h3>
+              
+              <p className="text-slate-600 text-center font-medium">
+                Are you sure you want to logout?
+              </p>
+            </div>
+
+            {/* Warning Message */}
+            <div className="p-6">
+              <div className="flex items-start space-x-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <svg className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div>
+                  <p className="text-sm text-amber-800 font-medium">
+                    Unsaved Changes Warning
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Any unsaved changes will be lost when you logout.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="p-6 pt-0 space-y-3">
+              <button
+                onClick={confirmLogout}
+                className="w-full px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 hover:shadow-xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              >
+                Yes, Logout
+              </button>
+              
+              <button
+                onClick={cancelLogout}
+                className="w-full px-6 py-3 bg-white border-2 border-slate-300 hover:border-slate-400 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transform hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={cancelLogout}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all duration-200"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
       )}

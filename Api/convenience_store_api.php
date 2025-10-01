@@ -111,28 +111,34 @@ try {
             }
             
             $stmt = $conn->prepare("
-                SELECT DISTINCT
-                    p.product_id,
+                SELECT 
+                    MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
                     p.category,
                     b.brand,
-                    p.unit_price,
-                    p.srp,
-                    p.quantity,
-                    p.status,
+                    AVG(p.unit_price) as unit_price,
+                    AVG(p.srp) as srp,
+                    SUM(p.quantity) as total_quantity,
+                    MAX(p.status) as status,
                     s.supplier_name,
-                    p.expiration,
+                    MAX(p.expiration) as expiration,
                     l.location_name
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 WHERE $where
+                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Update quantity field to use total_quantity
+            foreach ($rows as &$row) {
+                $row['quantity'] = $row['total_quantity'];
+            }
             
             echo json_encode([
                 "success" => true,
@@ -161,28 +167,34 @@ try {
             }
             
             $stmt = $conn->prepare("
-                SELECT DISTINCT
-                    p.product_id,
+                SELECT 
+                    MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
                     p.category,
                     b.brand,
-                    p.unit_price,
-                    p.srp,
-                    p.quantity,
-                    p.status,
+                    AVG(p.unit_price) as unit_price,
+                    AVG(p.srp) as srp,
+                    SUM(p.quantity) as total_quantity,
+                    MAX(p.status) as status,
                     s.supplier_name,
-                    p.expiration,
+                    MAX(p.expiration) as expiration,
                     l.location_name
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 WHERE $where
+                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Update quantity field to use total_quantity
+            foreach ($rows as &$row) {
+                $row['quantity'] = $row['total_quantity'];
+            }
             
             echo json_encode([
                 "success" => true,
@@ -207,35 +219,82 @@ try {
                 $location_id = $locStmt->fetchColumn();
             }
             
-            // Get batch transfer details from tbl_transfer_batch_details
+            // Get the product details to find related products with same name/barcode
+            $productStmt = $conn->prepare("SELECT product_name, barcode FROM tbl_product WHERE product_id = ?");
+            $productStmt->execute([$product_id]);
+            $productInfo = $productStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$productInfo) {
+                echo json_encode(['success' => false, 'message' => 'Product not found']);
+                break;
+            }
+            
+            // Find all related product IDs with same name and barcode
+            $relatedStmt = $conn->prepare("SELECT product_id FROM tbl_product WHERE product_name = ? AND barcode = ?");
+            $relatedStmt->execute([$productInfo['product_name'], $productInfo['barcode']]);
+            $relatedProductIds = $relatedStmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            // Create placeholders for IN clause
+            $placeholders = str_repeat('?,', count($relatedProductIds) - 1) . '?';
+            
+            // Get batch transfer details from tbl_batch_transfer_details for all related products
             $batchStmt = $conn->prepare("
                 SELECT 
-                    tbd.id as batch_transfer_id,
-                    tbd.batch_id,
-                    tbd.batch_reference,
-                    tbd.quantity as batch_quantity,
-                    fs.unit_cost,
-                    tbd.srp as batch_srp,
-                    tbd.expiration_date,
-                    'Available' as status,
-                    tbd.created_at as transfer_date,
+                    btd.batch_transfer_id,
+                    btd.batch_id,
+                    btd.batch_reference,
+                    btd.quantity_used as batch_quantity,
+                    btd.unit_cost,
+                    btd.srp as batch_srp,
+                    btd.expiration_date,
+                    btd.status,
+                    btd.transfer_date,
                     p.product_name,
                     p.barcode,
                     b.brand,
                     p.category,
-                    'Warehouse' as source_location_name,
+                    l.location_name as source_location_name,
                     'System' as employee_name
-                FROM tbl_transfer_batch_details tbd
-                LEFT JOIN tbl_product p ON tbd.product_id = p.product_id
+                FROM tbl_batch_transfer_details btd
+                LEFT JOIN tbl_product p ON btd.product_id = p.product_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
-                LEFT JOIN tbl_fifo_stock fs ON tbd.batch_id = fs.batch_id AND tbd.product_id = fs.product_id
-                WHERE tbd.product_id = ?
-                ORDER BY tbd.created_at ASC, tbd.id ASC
+                LEFT JOIN tbl_location l ON btd.location_id = l.location_id
+                WHERE btd.product_id IN ($placeholders)
+                ORDER BY btd.transfer_date ASC, btd.batch_transfer_id ASC
             ");
-            $batchStmt->execute([$product_id]);
+            $batchStmt->execute($relatedProductIds);
             $batchDetails = $batchStmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // If no batch details found, try to get from transfer details
+            // If still no data, try to get FIFO stock data directly for all related products
+            if (empty($batchDetails)) {
+                $fifoStmt = $conn->prepare("
+                    SELECT 
+                        fs.fifo_id as batch_transfer_id,
+                        fs.batch_id,
+                        fs.batch_reference,
+                        fs.available_quantity as batch_quantity,
+                        fs.unit_cost,
+                        fs.srp as batch_srp,
+                        fs.expiration_date,
+                        'Available' as status,
+                        fs.created_at as transfer_date,
+                        p.product_name,
+                        p.barcode,
+                        b.brand,
+                        p.category,
+                        'Warehouse' as source_location_name,
+                        fs.entry_by as employee_name
+                    FROM tbl_fifo_stock fs
+                    LEFT JOIN tbl_product p ON fs.product_id = p.product_id
+                    LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    WHERE fs.product_id IN ($placeholders)
+                    ORDER BY fs.expiration_date ASC, fs.fifo_id ASC
+                ");
+                $fifoStmt->execute($relatedProductIds);
+                $batchDetails = $fifoStmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            // If no batch details found, try to get from transfer details for all related products
             if (empty($batchDetails)) {
                 $fallbackStmt = $conn->prepare("
                     SELECT 
@@ -245,7 +304,7 @@ try {
                         td.qty as batch_quantity,
                         fs.unit_cost,
                         p.unit_price as batch_srp,
-                        b.expiration_date,
+                        fs.expiration_date,
                         'Available' as status,
                         th.date as transfer_date,
                         p.product_name,
@@ -261,11 +320,11 @@ try {
                     LEFT JOIN tbl_location sl ON th.source_location_id = sl.location_id
                     LEFT JOIN tbl_employee e ON th.employee_id = e.emp_id
                     LEFT JOIN tbl_fifo_stock fs ON td.product_id = fs.product_id
-                    LEFT JOIN tbl_batch b ON fs.batch_id = b.batch_id
-                    WHERE td.product_id = ? AND th.destination_location_id = ?
+                    WHERE td.product_id IN ($placeholders) AND th.destination_location_id = ?
                     ORDER BY th.date ASC, td.transfer_header_id ASC
                 ");
-                $fallbackStmt->execute([$product_id, $location_id]);
+                $fallbackParams = array_merge($relatedProductIds, [$location_id]);
+                $fallbackStmt->execute($fallbackParams);
                 $batchDetails = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);
             }
             
@@ -391,7 +450,11 @@ try {
             $items = $data['items'] ?? [];
             $location_name = 'Convenience Store';
             
+            // Debug logging
+            error_log("Convenience Store Sale Processing: Transaction ID: $transaction_id, Total: $total_amount, Items: " . json_encode($items));
+            
             if (empty($items) || $total_amount <= 0) {
+                error_log("Convenience Store Sale Error: Invalid sale data - Items: " . json_encode($items) . ", Total: $total_amount");
                 echo json_encode(['success' => false, 'message' => 'Invalid sale data']);
                 break;
             }
@@ -414,12 +477,13 @@ try {
                     $quantity = $item['quantity'] ?? 0;
                     
                     if ($product_id > 0 && $quantity > 0) {
-                        // Consume from FIFO batches
+                        // Consume from FIFO batches for products in this location
                         $fifoStmt = $conn->prepare("
-                            SELECT fifo_id, available_quantity, batch_reference, batch_id
-                            FROM tbl_fifo_stock 
-                            WHERE product_id = ? AND location_id = ? AND available_quantity > 0
-                            ORDER BY expiration_date ASC, fifo_id ASC
+                            SELECT fs.fifo_id, fs.available_quantity, fs.batch_reference, fs.batch_id
+                            FROM tbl_fifo_stock fs
+                            INNER JOIN tbl_product p ON fs.product_id = p.product_id
+                            WHERE fs.product_id = ? AND p.location_id = ? AND fs.available_quantity > 0
+                            ORDER BY fs.expiration_date ASC, fs.fifo_id ASC
                         ");
                         $fifoStmt->execute([$product_id, $location_id]);
                         $fifoBatches = $fifoStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -461,12 +525,21 @@ try {
                         }
                         
                         // Update product quantity
+                        error_log("Updating product quantity: Product ID: $product_id, Quantity to subtract: $quantity");
                         $updateProductStmt = $conn->prepare("
                             UPDATE tbl_product 
                             SET quantity = quantity - ?
                             WHERE product_id = ?
                         ");
                         $updateProductStmt->execute([$quantity, $product_id]);
+                        $rowsAffected = $updateProductStmt->rowCount();
+                        error_log("Product quantity update result: Rows affected: $rowsAffected");
+                        
+                        // Get current product quantity after sale
+                        $currentQtyStmt = $conn->prepare("SELECT quantity FROM tbl_product WHERE product_id = ?");
+                        $currentQtyStmt->execute([$product_id]);
+                        $current_quantity = $currentQtyStmt->fetchColumn();
+                        error_log("Current product quantity after sale: $current_quantity");
                         
                         // Log stock movement
                         $movementStmt = $conn->prepare("
@@ -478,7 +551,7 @@ try {
                         $movementStmt->execute([
                             $product_id,
                             $quantity,
-                            $quantity, // This should be calculated from current stock
+                            $current_quantity, // Current stock after sale
                             $transaction_id,
                             "POS Sale - FIFO Consumption: " . json_encode($consumed_batches),
                             'POS System'
@@ -487,6 +560,7 @@ try {
                 }
                 
                 $conn->commit();
+                error_log("Convenience Store Sale Success: Transaction $transaction_id completed successfully");
                 echo json_encode([
                     'success' => true,
                     'message' => 'Convenience store sale processed with FIFO consumption',

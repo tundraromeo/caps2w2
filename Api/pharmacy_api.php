@@ -236,7 +236,7 @@ try {
                         td.qty as batch_quantity,
                         fs.unit_cost,
                         p.unit_price as batch_srp,
-                        b.expiration_date,
+                        fs.expiration_date,
                         'Available' as status,
                         th.date as transfer_date,
                         p.product_name,
@@ -405,12 +405,13 @@ try {
                     $quantity = $item['quantity'] ?? 0;
                     
                     if ($product_id > 0 && $quantity > 0) {
-                        // Consume from FIFO batches
+                        // Consume from FIFO batches for products in this location
                         $fifoStmt = $conn->prepare("
-                            SELECT fifo_id, available_quantity, batch_reference, batch_id
-                            FROM tbl_fifo_stock 
-                            WHERE product_id = ? AND location_id = ? AND available_quantity > 0
-                            ORDER BY expiration_date ASC, fifo_id ASC
+                            SELECT fs.fifo_id, fs.available_quantity, fs.batch_reference, fs.batch_id
+                            FROM tbl_fifo_stock fs
+                            INNER JOIN tbl_product p ON fs.product_id = p.product_id
+                            WHERE fs.product_id = ? AND p.location_id = ? AND fs.available_quantity > 0
+                            ORDER BY fs.expiration_date ASC, fs.fifo_id ASC
                         ");
                         $fifoStmt->execute([$product_id, $location_id]);
                         $fifoBatches = $fifoStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -459,6 +460,11 @@ try {
                         ");
                         $updateProductStmt->execute([$quantity, $product_id]);
                         
+                        // Get current product quantity after sale
+                        $currentQtyStmt = $conn->prepare("SELECT quantity FROM tbl_product WHERE product_id = ?");
+                        $currentQtyStmt->execute([$product_id]);
+                        $current_quantity = $currentQtyStmt->fetchColumn();
+                        
                         // Log stock movement
                         $movementStmt = $conn->prepare("
                             INSERT INTO tbl_stock_movements (
@@ -469,7 +475,7 @@ try {
                         $movementStmt->execute([
                             $product_id,
                             $quantity,
-                            $quantity, // This should be calculated from current stock
+                            $current_quantity, // Current stock after sale
                             $transaction_id,
                             "POS Sale - FIFO Consumption: " . json_encode($consumed_batches),
                             'Pharmacy Cashier'
