@@ -62,9 +62,40 @@ export default function InventoryPage() {
     setShowLogoutConfirm(true);
   };
 
-  const confirmLogout = () => {
-    sessionStorage.removeItem('user_data');
-    router.push('/');
+  const confirmLogout = async () => {
+    try {
+      // Get user data from sessionStorage
+      const userData = sessionStorage.getItem('user_data');
+      const empId = userData ? JSON.parse(userData).user_id : null;
+      
+      console.log('Inventory Logout attempt - User data:', userData);
+      console.log('Inventory Logout attempt - Emp ID:', empId);
+      
+      // Call logout API
+      const response = await fetch('http://localhost/Enguio_Project/Api/login.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'logout',
+          emp_id: empId 
+        })
+      });
+      
+      const result = await response.json();
+      console.log('Inventory Logout API response:', result);
+      
+      if (result.success) {
+        console.log('Inventory logout successful');
+      } else {
+        console.error('Inventory logout failed:', result.message);
+      }
+    } catch (error) {
+      console.error('Inventory logout error:', error);
+    } finally {
+      // Always clear session and redirect
+      sessionStorage.removeItem('user_data');
+      router.push('/');
+    }
   };
 
   const cancelLogout = () => {

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Login Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+        .result { margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 3px; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Final Login Test</h1>
+    
+    <div class="test-section">
+        <h3>Test Login with Correct Credentials</h3>
+        <p><strong>Username:</strong> ezay</p>
+        <p><strong>Password:</strong> password123</p>
+        <br>
+        <input type="text" id="username" placeholder="Username" value="ezay">
+        <div style="position: relative; display: inline-block;">
+            <input type="password" id="password" placeholder="Password" value="password123" style="padding-right: 40px;">
+            <button type="button" onclick="togglePassword()" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer;">
+                <span id="password-icon">👁️</span>
+            </button>
+        </div>
+        <input type="text" id="captcha-input" placeholder="Captcha Answer">
+        <br>
+        <button onclick="generateCaptcha()">Generate Captcha</button>
+        <button onclick="testLogin()">Test Login</button>
+        <div id="login-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test Other Users</h3>
+        <button onclick="testClyde()">Test Clyde (Admin)</button>
+        <button onclick="testJepox()">Test Jepox (Cashier)</button>
+        <div id="other-result" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "http://localhost/Enguio_Project/Api/login.php";
+        let currentCaptchaAnswer = '';
+
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const passwordIcon = document.getElementById('password-icon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                passwordIcon.textContent = '🙈';
+            } else {
+                passwordInput.type = 'password';
+                passwordIcon.textContent = '👁️';
+            }
+        }
+
+        async function generateCaptcha() {
+            try {
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'generate_captcha' })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentCaptchaAnswer = data.answer;
+                    document.getElementById('captcha-input').value = data.answer;
+                    document.getElementById('login-result').innerHTML = `
+                        <div class="success">
+                            <strong>Captcha Generated!</strong><br>
+                            Question: ${data.question}<br>
+                            Answer: ${data.answer}
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('login-result').innerHTML = `<div class="error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('login-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const captchaInput = document.getElementById('captcha-input').value;
+
+            if (!username || !password || !captchaInput) {
+                document.getElementById('login-result').innerHTML = '<div class="error">Please fill all fields</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'login',
+                        username: username,
+                        password: password,
+                        captcha: captchaInput,
+                        captchaAnswer: currentCaptchaAnswer,
+                        route: '/admin'
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('login-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>Login Successful!</strong><br>
+                            User: ${data.full_name}<br>
+                            Role: ${data.role}<br>
+                            Terminal: ${data.terminal_name}<br>
+                            Location: ${data.location}<br>
+                            User ID: ${data.user_id}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <strong>Login Failed:</strong> ${data.message}<br>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('login-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testClyde() {
+            await testUser('clyde', '1234', 'admin');
+        }
+
+        async function testJepox() {
+            await testUser('jepox', '1234', 'cashier');
+        }
+
+        async function testUser(username, password, role) {
+            try {
+                // Generate captcha first
+                const captchaResponse = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'generate_captcha' })
+                });
+                
+                const captchaData = await captchaResponse.json();
+                if (!captchaData.success) {
+                    document.getElementById('other-result').innerHTML = `<div class="error">Captcha error: ${captchaData.message}</div>`;
+                    return;
+                }
+
+                // Test login
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'login',
+                        username: username,
+                        password: password,
+                        captcha: captchaData.answer,
+                        captchaAnswer: captchaData.answer,
+                        route: '/admin'
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('other-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>${username} Login Successful!</strong><br>
+                            User: ${data.full_name}<br>
+                            Role: ${data.role}<br>
+                            Terminal: ${data.terminal_name}<br>
+                            Location: ${data.location}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <strong>${username} Login Failed:</strong> ${data.message}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('other-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-generate captcha on page load
+        window.onload = function() {
+            generateCaptcha();
+        };
+    </script>
+</body>
+</html>

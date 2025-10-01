@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login System Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+        .result { margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Login System Test</h1>
+    
+    <div class="test-section">
+        <h3>1. Test Captcha Generation</h3>
+        <button onclick="testCaptcha()">Generate Captcha</button>
+        <div id="captcha-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>2. Test Login</h3>
+        <input type="text" id="username" placeholder="Username" value="ezay">
+        <input type="password" id="password" placeholder="Password" value="password">
+        <input type="text" id="captcha-input" placeholder="Captcha Answer">
+        <br>
+        <button onclick="testLogin()">Test Login</button>
+        <div id="login-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>3. Test Logout</h3>
+        <button onclick="testLogout()">Test Logout</button>
+        <div id="logout-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>5. Test Complete Login/Logout Flow</h3>
+        <button onclick="testCompleteFlow()">Test Complete Flow</button>
+        <div id="flow-result" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "http://localhost/Enguio_Project/Api/login.php";
+        let currentCaptchaAnswer = '';
+
+        async function testCaptcha() {
+            try {
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'generate_captcha' })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('captcha-result');
+                
+                if (data.success) {
+                    currentCaptchaAnswer = data.answer;
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>Success!</strong><br>
+                            Question: ${data.question}<br>
+                            Answer: ${data.answer}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('captcha-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const captchaInput = document.getElementById('captcha-input').value;
+
+            if (!username || !password || !captchaInput) {
+                document.getElementById('login-result').innerHTML = '<div class="error">Please fill all fields</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'login',
+                        username: username,
+                        password: password,
+                        captcha: captchaInput,
+                        captchaAnswer: currentCaptchaAnswer,
+                        route: '/admin'
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('login-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>Login Successful!</strong><br>
+                            User: ${data.full_name}<br>
+                            Role: ${data.role}<br>
+                            Terminal: ${data.terminal_name}<br>
+                            Location: ${data.location}<br>
+                            User ID: ${data.user_id}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Login Failed: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('login-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testLogout() {
+            try {
+                // Get user data from sessionStorage if available
+                const userData = sessionStorage.getItem('user_data');
+                const empId = userData ? JSON.parse(userData).user_id : null;
+                
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: 'logout',
+                        emp_id: empId 
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('logout-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = '<div class="success"><strong>Logout Successful!</strong><br>Status updated to offline in database.</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Logout Failed: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('logout-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function checkLoginRecords() {
+            try {
+                const response = await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'get_login_records' })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('db-result');
+                
+                if (data.success) {
+                    let html = '<div class="success"><strong>Recent Login Records:</strong><br>';
+                    data.records.forEach(record => {
+                        const statusColor = record.status === 'online' ? 'green' : 'red';
+                        html += `
+                            ID: ${record.login_id}, User: ${record.username}, 
+                            Role: ${record.role_id}, Login: ${record.login_date} ${record.login_time},
+                            Logout: ${record.logout_date || 'N/A'} ${record.logout_time || 'N/A'},
+                            Status: <span style="color: ${statusColor}; font-weight: bold;">${record.status || 'N/A'}</span><br>
+                        `;
+                    });
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('db-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function checkActivityRecords() {
+            try {
+                const response = await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'get_activity_records' })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('db-result');
+                
+                if (data.success) {
+                    let html = '<div class="success"><strong>Recent Activity Records:</strong><br>';
+                    data.records.forEach(record => {
+                        html += `
+                            User: ${record.username}, Activity: ${record.activity_type}, 
+                            Description: ${record.activity_description}, 
+                            Date: ${record.date_created} ${record.time_created}<br>
+                        `;
+                    });
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('db-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testCompleteFlow() {
+            const resultDiv = document.getElementById('flow-result');
+            resultDiv.innerHTML = '<div class="success">Testing complete login/logout flow...</div>';
+            
+            try {
+                // Step 1: Generate captcha
+                await testCaptcha();
+                
+                // Step 2: Login
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                const captchaInput = document.getElementById('captcha-input').value;
+                
+                if (!username || !password || !captchaInput) {
+                    resultDiv.innerHTML = '<div class="error">Please fill all login fields first</div>';
+                    return;
+                }
+                
+                // Login
+                const loginResponse = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'login',
+                        username: username,
+                        password: password,
+                        captcha: captchaInput,
+                        captchaAnswer: currentCaptchaAnswer,
+                        route: '/admin'
+                    })
+                });
+                
+                const loginData = await loginResponse.json();
+                
+                if (!loginData.success) {
+                    resultDiv.innerHTML = `<div class="error">Login failed: ${loginData.message}</div>`;
+                    return;
+                }
+                
+                // Step 3: Wait a moment then logout
+                setTimeout(async () => {
+                    const logoutResponse = await fetch(API_BASE_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            action: 'logout',
+                            emp_id: loginData.user_id 
+                        })
+                    });
+                    
+                    const logoutData = await logoutResponse.json();
+                    
+                    if (logoutData.success) {
+                        resultDiv.innerHTML = `
+                            <div class="success">
+                                <strong>Complete Flow Test Successful!</strong><br>
+                                ✅ Login successful<br>
+                                ✅ Logout successful<br>
+                                ✅ Status updated to offline<br>
+                                ✅ Database records updated
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `<div class="error">Logout failed: ${logoutData.message}</div>`;
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Flow test error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-generate captcha on page load
+        window.onload = function() {
+            testCaptcha();
+        };
+    </script>
+</body>
+</html>

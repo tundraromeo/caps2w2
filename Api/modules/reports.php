@@ -70,7 +70,9 @@ class ReportsModule {
             'data' => $reportData,
             'has_new_data' => $hasNewData,
             'report_type' => $reportType,
-            'date_range' => "$startDate to $endDate"
+            'date_range' => "$startDate to $endDate",
+            'timestamp' => date('Y-m-d H:i:s'),
+            'cache_bust' => time()
         ];
     }
     
@@ -558,10 +560,51 @@ class ReportsModule {
     }
     
     /**
-     * Get Login Logs Report Data
+     * Get Login Logs Report Data - Show Only Online Users in Cards
      */
     private function getLoginLogsReport($startDate, $endDate) {
-        $stmt = $this->conn->prepare("
+        // Get only ONLINE users for TODAY (status = 'online' or NULL, no logout_time, and login_date = TODAY)
+        // LIMIT TO ONLY 3 EMPLOYEES - BASED ON LATEST RECORD PER EMPLOYEE
+        $today = date('Y-m-d');
+        $onlineStmt = $this->conn->prepare("
+            SELECT 
+                l.login_date as date,
+                l.login_time as time,
+                l.username,
+                CONCAT(e.Fname, ' ', COALESCE(e.Mname, ''), ' ', e.Lname) as employee_name,
+                r.role,
+                'ONLINE' as login_status,
+                'LOGIN' as action,
+                l.location,
+                COALESCE(t.terminal_name, CONCAT('Terminal ', l.terminal_id)) as terminal,
+                l.logout_time,
+                l.logout_date,
+                l.ip_address,
+                l.created_at,
+                '🔓 Currently logged in today' as description,
+                TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), NOW()) as session_duration_minutes
+            FROM tbl_login l
+            LEFT JOIN tbl_employee e ON l.emp_id = e.emp_id
+            LEFT JOIN tbl_role r ON l.role_id = r.role_id
+            LEFT JOIN tbl_pos_terminal t ON l.terminal_id = t.terminal_id
+            WHERE l.login_date = ?
+            AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
+            AND (l.status = 'online' OR l.status IS NULL OR l.status = '')
+            AND l.login_id IN (
+                SELECT MAX(login_id) 
+                FROM tbl_login l2 
+                WHERE l2.emp_id = l.emp_id 
+                AND l2.login_date = ?
+            )
+            ORDER BY l.login_time DESC, l.created_at DESC
+            LIMIT 3
+        ");
+        $onlineStmt->execute([$today, $today]);
+        $onlineUsers = $onlineStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Get comprehensive login logs for detailed report - TODAY ONLY, MAX 3 EMPLOYEES
+        // BASED ON LATEST RECORD PER EMPLOYEE
+        $allLogsStmt = $this->conn->prepare("
             SELECT 
                 l.login_date as date,
                 l.login_time as time,
@@ -569,139 +612,146 @@ class ReportsModule {
                 CONCAT(e.Fname, ' ', COALESCE(e.Mname, ''), ' ', e.Lname) as employee_name,
                 r.role,
                 CASE 
-                    WHEN l.logout_time IS NULL OR l.logout_time = '00:00:00' THEN 'ONLINE'
+                    WHEN l.status = 'offline' THEN 'OFFLINE'
+                    WHEN l.login_date = ? AND (l.logout_time IS NULL OR l.logout_time = '00:00:00') AND (l.status = 'online' OR l.status IS NULL OR l.status = '') THEN 'ONLINE'
                     ELSE 'OFFLINE'
                 END as login_status,
                 CASE 
-                    WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00' THEN 'LOGOUT'
-                    ELSE 'LOGIN'
+                    WHEN l.status = 'offline' THEN 'LOGOUT'
+                    WHEN l.login_date = ? AND (l.logout_time IS NULL OR l.logout_time = '00:00:00') AND (l.status = 'online' OR l.status IS NULL OR l.status = '') THEN 'LOGIN'
+                    ELSE 'LOGOUT'
                 END as action,
                 l.location,
-                l.terminal_id as terminal,
+                COALESCE(t.terminal_name, CONCAT('Terminal ', l.terminal_id)) as terminal,
                 l.logout_time,
                 l.logout_date,
-                CONCAT(
-                    CASE 
-                        WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00' 
-                        THEN CONCAT('Logged out at ', TIME_FORMAT(l.logout_time, '%h:%i %p'), ' on ', DATE_FORMAT(l.logout_date, '%M %d, %Y'))
-                        ELSE 'Currently logged in'
-                    END,
-                    CASE 
-                        WHEN l.location IS NOT NULL THEN CONCAT(' from ', l.location)
-                        ELSE ''
-                    END,
-                    CASE 
-                        WHEN l.terminal_id IS NOT NULL THEN CONCAT(' (Terminal: ', l.terminal_id, ')')
-                        ELSE ''
-                    END
-                ) as description
+                l.ip_address,
+                l.created_at,
+                CASE 
+                    WHEN l.status = 'offline' 
+                    THEN CONCAT('🔒 Logged out at ', TIME_FORMAT(l.logout_time, '%h:%i %p'))
+                    WHEN l.login_date = ? AND (l.logout_time IS NULL OR l.logout_time = '00:00:00') AND (l.status = 'online' OR l.status IS NULL OR l.status = '')
+                    THEN '🔓 Currently logged in today'
+                    ELSE '🔒 Logged out'
+                END as description,
+                CASE 
+                    WHEN l.status = 'offline' AND l.logout_time IS NOT NULL AND l.logout_time != '00:00:00'
+                    THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), CONCAT(l.logout_date, ' ', l.logout_time))
+                    WHEN l.login_date = ? AND (l.logout_time IS NULL OR l.logout_time = '00:00:00') AND (l.status = 'online' OR l.status IS NULL OR l.status = '')
+                    THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), NOW())
+                    ELSE 0
+                END as session_duration_minutes
             FROM tbl_login l
             LEFT JOIN tbl_employee e ON l.emp_id = e.emp_id
             LEFT JOIN tbl_role r ON l.role_id = r.role_id
-            WHERE l.login_date BETWEEN ? AND ?
-            ORDER BY l.login_date DESC, l.login_time DESC
+            LEFT JOIN tbl_pos_terminal t ON l.terminal_id = t.terminal_id
+            WHERE l.login_date = ?
+            AND l.login_id IN (
+                SELECT MAX(login_id) 
+                FROM tbl_login l2 
+                WHERE l2.emp_id = l.emp_id 
+                AND l2.login_date = ?
+            )
+            ORDER BY l.login_time DESC, l.created_at DESC
+            LIMIT 3
         ");
-        $stmt->execute([$startDate, $endDate]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $allLogsStmt->execute([$today, $today, $today, $today, $today, $today]);
+        $allLogs = $allLogsStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Sort all logs by date and time
+        usort($allLogs, function($a, $b) {
+            $dateA = $a['date'] . ' ' . $a['time'];
+            $dateB = $b['date'] . ' ' . $b['time'];
+            return strtotime($dateB) - strtotime($dateA);
+        });
+        
+        // Return both online users (for cards) and all logs (for detailed report)
+        return [
+            'online_users' => $onlineUsers,  // Only online users for cards display
+            'all_logs' => $allLogs,         // All login/logout activities for detailed report
+            'online_count' => count($onlineUsers),
+            'total_logs' => count($allLogs)
+        ];
     }
     
     /**
-     * Get Activity Logs Report Data - Comprehensive System Activities
+     * Get Activity Logs Report Data - From tbl_activity_log table (TODAY ONLY)
      */
     private function getActivityLogsReport($startDate, $endDate) {
         try {
-            // Ensure the comprehensive activity logs table exists
-            $this->conn->exec("CREATE TABLE IF NOT EXISTS `tbl_system_activity_logs` (
-                `id` int(11) NOT NULL AUTO_INCREMENT,
-                `user_id` int(11) DEFAULT NULL,
-                `username` varchar(255) DEFAULT NULL,
-                `employee_name` varchar(255) DEFAULT NULL,
-                `role` varchar(100) DEFAULT NULL,
-                `activity_type` varchar(100) NOT NULL,
-                `activity_description` text DEFAULT NULL,
-                `module` varchar(100) DEFAULT NULL COMMENT 'Module where activity occurred (POS, Inventory, Admin, etc.)',
-                `action` varchar(100) DEFAULT NULL COMMENT 'Specific action performed',
-                `table_name` varchar(255) DEFAULT NULL COMMENT 'Database table affected',
-                `record_id` int(11) DEFAULT NULL COMMENT 'ID of the affected record',
-                `old_values` json DEFAULT NULL COMMENT 'Previous values (for updates)',
-                `new_values` json DEFAULT NULL COMMENT 'New values (for updates)',
-                `ip_address` varchar(45) DEFAULT NULL,
-                `user_agent` text DEFAULT NULL,
-                `location` varchar(255) DEFAULT NULL COMMENT 'Physical location or terminal',
-                `terminal_id` varchar(100) DEFAULT NULL,
-                `session_id` varchar(255) DEFAULT NULL,
-                `date_created` date NOT NULL,
-                `time_created` time NOT NULL,
-                `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-                `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-                PRIMARY KEY (`id`),
-                KEY `idx_user_id` (`user_id`),
-                KEY `idx_username` (`username`),
-                KEY `idx_activity_type` (`activity_type`),
-                KEY `idx_module` (`module`),
-                KEY `idx_date_created` (`date_created`),
-                KEY `idx_created_at` (`created_at`),
-                KEY `idx_table_record` (`table_name`, `record_id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Comprehensive system activity logs';");
+            // Get activity logs from the existing tbl_activity_log table - TODAY ONLY
+            $today = date('Y-m-d');
             
-            // Check if table is empty and add sample data
-            $countStmt = $this->conn->prepare("SELECT COUNT(*) as count FROM tbl_system_activity_logs");
-            $countStmt->execute();
-            $count = $countStmt->fetch(PDO::FETCH_ASSOC)['count'];
+            // Debug logging
+            error_log("Activity Logs Report - Fetching data for today: $today");
             
-            if ($count == 0) {
-                // Add comprehensive sample data
-                $sampleData = [
-                    [1, 'admin', 'System Administrator', 'Admin', 'LOGIN', 'User logged in successfully from Main Office', 'Authentication', 'LOGIN', 'tbl_login', 1, 'Main Office', 'TERMINAL-001'],
-                    [2, 'cashier1', 'John Doe', 'Cashier', 'POS_SALE_CREATED', 'POS Sale completed: Transaction TXN-2024001 - ₱250.00 (CASH, 3 items)', 'POS', 'SALE_CREATED', 'tbl_pos_sales_header', 1, 'Convenience Store', 'POS-001'],
-                    [3, 'inventory', 'Jane Smith', 'Inventory', 'STOCK_ADJUSTMENT_CREATED', 'Stock Addition: 100 units of Medicine ABC (Reason: New delivery)', 'Inventory', 'STOCK_ADJUSTMENT', 'tbl_stock_adjustment', 1, 'Warehouse', 'WAREHOUSE-001'],
-                    [4, 'inventory', 'Jane Smith', 'Inventory', 'INVENTORY_TRANSFER_CREATED', 'Transfer created from Warehouse to Convenience Store: 5 products', 'Inventory', 'TRANSFER_CREATED', 'tbl_inventory_transfer', 1, 'Warehouse', 'WAREHOUSE-001'],
-                    [1, 'admin', 'System Administrator', 'Admin', 'USER_CREATED', 'Created new employee: Mike Johnson (mike.johnson) with role Cashier', 'User Management', 'USER_CREATE', 'tbl_employee', 5, 'Main Office', 'ADMIN-001'],
-                    [2, 'cashier1', 'John Doe', 'Cashier', 'POS_SALE_CREATED', 'POS Sale completed: Transaction TXN-2024002 - ₱180.50 (GCASH, 2 items)', 'POS', 'SALE_CREATED', 'tbl_pos_sales_header', 2, 'Convenience Store', 'POS-001'],
-                    [3, 'inventory', 'Jane Smith', 'Inventory', 'STOCK_MOVEMENT_CREATED', 'Stock In: 50 units of Product XYZ received from Supplier ABC', 'Inventory', 'STOCK_IN', 'tbl_stock_movements', 1, 'Warehouse', 'WAREHOUSE-001'],
-                    [2, 'cashier1', 'John Doe', 'Cashier', 'LOGOUT', 'User logged out from Convenience Store terminal', 'Authentication', 'LOGOUT', 'tbl_login', 2, 'Convenience Store', 'POS-001'],
-                    [5, 'manager1', 'Sarah Wilson', 'Manager', 'NAVIGATION', 'User navigated to Reports section', 'Navigation', 'PAGE_ACCESS', NULL, NULL, 'Main Office', 'MANAGER-001'],
-                    [1, 'admin', 'System Administrator', 'Admin', 'USER_UPDATED', 'Updated employee profile: John Doe (cashier1)', 'User Management', 'USER_UPDATE', 'tbl_employee', 2, 'Main Office', 'ADMIN-001']
-                ];
-                
-                $insertSample = $this->conn->prepare("INSERT INTO tbl_system_activity_logs (user_id, username, employee_name, role, activity_type, activity_description, module, action, table_name, record_id, location, terminal_id, date_created, time_created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME())");
-                foreach ($sampleData as $sample) {
-                    $insertSample->execute($sample);
-                }
-            }
-            
-            // Get comprehensive activity logs from the dedicated table
             $stmt = $this->conn->prepare("
                 SELECT 
-                    sal.id,
-                    sal.user_id,
-                    sal.username,
-                    sal.employee_name,
-                    sal.role,
-                    sal.activity_type as action,
-                    sal.activity_description as description,
-                    sal.module,
-                    sal.action as specific_action,
-                    sal.table_name,
-                    sal.record_id,
-                    sal.location,
-                    sal.terminal_id,
-                    sal.date_created as date,
-                    sal.time_created as time,
-                    sal.created_at,
+                    al.id,
+                    al.user_id,
                     CASE 
-                        WHEN sal.activity_type IN ('LOGIN', 'POS_SALE_CREATED', 'STOCK_MOVEMENT_CREATED') THEN 'ONLINE'
-                        WHEN sal.activity_type = 'LOGOUT' THEN 'OFFLINE'
+                        WHEN al.username IS NOT NULL AND al.username != '' THEN al.username
+                        ELSE 'System'
+                    END as username,
+                    COALESCE(CONCAT(e.Fname, ' ', COALESCE(e.Mname, ''), ' ', e.Lname), 
+                             CASE 
+                                 WHEN al.username IS NOT NULL AND al.username != '' THEN al.username
+                                 ELSE 'System User'
+                             END) as employee_name,
+                    COALESCE(al.role, r.role, 'Unknown') as role,
+                    al.activity_type as action,
+                    al.activity_description as description,
+                    al.table_name,
+                    al.record_id,
+                    al.date_created as date,
+                    al.time_created as time,
+                    al.created_at,
+                    CASE 
+                        WHEN al.activity_type IN ('LOGIN', 'POS_SALE_CREATED', 'STOCK_MOVEMENT_CREATED') THEN 'ONLINE'
+                        WHEN al.activity_type = 'LOGOUT' THEN 'OFFLINE'
                         ELSE 'ACTIVE'
                     END as login_status,
-                    'SYSTEM_ACTIVITY' as source
-                FROM tbl_system_activity_logs sal
-                WHERE sal.date_created BETWEEN ? AND ?
-                ORDER BY sal.created_at DESC, sal.id DESC
+                    CASE 
+                        WHEN al.table_name = 'tbl_login' THEN 'Authentication'
+                        WHEN al.table_name = 'tbl_pos_sales_header' THEN 'POS'
+                        WHEN al.table_name = 'tbl_stock_movements' THEN 'Inventory'
+                        WHEN al.table_name = 'tbl_employee' THEN 'User Management'
+                        ELSE 'System'
+                    END as module,
+                    CASE 
+                        WHEN al.activity_type = 'LOGIN' THEN 'Main Office'
+                        WHEN al.activity_type = 'LOGOUT' THEN 'Main Office'
+                        WHEN al.activity_type = 'POS_SALE_CREATED' THEN 'Convenience Store'
+                        WHEN al.activity_type = 'STOCK_MOVEMENT_CREATED' THEN 'Warehouse'
+                        WHEN al.activity_type = 'USER_CREATE' THEN 'Main Office'
+                        WHEN al.activity_type = 'USER_UPDATE' THEN 'Main Office'
+                        ELSE 'System'
+                    END as location,
+                    CASE 
+                        WHEN al.activity_type = 'LOGIN' THEN 'Admin Terminal'
+                        WHEN al.activity_type = 'LOGOUT' THEN 'Admin Terminal'
+                        WHEN al.activity_type = 'POS_SALE_CREATED' THEN 'POS Terminal 1'
+                        WHEN al.activity_type = 'STOCK_MOVEMENT_CREATED' THEN 'Warehouse Terminal'
+                        WHEN al.activity_type = 'USER_CREATE' THEN 'Admin Terminal'
+                        WHEN al.activity_type = 'USER_UPDATE' THEN 'Admin Terminal'
+                        ELSE 'System Terminal'
+                    END as terminal,
+                    'ACTIVITY_LOG' as source
+                FROM tbl_activity_log al
+                LEFT JOIN tbl_employee e ON al.user_id = e.emp_id
+                LEFT JOIN tbl_role r ON e.role_id = r.role_id
+                WHERE al.date_created = ?
+                ORDER BY al.created_at DESC, al.id DESC
                 LIMIT 1000
             ");
-            $stmt->execute([$startDate, $endDate]);
+            $stmt->execute([$today]);
             $activityLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Debug logging
+            error_log("Activity Logs Report - Found " . count($activityLogs) . " records for today");
+            if (count($activityLogs) > 0) {
+                error_log("Activity Logs Report - First record: " . json_encode($activityLogs[0]));
+            }
             
             return $activityLogs;
             
@@ -820,6 +870,87 @@ class ReportsModule {
                 "minutesChecked" => $minutes
             ]
         ];
+    }
+    
+    /**
+     * Get report details by report ID
+     */
+    public function getReportDetails($reportId) {
+        try {
+            // Get report details from stock movements
+            $stmt = $this->conn->prepare("
+                SELECT 
+                    sm.movement_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    sm.quantity,
+                    sm.unit_cost as unit_price,
+                    (sm.quantity * sm.unit_cost) as total_value,
+                    sm.movement_type,
+                    sm.reference_no,
+                    DATE(sm.movement_date) as date,
+                    TIME(sm.movement_date) as time,
+                    COALESCE(l.location_name, 'Warehouse') as location_name,
+                    COALESCE(s.supplier_name, 'Unknown') as supplier_name,
+                    COALESCE(b.brand, 'Generic') as brand,
+                    p.expiration as expiration_date,
+                    sm.notes
+                FROM tbl_stock_movements sm
+                JOIN tbl_product p ON sm.product_id = p.product_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                WHERE sm.movement_id = ?
+            ");
+            $stmt->execute([$reportId]);
+            $details = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            if (empty($details)) {
+                // Try to get from transfer reports
+                $transferStmt = $this->conn->prepare("
+                    SELECT 
+                        th.transfer_header_id as movement_id,
+                        p.product_name,
+                        p.barcode,
+                        p.category,
+                        td.qty as quantity,
+                        p.unit_price,
+                        (td.qty * p.unit_price) as total_value,
+                        'TRANSFER' as movement_type,
+                        th.reference_number as reference_no,
+                        DATE(th.date) as date,
+                        TIME(th.date) as time,
+                        COALESCE(l.location_name, 'Warehouse') as location_name,
+                        COALESCE(s.supplier_name, 'Unknown') as supplier_name,
+                        COALESCE(b.brand, 'Generic') as brand,
+                        p.expiration as expiration_date,
+                        th.notes
+                    FROM tbl_transfer_header th
+                    JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
+                    JOIN tbl_product p ON td.product_id = p.product_id
+                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                    LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    WHERE th.transfer_header_id = ?
+                ");
+                $transferStmt->execute([$reportId]);
+                $details = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            return [
+                'success' => true,
+                'details' => $details,
+                'report_id' => $reportId
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Error fetching report details: ' . $e->getMessage(),
+                'details' => []
+            ];
+        }
     }
     
     /**

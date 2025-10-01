@@ -24,7 +24,10 @@ $allowed = [
     'update_product_stock',
     'reduce_product_stock',
     'get_pos_inventory',
-    'get_locations'
+    'get_locations',
+    'get_report_data',
+    'generate_report',
+    'get_report_details'
 ];
 
 if (!in_array($action, $allowed, true)) {

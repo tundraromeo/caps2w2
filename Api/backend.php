@@ -311,8 +311,8 @@ try {
                     // Log login activity to tbl_login
                     try {
                         $loginStmt = $conn->prepare("
-                            INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address) 
-                            VALUES (:emp_id, :role_id, :username, NOW(), CURDATE(), :ip_address)
+                            INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id) 
+                            VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id)
                         ");
                         
                         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
@@ -321,12 +321,35 @@ try {
                         $loginStmt->bindParam(':role_id', $user['role_id'], PDO::PARAM_INT);
                         $loginStmt->bindParam(':username', $user['username'], PDO::PARAM_STR);
                         $loginStmt->bindParam(':ip_address', $ip_address, PDO::PARAM_STR);
+                        $loginStmt->bindParam(':location', $location_label, PDO::PARAM_STR);
+                        $loginStmt->bindParam(':terminal_id', $terminal_id, PDO::PARAM_INT);
+                        $loginStmt->bindParam(':shift_id', $user['shift_id'], PDO::PARAM_INT);
                         
                         $loginStmt->execute();
                         
                         // Store login_id in session for logout tracking
                         $_SESSION['login_id'] = $conn->lastInsertId();
                         $login_id_inserted = $_SESSION['login_id'];
+                        
+                        // Log login activity to activity log
+                        try {
+                            $activityStmt = $conn->prepare("
+                                INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) 
+                                VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())
+                            ");
+                            
+                            $activityStmt->execute([
+                                ':user_id' => $user['emp_id'],
+                                ':username' => $user['username'],
+                                ':role' => $user['role'],
+                                ':activity_type' => 'LOGIN',
+                                ':activity_description' => 'User logged in successfully',
+                                ':table_name' => 'tbl_login',
+                                ':record_id' => $login_id_inserted
+                            ]);
+                        } catch (Exception $activityError) {
+                            error_log("Activity logging error: " . $activityError->getMessage());
+                        }
                         
                     } catch (Exception $loginLogError) {
                         error_log("Login logging error: " . $loginLogError->getMessage());
@@ -391,6 +414,25 @@ try {
                         }
                     }
     
+                    // Log login activity to system activity logs
+                    try {
+                        $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                        $logStmt->execute([
+                            ':user_id' => $user['emp_id'],
+                            ':username' => $user['username'],
+                            ':employee_name' => $user['Fname'] . ' ' . $user['Lname'],
+                            ':role' => $user['role'],
+                            ':activity_type' => 'LOGIN',
+                            ':activity_description' => "User logged in successfully from {$terminal_name}",
+                            ':module' => 'Authentication',
+                            ':action' => 'LOGIN',
+                            ':location' => $terminal_name,
+                            ':terminal_id' => $terminal_id
+                        ]);
+                    } catch (Exception $activityLogError) {
+                        error_log("Activity logging error: " . $activityLogError->getMessage());
+                    }
+
                     echo json_encode([
                         "success" => true,
                         "message" => "Login successful",
@@ -624,6 +666,32 @@ try {
                     error_log("Logout logging error: " . $logoutLogError->getMessage());
             }
 
+            // Log logout activity to system activity logs
+            if ($empId) {
+                try {
+                    // Get employee details for logging
+                    $empStmt = $conn->prepare("SELECT username, Fname, Lname, role FROM tbl_employee WHERE emp_id = ?");
+                    $empStmt->execute([$empId]);
+                    $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($empData) {
+                        $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                        $logStmt->execute([
+                            ':user_id' => $empId,
+                            ':username' => $empData['username'],
+                            ':employee_name' => $empData['Fname'] . ' ' . $empData['Lname'],
+                            ':role' => $empData['role'],
+                            ':activity_type' => 'LOGOUT',
+                            ':activity_description' => 'User logged out from system',
+                            ':module' => 'Authentication',
+                            ':action' => 'LOGOUT'
+                        ]);
+                    }
+                } catch (Exception $activityLogError) {
+                    error_log("Activity logging error: " . $activityLogError->getMessage());
+                }
+            }
+
             // Clear session only after writing logout record
             $_SESSION = [];
             if (ini_get("session.use_cookies")) {
@@ -641,6 +709,69 @@ try {
             echo json_encode(['success' => false, 'message' => 'An error occurred during logout: ' . $e->getMessage()]);
         }
         break;
+
+    case 'get_login_records':
+        try {
+            $stmt = $conn->prepare("
+                SELECT l.*, e.username, r.role 
+                FROM tbl_login l 
+                JOIN tbl_employee e ON l.emp_id = e.emp_id 
+                LEFT JOIN tbl_role r ON l.role_id = r.role_id 
+                ORDER BY l.login_id DESC 
+                LIMIT 10
+            ");
+            $stmt->execute();
+            $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'records' => $records
+            ]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'get_users':
+        try {
+            $stmt = $conn->prepare("
+                SELECT e.emp_id, e.username, e.status, r.role 
+                FROM tbl_employee e 
+                LEFT JOIN tbl_role r ON e.role_id = r.role_id 
+                ORDER BY e.emp_id
+            ");
+            $stmt->execute();
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'users' => $users
+            ]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'get_activity_records':
+        try {
+            $stmt = $conn->prepare("
+                SELECT * FROM tbl_activity_log 
+                WHERE activity_type IN ('LOGIN', 'LOGOUT') 
+                ORDER BY created_at DESC 
+                LIMIT 10
+            ");
+            $stmt->execute();
+            $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'records' => $records
+            ]);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
     case 'register_terminal_route':
         try {
             if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
@@ -789,7 +920,7 @@ try {
     case 'log_activity':
         try {
             // Ensure comprehensive activity logs table exists
-            $conn->exec("CREATE TABLE IF NOT EXISTS `tbl_system_activity_logs` (
+            $conn->exec("CREATE TABLE IF NOT EXISTS `tbl_activity_log` (
                 `id` int(11) NOT NULL AUTO_INCREMENT,
                 `user_id` int(11) DEFAULT NULL,
                 `username` varchar(255) DEFAULT NULL,
@@ -848,7 +979,7 @@ try {
             $date_created = date('Y-m-d');
             $time_created = date('H:i:s');
 
-            $stmt = $conn->prepare("INSERT INTO tbl_system_activity_logs (user_id, username, employee_name, role, activity_type, activity_description, module, action, table_name, record_id, location, terminal_id, ip_address, user_agent, session_id, date_created, time_created) VALUES (:user_id, :username, :employee_name, :role, :activity_type, :activity_description, :module, :action, :table_name, :record_id, :location, :terminal_id, :ip_address, :user_agent, :session_id, :date_created, :time_created)");
+            $stmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, employee_name, role, activity_type, activity_description, module, action, table_name, record_id, location, terminal_id, ip_address, user_agent, session_id, date_created, time_created) VALUES (:user_id, :username, :employee_name, :role, :activity_type, :activity_description, :module, :action, :table_name, :record_id, :location, :terminal_id, :ip_address, :user_agent, :session_id, :date_created, :time_created)");
             
             $stmt->bindValue(':user_id', $user_id !== null && $user_id !== '' ? $user_id : null, $user_id !== null && $user_id !== '' ? PDO::PARAM_INT : PDO::PARAM_NULL);
             $stmt->bindValue(':username', $username !== null && $username !== '' ? $username : null, $username !== null && $username !== '' ? PDO::PARAM_STR : PDO::PARAM_NULL);
@@ -2695,7 +2826,9 @@ case 'get_products_oldest_batch_for_transfer':
                         fs.batch_id as fifo_batch_id
                     FROM tbl_transfer_batch_details tbd
                     LEFT JOIN tbl_fifo_stock fs ON tbd.batch_id = fs.batch_id
-                    WHERE tbd.transfer_id = ?
+                    LEFT JOIN tbl_transfer_dtl td ON tbd.product_id = td.product_id
+                    LEFT JOIN tbl_transfer_header th ON td.transfer_header_id = th.transfer_header_id
+                    WHERE th.transfer_header_id = ?
                     ORDER BY tbd.batch_id
                 ");
                 
@@ -2747,35 +2880,30 @@ case 'get_products_oldest_batch_for_transfer':
             $create_table_sql = "
                 CREATE TABLE IF NOT EXISTS `tbl_transfer_batch_details` (
                     `id` int(11) NOT NULL AUTO_INCREMENT,
-                    `transfer_id` int(11) NOT NULL,
+                    `product_id` int(11) NOT NULL,
                     `batch_id` int(11) NOT NULL,
                     `batch_reference` varchar(255) NOT NULL,
                     `quantity` int(11) NOT NULL,
-                    `srp` decimal(10,2) NOT NULL,
+                    `srp` decimal(10,2) DEFAULT NULL,
                     `expiration_date` date DEFAULT NULL,
                     `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
                     PRIMARY KEY (`id`),
-                    KEY `transfer_id` (`transfer_id`),
+                    KEY `product_id` (`product_id`),
                     KEY `batch_id` (`batch_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
             ";
             
             $conn->exec($create_table_sql);
             
-            // Ensure transfer_id column in batch details table is properly set up
-            try {
-                $conn->exec("ALTER TABLE tbl_transfer_batch_details MODIFY COLUMN transfer_id int(11) NOT NULL");
-            } catch (Exception $e) {
-                // Column might already be properly configured, ignore error
-                error_log("Transfer batch details table modification: " . $e->getMessage());
-            }
+            // Note: tbl_transfer_batch_details doesn't use transfer_id column
+            // The table structure uses product_id instead
             
             // Populate sample batch details for existing transfers
             $populate_stmt = $conn->prepare("
                 INSERT IGNORE INTO tbl_transfer_batch_details 
-                (transfer_id, batch_id, batch_reference, quantity, srp, expiration_date)
+                (product_id, batch_id, batch_reference, quantity, srp, expiration_date)
                 SELECT 
-                    tl.transfer_id,
+                    tl.product_id,
                     COALESCE(fs.batch_id, 1) as batch_id,
                     COALESCE(fs.batch_reference, CONCAT('BR-', tl.transfer_id, '-', tl.product_id)) as batch_reference,
                     tl.quantity,
@@ -2785,7 +2913,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_fifo_stock fs ON tl.product_id = fs.product_id
                 WHERE NOT EXISTS (
                     SELECT 1 FROM tbl_transfer_batch_details tbd 
-                    WHERE tbd.transfer_id = tl.transfer_id
+                    WHERE tbd.product_id = tl.product_id
                 )
                 LIMIT 1
             ");
@@ -3117,8 +3245,8 @@ case 'get_products_oldest_batch_for_transfer':
                     if (!empty($consumed_batches)) {
                         $batchDetailsStmt = $conn->prepare("
                             INSERT INTO tbl_transfer_batch_details 
-                            (transfer_id, product_id, batch_id, batch_reference, quantity, srp, expiration_date) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            (product_id, batch_id, batch_reference, quantity, srp, expiration_date) 
+                            VALUES (?, ?, ?, ?, ?, ?)
                         ");
                         
                         foreach ($consumed_batches as $batch) {
@@ -3134,7 +3262,6 @@ case 'get_products_oldest_batch_for_transfer':
                             
                             if ($batchInfo) {
                                 $batchDetailsStmt->execute([
-                                    $transfer_header_id,
                                     $product_id,
                                     $batchInfo['batch_id'],
                                     $batch['batch_reference'],
@@ -3882,6 +4009,57 @@ case 'get_products_oldest_batch_for_transfer':
         }
         break;
 
+    case 'get_product_batches':
+        try {
+            $product_id = $data['product_id'] ?? 0;
+            
+            if (empty($product_id)) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Product ID is required",
+                    "data" => []
+                ]);
+                break;
+            }
+            
+            // Get all batches for the specific product
+            $stmt = $conn->prepare("
+                SELECT 
+                    p.product_id,
+                    p.batch_id,
+                    p.expiration,
+                    p.quantity,
+                    p.unit_price,
+                    p.srp,
+                    p.date_added,
+                    p.status,
+                    b.batch,
+                    s.supplier_name,
+                    l.location_name
+                FROM tbl_product p
+                LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
+                LEFT JOIN tbl_supplier s ON b.supplier_id = s.supplier_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                WHERE p.product_id = ?
+                AND (p.status IS NULL OR p.status <> 'archived')
+                ORDER BY p.expiration ASC, p.date_added DESC
+            ");
+            $stmt->execute([$product_id]);
+            $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $batches
+            ]);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage(),
+                "data" => []
+            ]);
+        }
+        break;
+
     // POS: fetch discount options from tbl_discount
     case 'get_discounts':
         try {
@@ -4359,21 +4537,24 @@ case 'get_products_oldest_batch_for_transfer':
                     $seenProducts[$key] = count($uniqueProducts);
                     $uniqueProducts[] = $product;
                 } else {
-                    // If duplicate found, sum the quantities
+                    // If duplicate found, SUM only REGULAR quantities (ignore transferred)
                     $existingIndex = $seenProducts[$key];
-                    $uniqueProducts[$existingIndex]['quantity'] += $product['quantity'];
+                    
+                    // Only sum quantities if both are Regular products
+                    if ($product['product_type'] === 'Regular' && $uniqueProducts[$existingIndex]['product_type'] === 'Regular') {
+                        $uniqueProducts[$existingIndex]['quantity'] += $product['quantity'];
+                    } else if ($product['product_type'] === 'Regular' && $uniqueProducts[$existingIndex]['product_type'] !== 'Regular') {
+                        // Replace transferred with regular quantity
+                        $uniqueProducts[$existingIndex]['quantity'] = $product['quantity'];
+                        $uniqueProducts[$existingIndex]['product_type'] = 'Regular';
+                    }
+                    // If both are transferred or current is transferred, keep existing
                     
                     // Update stock status based on new total quantity
                     $totalQty = $uniqueProducts[$existingIndex]['quantity'];
                     $uniqueProducts[$existingIndex]['stock_status'] = 
                         $totalQty <= 0 ? 'out of stock' : 
                         ($totalQty <= 10 ? 'low stock' : 'in stock');
-                    
-                    // Prefer transferred version if available
-                    if ($product['product_type'] === 'Transferred') {
-                        $uniqueProducts[$existingIndex]['product_type'] = 'Transferred';
-                        $uniqueProducts[$existingIndex]['transfer_header_id'] = $product['transfer_header_id'];
-                    }
                 }
             }
             
@@ -5631,7 +5812,24 @@ case 'get_products_oldest_batch_for_transfer':
             
             $stmt = $conn->prepare("
                 SELECT 
-                    p.*,
+                    p.product_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    p.description,
+                    p.prescription,
+                    p.bulk,
+                    p.expiration,
+                    SUM(p.quantity) as quantity,
+                    p.unit_price,
+                    p.srp,
+                    p.brand_id,
+                    p.supplier_id,
+                    p.location_id,
+                    p.batch_id,
+                    p.status,
+                    p.stock_status,
+                    p.date_added,
                     s.supplier_name,
                     b.brand,
                     l.location_name,
@@ -5646,6 +5844,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
                 AND l.location_name = ?
+                GROUP BY p.product_name, p.barcode, p.category, p.description, p.prescription, p.bulk, p.expiration, p.unit_price, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, s.supplier_name, b.brand, l.location_name, batch.batch, batch.entry_date, batch.entry_by
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute([$location_name]);
@@ -5694,10 +5893,27 @@ case 'get_products_oldest_batch_for_transfer':
             
             $where_clause = "WHERE " . implode(" AND ", $where_conditions);
             
-            // Get regular products for specific location
+            // Get regular products for specific location - GROUP BY product name to consolidate duplicates
             $stmt = $conn->prepare("
                 SELECT 
-                    p.*,
+                    p.product_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    p.description,
+                    p.prescription,
+                    p.bulk,
+                    p.expiration,
+                    SUM(p.quantity) as quantity,
+                    p.unit_price,
+                    p.srp,
+                    p.brand_id,
+                    p.supplier_id,
+                    p.location_id,
+                    p.batch_id,
+                    p.status,
+                    p.stock_status,
+                    p.date_added,
                     b.brand,
                     s.supplier_name,
                     l.location_name,
@@ -5705,8 +5921,8 @@ case 'get_products_oldest_batch_for_transfer':
                     COALESCE(batch.batch_reference, 'N/A') as batch_reference,
                     COALESCE(batch.entry_date, 'N/A') as batch_date_time,
                     CASE 
-                        WHEN p.quantity <= 0 THEN 'out of stock'
-                        WHEN p.quantity <= 10 THEN 'low stock'
+                        WHEN SUM(p.quantity) <= 0 THEN 'out of stock'
+                        WHEN SUM(p.quantity) <= 10 THEN 'low stock'
                         ELSE 'in stock'
                     END as stock_status,
                     'Regular' as product_type
@@ -5717,6 +5933,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 $where_clause
                 AND p.status = 'active'
+                GROUP BY p.product_name, p.barcode, p.category, p.description, p.prescription, p.bulk, p.expiration, p.unit_price, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
                 ORDER BY p.product_name ASC
             ");
             
@@ -5761,7 +5978,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.prescription,
                     p.bulk,
                     p.expiration,
-                    td.qty as quantity,
+                    SUM(td.qty) as quantity,
                     p.unit_price,
                     p.srp,
                     p.brand_id,
@@ -5777,15 +5994,15 @@ case 'get_products_oldest_batch_for_transfer':
                     COALESCE(batch.batch_reference, 'N/A') as batch_reference,
                     COALESCE(batch.entry_date, 'N/A') as batch_date_time,
                     CASE 
-                        WHEN td.qty <= 0 THEN 'out of stock'
-                        WHEN td.qty <= 10 THEN 'low stock'
+                        WHEN SUM(td.qty) <= 0 THEN 'out of stock'
+                        WHEN SUM(td.qty) <= 10 THEN 'low stock'
                         ELSE 'in stock'
                     END as stock_status,
                     'Transferred' as product_type,
-                    th.transfer_header_id,
-                    th.date as transfer_date,
-                    sl.location_name as source_location,
-                    CONCAT(e.Fname, ' ', e.Lname) as transferred_by
+                    GROUP_CONCAT(DISTINCT th.transfer_header_id) as transfer_header_ids,
+                    MAX(th.date) as transfer_date,
+                    GROUP_CONCAT(DISTINCT sl.location_name) as source_locations,
+                    GROUP_CONCAT(DISTINCT CONCAT(e.Fname, ' ', e.Lname)) as transferred_by
                 FROM tbl_transfer_header th
                 JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
                 JOIN tbl_product p ON td.product_id = p.product_id
@@ -5797,27 +6014,16 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_employee e ON th.employee_id = e.emp_id
                 $transferWhereClause
                 AND th.status = 'approved'
+                GROUP BY p.product_name, p.category, p.barcode, p.description, p.prescription, p.bulk, p.expiration, p.unit_price, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
                 ORDER BY p.product_name ASC
             ");
             
             $transferStmt->execute($transferParams);
             $transferredProducts = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
 
-            // Aggregate transferred quantities per product (summing multiple transfer rows)
-            $aggregatedTransfers = [];
-            foreach ($transferredProducts as $tp) {
-                $key = $tp['product_name'] . '|' . $tp['category'] . '|' . $tp['barcode'];
-                if (!isset($aggregatedTransfers[$key])) {
-                    $aggregatedTransfers[$key] = $tp;
-                } else {
-                    $aggregatedTransfers[$key]['quantity'] += (int)$tp['quantity'];
-                    $totalQty = (int)$aggregatedTransfers[$key]['quantity'];
-                    $aggregatedTransfers[$key]['stock_status'] = $totalQty <= 0 ? 'out of stock' : ($totalQty <= 10 ? 'low stock' : 'in stock');
-                }
-            }
-
-            // Combine both regular and aggregated transferred products
-            $allProducts = array_merge($regularProducts, array_values($aggregatedTransfers));
+            // Since we're already grouping in the query, we can use the results directly
+            // Combine both regular and transferred products
+            $allProducts = array_merge($regularProducts, $transferredProducts);
 
             // Deduplicate by summing quantities if the same product exists in both Regular and Transferred
             $uniqueProducts = [];
@@ -6534,6 +6740,29 @@ case 'get_products_oldest_batch_for_transfer':
                     }
                 }
 
+                // Log activity to system activity logs
+                try {
+                    // Get employee details for logging
+                    $empStmt = $conn->prepare("SELECT username, full_name, role FROM tbl_employee WHERE emp_id = ?");
+                    $empStmt->execute([$empId]);
+                    $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    // Insert activity log
+                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                    $logStmt->execute([
+                        ':user_id' => $empId,
+                        ':username' => $empData['username'] ?? 'Unknown',
+                        ':role' => $empData['role'] ?? 'Cashier',
+                        ':activity_type' => 'POS_SALE_SAVED',
+                        ':activity_description' => "POS Sale completed: ₱{$totalAmount} ({$paymentEnum}, " . count($items) . " items) - Terminal: {$terminalName}",
+                        ':table_name' => 'tbl_pos_transaction',
+                        ':record_id' => $transactionId
+                    ]);
+                    
+                } catch (Exception $logError) {
+                    error_log("Activity logging error: " . $logError->getMessage());
+                }
+
                 // Log
                 error_log("POS Sale saved: TXN {$transactionId} (client={$clientTxnId}), Amount: {$totalAmount}, Location: {$locationName}, Payment: {$paymentEnum}, Items: " . count($items));
 
@@ -6835,7 +7064,8 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 // Add batch details for each transfer log
                 foreach ($logs as &$log) {
-                    // First try direct match on transfer_id
+                    // Note: tbl_transfer_batch_details doesn't have transfer_id column
+                    // Using product_id instead to get batch details
                     $batchDetailsStmt = $conn->prepare("
                         SELECT 
                             tbd.batch_id,
@@ -6845,10 +7075,10 @@ case 'get_products_oldest_batch_for_transfer':
                             tbd.expiration_date
                         FROM tbl_transfer_batch_details tbd
                         LEFT JOIN tbl_fifo_stock fs ON fs.batch_id = tbd.batch_id
-                        WHERE tbd.transfer_id = ?
+                        WHERE tbd.product_id = ?
                         ORDER BY tbd.id ASC
                     ");
-                    $batchDetailsStmt->execute([$log['transfer_id']]);
+                    $batchDetailsStmt->execute([$log['product_id']]);
                     $details = $batchDetailsStmt->fetchAll(PDO::FETCH_ASSOC);
                     
                     if (!$details || count($details) === 0) {
@@ -6876,6 +7106,8 @@ case 'get_products_oldest_batch_for_transfer':
                         ]);
                         $header = $mapStmt->fetch(PDO::FETCH_ASSOC);
                         if ($header && isset($header['transfer_header_id'])) {
+                            // Note: tbl_transfer_batch_details doesn't have transfer_id column
+                            // Using product_id instead to get batch details
                             $batchDetailsStmt = $conn->prepare("
                                 SELECT 
                                     tbd.batch_id,
@@ -6885,7 +7117,8 @@ case 'get_products_oldest_batch_for_transfer':
                                     tbd.expiration_date
                                 FROM tbl_transfer_batch_details tbd
                                 LEFT JOIN tbl_fifo_stock fs ON fs.batch_id = tbd.batch_id
-                                WHERE tbd.transfer_id = ?
+                                LEFT JOIN tbl_transfer_dtl td ON tbd.product_id = td.product_id
+                                WHERE td.transfer_header_id = ?
                                 ORDER BY tbd.id ASC
                             ");
                             $batchDetailsStmt->execute([$header['transfer_header_id']]);
@@ -6937,6 +7170,8 @@ case 'get_products_oldest_batch_for_transfer':
                 echo json_encode(["success" => false, "message" => "Transfer log not found"]);
                 break;
             }
+            // Note: tbl_transfer_batch_details doesn't have transfer_id column
+            // Using transfer_header_id through transfer_dtl table instead
             $batchDetailsStmt = $conn->prepare("
                 SELECT 
                     tbd.batch_id,
@@ -6946,7 +7181,8 @@ case 'get_products_oldest_batch_for_transfer':
                     tbd.expiration_date
                 FROM tbl_transfer_batch_details tbd
                 LEFT JOIN tbl_fifo_stock fs ON fs.batch_id = tbd.batch_id
-                WHERE tbd.transfer_id = ?
+                LEFT JOIN tbl_transfer_dtl td ON tbd.product_id = td.product_id
+                WHERE td.transfer_header_id = ?
                 ORDER BY tbd.id ASC
             ");
             $batchDetailsStmt->execute([$transfer_id]);
@@ -6976,6 +7212,8 @@ case 'get_products_oldest_batch_for_transfer':
                 ]);
                 $header = $mapStmt->fetch(PDO::FETCH_ASSOC);
                 if ($header && isset($header['transfer_header_id'])) {
+                    // Note: tbl_transfer_batch_details doesn't have transfer_id column
+                    // Using transfer_header_id through transfer_dtl table instead
                     $batchDetailsStmt = $conn->prepare("
                         SELECT 
                             tbd.batch_id,
@@ -6985,7 +7223,8 @@ case 'get_products_oldest_batch_for_transfer':
                             tbd.expiration_date
                         FROM tbl_transfer_batch_details tbd
                         LEFT JOIN tbl_fifo_stock fs ON fs.batch_id = tbd.batch_id
-                        WHERE tbd.transfer_id = ?
+                        LEFT JOIN tbl_transfer_dtl td ON tbd.product_id = td.product_id
+                        WHERE td.transfer_header_id = ?
                         ORDER BY tbd.id ASC
                     ");
                     $batchDetailsStmt->execute([$header['transfer_header_id']]);
@@ -7620,6 +7859,34 @@ case 'get_products_oldest_batch_for_transfer':
                     if ($pid <= 0 || $qty <= 0) { continue; }
                     $dtlStmt->execute([$sales_header_id, $pid, $qty, $price]);
                     $updQtyStmt->execute([$qty, $pid]);
+                }
+
+                // Log activity to system activity logs
+                try {
+                    // Get employee details for logging (using emp_id = 1 as default)
+                    $empStmt = $conn->prepare("SELECT username, full_name, role FROM tbl_employee WHERE emp_id = 1");
+                    $empStmt->execute();
+                    $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    // Insert activity log
+                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                    $logStmt->execute([
+                        ':user_id' => 1,
+                        ':username' => $empData['username'] ?? 'Unknown',
+                        ':employee_name' => $empData['full_name'] ?? $empData['username'] ?? 'Unknown Employee',
+                        ':role' => $empData['role'] ?? 'Cashier',
+                        ':activity_type' => 'POS_SALE_SAVED',
+                        ':activity_description' => "POS Sale completed: ₱{$total_amount} ({$payment_enum}, " . count($items) . " items) - Terminal: {$terminal_name}",
+                        ':module' => 'POS',
+                        ':action' => 'POS_SALE_SAVED',
+                        ':table_name' => 'tbl_pos_transaction',
+                        ':record_id' => $transaction_id,
+                        ':location' => $terminal_name,
+                        ':terminal_id' => $terminal_id
+                    ]);
+                    
+                } catch (Exception $logError) {
+                    error_log("Activity logging error: " . $logError->getMessage());
                 }
 
                 $conn->commit();
@@ -8368,6 +8635,32 @@ case 'get_products_oldest_batch_for_transfer':
             echo json_encode([
                 "success" => false,
                 "message" => "Error generating report: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'get_report_details':
+        try {
+            require_once 'modules/reports.php';
+            
+            $reportId = $data['report_id'] ?? null;
+            
+            if (!$reportId) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Report ID is required"
+                ]);
+                break;
+            }
+            
+            $reportsModule = new ReportsModule($conn);
+            $result = $reportsModule->getReportDetails($reportId);
+            
+            echo json_encode($result);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error fetching report details: " . $e->getMessage()
             ]);
         }
         break;

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logout Functionality Demo</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 5px; 
+            background-color: #f9f9f9;
+        }
+        .success { 
+            background-color: #d4edda; 
+            border-color: #c3e6cb; 
+            color: #155724;
+        }
+        .error { 
+            background-color: #f8d7da; 
+            border-color: #f5c6cb; 
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        button { 
+            padding: 10px 15px; 
+            margin: 5px; 
+            cursor: pointer; 
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-warning { background-color: #ffc107; color: black; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .result { 
+            margin-top: 10px; 
+            padding: 10px; 
+            background-color: #f8f9fa; 
+            border-radius: 3px; 
+            border-left: 4px solid #007bff;
+        }
+        pre { 
+            background-color: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 3px; 
+            overflow-x: auto; 
+            white-space: pre-wrap;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .online { background-color: #28a745; }
+        .offline { background-color: #dc3545; }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .table th, .table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        h1 { color: #333; text-align: center; }
+        h3 { color: #555; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Logout Functionality Demo</h1>
+        <p style="text-align: center; color: #666; font-size: 16px;">
+            This demo shows how logout activities are tracked and displayed in the login logs system.
+        </p>
+        
+        <div class="test-section info">
+            <h3>📋 System Overview</h3>
+            <p><strong>Current Logout Tracking Features:</strong></p>
+            <ul>
+                <li>✅ Automatic logout time recording in database</li>
+                <li>✅ User status tracking (ONLINE/OFFLINE)</li>
+                <li>✅ Session duration calculation</li>
+                <li>✅ Activity logging for audit trail</li>
+                <li>✅ Real-time login logs report</li>
+                <li>✅ Auto-detection of offline users</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h3>1. 📊 Current Login Records</h3>
+            <button onclick="checkLoginRecords()" class="btn-primary">Check Current Login Records</button>
+            <div id="records-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>2. 🔒 Test Logout Function</h3>
+            <div style="margin-bottom: 10px;">
+                <label>Employee ID: </label>
+                <input type="number" id="emp-id" placeholder="Employee ID" value="1" style="padding: 5px; margin-right: 10px;">
+                <label>Login ID: </label>
+                <input type="number" id="login-id" placeholder="Login ID (optional)" style="padding: 5px;">
+            </div>
+            <button onclick="testLogout()" class="btn-danger">Test Logout</button>
+            <button onclick="testLogoutWithSession()" class="btn-warning">Test Logout (Session-based)</button>
+            <div id="logout-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>3. 📈 Login Logs Report</h3>
+            <button onclick="getLoginLogsReport()" class="btn-success">Get Login Logs Report</button>
+            <div id="logs-result" class="result"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>4. 🔄 Verify Database Changes</h3>
+            <button onclick="verifyDatabaseChanges()" class="btn-primary">Check Database After Logout</button>
+            <div id="verify-result" class="result"></div>
+        </div>
+
+        <div class="test-section info">
+            <h3>💡 How It Works</h3>
+            <p><strong>When a user logs out:</strong></p>
+            <ol>
+                <li><strong>Session Check:</strong> System checks for active session and login_id</li>
+                <li><strong>Database Update:</strong> Updates tbl_login with logout_time, logout_date, and status='offline'</li>
+                <li><strong>Activity Log:</strong> Records logout activity in tbl_activity_log</li>
+                <li><strong>Session Cleanup:</strong> Clears session data and destroys session</li>
+                <li><strong>Report Update:</strong> Login logs report shows user as OFFLINE with logout details</li>
+            </ol>
+            
+            <p><strong>Login Logs Report Features:</strong></p>
+            <ul>
+                <li>🟢 <strong>ONLINE:</strong> Users currently logged in</li>
+                <li>🔴 <strong>OFFLINE:</strong> Users who have logged out</li>
+                <li>⏱️ <strong>Session Duration:</strong> How long user was logged in</li>
+                <li>📍 <strong>Location & Terminal:</strong> Where user logged in/out</li>
+                <li>🔍 <strong>Auto-detection:</strong> Detects users who went offline without proper logout</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const LOGIN_API_URL = "http://localhost/Enguio_Project/Api/login.php";
+        const BACKEND_API_URL = "http://localhost/Enguio_Project/Api/backend.php";
+
+        async function checkLoginRecords() {
+            try {
+                const response = await fetch(BACKEND_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'get_login_records' })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('records-result');
+                
+                if (data.success) {
+                    let html = '<div class="success"><strong>📊 Current Login Records:</strong><br><br>';
+                    
+                    if (data.records && data.records.length > 0) {
+                        html += '<table class="table">';
+                        html += '<tr><th>ID</th><th>Username</th><th>Login Time</th><th>Logout Time</th><th>Status</th><th>Location</th></tr>';
+                        
+                        data.records.forEach(record => {
+                            const statusClass = record.status === 'online' ? 'online' : 'offline';
+                            const statusText = record.status === 'online' ? '🟢 ONLINE' : '🔴 OFFLINE';
+                            
+                            html += `
+                                <tr>
+                                    <td>${record.login_id}</td>
+                                    <td>${record.username || 'Unknown'}</td>
+                                    <td>${record.login_date} ${record.login_time}</td>
+                                    <td>${record.logout_date || 'N/A'} ${record.logout_time || 'N/A'}</td>
+                                    <td><span class="status-indicator ${statusClass}"></span>${statusText}</td>
+                                    <td>${record.location || 'Unknown'}</td>
+                                </tr>
+                            `;
+                        });
+                        html += '</table>';
+                    } else {
+                        html += '<p>No login records found.</p>';
+                    }
+                    
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('records-result').innerHTML = `<div class="error">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testLogout() {
+            const empId = document.getElementById('emp-id').value;
+            const loginId = document.getElementById('login-id').value;
+
+            try {
+                const response = await fetch(LOGIN_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: 'logout',
+                        emp_id: parseInt(empId),
+                        login_id: loginId ? parseInt(loginId) : null
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('logout-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>✅ Logout Successful!</strong><br>
+                            <p>User ${empId} has been logged out successfully.</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <strong>❌ Logout Failed:</strong> ${data.message}<br>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('logout-result').innerHTML = `<div class="error">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testLogoutWithSession() {
+            try {
+                const response = await fetch(LOGIN_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: 'logout',
+                        emp_id: 1  // Default test user
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('logout-result');
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>✅ Session-based Logout Successful!</strong><br>
+                            <p>User logged out using session data.</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <strong>❌ Session Logout Failed:</strong> ${data.message}<br>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('logout-result').innerHTML = `<div class="error">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function getLoginLogsReport() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                
+                const response = await fetch(BACKEND_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        action: 'get_report_data',
+                        report_type: 'login_logs',
+                        start_date: sevenDaysAgo,
+                        end_date: today
+                    })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('logs-result');
+                
+                if (data.success) {
+                    let html = '<div class="success"><strong>📈 Login Logs Report:</strong><br><br>';
+                    
+                    if (data.data && data.data.length > 0) {
+                        html += '<table class="table">';
+                        html += '<tr><th>Date</th><th>Time</th><th>Employee</th><th>Action</th><th>Status</th><th>Location</th><th>Description</th></tr>';
+                        
+                        data.data.forEach(record => {
+                            const statusClass = record.login_status === 'ONLINE' ? 'online' : 'offline';
+                            const statusText = record.login_status === 'ONLINE' ? '🟢 ONLINE' : '🔴 OFFLINE';
+                            const actionText = record.action === 'LOGIN' ? '🔓 LOGIN' : '🔒 LOGOUT';
+                            
+                            html += `
+                                <tr>
+                                    <td>${record.date || 'N/A'}</td>
+                                    <td>${record.time || 'N/A'}</td>
+                                    <td>${record.employee_name || record.username || 'Unknown'}</td>
+                                    <td>${actionText}</td>
+                                    <td><span class="status-indicator ${statusClass}"></span>${statusText}</td>
+                                    <td>${record.location || 'Unknown'}</td>
+                                    <td>${record.description || 'N/A'}</td>
+                                </tr>
+                            `;
+                        });
+                        html += '</table>';
+                    } else {
+                        html += '<p>No login logs found for the selected date range.</p>';
+                    }
+                    
+                    html += '</div>';
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('logs-result').innerHTML = `<div class="error">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function verifyDatabaseChanges() {
+            await checkLoginRecords();
+            await getLoginLogsReport();
+            
+            const resultDiv = document.getElementById('verify-result');
+            resultDiv.innerHTML = `
+                <div class="info">
+                    <strong>✅ Database Verification Complete!</strong><br>
+                    <p>Check the results above to see the updated login records and logout activities.</p>
+                    <p><strong>What to look for:</strong></p>
+                    <ul>
+                        <li>Users with logout_time and logout_date populated</li>
+                        <li>Status changed from 'online' to 'offline'</li>
+                        <li>LOGOUT entries in the activity logs</li>
+                        <li>Session duration calculations</li>
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Auto-load data on page load
+        window.onload = function() {
+            checkLoginRecords();
+        };
+    </script>
+</body>
+</html>

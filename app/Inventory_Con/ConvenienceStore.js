@@ -390,6 +390,9 @@ function ConvenienceInventory() {
   // Load batch data for a product from tbl_batch_transfer_details
   const loadBatchData = async (productId) => {
     setLoadingBatch(true);
+    console.log("🚀 Starting loadBatchData for product:", productId);
+    console.log("🚀 Convenience location ID:", convenienceLocationId);
+    
     try {
       console.log("🔍 Loading batch transfer details for product:", productId);
       console.log("🔍 Convenience location ID:", convenienceLocationId);
@@ -401,6 +404,8 @@ function ConvenienceInventory() {
       });
       
       console.log("🔍 Raw Batch Transfer Response:", batchResponse);
+      console.log("🔍 Response Success:", batchResponse?.success);
+      console.log("🔍 Response Data:", batchResponse?.data);
       
       if (batchResponse.success && batchResponse.data) {
         // Handle both data structures - direct array or object with batch_details
@@ -415,12 +420,14 @@ function ConvenienceInventory() {
         
         if (batchDetails.length > 0) {
           console.log("✅ Found batch transfer details from tbl_batch_transfer_details");
+          console.log("✅ Setting batchData to:", batchDetails);
           // Update the modal with summary data
           updateBatchSummary(summary);
           // Set individual batch data
           setBatchData(batchDetails);
         } else {
           console.log("⚠️ No batch transfer details found, trying FIFO fallback");
+          console.log("⚠️ batchDetails was empty:", batchDetails);
           // Fallback to FIFO stock if no batch details found
           const fifoResponse = await handleApiCall("get_fifo_stock", {
             product_id: productId
@@ -455,8 +462,10 @@ function ConvenienceInventory() {
       }
     } catch (error) {
       console.error("❌ Error loading batch transfer data:", error);
+      console.error("❌ Error details:", error.message);
       setBatchData([]);
     } finally {
+      console.log("🏁 Finished loadBatchData, setting loadingBatch to false");
       setLoadingBatch(false);
     }
   };
@@ -1124,7 +1133,13 @@ function ConvenienceInventory() {
       )}
 
       {/* Batch Details Modal */}
-      {showBatchModal && selectedProductForBatch && (
+      {showBatchModal && selectedProductForBatch && (() => {
+        console.log("🎭 Rendering Batch Modal");
+        console.log("🎭 batchData:", batchData);
+        console.log("🎭 loadingBatch:", loadingBatch);
+        console.log("🎭 selectedProductForBatch:", selectedProductForBatch);
+        return true;
+      })() && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50" style={{ zIndex: 9999 }}>
           <div className="rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto bg-white">
             {/* Header */}

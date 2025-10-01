@@ -4,7 +4,6 @@ import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
-import { useNotification } from "./NotificationContext";
 import NotificationSystem from "./NotificationSystem";
 
 import {
@@ -59,34 +58,16 @@ async function handleApiCall(action, data = {}) {
 
   try {
     console.log("📡 Making API request to:", API_BASE_URL);
-    
-    // Add timeout to prevent hanging requests
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      console.log("⏰ Request timeout reached, aborting request");
-      controller.abort();
-    }, 15000); // 15 second timeout
-    
     const response = await fetch(API_BASE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
-      signal: controller.signal
     });
-    
-    // Clear timeout since request completed successfully
-    clearTimeout(timeoutId);
 
     console.log("📡 HTTP Response Status:", response.status);
-    
-    // Safely log headers without causing issues
-    try {
-      console.log("📡 HTTP Response Headers:", Object.fromEntries(response.headers.entries()));
-    } catch (headerError) {
-      console.log("📡 HTTP Response Headers: [Unable to log headers]");
-    }
+    console.log("📡 HTTP Response Headers:", response.headers);
 
     // Check if response is ok
     if (!response.ok) {
@@ -96,17 +77,6 @@ async function handleApiCall(action, data = {}) {
     // Get response text first to check if it's valid JSON
     const responseText = await response.text();
     console.log("📡 Raw Response Text:", responseText);
-
-    // Check if response is empty or only whitespace
-    if (!responseText || responseText.trim() === '') {
-      console.error("❌ API returned empty response");
-      return {
-        success: false,
-        message: "Server returned empty response. Please check server status.",
-        error: "EMPTY_RESPONSE",
-        rawResponse: "Empty response"
-      };
-    }
 
     // Check if response starts with HTML tags (indicating PHP error)
     if (responseText.trim().startsWith('<') || responseText.includes('<br />') || responseText.includes('<b>')) {
@@ -132,23 +102,12 @@ async function handleApiCall(action, data = {}) {
     } catch (jsonError) {
       console.error("❌ Failed to parse JSON response:", jsonError);
       console.error("❌ Response text:", responseText);
-      console.error("❌ Response length:", responseText.length);
-      console.error("❌ Response type:", typeof responseText);
-      
-      // Provide more specific error message based on the error type
-      let errorMessage = "Invalid JSON response from server";
-      if (jsonError.message.includes("Unexpected end of JSON input")) {
-        errorMessage = "Server returned incomplete JSON response. This may indicate a server error or connection issue.";
-      } else if (jsonError.message.includes("Unexpected token")) {
-        errorMessage = "Server returned malformed JSON response. This may indicate a PHP error.";
-      }
       
       return {
         success: false,
-        message: errorMessage,
+        message: "Invalid JSON response from server",
         error: "JSON_PARSE_ERROR",
-        rawResponse: responseText.substring(0, 500),
-        jsonError: jsonError.message
+        rawResponse: responseText.substring(0, 500)
       };
     }
 
@@ -170,40 +129,12 @@ async function handleApiCall(action, data = {}) {
       };
     }
   } catch (error) {
-    // Clear timeout in case of error
-    clearTimeout(timeoutId);
-    
     console.error("❌ API Call Error:", error);
     console.error("❌ Error details:", {
       name: error.name,
       message: error.message,
       stack: error.stack
     });
-    
-    // Enhanced error handling for specific error types
-    if (error.name === 'AbortError' || error.message.includes('signal is aborted')) {
-      console.error("⏰ Request aborted: Server took too long to respond or request was cancelled");
-      return {
-        success: false,
-        message: "Request timeout: Server took too long to respond. Please try again.",
-        error: "TIMEOUT_ERROR",
-      };
-    }
-    
-    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-      console.error("🌐 Network Error: Unable to connect to the server");
-      console.error("Check if:");
-      console.error("1. XAMPP/Apache is running");
-      console.error("2. The API endpoint is accessible");
-      console.error("3. There are no CORS issues");
-      console.error("4. The server is responding to requests");
-      return {
-        success: false,
-        message: "Network Error: Unable to connect to the server. Please check your connection and server status.",
-        error: "NETWORK_ERROR",
-      };
-    }
-    
     return {
       success: false,
       message: error.message,
@@ -298,53 +229,7 @@ async function duplicateProductBatches(productId, batchIds = [22, 23]) {
 }
 
 function Warehouse() {
-  const { theme, isDarkMode } = useTheme();
-  const { updateWarehouseNotifications } = useNotification();
-  
-  // Add CSS for placeholder styling
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.textContent = `
-      .theme-input::placeholder {
-        color: ${isDarkMode ? '#94a3b8' : '#64748b'} !important;
-        opacity: 1;
-      }
-      .theme-input:focus::placeholder {
-        color: ${isDarkMode ? '#94a3b8' : '#64748b'} !important;
-        opacity: 0.7;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, [isDarkMode]);
-
-  // Global error handler for unhandled AbortErrors
-  useEffect(() => {
-    const handleUnhandledError = (event) => {
-      if (event.error && (event.error.name === 'AbortError' || event.error.message?.includes('signal is aborted'))) {
-        console.warn("⚠️ Unhandled AbortError caught globally:", event.error);
-        event.preventDefault(); // Prevent the error from being logged to console
-        return false;
-      }
-    };
-
-    const handleUnhandledRejection = (event) => {
-      if (event.reason && (event.reason.name === 'AbortError' || event.reason.message?.includes('signal is aborted'))) {
-        console.warn("⚠️ Unhandled AbortError promise rejection caught globally:", event.reason);
-        event.preventDefault(); // Prevent the error from being logged to console
-        return false;
-      }
-    };
-
-    window.addEventListener('error', handleUnhandledError);
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    return () => {
-      window.removeEventListener('error', handleUnhandledError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-    };
-  }, []);
-
+  const { theme } = useTheme();
   const { settings, isProductExpiringSoon, isProductExpired, getExpiryStatus, isStockLow } = useSettings();
 
   // Helper function to calculate stock status based on quantity and settings
@@ -379,6 +264,7 @@ function Warehouse() {
     const [scannerActive, setScannerActive] = useState(settings.barcodeScanning) // Scanner state based on settings
     const [scannedBarcode, setScannedBarcode] = useState("")
     const [selectedItem, setSelectedItem] = useState(null)
+    const [useSameBatch, setUseSameBatch] = useState(true)
     const [showProductModal, setShowProductModal] = useState(false);
     const [selectedProducts, setSelectedProducts] = useState([]);
     
@@ -397,11 +283,6 @@ function Warehouse() {
     const [stockUpdateConfigMode, setStockUpdateConfigMode] = useState("bulk");
     const [editSrpEnabled, setEditSrpEnabled] = useState(false);
     const [newSrp, setNewSrp] = useState("");
-    // Batch configuration fields for stock update
-    const [newStockBatchReference, setNewStockBatchReference] = useState("");
-    const [useSameBatch, setUseSameBatch] = useState(false);
-    const [existingBatches, setExistingBatches] = useState([]);
-    const [selectedExistingBatch, setSelectedExistingBatch] = useState(null);
     const [showFifoModal, setShowFifoModal] = useState(false);
     
     // Notification states
@@ -413,41 +294,11 @@ function Warehouse() {
       outOfStock: []
     });
     const [alertCount, setAlertCount] = useState(0);
-
-  // Update warehouse notifications when alert count changes
-  useEffect(() => {
-    if (inventoryData.length > 0) {
-      const lowStock = inventoryData.filter(product => {
-        const quantity = parseInt(product.product_quantity || 0);
-        return isStockLow(quantity);
-      }).length;
-
-      const expiring = inventoryData.filter(product => {
-        const expirationDate = product.earliest_expiration || product.expiration;
-        return expirationDate && (isProductExpiringSoon(expirationDate) || isProductExpired(expirationDate));
-      }).length;
-
-      const outOfStock = inventoryData.filter(product => {
-        const quantity = parseInt(product.product_quantity || 0);
-        return quantity === 0;
-      }).length;
-
-      updateWarehouseNotifications({
-        lowStock,
-        expiring,
-        outOfStock
-      });
-    }
-  }, [inventoryData, isStockLow, isProductExpiringSoon, isProductExpired]);
     const [fifoStockData, setFifoStockData] = useState([]);
     
     // Expiring batch modal states
     const [showExpiringBatchModal, setShowExpiringBatchModal] = useState(false);
     const [selectedExpiringProduct, setSelectedExpiringProduct] = useState(null);
-    
-    // View batch modal states
-    const [showViewBatchModal, setShowViewBatchModal] = useState(false);
-    const [viewBatchData, setViewBatchData] = useState(null);
     const [selectedProductForFifo, setSelectedProductForFifo] = useState(null);
     const [showQuantityHistoryModal, setShowQuantityHistoryModal] = useState(false);
     const [selectedProductForHistory, setSelectedProductForHistory] = useState(null);
@@ -458,10 +309,6 @@ function Warehouse() {
     const [temporaryProducts, setTemporaryProducts] = useState([]);
     const [showBatchEntryModal, setShowBatchEntryModal] = useState(false);
     const [currentBatchNumber, setCurrentBatchNumber] = useState(generateBatchRef()); // Generate batch number on component mount
-    
-    // Update Stock Batch System
-    const [updateStockProducts, setUpdateStockProducts] = useState([]);
-    const [showUpdateStockBatchModal, setShowUpdateStockBatchModal] = useState(false);
     
     // New state for medicine/non-medicine configuration modal
     const [showProductTypeModal, setShowProductTypeModal] = useState(false);
@@ -600,7 +447,7 @@ function Warehouse() {
       stockStatus: "all",
     })
   
-    // Generate batch reference function with sequential numbering
+    // Generate batch reference function
     function generateBatchRef() {
       const now = new Date()
       const yyyy = now.getFullYear()
@@ -609,14 +456,8 @@ function Warehouse() {
       const hh = String(now.getHours()).padStart(2, "0")
       const mi = String(now.getMinutes()).padStart(2, "0")
       const ss = String(now.getSeconds()).padStart(2, "0")
-      
-      // Add milliseconds for better uniqueness
-      const ms = String(now.getMilliseconds()).padStart(3, "0")
-      
-      // Generate a random 3-digit suffix for additional uniqueness
-      const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, "0")
   
-      return `BR-${yyyy}${mm}${dd}-${hh}${mi}${ss}${ms}-${randomSuffix}`
+      return `BR-${yyyy}${mm}${dd}-${hh}${mi}${ss}`
     }
   
     // Removed unused form state variables since we're using modals now
@@ -840,8 +681,6 @@ function Warehouse() {
       }
     } catch (error) {
       console.error("Error getting earliest expiring batch:", error);
-      // Return null to prevent further errors in the calling function
-      return null;
     }
     return null;
   }
@@ -856,20 +695,11 @@ function Warehouse() {
     // Get earliest expiring dates for all products
     const productsWithEarliestExpiry = await Promise.all(
       productList.map(async (product) => {
-        try {
-          const earliestExpiry = await getEarliestExpiringBatch(product.product_id);
-          return {
-            ...product,
-            earliest_expiration: earliestExpiry || product.expiration
-          };
-        } catch (error) {
-          console.error(`Error getting earliest expiry for product ${product.product_id}:`, error);
-          // Return product with original expiration if API fails
-          return {
-            ...product,
-            earliest_expiration: product.expiration
-          };
-        }
+        const earliestExpiry = await getEarliestExpiringBatch(product.product_id);
+        return {
+          ...product,
+          earliest_expiration: earliestExpiry || product.expiration
+        };
       })
     );
 
@@ -1111,7 +941,7 @@ function Warehouse() {
   
     function calculateWarehouseValue(products) {
   const totalValue = products.reduce((sum, product) => {
-    return sum + (Number.parseFloat(product?.srp) || 0) * (Number.parseFloat(product?.product_quantity || product?.quantity || 0))
+    return sum + (Number.parseFloat(product.srp) || 0) * (Number.parseFloat(product.product_quantity || product.quantity || 0))
   }, 0)
   
   // Calculate total quantity from product quantity
@@ -1192,8 +1022,17 @@ function Warehouse() {
           
           if (existingProductInInventory) {
             console.log("Product found in inventory data:", existingProductInInventory);
-            // Product exists - show update stock modal with proper initialization
-            openUpdateStockModal(existingProductInInventory);
+            // Product exists - show update stock modal
+            setExistingProduct(existingProductInInventory);
+            setNewStockQuantity("");
+            
+            // Set default configuration mode based on product data
+            const hasBulkFields = existingProductInInventory.boxes || existingProductInInventory.strips_per_box || 
+                                  existingProductInInventory.tablets_per_strip || 
+                                  existingProductInInventory.pieces_per_pack;
+            setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
+            
+            setShowUpdateStockModal(true);
             setScannerStatusMessage("✅ Product found! Opening update stock modal.");
           } else {
             // If not in inventory, check API
@@ -1202,13 +1041,47 @@ function Warehouse() {
             
             if (barcodeCheck.success && barcodeCheck.product) {
               console.log("Product found via API, opening update stock modal");
-              // Product exists - show update stock modal with proper initialization
-              openUpdateStockModal(barcodeCheck.product);
+              setExistingProduct(barcodeCheck.product);
+              setNewStockQuantity("");
+              
+              // Set default configuration mode based on product data
+              const hasBulkFields = barcodeCheck.product.boxes || barcodeCheck.product.strips_per_box || 
+                                    barcodeCheck.product.tablets_per_strip || 
+                                    barcodeCheck.product.pieces_per_pack;
+              setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
+              
+              setShowUpdateStockModal(true);
               setScannerStatusMessage("✅ Product found! Opening update stock modal.");
             } else {
               console.log("Product not found, opening new product modal");
               // Product doesn't exist - show new product modal
-              openNewProductModal(scanned); // Pass scanned barcode to pre-fill
+              setNewProductForm({
+                product_name: "",
+                category: "",
+                product_type: "",
+                configMode: "bulk", // Default to bulk mode
+                barcode: scanned, // Pre-fill with scanned barcode
+                description: "",
+                srp: "",
+                brand_id: "",
+                brand_search: "",
+                supplier_id: "",
+                expiration: "",
+                date_added: new Date().toISOString().split('T')[0], // Auto-set current date
+                batch: generateBatchRef(), // Auto-generate batch
+                order_number: "",
+                prescription: 0,
+                bulk: 0,
+                // Medicine fields
+                boxes: "",
+                strips_per_box: "",
+                tablets_per_strip: "",
+                total_tablets: "",
+                // Non-Medicine fields
+                pieces_per_pack: "",
+                total_pieces: ""
+              });
+              setShowNewProductModal(true);
               setScannerStatusMessage("✅ New product detected! Opening new product modal.");
             }
           }
@@ -1280,17 +1153,17 @@ function Warehouse() {
     function openEditProductModal(product) {
       setSelectedItem(product)
       setEditProductFormData({
-        product_name: product?.product_name || "",
-        category: product?.category || "",
-        barcode: product?.barcode || "",
-        description: product?.description || "",
-        srp: product?.srp || product?.unit_price || "",
-        brand_id: product?.brand_id || "",
-        quantity: product?.quantity || "",
-        supplier_id: product?.supplier_id || "",
-        expiration: product?.expiration || "",
-        prescription: product?.prescription || 0,
-        bulk: product?.bulk || 0
+        product_name: product.product_name || "",
+        category: product.category || "",
+        barcode: product.barcode || "",
+        description: product.description || "",
+        srp: product.srp || product.unit_price || "",
+        brand_id: product.brand_id || "",
+        quantity: product.quantity || "",
+        supplier_id: product.supplier_id || "",
+        expiration: product.expiration || "",
+        prescription: product.prescription || 0,
+        bulk: product.bulk || 0
       })
       setShowEditProductModal(true)
     }
@@ -1310,7 +1183,7 @@ function Warehouse() {
         barcode: "",
         description: "",
         srp: "",
-        brand_id: null,
+        brand_id: "",
         quantity: "",
         supplier_id: "",
         expiration: "",
@@ -1344,43 +1217,9 @@ function Warehouse() {
         setStockUpdateConfigMode("bulk");
       setEditSrpEnabled(false);
       setNewSrp("");
-      // Reset batch fields but keep auto-generation ready
-      setNewStockBatchReference(""); // Will be auto-generated when modal opens
-      setUseSameBatch(false);
-      setExistingBatches([]);
-      setSelectedExistingBatch(null);
     }
 
-    async function openUpdateStockModal(product) {
-      // Close modal first if it's already open to ensure clean state
-      if (showUpdateStockModal) {
-        closeUpdateStockModal();
-        // Small delay to ensure state is reset
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      // Handle case when empty object is passed for new product scanning
-      if (!product || Object.keys(product).length === 0) {
-        // Reset all fields for new product scanning
-        setExistingProduct(null);
-        setNewStockQuantity("");
-        setNewStockBoxes("");
-        setNewStockStripsPerBox("");
-        setNewStockTabletsPerStrip("");
-        setNewStockPiecesPerPack("");
-        setNewStockExpiration("");
-        setNewSrp("");
-        setEditSrpEnabled(false);
-        setNewStockBatchReference("");
-        setUseSameBatch(false);
-        setSelectedExistingBatch(null);
-        setExistingBatches([]);
-        setStockUpdateConfigMode("pieces");
-        setShowUpdateStockModal(true);
-        return;
-      }
-
-      console.log("🔄 Setting existing product in update stock modal:", product);
+    function openUpdateStockModal(product) {
       setExistingProduct(product);
       setNewStockQuantity("");
       setNewStockBoxes("");
@@ -1390,30 +1229,6 @@ function Warehouse() {
       setNewStockExpiration("");
       setNewSrp("");
       setEditSrpEnabled(false);
-      // Initialize batch fields - ALWAYS auto-generate
-      const autoBatchRef = generateBatchRef();
-      console.log("🔄 Auto-generating batch reference:", autoBatchRef);
-      setNewStockBatchReference(autoBatchRef);
-      setUseSameBatch(false);
-      setSelectedExistingBatch(null);
-      
-      // Load existing batches for this product
-      try {
-        console.log("🔄 Loading existing batches for product:", product.product_id);
-        const response = await handleApiCall("get_product_batches", { product_id: product.product_id });
-        console.log("📦 Existing batches response:", response);
-        if (response.success && response.data && Array.isArray(response.data)) {
-          setExistingBatches(response.data);
-          console.log("✅ Loaded", response.data.length, "existing batches");
-        } else {
-          setExistingBatches([]);
-          console.log("ℹ️ No existing batches found for this product");
-        }
-      } catch (error) {
-        console.error("❌ Error loading existing batches:", error);
-        setExistingBatches([]);
-        safeToast("warning", "Could not load existing batches. You can still create a new batch.");
-      }
       
       // Set default configuration mode based on product data
       const hasBulkFields = product.boxes || product.strips_per_box || 
@@ -1426,24 +1241,22 @@ function Warehouse() {
       setShowUpdateStockModal(true);
     }
 
-    function openNewProductModal(barcode = "") {
-      // Auto-generate a new batch reference when opening the modal
-      const newBatchRef = generateBatchRef();
-      console.log("🔄 Auto-generating batch reference for new product:", newBatchRef);
+    function closeNewProductModal() {
+      setShowNewProductModal(false);
       setNewProductForm({
         product_name: "",
         category: "",
         product_type: "",
         configMode: "bulk", // Reset to default
-        barcode: barcode, // Pre-fill with scanned barcode if provided
+        barcode: "",
         description: "",
         srp: "",
-        brand_id: null,
+        brand_id: "",
         brand_search: "",
         supplier_id: "",
         expiration: "",
         date_added: new Date().toISOString().split('T')[0], // Auto-set current date
-        batch: newBatchRef, // Auto-generated batch reference
+        batch: currentBatchNumber, // Keep current batch number instead of generating new one
         order_number: "",
         prescription: 0,
         bulk: 0,
@@ -1456,12 +1269,6 @@ function Warehouse() {
         pieces_per_pack: "",
         total_pieces: ""
       });
-      setCurrentBatchNumber(newBatchRef); // Update current batch number
-      setShowNewProductModal(true);
-    }
-
-    function closeNewProductModal() {
-      setShowNewProductModal(false);
     }
 
     // Product Type Modal Functions
@@ -1566,17 +1373,10 @@ function Warehouse() {
         console.log("Calling get_fifo_stock API with product_id:", productId);
         const response = await handleApiCall("get_fifo_stock", { product_id: productId });
         console.log("get_fifo_stock API response:", response);
-        
-        // Ensure response has the expected structure
-        if (response && typeof response === 'object') {
-          return response;
-        } else {
-          console.warn("Unexpected response format from get_fifo_stock:", response);
-          return { success: false, data: [], error: "Unexpected response format" };
-        }
+        return response;
       } catch (error) {
         console.error("Error getting FIFO stock:", error);
-        return { success: false, data: [], error: error.message };
+        return { success: false, error: error.message };
       }
     }
 
@@ -1616,7 +1416,7 @@ function Warehouse() {
               oldest_batch_quantity: product.oldest_batch_quantity || 0,
               oldest_batch_expiration: expiration,
               oldest_batch_entry_date: product.entry_date || product.oldest_batch_entry_date || null,
-              oldest_batch_unit_cost: product?.unit_cost || product?.oldest_batch_unit_cost || product?.srp || 0,
+              oldest_batch_unit_cost: product.unit_cost || product.oldest_batch_unit_cost || product.srp || 0,
             };
           });
           
@@ -1682,7 +1482,7 @@ function Warehouse() {
                     oldest_batch_quantity: 0,
                     oldest_batch_expiration: null,
                     oldest_batch_entry_date: null,
-                    oldest_batch_unit_cost: product?.srp || product?.unit_price,
+                    oldest_batch_unit_cost: product.srp || product.unit_price,
                     total_fifo_batches: 0
                   };
                 }
@@ -1843,17 +1643,6 @@ function Warehouse() {
     setFifoStockData([]);
   }
 
-  // Functions for view batch modal
-  function openViewBatchModal(batchData) {
-    setViewBatchData(batchData);
-    setShowViewBatchModal(true);
-  }
-
-  function closeViewBatchModal() {
-    setShowViewBatchModal(false);
-    setViewBatchData(null);
-  }
-
     function openQuantityHistoryModal(product) {
       setSelectedProductForHistory(product);
       setShowQuantityHistoryModal(true);
@@ -1931,7 +1720,7 @@ function Warehouse() {
       // Check if user is using direct quantity input
       const hasDirectQuantity = newStockQuantity && newStockQuantity > 0;
       
-      if (existingProduct?.product_type === "Medicine") {
+      if (existingProduct.product_type === "Medicine") {
         // Medicine: calculate from boxes × strips × tablets
         if (stockUpdateConfigMode === "bulk") {
           const boxes = parseInt(newStockBoxes) || 0;
@@ -1951,7 +1740,7 @@ function Warehouse() {
           }
           quantityToAdd = parseInt(newStockQuantity);
         }
-      } else if (existingProduct?.product_type === "Non-Medicine") {
+      } else if (existingProduct.product_type === "Non-Medicine") {
         // Non-Medicine: calculate from boxes × pieces per box
         if (stockUpdateConfigMode === "bulk") {
           const boxes = parseInt(newStockBoxes) || 0;
@@ -1971,8 +1760,8 @@ function Warehouse() {
           quantityToAdd = parseInt(newStockQuantity);
         }
       } else {
-        // Unknown product type - use configuration mode to determine validation
-        if (stockUpdateConfigMode === "bulk") {
+        // Unknown product type - try to detect configuration mode automatically
+        if (hasBulkConfiguration) {
           // User is using bulk mode, calculate from boxes and pieces
           if (newStockBoxes && newStockPiecesPerPack) {
             // Non-medicine style bulk configuration
@@ -1999,24 +1788,13 @@ function Warehouse() {
             safeToast("error", "Please fill in all bulk configuration fields");
             return;
           }
-        } else if (stockUpdateConfigMode === "pieces") {
-          // User is using pieces mode - direct quantity input
-          if (!newStockQuantity || newStockQuantity <= 0) {
-            safeToast("error", "Please enter a valid quantity");
-            return;
-          }
+        } else if (hasDirectQuantity) {
+          // User is using direct quantity input
           quantityToAdd = parseInt(newStockQuantity);
         } else {
-          // Fallback: try to detect configuration mode automatically
-          if (hasBulkConfiguration) {
-            safeToast("error", "Please fill in all bulk configuration fields");
-            return;
-          } else if (hasDirectQuantity) {
-            quantityToAdd = parseInt(newStockQuantity);
-          } else {
-            safeToast("error", "Please configure quantity using bulk mode (boxes × pieces) or enter direct quantity");
-            return;
-          }
+          // No valid configuration found
+          safeToast("error", "Please configure quantity using bulk mode (boxes × pieces) or enter direct quantity");
+          return;
         }
       }
       
@@ -2025,69 +1803,140 @@ function Warehouse() {
         return;
       }
 
-      // Validate same batch selection
-      if (useSameBatch && !selectedExistingBatch) {
-        safeToast("error", "Please select an existing batch to add quantity to");
-        return;
+      setLoading(true);
+      try {
+        // Generate batch reference for new stock
+        const batchRef = generateBatchRef();
+        
+        // Use SRP as unit cost for new stock
+        const unitCost = existingProduct.srp || existingProduct.unit_price || 0;
+        
+        // Use new SRP if edit SRP is enabled, otherwise use null
+        const srpValue = editSrpEnabled && newSrp ? parseFloat(newSrp) : null;
+        
+        // Ensure we use the most accurate expiration date from database
+        const expirationDate = newStockExpiration || existingProduct.expiration || existingProduct.oldest_batch_expiration;
+        
+        const response = await updateProductStock(
+          existingProduct.product_id, 
+          quantityToAdd, // Use calculated quantity
+          batchRef,
+          expirationDate,
+          unitCost,
+          srpValue,
+          currentUser // Pass current user for tracking
+        );
+        
+        if (response.success) {
+          const expirationMsg = newStockExpiration ? ` with expiration date ${new Date(newStockExpiration).toLocaleDateString()}` : "";
+          const srpMsg = editSrpEnabled && newSrp ? ` and updated SRP to ₱${parseFloat(newSrp).toFixed(2)}` : "";
+          const quantityMsg = ` (${quantityToAdd} ${existingProduct.product_type === "Medicine" ? "tablets" : "pieces"} added)`;
+          safeToast("success", `Stock updated successfully with FIFO tracking${quantityMsg}${expirationMsg}${srpMsg}`);
+          closeUpdateStockModal();
+          
+          console.log("🔄 Stock updated successfully, refreshing data...");
+          
+          // Add a delay to ensure database transaction is complete
+          console.log("⏳ Waiting for database transaction to complete...");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Refresh product data to show updated quantities immediately
+          console.log("🔄 Loading updated product quantities...");
+          await loadData("products");
+          
+          // Also refresh oldest batch data to show updated batch information
+          console.log("🔄 Refreshing oldest batch data...");
+          await refreshOldestBatchData();
+          
+          // Force a complete data reload to ensure all data is fresh
+          console.log("🔄 Force reloading all data...");
+          await loadData("all");
+          
+          // Additional refresh to ensure UI is updated
+          console.log("🔄 Final refresh to ensure UI update...");
+          await refreshProductQuantities();
+          
+          // Get fresh data directly to verify the update
+          console.log("🔍 Verifying updated product data...");
+          const freshProducts = await loadProductsWithOldestBatch();
+          const updatedProduct = freshProducts.find(p => p.product_id === existingProduct.product_id);
+          if (updatedProduct) {
+            console.log("🔍 Updated product found in fresh data:", {
+              product_id: updatedProduct.product_id,
+              product_name: updatedProduct.product_name,
+              quantity: updatedProduct.quantity,
+              product_quantity: updatedProduct.product_quantity
+            });
+          } else {
+            console.log("⚠️ Updated product not found in fresh data, trying fallback...");
+            // Try fallback to regular products endpoint
+            const fallbackResponse = await handleApiCall("get_products");
+            if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
+              const fallbackProduct = fallbackResponse.data.find(p => p.product_id === existingProduct.product_id);
+              if (fallbackProduct) {
+                console.log("🔍 Updated product found in fallback data:", {
+                  product_id: fallbackProduct.product_id,
+                  product_name: fallbackProduct.product_name,
+                  quantity: fallbackProduct.quantity,
+                  product_quantity: fallbackProduct.product_quantity
+                });
+              }
+            }
+          }
+          
+          // Force a final UI update by setting the state directly
+          console.log("🔄 Force updating UI state...");
+          if (updatedProduct) {
+            setInventoryData(prevData => {
+              const updatedData = prevData.map(product => 
+                product.product_id === existingProduct.product_id 
+                  ? { ...product, ...updatedProduct }
+                  : product
+              );
+              console.log("🔍 Updated inventory data:", updatedData.length, "products");
+              return updatedData;
+            });
+          } else {
+            // If still no updated product found, wait a bit more and try again
+            console.log("⚠️ Still no updated product found, waiting and retrying...");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const retryProducts = await loadProductsWithOldestBatch();
+            const retryProduct = retryProducts.find(p => p.product_id === existingProduct.product_id);
+            if (retryProduct) {
+              console.log("🔍 Updated product found on retry:", {
+                product_id: retryProduct.product_id,
+                product_name: retryProduct.product_name,
+                quantity: retryProduct.quantity,
+                product_quantity: retryProduct.product_quantity
+              });
+              
+              // Update the state with retry data
+              setInventoryData(prevData => {
+                const updatedData = prevData.map(product => 
+                  product.product_id === existingProduct.product_id 
+                    ? { ...product, ...retryProduct }
+                    : product
+                );
+                return updatedData;
+              });
+            }
+          }
+          
+          console.log("✅ Data refresh completed");
+          
+          // Force a final re-render to ensure UI is updated
+          console.log("🔄 Force triggering re-render...");
+          setInventoryData(prevData => [...prevData]);
+        } else {
+          safeToast("error", response.message || "Failed to update stock");
+        }
+      } catch (error) {
+        console.error("Error updating stock:", error);
+        safeToast("error", "Failed to update stock");
+      } finally {
+        setLoading(false);
       }
-
-      // Determine batch reference - automatically generate if not provided
-      let batchRef;
-      
-      if (useSameBatch && selectedExistingBatch) {
-        // Use existing batch information
-        batchRef = selectedExistingBatch.batch_reference;
-        console.log("🔄 Using existing batch:", batchRef);
-      } else {
-        // Use new batch information - auto-generate if not provided
-        batchRef = newStockBatchReference || generateBatchRef();
-        console.log("🆕 Creating new batch:", batchRef);
-      }
-      
-      // Use new SRP if edit SRP is enabled, otherwise use null
-      const srpValue = editSrpEnabled && newSrp ? parseFloat(newSrp) : null;
-      
-      // Ensure we use the most accurate expiration date from database
-      const expirationDate = newStockExpiration || existingProduct?.expiration || existingProduct?.oldest_batch_expiration;
-      
-      // Use consistent batch reference for all products in update stock batch
-      const consistentBatchRef = updateStockProducts.length > 0 ? updateStockProducts[0]?.batch_reference : batchRef;
-      
-      // Add product to update stock batch instead of immediate save
-      const updateStockProduct = {
-        temp_id: Date.now() + Math.random(), // Unique temporary ID
-        product_id: existingProduct?.product_id,
-        product_name: existingProduct?.product_name,
-        category: existingProduct?.category,
-        product_type: existingProduct?.product_type,
-        brand_search: existingProduct?.brand_search || existingProduct?.brand_id,
-        barcode: existingProduct?.barcode,
-        srp: srpValue || existingProduct?.srp,
-        quantity: quantityToAdd,
-        batch_reference: consistentBatchRef, // Use consistent batch reference
-        expiration: expirationDate,
-        batchType: useSameBatch ? "existing" : "new",
-        // Store configuration details
-        configMode: stockUpdateConfigMode,
-        boxes: newStockBoxes,
-        strips_per_box: newStockStripsPerBox,
-        tablets_per_strip: newStockTabletsPerStrip,
-        pieces_per_pack: newStockPiecesPerPack,
-        // Calculate totals for display
-        total_tablets: existingProduct?.product_type === "Medicine" ? quantityToAdd : null,
-        total_pieces: existingProduct?.product_type === "Non-Medicine" ? quantityToAdd : null,
-        prescription: existingProduct?.prescription || 0,
-        bulk: existingProduct?.bulk || 0
-      };
-      
-      // Add to update stock products array
-      setUpdateStockProducts(prev => [...prev, updateStockProduct]);
-      
-      // Close update modal and automatically show batch modal
-      closeUpdateStockModal();
-      setShowUpdateStockBatchModal(true);
-      
-      safeToast("success", `Product added to update stock batch! Total products: ${updateStockProducts.length + 1}`);
     }
 
     // Handle new product submission - Now adds to temporary storage
@@ -2146,18 +1995,10 @@ function Warehouse() {
         batch: currentBatchNumber, // Use the same batch number for all products
         temp_id: Date.now(), // Unique temporary ID
         status: "pending",
-        created_at: new Date().toISOString(),
-        brand_id: newProductForm.brand_id || null, // Ensure brand_id is included
-        brand_search: newProductForm.brand_search || "" // Ensure brand_search is included
+        created_at: new Date().toISOString()
       };
 
       setTemporaryProducts(prev => [...prev, tempProduct]);
-      
-      console.log("📦 Added product to temporary storage:", tempProduct);
-      console.log("🔍 Brand info in temp product:", {
-        brand_id: tempProduct.brand_id,
-        brand_search: tempProduct.brand_search
-      });
       
       // Reset form for next product (keep same batch number and config mode)
       setNewProductForm({
@@ -2168,7 +2009,7 @@ function Warehouse() {
         barcode: "", // No auto-generated barcode
         description: "",
         srp: "",
-        brand_id: null,
+        brand_id: "",
         brand_search: "",
         supplier_id: "",
         expiration: "",
@@ -2203,76 +2044,6 @@ function Warehouse() {
       setLoading(true);
 
       try {
-        // Process products and handle brand creation for new brands
-        const processedProducts = [];
-        
-        for (const product of temporaryProducts) {
-          let brandId = product?.brand_id || 1;
-          
-          // Debug brand information
-          console.log("🔍 Product brand info:", {
-            brand_search: product?.brand_search,
-            brand_id: product?.brand_id,
-            brand_id_type: typeof product?.brand_id,
-            condition_check: product?.brand_search && (!product?.brand_id || product?.brand_id === "" || product?.brand_id === null)
-          });
-          
-          // If brand_search has a value but no brand_id (null, undefined, or empty string), create a new brand
-          if (product?.brand_search && (!product?.brand_id || product?.brand_id === "" || product?.brand_id === null)) {
-            console.log("🆕 Creating new brand:", product.brand_search);
-            try {
-              const brandResponse = await handleApiCall("add_brand", {
-                brand_name: product.brand_search
-              });
-              
-              console.log("📡 Brand API Response:", brandResponse);
-              
-              if (brandResponse.success) {
-                brandId = brandResponse.brand_id;
-                console.log("✅ New brand created with ID:", brandId);
-              } else {
-                console.error("❌ Failed to create brand:", brandResponse.message);
-                safeToast("error", `Failed to create brand "${product.brand_search}": ${brandResponse.message}`);
-                // Continue with default brand_id = 1
-              }
-            } catch (error) {
-              console.error("❌ Error creating brand:", error);
-              safeToast("error", `Error creating brand "${product.brand_search}": ${error.message}`);
-              // Continue with default brand_id = 1
-            }
-          } else {
-            console.log("ℹ️ Using existing brand_id:", brandId);
-          }
-          
-          processedProducts.push({
-            product_name: product?.product_name || "",
-            category: product?.category || "",
-            product_type: product?.product_type || "",
-            configMode: product?.configMode || "bulk", // Store configuration mode
-            barcode: product?.barcode || "",
-            description: product?.description || "",
-            unit_price: parseFloat(product?.srp || 0), // Using SRP as unit_price for backend compatibility
-            srp: parseFloat(product?.srp || 0),
-            brand_id: brandId, // Use the processed brand_id
-            // Store total pieces instead of bulk units
-            quantity: product?.product_type === "Medicine" 
-              ? parseInt(product?.total_tablets || 0)  // Total tablets for medicine
-              : parseInt(product?.total_pieces || 0),  // Total pieces for non-medicine
-            supplier_id: product?.supplier_id || 1,
-            expiration: product?.expiration || null,
-            prescription: product?.prescription || 0,
-            bulk: product?.bulk || 0,
-            // Medicine fields
-            boxes: product?.boxes || null,
-            strips_per_box: product?.strips_per_box || null,
-            tablets_per_strip: product?.tablets_per_strip || null,
-            total_tablets: product?.total_tablets || null,
-            // Non-Medicine fields
-            pieces_per_pack: product?.pieces_per_pack || null,
-            total_pieces: product?.total_pieces || null
-          });
-        }
-
         // Create batch summary data
         const batchData = {
           batch_reference: currentBatchNumber,
@@ -2280,26 +2051,51 @@ function Warehouse() {
           batch_time: new Date().toLocaleTimeString(),
           total_products: temporaryProducts.length,
           total_quantity: temporaryProducts.reduce((sum, p) => {
-            const totalPieces = p?.product_type === "Medicine" 
-              ? parseInt(p?.total_tablets || 0)  // Total tablets for medicine
-              : parseInt(p?.total_pieces || 0);  // Total pieces for non-medicine
+            const totalPieces = p.product_type === "Medicine" 
+              ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
+              : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
             return sum + totalPieces;
           }, 0),
           total_value: temporaryProducts.reduce((sum, p) => {
-            const totalPieces = p?.product_type === "Medicine" 
-              ? parseInt(p?.total_tablets || 0)  // Total tablets for medicine
-              : parseInt(p?.total_pieces || 0);  // Total pieces for non-medicine
-            return sum + ((parseFloat(p?.srp || 0) * totalPieces));
+            const totalPieces = p.product_type === "Medicine" 
+              ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
+              : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
+            return sum + ((parseFloat(p.srp || 0) * totalPieces));
           }, 0),
           location: "Warehouse",
           entry_by: currentUser,
           status: "active",
-          products: processedProducts
+          products: temporaryProducts.map(product => ({
+            product_name: product.product_name,
+            category: product.category,
+            product_type: product.product_type,
+            configMode: product.configMode || "bulk", // Store configuration mode
+            barcode: product.barcode,
+            description: product.description,
+            unit_price: parseFloat(product.srp), // Using SRP as unit_price for backend compatibility
+            srp: parseFloat(product.srp || 0),
+            brand_id: product.brand_id || 1,
+            // Store total pieces instead of bulk units
+            quantity: product.product_type === "Medicine" 
+              ? parseInt(product.total_tablets || 0)  // Total tablets for medicine
+              : parseInt(product.total_pieces || 0),  // Total pieces for non-medicine
+            supplier_id: product.supplier_id || 1,
+            expiration: product.expiration || null,
+            prescription: product.prescription,
+            bulk: product.bulk,
+            // Medicine fields
+            boxes: product.boxes || null,
+            strips_per_box: product.strips_per_box || null,
+            tablets_per_strip: product.tablets_per_strip || null,
+            total_tablets: product.total_tablets || null,
+            // Non-Medicine fields
+            boxes: product.boxes || null,
+            pieces_per_pack: product.pieces_per_pack || null,
+            total_pieces: product.total_pieces || null
+          }))
         };
 
         console.log("🚀 Saving batch as single entry:", batchData);
-        console.log("🔍 Products being saved:", processedProducts);
-        console.log("🔍 Brand IDs in processed products:", processedProducts.map(p => ({ name: p.product_name, brand_id: p.brand_id })));
 
         // Call API to save batch
         const response = await handleApiCall("add_batch_entry", batchData);
@@ -2339,7 +2135,7 @@ function Warehouse() {
 
     // New function to remove product from temporary storage
     function removeTemporaryProduct(tempId) {
-      setTemporaryProducts(prev => prev.filter(product => product?.temp_id !== tempId));
+      setTemporaryProducts(prev => prev.filter(product => product.temp_id !== tempId));
       safeToast("success", "Product removed from batch");
     }
 
@@ -2351,60 +2147,6 @@ function Warehouse() {
     // New function to close batch entry modal
     function closeBatchEntryModal() {
       setShowBatchEntryModal(false);
-    }
-    
-    // Update Stock Batch Modal Functions
-    function openUpdateStockBatchModal() {
-      setShowUpdateStockBatchModal(true);
-    }
-    
-    function closeUpdateStockBatchModal() {
-      setShowUpdateStockBatchModal(false);
-    }
-    
-    function removeUpdateStockProduct(tempId) {
-      setUpdateStockProducts(prev => prev.filter(product => product?.temp_id !== tempId));
-    }
-    
-    // Save update stock batch
-    async function handleSaveUpdateStockBatch() {
-      if (updateStockProducts.length === 0) {
-        safeToast("error", "No products to update");
-        return;
-      }
-
-      setLoading(true);
-
-      try {
-        // Process each product in the batch
-        for (const product of updateStockProducts) {
-          await updateProductStock(
-            product?.product_id,
-            product?.quantity,
-            product?.batch_reference,
-            product?.expiration,
-            0, // unitCost - not used in update stock
-            product?.srp,
-            currentUser
-          );
-        }
-
-        safeToast("success", `Successfully updated stock for ${updateStockProducts.length} products!`);
-        
-        // Clear update stock products and close modal
-        setUpdateStockProducts([]);
-        setShowUpdateStockBatchModal(false);
-        
-        // Reload data to show updated quantities
-        await loadData("products");
-        await loadData("all");
-        
-      } catch (error) {
-        console.error("❌ Error saving update stock batch:", error);
-        safeToast("error", "Failed to save update stock batch: " + error.message);
-      } finally {
-        setLoading(false);
-      }
     }
 
     // New function to sync FIFO stock with product quantities
@@ -2645,28 +2387,6 @@ function Warehouse() {
         batch: currentBatchNumber
       }));
     }, [currentBatchNumber]);
-
-    // Ensure batch reference is auto-generated when update stock modal opens
-    useEffect(() => {
-      if (showUpdateStockModal && !newStockBatchReference) {
-        const autoBatchRef = generateBatchRef();
-        console.log("🔄 useEffect: Auto-generating batch reference for update modal:", autoBatchRef);
-        setNewStockBatchReference(autoBatchRef);
-      }
-    }, [showUpdateStockModal, newStockBatchReference]);
-
-    // Ensure batch reference is auto-generated when new product modal opens
-    useEffect(() => {
-      if (showNewProductModal && (!newProductForm.batch || newProductForm.batch === "")) {
-        const autoBatchRef = generateBatchRef();
-        console.log("🔄 useEffect: Auto-generating batch reference for new product modal:", autoBatchRef);
-        setNewProductForm(prev => ({
-          ...prev,
-          batch: autoBatchRef
-        }));
-        setCurrentBatchNumber(autoBatchRef);
-      }
-    }, [showNewProductModal, newProductForm.batch]);
   
     // Debug useEffect to track categoriesData changes
     useEffect(() => {
@@ -2737,7 +2457,7 @@ function Warehouse() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold mb-2" style={{ color: theme.text.primary }}>Warehouse</h1>
-              <p style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Manage your inventory efficiently and effectively</p>
+              <p style={{ color: theme.text.secondary }}>Manage your inventory efficiently and effectively</p>
             </div>
             
             {/* Notification Bell */}
@@ -2756,7 +2476,7 @@ function Warehouse() {
                 {alertCount > 0 ? (
                   <BellRing className="h-6 w-6" style={{ color: theme.colors.warning }} />
                 ) : (
-                  <Bell className="h-6 w-6" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }} />
+                  <Bell className="h-6 w-6" style={{ color: theme.text.secondary }} />
                 )}
                 
                 {/* Notification Badge */}
@@ -2773,7 +2493,7 @@ function Warehouse() {
                      style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow}` }}>
                   <div className="p-4 border-b" style={{ borderColor: theme.border.default }}>
                     <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Notifications</h3>
-                    <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                    <p className="text-sm" style={{ color: theme.text.secondary }}>
                       {(notifications?.expiring?.length || 0) + (notifications?.expired?.length || 0) + (notifications?.lowStock?.length || 0) + (notifications?.outOfStock?.length || 0)} alerts
                     </p>
                   </div>
@@ -2798,7 +2518,7 @@ function Warehouse() {
                           </div>
                         ))}
                         {(notifications?.expired?.length || 0) > 5 && (
-                          <p className="text-xs mt-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                          <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
                             +{(notifications?.expired?.length || 0) - 5} more...
                           </p>
                         )}
@@ -2818,7 +2538,7 @@ function Warehouse() {
                             className="flex justify-between items-center py-2 cursor-pointer rounded px-3 transition-all duration-200 hover:bg-opacity-10"
                             style={{ 
                               backgroundColor: 'transparent',
-                              color: isDarkMode ? '#f8fafc' : '#0f172a'
+                              color: theme.text.primary
                             }}
                             onMouseEnter={(e) => {
                               e.target.style.backgroundColor = theme.colors.warning + '20';
@@ -2847,7 +2567,7 @@ function Warehouse() {
                           </div>
                         ))}
                         {(notifications?.expiring?.length || 0) > 5 && (
-                          <p className="text-xs mt-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                          <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
                             +{(notifications?.expiring?.length || 0) - 5} more...
                           </p>
                         )}
@@ -2867,7 +2587,7 @@ function Warehouse() {
                             className="flex justify-between items-center py-2 cursor-pointer rounded px-3 transition-all duration-200"
                             style={{ 
                               backgroundColor: 'transparent',
-                              color: isDarkMode ? '#f8fafc' : '#0f172a'
+                              color: theme.text.primary
                             }}
                             onMouseEnter={(e) => {
                               e.target.style.backgroundColor = theme.colors.warning + '20';
@@ -2889,7 +2609,7 @@ function Warehouse() {
                           </div>
                         ))}
                         {(notifications?.lowStock?.length || 0) > 5 && (
-                          <p className="text-xs mt-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                          <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
                             +{(notifications?.lowStock?.length || 0) - 5} more...
                           </p>
                         )}
@@ -2909,7 +2629,7 @@ function Warehouse() {
                             className="flex justify-between items-center py-2 cursor-pointer rounded px-3 transition-all duration-200"
                             style={{ 
                               backgroundColor: 'transparent',
-                              color: isDarkMode ? '#f8fafc' : '#0f172a'
+                              color: theme.text.primary
                             }}
                             onMouseEnter={(e) => {
                               e.target.style.backgroundColor = theme.colors.danger + '20';
@@ -2931,7 +2651,7 @@ function Warehouse() {
                           </div>
                         ))}
                         {(notifications?.outOfStock?.length || 0) > 5 && (
-                          <p className="text-xs mt-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                          <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
                             +{(notifications?.outOfStock?.length || 0) - 5} more...
                           </p>
                         )}
@@ -2942,7 +2662,7 @@ function Warehouse() {
                     {((notifications?.expiring?.length || 0) + (notifications?.expired?.length || 0) + (notifications?.lowStock?.length || 0) + (notifications?.outOfStock?.length || 0)) === 0 && (
                       <div className="p-8 text-center">
                         <CheckCircle className="h-12 w-12 mx-auto mb-2" style={{ color: theme.colors.success }} />
-                        <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>All products are in good condition!</p>
+                        <p className="text-sm" style={{ color: theme.text.secondary }}>All products are in good condition!</p>
                       </div>
                     )}
                   </div>
@@ -2953,8 +2673,8 @@ function Warehouse() {
         </div>
 
         {/* Status Bar */}
-        <div className="rounded-xl border-2 mb-6 shadow-sm transition-all duration-200 hover:shadow-md" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
-          <div className="p-6">
+        <div className="rounded-lg border mb-6" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
+          <div className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-6">
                 <div className="flex items-center space-x-2">
@@ -2989,9 +2709,9 @@ function Warehouse() {
                       placeholder="Enter your name"
                       className="px-2 py-0.5 text-xs border rounded focus:outline-none focus:ring-1 w-24"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary
                       }}
                       title="Click to edit your name for tracking purposes"
                     />
@@ -3016,13 +2736,13 @@ function Warehouse() {
                   <Camera className="h-4 w-4" />
                   <span className="text-sm font-medium">Scanner Active</span>
                 </div>
-                <div className="text-sm max-w-md" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                <div className="text-sm max-w-md" style={{ color: theme.text.secondary }}>
                   {scannerStatusMessage}
                 </div>
 
                 <button
                   onClick={startNewBatch}
-                  className="px-4 py-2 rounded-lg flex items-center mr-3 font-medium transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95"
+                  className="px-3 py-1 rounded flex items-center mr-2"
                   style={{ backgroundColor: theme.colors.info, color: 'white' }}
                 >
                   <Package className="h-4 w-4 mr-2" />
@@ -3030,7 +2750,7 @@ function Warehouse() {
                 </button>
                 <button
                   onClick={openSupplierModal}
-                  className="px-4 py-2 rounded-lg flex items-center font-medium transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95"
+                  className="px-3 py-1 rounded flex items-center"
                   style={{ backgroundColor: theme.colors.accent, color: 'white' }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -3055,11 +2775,11 @@ function Warehouse() {
                 color: "purple",
               },
             ].map((stat, index) => (
-              <div key={index} className="rounded-xl border-2 p-6 flex items-center shadow-sm transition-all duration-200 hover:shadow-md hover:scale-105" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
-                <stat.icon className="h-8 w-8" style={{ color: theme.colors.accent }} />
-                <div className="ml-4">
-                  <p className="text-sm font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>{stat.title}</p>
-                  <p className="text-xl font-bold" style={{ color: theme.text.primary }}>{stat.value}</p>
+              <div key={index} className="rounded-lg border p-4 flex items-center" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
+                <stat.icon className="h-6 w-6" style={{ color: theme.colors.accent }} />
+                <div className="ml-3">
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>{stat.title}</p>
+                  <p className="text-lg font-bold" style={{ color: theme.text.primary }}>{stat.value}</p>
                 </div>
               </div>
             ))}
@@ -3068,7 +2788,7 @@ function Warehouse() {
    
         {/* Search and Filter Bar */}
         <div className="px-6 mb-6">
-          <div className="rounded-xl border-2 p-6 shadow-sm transition-all duration-200 hover:shadow-md" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
+          <div className="rounded-lg border p-4" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
@@ -3078,14 +2798,14 @@ function Warehouse() {
                   placeholder={`Search ${activeTab}...`}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-3 w-full border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80"
+                  className="pl-10 pr-4 py-2 w-full border rounded-md focus:outline-none focus:ring-2"
                   style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#f8fafc' : '#0f172a',
-                    focusRingColor: '#3b82f6',
+                    borderColor: theme.border.default,
+                    backgroundColor: theme.bg.secondary,
+                    color: theme.text.primary,
+                    focusRingColor: theme.colors.accent,
                     '::placeholder': {
-                      color: isDarkMode ? '#94a3b8' : '#64748b'
+                      color: theme.text.muted
                     }
                   }}
                 />
@@ -3099,12 +2819,12 @@ function Warehouse() {
                     const selectedCategory = e.target.value;
                     setFilterOptions((prev) => ({ ...prev, category: selectedCategory }));
                   }}
-                  className="w-full px-3 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                   style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#f8fafc' : '#0f172a',
-                    focusRingColor: '#3b82f6'
+                    borderColor: theme.border.default,
+                    backgroundColor: theme.bg.secondary,
+                    color: theme.text.primary,
+                    focusRingColor: theme.colors.accent
                   }}
                 >
                   <option value="">All Categories</option>
@@ -3156,7 +2876,7 @@ function Warehouse() {
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Products</h3>
             <div className="flex items-center space-x-3">
-              <div className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+              <div className="text-sm" style={{ color: theme.text.secondary }}>
                 {inventoryData.length} products found
               </div>
               <div className="flex space-x-2">
@@ -3251,7 +2971,7 @@ function Warehouse() {
                   <td colSpan="13" className="px-3 py-6 text-center">
                     <div className="flex flex-col items-center space-y-3">
                       <Package className="h-12 w-12" style={{ color: theme.text.muted }} />
-                      <div style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                      <div style={{ color: theme.text.secondary }}>
                         <p className="text-lg font-medium">No products found</p>
                         <p className="text-sm">Products will appear here when added to warehouse</p>
                       </div>
@@ -3282,7 +3002,7 @@ function Warehouse() {
                     
                     // Determine row styling based on alert conditions
                     let rowStyle = { backgroundColor: 'transparent' };
-                    let rowClass = "hover:shadow-md hover:scale-[1.01] transition-all duration-300 cursor-pointer";
+                    let rowClass = "hover:opacity-90 transition-all duration-200";
                     
                     if (isExpired) {
                       rowStyle.backgroundColor = theme.colors.danger + '10';
@@ -3312,22 +3032,14 @@ function Warehouse() {
                       {product.barcode}
                     </td>
                     <td className="px-3 py-2 text-sm">
-                      <span className="inline-flex px-3 py-1 text-xs font-medium rounded-full shadow-sm transition-all duration-200 hover:shadow-md" style={{ backgroundColor: theme.bg.secondary, color: theme.text.secondary }}>
+                      <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.secondary }}>
                         {product.category}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
                       {(() => {
-                        console.log("🔍 Brand display debug for product:", product.product_name, {
-                          product_brand_id: product.brand_id,
-                          product_brand: product.brand,
-                          brandsData_length: brandsData.length,
-                          brandsData_sample: brandsData.slice(0, 3)
-                        });
-                        
                         if (product.brand_id && brandsData.length > 0) {
                           const brand = brandsData.find(b => b.brand_id == product.brand_id);
-                          console.log("🔍 Found brand:", brand);
                           return brand ? brand.brand : "N/A";
                         }
                         return product.brand || "N/A";
@@ -3345,7 +3057,7 @@ function Warehouse() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{((product?.product_quantity || product?.quantity || 0) * (Number.parseFloat(product?.srp || 0))).toFixed(2)}
+                      ₱{((product.product_quantity || product.quantity || 0) * (Number.parseFloat(product.srp || 0))).toFixed(2)}
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || "N/A"}
@@ -3379,7 +3091,7 @@ function Warehouse() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full shadow-sm transition-all duration-200 hover:shadow-md" style={{
+                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
                         backgroundColor: getStockStatus(product.quantity) === 'out of stock' ? theme.colors.danger + '20' : 
                                        getStockStatus(product.quantity) === 'low stock' ? theme.colors.warning + '20' : 
                                        theme.colors.success + '20',
@@ -3399,7 +3111,7 @@ function Warehouse() {
                           
                           if (daysUntilExpiry < 0) {
                             return (
-                              <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full shadow-sm transition-all duration-200 hover:shadow-md" style={{
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
                                 backgroundColor: theme.colors.danger + '20',
                                 color: theme.colors.danger
                               }}>
@@ -3408,7 +3120,7 @@ function Warehouse() {
                             );
                           } else if (daysUntilExpiry <= 30) {
                             return (
-                              <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full shadow-sm transition-all duration-200 hover:shadow-md" style={{
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
                                 backgroundColor: theme.colors.warning + '20',
                                 color: theme.colors.warning
                               }}>
@@ -3417,7 +3129,7 @@ function Warehouse() {
                             );
                           } else {
                             return (
-                              <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full shadow-sm transition-all duration-200 hover:shadow-md" style={{
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
                                 backgroundColor: theme.colors.success + '20',
                                 color: theme.colors.success
                               }}>
@@ -3427,9 +3139,9 @@ function Warehouse() {
                           }
                         } else {
                           return (
-                            <span className="inline-flex px-3 py-1 text-xs font-semibold rounded-full shadow-sm transition-all duration-200 hover:shadow-md" style={{
-                              backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                              color: isDarkMode ? '#94a3b8' : '#64748b'
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.bg.secondary,
+                              color: theme.text.muted
                             }}>
                               N/A
                             </span>
@@ -3438,53 +3150,17 @@ function Warehouse() {
                       })()}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button 
-                          onClick={() => openQuantityHistoryModal(product)} 
-                          className="p-2 rounded-lg transition-all duration-200 hover:shadow-md hover:scale-110 active:scale-95" 
-                          style={{ 
-                            color: theme.colors.success,
-                            backgroundColor: theme.colors.success + '10',
-                            border: `1px solid ${theme.colors.success}20`
-                          }} 
-                          title="View Quantity History"
-                        >
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => openQuantityHistoryModal(product)} className="p-1" style={{ color: theme.colors.success }} title="View Quantity History">
                           <Package className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => openExpiringBatchModal(product)} 
-                          className="p-2 rounded-lg transition-all duration-200 hover:shadow-md hover:scale-110 active:scale-95" 
-                          style={{ 
-                            color: theme.colors.info,
-                            backgroundColor: theme.colors.info + '10',
-                            border: `1px solid ${theme.colors.info}20`
-                          }} 
-                          title="View Batch Details"
-                        >
+                        <button onClick={() => openExpiringBatchModal(product)} className="p-1" style={{ color: theme.colors.info }} title="View Batch Details">
                           <Calendar className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => openEditProductModal(product)} 
-                          className="p-2 rounded-lg transition-all duration-200 hover:shadow-md hover:scale-110 active:scale-95" 
-                          style={{ 
-                            color: theme.colors.accent,
-                            backgroundColor: theme.colors.accent + '10',
-                            border: `1px solid ${theme.colors.accent}20`
-                          }} 
-                          title="Edit Product"
-                        >
+                        <button onClick={() => openEditProductModal(product)} className="p-1" style={{ color: theme.colors.accent }} title="Edit Product">
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => openDeleteModal(product)} 
-                          className="p-2 rounded-lg transition-all duration-200 hover:shadow-md hover:scale-110 active:scale-95" 
-                          style={{ 
-                            color: theme.colors.danger,
-                            backgroundColor: theme.colors.danger + '10',
-                            border: `1px solid ${theme.colors.danger}20`
-                          }} 
-                          title="Archive Product"
-                        >
+                        <button onClick={() => openDeleteModal(product)} className="p-1" style={{ color: theme.colors.danger }} title="Archive Product">
                           <Archive className="h-4 w-4" />
                         </button>
                       </div>
@@ -3506,7 +3182,7 @@ function Warehouse() {
                 <div className="px-6 py-4 border-b" style={{ borderColor: theme.border.default }}>
                   <div className="flex justify-between items-center">
                     <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Suppliers</h3>
-                    <div className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                    <div className="text-sm" style={{ color: theme.text.secondary }}>
                       {suppliersData.length} suppliers found
                     </div>
                   </div>
@@ -3530,7 +3206,7 @@ function Warehouse() {
                           <td colSpan="7" className="px-6 py-8 text-center">
                             <div className="flex flex-col items-center space-y-3">
                               <User className="h-12 w-12" style={{ color: theme.text.muted }} />
-                              <div style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                              <div style={{ color: theme.text.secondary }}>
                                 <p className="text-lg font-medium">No suppliers found</p>
                                 <p className="text-sm">Suppliers will appear here when added</p>
                               </div>
@@ -3569,22 +3245,11 @@ function Warehouse() {
   
         {/* SUPPLIER MODAL - ALL FIELDS KEPT */}
         {showSupplierModal && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 transition-all duration-300" style={{ backgroundColor: 'transparent' }}>
-            <div className="rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border-2 transform transition-all duration-300 scale-100" style={{ 
-              backgroundColor: isDarkMode ? '#334155' : '#ffffff', 
-              borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-              boxShadow: isDarkMode ? '0 25px 50px -12px rgba(0, 0, 0, 0.3)' : '0 25px 50px -12px rgba(0, 0, 0, 0.1)'
-            }}>
-              <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ 
-                borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                backgroundColor: isDarkMode ? '#334155' : '#ffffff' 
-              }}>
-                <h3 className="text-lg font-semibold" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>Add New Supplier</h3>
-                <button 
-                  onClick={closeSupplierModal} 
-                  className="p-2 rounded-lg hover:bg-opacity-10 transition-all duration-200 hover:scale-110 active:scale-95" 
-                  style={{ color: isDarkMode ? '#94a3b8' : '#64748b', backgroundColor: (isDarkMode ? '#94a3b8' : '#64748b') + '10' }}
-                >
+          <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="backdrop-blur-md rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border" style={{ backgroundColor: theme.bg.card + 'F0', borderColor: theme.border.default }}>
+              <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ borderColor: theme.border.default, backgroundColor: theme.bg.card + 'F0' }}>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Add New Supplier</h3>
+                <button onClick={closeSupplierModal} className="hover:opacity-70" style={{ color: theme.text.muted }}>
                   <X className="h-6 w-6" />
                 </button>
               </div>
@@ -3593,212 +3258,212 @@ function Warehouse() {
                 <form onSubmit={handleAddSupplier} className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Supplier Name *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Supplier Name *</label>
                     <input
                       type="text"
                       required
                       value={supplierFormData.supplier_name || ""}
                       onChange={(e) => handleSupplierInputChange("supplier_name", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Contact Number *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Contact Number *</label>
                     <input
                       type="text"
                       required
                       value={supplierFormData.supplier_contact || ""}
                       onChange={(e) => handleSupplierInputChange("supplier_contact", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Email *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Email *</label>
                     <input
                       type="email"
                       required
                       value={supplierFormData.supplier_email || ""}
                       onChange={(e) => handleSupplierInputChange("supplier_email", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Primary Phone</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Primary Phone</label>
                     <input
                       type="text"
                       value={supplierFormData.primary_phone || ""}
                       onChange={(e) => handleSupplierInputChange("primary_phone", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Primary Email</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Primary Email</label>
                     <input
                       type="email"
                       value={supplierFormData.primary_email || ""}
                       onChange={(e) => handleSupplierInputChange("primary_email", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Contact Person</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Contact Person</label>
                     <input
                       type="text"
                       value={supplierFormData.contact_person || ""}
                       onChange={(e) => handleSupplierInputChange("contact_person", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Contact Title</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Contact Title</label>
                     <input
                       type="text"
                       value={supplierFormData.contact_title || ""}
                       onChange={(e) => handleSupplierInputChange("contact_title", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Payment Terms</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Payment Terms</label>
                     <input
                       type="text"
                       value={supplierFormData.payment_terms || ""}
                       onChange={(e) => handleSupplierInputChange("payment_terms", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Lead Time (Days)</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Lead Time (Days)</label>
                     <input
                       type="number"
                       value={supplierFormData.lead_time_days || ""}
                       onChange={(e) => handleSupplierInputChange("lead_time_days", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Order Level</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Order Level</label>
                     <input
                       type="number"
                       value={supplierFormData.order_level || ""}
                       onChange={(e) => handleSupplierInputChange("order_level", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Credit Rating</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Credit Rating</label>
                     <input
                       type="text"
                       value={supplierFormData.credit_rating || ""}
                       onChange={(e) => handleSupplierInputChange("credit_rating", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div className="md:col-span-3">
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Address</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Address</label>
                     <textarea
                       rows={3}
                       value={supplierFormData.supplier_address}
                       onChange={(e) => handleSupplierInputChange("supplier_address", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div className="md:col-span-3">
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Notes</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Notes</label>
                     <textarea
                       rows={3}
                       value={supplierFormData.notes}
                       onChange={(e) => handleSupplierInputChange("notes", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
@@ -3808,11 +3473,11 @@ function Warehouse() {
                   <button
                     type="button"
                     onClick={closeSupplierModal}
-                    className="px-6 py-3 border-2 rounded-lg font-medium transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95"
+                    className="px-4 py-2 border rounded-md hover:opacity-70"
                     style={{ 
-                      borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                      color: isDarkMode ? '#f8fafc' : '#0f172a'
+                      borderColor: theme.border.default, 
+                      backgroundColor: theme.bg.secondary,
+                      color: theme.text.primary
                     }}
                   >
                     Cancel
@@ -3820,9 +3485,9 @@ function Warehouse() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-6 py-3 rounded-lg font-medium disabled:opacity-50 transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none"
+                    className="px-4 py-2 rounded-md disabled:opacity-50"
                     style={{ 
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: theme.colors.accent,
                       color: '#ffffff'
                     }}
                   >
@@ -3837,22 +3502,11 @@ function Warehouse() {
   
         {/* Edit Supplier Modal */}
         {showEditModal && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 transition-all duration-300" style={{ backgroundColor: 'transparent' }}>
-            <div className="rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border-2 transform transition-all duration-300 scale-100" style={{ 
-              backgroundColor: isDarkMode ? '#334155' : '#ffffff', 
-              borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-              boxShadow: isDarkMode ? '0 25px 50px -12px rgba(0, 0, 0, 0.3)' : '0 25px 50px -12px rgba(0, 0, 0, 0.1)'
-            }}>
-              <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ 
-                borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                backgroundColor: isDarkMode ? '#334155' : '#ffffff' 
-              }}>
-                <h3 className="text-lg font-semibold" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>Edit Supplier</h3>
-                <button 
-                  onClick={closeEditModal} 
-                  className="p-2 rounded-lg hover:bg-opacity-10 transition-all duration-200 hover:scale-110 active:scale-95" 
-                  style={{ color: isDarkMode ? '#94a3b8' : '#64748b', backgroundColor: (isDarkMode ? '#94a3b8' : '#64748b') + '10' }}
-                >
+          <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="backdrop-blur-md rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border" style={{ backgroundColor: theme.bg.card + 'F0', borderColor: theme.border.default }}>
+              <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ borderColor: theme.border.default, backgroundColor: theme.bg.card + 'F0' }}>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Edit Supplier</h3>
+                <button onClick={closeEditModal} className="hover:opacity-70" style={{ color: theme.text.muted }}>
                   <X className="h-6 w-6" />
                 </button>
               </div>
@@ -3861,132 +3515,132 @@ function Warehouse() {
                 <form onSubmit={handleUpdateSupplier} className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Supplier Name *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Supplier Name *</label>
                     <input
                       type="text"
                       required
                       value={editFormData.supplier_name || ""}
                       onChange={(e) => handleEditInputChange("supplier_name", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Contact Number *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Contact Number *</label>
                     <input
                       type="text"
                       required
                       value={editFormData.supplier_contact || ""}
                       onChange={(e) => handleEditInputChange("supplier_contact", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Email *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Email *</label>
                     <input
                       type="email"
                       required
                       value={editFormData.supplier_email || ""}
                       onChange={(e) => handleEditInputChange("supplier_email", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Contact Person</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Contact Person</label>
                     <input
                       type="text"
                       value={editFormData.contact_person || ""}
                       onChange={(e) => handleEditInputChange("contact_person", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Payment Terms</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Payment Terms</label>
                     <input
                       type="text"
                       value={editFormData.payment_terms || ""}
                       onChange={(e) => handleEditInputChange("payment_terms", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Lead Time (Days)</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Lead Time (Days)</label>
                     <input
                       type="number"
                       value={editFormData.lead_time_days || ""}
                       onChange={(e) => handleEditInputChange("lead_time_days", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Address</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Address</label>
                     <textarea
                       rows={3}
                       value={editFormData.supplier_address || ""}
                       onChange={(e) => handleEditInputChange("supplier_address", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Notes</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Notes</label>
                     <textarea
                       rows={3}
                       value={editFormData.notes || ""}
                       onChange={(e) => handleEditInputChange("notes", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default, 
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
@@ -3998,9 +3652,9 @@ function Warehouse() {
                     onClick={closeEditModal}
                     className="px-4 py-2 border rounded-md hover:opacity-70"
                     style={{ 
-                      borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-                      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                      color: isDarkMode ? '#f8fafc' : '#0f172a'
+                      borderColor: theme.border.default, 
+                      backgroundColor: theme.bg.secondary,
+                      color: theme.text.primary
                     }}
                   >
                     Cancel
@@ -4025,11 +3679,10 @@ function Warehouse() {
 
         {/* Edit Product Modal */}
         {showEditProductModal && (
-          <div className="fixed inset-0 backdrop-blur-md bg-black bg-opacity-30 flex items-center justify-center z-50 transition-all duration-300">
-            <div className="backdrop-blur-lg rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border transform transition-all duration-300 scale-100" style={{ 
-              backgroundColor: theme.bg.card + 'F5', 
-              borderColor: theme.border.default,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border" style={{ 
+              backgroundColor: theme.bg.card, 
+              borderColor: theme.border.default 
             }}>
               <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ 
                 backgroundColor: theme.bg.card, 
@@ -4038,8 +3691,10 @@ function Warehouse() {
                 <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Edit Product</h3>
                 <button 
                   onClick={closeEditProductModal} 
-                  className="p-2 rounded-lg hover:bg-opacity-10 transition-all duration-200 hover:scale-110 active:scale-95" 
-                  style={{ color: theme.text.muted, backgroundColor: theme.text.muted + '10' }}
+                  className="transition-colors"
+                  style={{ color: theme.text.muted }}
+                  onMouseEnter={(e) => e.target.style.color = theme.text.primary}
+                  onMouseLeave={(e) => e.target.style.color = theme.text.muted}
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -4049,50 +3704,50 @@ function Warehouse() {
                 <form onSubmit={handleUpdateProduct} className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Product Name *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Product Name *</label>
                     <input
                       type="text"
                       required
                       value={editProductFormData.product_name || ""}
                       onChange={(e) => handleEditProductInputChange("product_name", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Barcode</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Barcode</label>
                     <input
                       type="text"
                       value={editProductFormData.barcode || ""}
                       onChange={(e) => handleEditProductInputChange("barcode", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Category *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Category *</label>
                     <select
                       required
                       value={editProductFormData.category || ""}
                       onChange={(e) => handleEditProductInputChange("category", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     >
                       <option value="">Select Category</option>
@@ -4105,50 +3760,50 @@ function Warehouse() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Suggested Retail Price (SRP)</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Suggested Retail Price (SRP)</label>
                     <input
                       type="number"
                       step="0.01"
                       value={editProductFormData.srp || ""}
                       onChange={(e) => handleEditProductInputChange("srp", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Quantity *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Quantity *</label>
                     <input
                       type="number"
                       required
                       value={editProductFormData.quantity || ""}
                       onChange={(e) => handleEditProductInputChange("quantity", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Brand</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Brand</label>
                     <select
                       value={editProductFormData.brand_id || ""}
                       onChange={(e) => handleEditProductInputChange("brand_id", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     >
                       <option value="">Select Brand</option>
@@ -4161,16 +3816,16 @@ function Warehouse() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Supplier</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Supplier</label>
                     <select
                       value={editProductFormData.supplier_id || ""}
                       onChange={(e) => handleEditProductInputChange("supplier_id", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     >
                       <option value="">Select Supplier</option>
@@ -4183,7 +3838,7 @@ function Warehouse() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Expiration Date</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Expiration Date</label>
                     <input
                       type="date"
                       value={editProductFormData.expiration || ""}
@@ -4197,12 +3852,12 @@ function Warehouse() {
                         handleEditProductInputChange("expiration", selectedDate);
                       }}
                       min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                     <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
@@ -4216,17 +3871,17 @@ function Warehouse() {
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Description</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Description</label>
                     <textarea
                       rows={3}
                       value={editProductFormData.description || ""}
                       onChange={(e) => handleEditProductInputChange("description", e.target.value)}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: '#3b82f6'
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
                       }}
                     />
                   </div>
@@ -4245,7 +3900,7 @@ function Warehouse() {
                             borderColor: theme.border.default
                           }}
                         />
-                        <label htmlFor="editPrescription" className="text-sm font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                        <label htmlFor="editPrescription" className="text-sm font-medium" style={{ color: theme.text.secondary }}>
                           Prescription Required
                         </label>
                       </div>
@@ -4261,7 +3916,7 @@ function Warehouse() {
                             borderColor: theme.border.default
                           }}
                         />
-                        <label htmlFor="editBulk" className="text-sm font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                        <label htmlFor="editBulk" className="text-sm font-medium" style={{ color: theme.text.secondary }}>
                           Bulk Product
                         </label>
                       </div>
@@ -4275,9 +3930,9 @@ function Warehouse() {
                     onClick={closeEditProductModal}
                     className="px-4 py-2 border rounded-md transition-colors"
                     style={{ 
-                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                      color: isDarkMode ? '#f8fafc' : '#0f172a'
+                      borderColor: theme.border.default,
+                      backgroundColor: theme.bg.secondary,
+                      color: theme.text.primary
                     }}
                     onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
                     onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.secondary}
@@ -4290,7 +3945,7 @@ function Warehouse() {
                     className="px-4 py-2 rounded-md transition-colors disabled:opacity-50"
                     style={{ 
                       backgroundColor: theme.colors.accent,
-                      color: isDarkMode ? '#f8fafc' : '#0f172a'
+                      color: theme.text.primary
                     }}
                     onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = theme.colors.accent + 'dd')}
                     onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = theme.colors.accent)}
@@ -4307,65 +3962,37 @@ function Warehouse() {
   
   {/* Delete Confirmation Modal */}
   {showDeleteModal && (
-    <div className="fixed inset-0 backdrop-blur-md bg-black bg-opacity-30 flex items-center justify-center z-50 transition-all duration-300">
-      <div className="backdrop-blur-lg rounded-2xl shadow-2xl p-8 border-2 w-96 transform transition-all duration-300 scale-100" style={{ 
-        backgroundColor: theme.bg.card + 'F5', 
-        borderColor: theme.border.default,
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
-      }}>
-        <h3 className="text-xl font-semibold mb-6" style={{ color: theme.text.primary }}>Confirm Archive</h3>
-        <p className="text-base mb-6" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Are you sure you want to archive this item?</p>
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl p-6 border border-gray-200/50 w-96">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Archive</h3>
+        <p className="text-gray-700 mb-4">Are you sure you want to archive this item?</p>
         <div className="flex justify-end space-x-4">
           <button
             type="button"
             onClick={closeDeleteModal}
-            className="px-6 py-3 border-2 rounded-lg font-medium transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95"
-            style={{ 
-              borderColor: theme.border.default, 
-              backgroundColor: theme.bg.secondary,
-              color: theme.text.primary
-            }}
+            className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleDeleteItem}
-            className="px-6 py-3 rounded-lg font-medium disabled:opacity-50 transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95 disabled:hover:scale-100 disabled:hover:shadow-none"
-            style={{ 
-              backgroundColor: theme.colors.danger,
-              color: 'white'
-            }}
-          >
-            {loading ? "Archiving..." : "Archive"}
-          </button>
+                      <button
+              type="button"
+              onClick={handleDeleteItem}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md disabled:opacity-50"
+            >
+              {loading ? "Archiving..." : "Archive"}
+            </button>
         </div>
       </div>
     </div>
   )}
   
 
-  {showUpdateStockModal && (
-    <div className="fixed inset-0 flex items-center justify-center z-50 transition-all duration-300" style={{ 
-      backgroundColor: 'transparent' 
-    }}>
-      <div className="rounded-2xl shadow-2xl max-w-6xl w-full mx-4 max-h-[95vh] border-2 transform transition-all duration-300 scale-100" style={{ 
-        backgroundColor: isDarkMode ? '#334155' : '#ffffff', 
-        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-        boxShadow: isDarkMode ? '0 25px 50px -12px rgba(0, 0, 0, 0.3)' : '0 25px 50px -12px rgba(0, 0, 0, 0.1)'
-      }}>
-        <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ 
-          borderColor: isDarkMode ? '#475569' : '#e2e8f0', 
-          backgroundColor: isDarkMode ? '#334155' : '#ffffff' 
-        }}>
-          <h3 className="text-xl font-semibold" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>
-            {existingProduct ? "Update Product Stock" : "Add New Product Stock"}
-          </h3>
-          <button 
-            onClick={closeUpdateStockModal} 
-            className="p-2 rounded-lg hover:bg-opacity-10 transition-all duration-200 hover:scale-110 active:scale-95" 
-            style={{ color: theme.text.muted, backgroundColor: theme.text.muted + '10' }}
-          >
+  {showUpdateStockModal && existingProduct && (
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[95vh] border border-gray-200/50">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
+          <h3 className="text-lg font-semibold text-gray-900">Update Product Stock</h3>
+          <button onClick={closeUpdateStockModal} className="text-gray-400 hover:text-gray-600">
             <X className="h-6 w-6" />
           </button>
         </div>
@@ -4373,19 +4000,16 @@ function Warehouse() {
         <div className="overflow-y-auto max-h-[calc(95vh-80px)]">
           <div className="p-6">
             {/* Quick Start Guide */}
-            <div className="mb-6 p-6 rounded-xl border-2 shadow-sm transition-all duration-200 hover:shadow-md" style={{ 
-              backgroundColor: isDarkMode ? '#334155' : '#ffffff', 
-              borderColor: isDarkMode ? '#475569' : '#e2e8f0' 
-            }}>
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <svg className="h-6 w-6" style={{ color: '#3b82f6' }} fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                   </svg>
                 </div>
                 <div className="ml-3">
-                  <h4 className="text-base font-semibold" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>Quick Start Guide</h4>
-                  <p className="text-sm mt-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                  <h4 className="text-sm font-medium text-blue-800">Quick Start Guide</h4>
+                  <p className="text-xs text-blue-700 mt-1">
                     <strong>For quick stock updates:</strong> Switch to "Pieces Mode" and enter the total quantity directly. 
                     <strong>For detailed tracking:</strong> Use "Bulk Mode" to specify boxes and pieces per box.
                   </p>
@@ -4394,121 +4018,55 @@ function Warehouse() {
             </div>
             
             {/* Product Details Section */}
-            {existingProduct ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Product Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
                 <input
                   type="text"
-                  value={existingProduct?.product_name || ""}
+                  value={existingProduct.product_name || ""}
                   readOnly
-                  className="w-full px-4 py-3 border-2 rounded-lg"
-                  style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#94a3b8' : '#64748b'
-                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Barcode</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
                 <input
                   type="text"
-                  value={existingProduct?.barcode || ""}
+                  value={existingProduct.barcode || ""}
                   readOnly
-                  className="w-full px-4 py-3 border-2 rounded-lg"
-                  style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#94a3b8' : '#64748b'
-                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Category</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                 <input
                   type="text"
-                  value={existingProduct?.category || ""}
+                  value={existingProduct.category || ""}
                   readOnly
-                  className="w-full px-4 py-3 border-2 rounded-lg"
-                  style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#94a3b8' : '#64748b'
-                  }}
-                />
-              </div>
-              </div>
-            ) : (
-              <div className="mb-6 p-6 rounded-xl border-2 shadow-sm transition-all duration-200 hover:shadow-md" style={{ 
-                backgroundColor: isDarkMode ? '#334155' : '#ffffff', 
-                borderColor: isDarkMode ? '#475569' : '#e2e8f0' 
-              }}>
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <svg className="h-6 w-6" style={{ color: '#10b981' }} fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h4 className="text-base font-semibold" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>Ready for New Product Scan</h4>
-                    <p className="text-sm mt-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
-                      Scan a barcode to automatically populate product details, or manually enter product information below.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Additional Product Info - Only show when existingProduct exists */}
-            {existingProduct && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Brand</label>
-                <input
-                  type="text"
-                  value={(() => {
-                    console.log("🔍 Update modal brand debug:", {
-                      existingProduct_brand_id: existingProduct?.brand_id,
-                      existingProduct_brand: existingProduct?.brand,
-                      brandsData_length: brandsData.length
-                    });
-                    
-                    if (existingProduct?.brand_id && brandsData.length > 0) {
-                      const brand = brandsData.find(b => b.brand_id == existingProduct.brand_id);
-                      console.log("🔍 Found brand for modal:", brand);
-                      return brand ? brand.brand : existingProduct?.brand || "N/A";
-                    }
-                    return existingProduct?.brand || "N/A";
-                  })()}
-                  readOnly
-                  className="w-full px-4 py-3 border-2 rounded-lg"
-                  style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#94a3b8' : '#64748b'
-                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Current Stock</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
                 <input
                   type="text"
-                  value={existingProduct?.quantity || "0"}
+                  value={existingProduct.brand || "N/A"}
                   readOnly
-                  className="w-full px-4 py-3 border-2 rounded-lg"
-                  style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#94a3b8' : '#64748b'
-                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+                <input
+                  type="text"
+                  value={existingProduct.quantity || "0"}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                />
               </div>
-            )}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>SRP</label>
+                  <label className="block text-sm font-medium text-gray-700">SRP</label>
                   <div className="flex items-center">
                     <input
                       type="checkbox"
@@ -4517,15 +4075,14 @@ function Warehouse() {
                       onChange={(e) => {
                         setEditSrpEnabled(e.target.checked);
                         if (e.target.checked) {
-                          setNewSrp(existingProduct?.srp || existingProduct?.unit_price || "");
+                          setNewSrp(existingProduct.srp || existingProduct.unit_price || "");
                         } else {
                           setNewSrp("");
                         }
                       }}
-                      className="h-4 w-4 rounded"
-                      style={{ accentColor: theme.colors.accent }}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                    <label htmlFor="editSrp" className="ml-2 text-sm cursor-pointer" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                    <label htmlFor="editSrp" className="ml-2 text-sm text-gray-600">
                       Edit SRP
                     </label>
                   </div>
@@ -4537,25 +4094,25 @@ function Warehouse() {
                     value={newSrp || ""}
                     onChange={(e) => setNewSrp(e.target.value)}
                     placeholder="Enter new SRP"
-                    className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                     style={{ 
-                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                      color: isDarkMode ? '#f8fafc' : '#0f172a',
-                      focusRingColor: '#3b82f6'
+                      borderColor: theme.border.default,
+                      backgroundColor: theme.bg.secondary,
+                      color: theme.text.primary,
+                      focusRingColor: theme.colors.accent
                     }}
                   />
                 ) : (
                   <input
                     type="text"
                     readOnly
-                    className="w-full px-4 py-3 border-2 rounded-lg"
+                    className="w-full px-3 py-2 border rounded-md text-sm"
                     placeholder="SRP"
-                    value={`₱${Number.parseFloat(existingProduct?.srp || existingProduct?.unit_price || 0).toFixed(2)}`}
+                    value={`₱${Number.parseFloat(existingProduct.srp || existingProduct.unit_price || 0).toFixed(2)}`}
                     style={{ 
-                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                      color: isDarkMode ? '#f8fafc' : '#0f172a'
+                      borderColor: theme.border.default,
+                      backgroundColor: theme.bg.hover,
+                      color: theme.text.primary
                     }}
                   />
                 )}
@@ -4564,29 +4121,21 @@ function Warehouse() {
 
             {/* Description Section */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <textarea
-                value={existingProduct?.description || ""}
+                value={existingProduct.description || ""}
                 readOnly
                 rows={3}
-                className="w-full px-4 py-3 border-2 rounded-lg"
-                style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#94a3b8' : '#64748b'
-                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
               />
             </div>
 
             {/* Bulk Configuration Section */}
-            <div className="mb-6 p-6 rounded-xl border-2 shadow-sm transition-all duration-200 hover:shadow-md" style={{ 
-              backgroundColor: isDarkMode ? '#334155' : '#ffffff', 
-              borderColor: isDarkMode ? '#475569' : '#e2e8f0' 
-            }}>
-              <h4 className="text-base font-semibold mb-4 flex items-center" style={{ color: theme.text.primary }}>
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-800 mb-4 flex items-center">
                 ⚙️ Configuration Mode
               </h4>
-              <p className="text-sm mb-4" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+              <p className="text-xs text-gray-600 mb-4">
                 Choose how you want to configure the product quantity. <strong>Pieces Mode</strong> is recommended for quick stock updates.
               </p>
               
@@ -4599,11 +4148,11 @@ function Warehouse() {
                       : 'rgb(254 252 232)'; // yellow-50
                   } else {
                     // Bulk mode validation
-                    if (existingProduct?.product_type === "Medicine") {
+                    if (existingProduct.product_type === "Medicine") {
                       return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
                         ? 'rgb(240 253 244)' // green-50
                         : 'rgb(254 252 232)'; // yellow-50
-                    } else if (existingProduct?.product_type === "Non-Medicine") {
+                    } else if (existingProduct.product_type === "Non-Medicine") {
                       return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
                         ? 'rgb(240 253 244)' // green-50
                         : 'rgb(254 252 232)'; // yellow-50
@@ -4622,11 +4171,11 @@ function Warehouse() {
                       : 'rgb(254 240 138)'; // yellow-200
                   } else {
                     // Bulk mode validation
-                    if (existingProduct?.product_type === "Medicine") {
+                    if (existingProduct.product_type === "Medicine") {
                       return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
                         ? 'rgb(187 247 208)' // green-200
                         : 'rgb(254 240 138)'; // yellow-200
-                    } else if (existingProduct?.product_type === "Non-Medicine") {
+                    } else if (existingProduct.product_type === "Non-Medicine") {
                       return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
                         ? 'rgb(187 247 208)' // green-200
                         : 'rgb(254 240 138)'; // yellow-200
@@ -4647,11 +4196,11 @@ function Warehouse() {
                         : 'rgb(161 98 7)'; // yellow-700
                     } else {
                       // Bulk mode validation
-                      if (existingProduct?.product_type === "Medicine") {
+                      if (existingProduct.product_type === "Medicine") {
                         return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
                           ? 'rgb(21 128 61)' // green-700
                           : 'rgb(161 98 7)'; // yellow-700
-                      } else if (existingProduct?.product_type === "Non-Medicine") {
+                      } else if (existingProduct.product_type === "Non-Medicine") {
                         return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
                           ? 'rgb(21 128 61)' // green-700
                           : 'rgb(161 98 7)'; // yellow-700
@@ -4671,11 +4220,11 @@ function Warehouse() {
                         : "⏳ Enter quantity to enable button"
                       : (() => {
                           // Bulk mode status
-                          if (existingProduct?.product_type === "Medicine") {
+                          if (existingProduct.product_type === "Medicine") {
                             return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
                               ? "✅ Ready to update stock (Medicine Bulk Mode)"
                               : "⏳ Fill Medicine fields: Boxes, Strips per Box, Tablets per Strip";
-                          } else if (existingProduct?.product_type === "Non-Medicine") {
+                          } else if (existingProduct.product_type === "Non-Medicine") {
                             return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
                               ? "✅ Ready to update stock (Non-Medicine Bulk Mode)"
                               : "⏳ Fill Non-Medicine fields: Boxes, Pieces per Box";
@@ -4691,10 +4240,7 @@ function Warehouse() {
               </div>
               
               <div className="flex items-center space-x-6 mb-4">
-                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "bulk" ? "border-2" : ""}`} style={{
-                  backgroundColor: stockUpdateConfigMode === "bulk" ? (isDarkMode ? '#1e40af' : '#dbeafe') : 'transparent',
-                  borderColor: stockUpdateConfigMode === "bulk" ? (isDarkMode ? '#3b82f6' : '#3b82f6') : 'transparent'
-                }}>
+                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "bulk" ? "bg-blue-100 border border-blue-300" : "hover:bg-gray-50"}`}>
                   <input
                     type="radio"
                     id="bulkMode"
@@ -4702,20 +4248,13 @@ function Warehouse() {
                     value="bulk"
                     checked={stockUpdateConfigMode === "bulk"}
                     onChange={(e) => setStockUpdateConfigMode("bulk")}
-                    className="h-4 w-4 focus:ring-blue-500"
-                    style={{ 
-                      accentColor: '#3b82f6',
-                      borderColor: isDarkMode ? '#475569' : '#d1d5db'
-                    }}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                   />
-                  <label htmlFor="bulkMode" className="text-sm font-medium cursor-pointer" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>
+                  <label htmlFor="bulkMode" className="text-sm font-medium text-gray-700 cursor-pointer">
                     📦 Bulk Mode (Boxes × Pieces)
                   </label>
                 </div>
-                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "pieces" ? "border-2" : ""}`} style={{
-                  backgroundColor: stockUpdateConfigMode === "pieces" ? (isDarkMode ? '#1e40af' : '#dbeafe') : 'transparent',
-                  borderColor: stockUpdateConfigMode === "pieces" ? (isDarkMode ? '#3b82f6' : '#3b82f6') : 'transparent'
-                }}>
+                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "pieces" ? "bg-blue-100 border border-blue-300" : "hover:bg-gray-50"}`}>
                   <input
                     type="radio"
                     id="piecesMode"
@@ -4723,98 +4262,88 @@ function Warehouse() {
                     value="pieces"
                     checked={stockUpdateConfigMode === "pieces"}
                     onChange={(e) => setStockUpdateConfigMode("pieces")}
-                    className="h-4 w-4 focus:ring-blue-500"
-                    style={{ 
-                      accentColor: '#3b82f6',
-                      borderColor: isDarkMode ? '#475569' : '#d1d5db'
-                    }}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                   />
-                  <label htmlFor="piecesMode" className="text-sm font-medium cursor-pointer" style={{ color: isDarkMode ? '#f8fafc' : '#0f172a' }}>
-                    🔢 Pieces Mode (Direct Total) - <span className="font-semibold" style={{ color: '#10b981' }}>Recommended</span>
+                  <label htmlFor="piecesMode" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    🔢 Pieces Mode (Direct Total) - <span className="text-green-600 font-semibold">Recommended</span>
                   </label>
                 </div>
               </div>
 
               {/* Show input fields based on configuration mode */}
               {(() => {
-                if (existingProduct?.product_type === "Medicine") {
+                if (existingProduct.product_type === "Medicine") {
                   // Medicine Configuration
                   if (stockUpdateConfigMode === "bulk") {
                     // Medicine with Bulk Mode (Boxes × Strips × Tablets)
                     return (
-                      <div className="p-4 rounded-lg border-2" style={{
-                        backgroundColor: isDarkMode ? '#064e3b' : '#ecfdf5',
-                        borderColor: isDarkMode ? '#10b981' : '#10b981'
-                      }}>
-                        <h4 className="text-sm font-semibold mb-3 flex items-center" style={{ color: '#10b981' }}>
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <h4 className="text-sm font-semibold text-green-800 mb-3 flex items-center">
                           💊 Medicine Configuration (Bulk Mode)
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Number of Boxes *</label>
+                            <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Number of Boxes *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockBoxes || ""}
                               onChange={(e) => setNewStockBoxes(e.target.value)}
                               placeholder="Enter boxes"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
                           <div>
-                            <label className="text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Strips per Box *</label>
+                            <label className="text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Strips per Box *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockStripsPerBox || ""}
                               onChange={(e) => setNewStockStripsPerBox(e.target.value)}
                               placeholder="Enter strips per box"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Tablets per Strip *</label>
+                            <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Tablets per Strip *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockTabletsPerStrip || ""}
                               onChange={(e) => setNewStockTabletsPerStrip(e.target.value)}
                               placeholder="Enter tablets per strip"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
                         </div>
                         
                         {/* Auto-computed Total Display */}
-                        <div className="mt-4 p-3 rounded border-2" style={{
-                          backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                          borderColor: '#10b981'
-                        }}>
-                          <div className="text-sm" style={{ color: '#10b981' }}>
+                        <div className="mt-4 p-3 bg-white rounded border border-green-200">
+                          <div className="text-sm text-green-700">
                             <span className="font-medium">Auto-computed Total: </span>
-                            <span className="text-lg font-bold" style={{ color: '#059669' }}>
+                            <span className="text-lg font-bold text-green-800">
                               {parseInt(newStockBoxes || 0) * parseInt(newStockStripsPerBox || 0) * parseInt(newStockTabletsPerStrip || 0)} tablets
                             </span>
                           </div>
-                          <div className="text-xs mt-1" style={{ color: '#047857' }}>
+                          <div className="text-xs text-green-600 mt-1">
                             Formula: {newStockBoxes || 0} boxes × {newStockStripsPerBox || 0} strips × {newStockTabletsPerStrip || 0} tablets
                           </div>
                         </div>
@@ -4823,95 +4352,86 @@ function Warehouse() {
                   } else {
                     // Medicine with Pieces Mode (Direct Total Input)
                     return (
-                      <div className="p-4 rounded-lg border-2" style={{
-                        backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff',
-                        borderColor: isDarkMode ? '#3b82f6' : '#3b82f6'
-                      }}>
-                        <h4 className="text-sm font-semibold mb-3 flex items-center" style={{ color: '#3b82f6' }}>
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
                           💊 Medicine Configuration (Pieces Mode)
                         </h4>
                                                  <div>
-                           <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Total Tablets to Add *</label>
+                           <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Total Tablets to Add *</label>
                            <input
                              type="number"
                              min="1"
                              value={newStockQuantity || ""}
                              onChange={(e) => setNewStockQuantity(e.target.value)}
                              placeholder="Enter total number of tablets"
-                             className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                             className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                              style={{ 
-                               borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                               backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                               color: isDarkMode ? '#f8fafc' : '#0f172a',
-                               focusRingColor: '#3b82f6'
+                               borderColor: theme.border.default,
+                               backgroundColor: theme.bg.secondary,
+                               color: theme.text.primary,
+                               focusRingColor: theme.colors.accent
                              }}
                            />
-                           <p className="text-xs mt-1" style={{ color: isDarkMode ? '#94a3b8' : '#64748b' }}>Direct input of total tablets for this medicine. <strong>Tip:</strong> This is the fastest way to add stock!</p>
+                           <p className="text-xs mt-1" style={{ color: theme.text.muted }}>Direct input of total tablets for this medicine. <strong>Tip:</strong> This is the fastest way to add stock!</p>
                          </div>
                       </div>
                     );
                   }
-                          } else if (existingProduct?.product_type === "Non-Medicine") {
+                } else if (existingProduct.product_type === "Non-Medicine") {
                   // Non-Medicine Configuration
                   if (stockUpdateConfigMode === "bulk") {
                     // Non-Medicine with Bulk Mode (Boxes × Pieces per Box)
                     return (
-                      <div className="p-4 rounded-lg border-2" style={{
-                        backgroundColor: isDarkMode ? '#7c2d12' : '#fff7ed',
-                        borderColor: isDarkMode ? '#f59e0b' : '#f59e0b'
-                      }}>
-                        <h4 className="text-sm font-semibold mb-3 flex items-center" style={{ color: '#f59e0b' }}>
+                      <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                        <h4 className="text-sm font-semibold text-orange-800 mb-3 flex items-center">
                           📦 Non-Medicine Configuration (Bulk Mode)
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Number of Boxes *</label>
+                            <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Number of Boxes *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockBoxes || ""}
                               onChange={(e) => setNewStockBoxes(e.target.value)}
                               placeholder="Enter boxes"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Pieces per Box *</label>
+                            <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Pieces per Box *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockPiecesPerPack || ""}
                               onChange={(e) => setNewStockPiecesPerPack(e.target.value)}
                               placeholder="Enter pieces per box"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
                         </div>
                         
                         {/* Auto-computed Total Display */}
-                        <div className="mt-4 p-3 rounded border-2" style={{
-                          backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                          borderColor: '#f59e0b'
-                        }}>
-                          <div className="text-sm" style={{ color: '#f59e0b' }}>
+                        <div className="mt-4 p-3 bg-white rounded border border-orange-200">
+                          <div className="text-sm text-orange-700">
                             <span className="font-medium">Auto-computed Total: </span>
-                            <span className="text-lg font-bold" style={{ color: '#d97706' }}>
+                            <span className="text-lg font-bold text-orange-800">
                               {parseInt(newStockBoxes || 0) * parseInt(newStockPiecesPerPack || 0)} pieces
                             </span>
                           </div>
-                          <div className="text-xs mt-1" style={{ color: '#b45309' }}>
+                          <div className="text-xs text-orange-600 mt-1">
                             Formula: {newStockBoxes || 0} boxes × {newStockPiecesPerPack || 0} pieces
                           </div>
                         </div>
@@ -4920,27 +4440,24 @@ function Warehouse() {
                   } else {
                     // Non-Medicine with Pieces Mode (Direct Total Input)
                     return (
-                      <div className="p-4 rounded-lg border-2" style={{
-                        backgroundColor: isDarkMode ? '#1e3a8a' : '#eff6ff',
-                        borderColor: isDarkMode ? '#3b82f6' : '#3b82f6'
-                      }}>
-                        <h4 className="text-sm font-semibold mb-3 flex items-center" style={{ color: '#3b82f6' }}>
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
                           📦 Non-Medicine Configuration (Pieces Mode)
                         </h4>
                         <div>
-                          <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Total Pieces to Add *</label>
+                          <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Total Pieces to Add *</label>
                           <input
                             type="number"
                             min="1"
                             value={newStockQuantity || ""}
                             onChange={(e) => setNewStockQuantity(e.target.value)}
                             placeholder="Enter total number of pieces"
-                            className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                            className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                             style={{ 
-                              borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                              backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                              color: isDarkMode ? '#f8fafc' : '#0f172a',
-                              focusRingColor: '#3b82f6'
+                              borderColor: theme.border.default,
+                              backgroundColor: theme.bg.secondary,
+                              color: theme.text.primary,
+                              focusRingColor: theme.colors.accent
                             }}
                           />
                           <p className="text-xs mt-1" style={{ color: theme.text.muted }}>Direct input of total pieces for this product. <strong>Tip:</strong> This is the fastest way to add stock!</p>
@@ -4958,36 +4475,36 @@ function Warehouse() {
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Number of Boxes *</label>
+                            <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Number of Boxes *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockBoxes || ""}
                               onChange={(e) => setNewStockBoxes(e.target.value)}
                               placeholder="Enter boxes"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Pieces per Box *</label>
+                            <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Pieces per Box *</label>
                             <input
                               type="number"
                               min="1"
                               value={newStockPiecesPerPack || ""}
                               onChange={(e) => setNewStockPiecesPerPack(e.target.value)}
                               placeholder="Enter pieces per box"
-                              className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a',
-                                focusRingColor: '#3b82f6'
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.secondary,
+                                color: theme.text.primary,
+                                focusRingColor: theme.colors.accent
                               }}
                             />
                           </div>
@@ -5032,144 +4549,9 @@ function Warehouse() {
               })()}
             </div>
 
-            {/* Batch Configuration Section - Only show when creating new batch */}
-            {!useSameBatch && (
-              <div className="mb-6 p-6 rounded-xl border-2 shadow-sm transition-all duration-200 hover:shadow-md" style={{ 
-                backgroundColor: theme.bg.card, 
-                borderColor: theme.border.default 
-              }}>
-              <h4 className="text-base font-semibold mb-4 flex items-center" style={{ color: theme.colors.accent }}>
-                🏷️ Batch Information
-              </h4>
-              <p className="text-sm mb-4" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
-                Configure batch details for proper FIFO tracking and inventory management.
-              </p>
-              
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Batch Reference *</label>
-                  <input
-                    type="text"
-                    value={newStockBatchReference || ""}
-                    onChange={(e) => setNewStockBatchReference(e.target.value)}
-                    placeholder="Auto-generated batch reference"
-                    className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80"
-                    style={{ 
-                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                      color: isDarkMode ? '#f8fafc' : '#0f172a',
-                      focusRingColor: '#3b82f6'
-                    }}
-                  />
-                  <p className="text-xs mt-1" style={{ color: theme.text.muted }}>Auto-generated unique identifier for this batch</p>
-                </div>
-                
-              </div>
-            </div>
-            )}
-
-            {/* Same Batch Option Section */}
-            {existingBatches.length > 0 ? (
-              <div className="mb-6 p-6 rounded-xl border-2 shadow-sm transition-all duration-200 hover:shadow-md" style={{ 
-                backgroundColor: theme.bg.card, 
-                borderColor: theme.border.default 
-              }}>
-                <h4 className="text-base font-semibold mb-4 flex items-center" style={{ color: theme.colors.success }}>
-                  🔄 Add to Existing Batch
-                </h4>
-                <p className="text-sm mb-4" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
-                  Add more quantity to an existing batch instead of creating a new one.
-                </p>
-                
-                <div className="flex items-center space-x-4 mb-4">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={!useSameBatch}
-                      onChange={() => setUseSameBatch(false)}
-                      className="w-4 h-4"
-                      style={{ accentColor: theme.colors.accent }}
-                    />
-                    <span className="text-sm font-medium" style={{ color: theme.text.primary }}>Create New Batch</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={useSameBatch}
-                      onChange={() => setUseSameBatch(true)}
-                      className="w-4 h-4"
-                      style={{ accentColor: theme.colors.success }}
-                    />
-                    <span className="text-sm font-medium" style={{ color: theme.text.primary }}>Add to Existing Batch</span>
-                  </label>
-                </div>
-
-                {useSameBatch && (
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium mb-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Select Existing Batch</label>
-                    <select
-                      value={selectedExistingBatch?.batch_reference || ""}
-                      onChange={(e) => {
-                        const selectedBatch = existingBatches.find(batch => batch.batch_reference === e.target.value);
-                        setSelectedExistingBatch(selectedBatch || null);
-                        if (selectedBatch) {
-                          setNewStockExpiration(selectedBatch.expiration_date || "");
-                        }
-                      }}
-                      className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
-                      style={{ 
-                        borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                        backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                        color: isDarkMode ? '#f8fafc' : '#0f172a',
-                        focusRingColor: theme.colors.success
-                      }}
-                    >
-                      <option value="">Select a batch...</option>
-                      {existingBatches.map((batch) => (
-                        <option key={batch.batch_reference} value={batch.batch_reference}>
-                          {batch.batch_reference} - Qty: {batch.quantity} - Exp: {batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}
-                        </option>
-                      ))}
-                    </select>
-                    
-                    {selectedExistingBatch && (
-                      <div className="mt-3 p-3 rounded-lg" style={{ backgroundColor: theme.bg.secondary }}>
-                        <div className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div><strong>Batch Reference:</strong> {selectedExistingBatch.batch_reference}</div>
-                            <div><strong>Current Quantity:</strong> {selectedExistingBatch.quantity}</div>
-                            <div><strong>Expiration:</strong> {selectedExistingBatch.expiration_date ? new Date(selectedExistingBatch.expiration_date).toLocaleDateString() : 'N/A'}</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="mb-6 p-6 rounded-xl border-2 shadow-sm transition-all duration-200 hover:shadow-md" style={{ 
-                backgroundColor: theme.bg.card, 
-                borderColor: theme.border.default 
-              }}>
-                <h4 className="text-base font-semibold mb-4 flex items-center" style={{ color: theme.text.primary }}>
-                  ℹ️ Batch Information
-                </h4>
-                <p className="text-sm mb-4" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
-                  No existing batches found for this product. A new batch will be created when you update the stock.
-                </p>
-                <div className="flex items-center space-x-2 text-sm" style={{ color: theme.text.muted }}>
-                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                  <span>This is normal for new products or products that haven't had stock updates yet.</span>
-                </div>
-              </div>
-            )}
-
             {/* Expiration Date Section */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Expiration Date</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Expiration Date</label>
               <input
                 type="date"
                 value={newStockExpiration || ""}
@@ -5185,10 +4567,10 @@ function Warehouse() {
                 min={new Date().toISOString().split('T')[0]}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
               <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
@@ -5215,7 +4597,7 @@ function Warehouse() {
                 onClick={handleUpdateStock}
                 disabled={loading || (() => {
                   if (stockUpdateConfigMode === "bulk") {
-                    if (existingProduct?.product_type === "Medicine") {
+                    if (existingProduct.product_type === "Medicine") {
                       // Medicine bulk mode: validate boxes, strips per box, tablets per strip
                       return (!newStockBoxes || newStockBoxes <= 0 || !newStockStripsPerBox || newStockStripsPerBox <= 0 || !newStockTabletsPerStrip || newStockTabletsPerStrip <= 0);
                     } else {
@@ -5229,16 +4611,15 @@ function Warehouse() {
                 })()}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50"
               >
-                {loading ? "Adding..." : "Add to Batch"}
+                {loading ? "Updating..." : "Update Stock"}
               </button>
             </div>
           </div>
         </div>
       </div>
-    
+    </div>
   )}
-
-  {showNewProductModal && (
+            {showNewProductModal && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden border border-gray-200/50">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
@@ -5270,7 +4651,7 @@ function Warehouse() {
             
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Product Name *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Product Name *</label>
               <input
                 type="text"
                 required
@@ -5278,15 +4659,15 @@ function Warehouse() {
                 onChange={(e) => handleNewProductInputChange("product_name", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Barcode</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Barcode</label>
               <input
                 type="text"
                 value={newProductForm.barcode || ""}
@@ -5294,15 +4675,15 @@ function Warehouse() {
                 placeholder="Scan or enter barcode"
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Category *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Category *</label>
               <select
                 required
                 value={newProductForm.category || ""}
@@ -5311,10 +4692,10 @@ function Warehouse() {
                 }}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               >
                 <option value="">Select Category</option>
@@ -5362,7 +4743,7 @@ function Warehouse() {
 
        
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Suggested Retail Price (SRP) *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Suggested Retail Price (SRP) *</label>
               <input
                 type="number"
                 step="0.01"
@@ -5372,10 +4753,10 @@ function Warehouse() {
                 placeholder="Enter SRP"
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
             </div>
@@ -5539,11 +4920,7 @@ function Warehouse() {
                           value="bulk"
                           checked={newProductForm.configMode === "bulk"}
                           onChange={(e) => handleNewProductInputChange("configMode", e.target.value)}
-                          className="h-4 w-4 focus:ring-blue-500"
-                    style={{ 
-                      accentColor: '#3b82f6',
-                      borderColor: isDarkMode ? '#475569' : '#d1d5db'
-                    }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                         />
                         <label htmlFor="newBulkMode" className="text-sm font-medium" style={{ color: theme.text.primary }}>
                           📦 Bulk Mode (Boxes × Pieces)
@@ -5557,11 +4934,7 @@ function Warehouse() {
                           value="pieces"
                           checked={newProductForm.configMode === "pieces"}
                           onChange={(e) => handleNewProductInputChange("configMode", e.target.value)}
-                          className="h-4 w-4 focus:ring-blue-500"
-                    style={{ 
-                      accentColor: '#3b82f6',
-                      borderColor: isDarkMode ? '#475569' : '#d1d5db'
-                    }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                         />
                         <label htmlFor="newPiecesMode" className="text-sm font-medium" style={{ color: theme.text.primary }}>
                           🔢 Pieces Mode (Direct Total)
@@ -5574,55 +4947,55 @@ function Warehouse() {
                   {newProductForm.product_type === "Medicine" && newProductForm.configMode === "bulk" && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Number of Boxes *</label>
+                        <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Number of Boxes *</label>
                         <input
                           type="number"
                           required
                           min="1"
                           value={newProductForm.boxes || ""}
                           onChange={(e) => handleNewProductInputChange("boxes", e.target.value)}
-                          className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                           style={{ 
-                            borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                            backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                            color: isDarkMode ? '#f8fafc' : '#0f172a',
-                            focusRingColor: '#3b82f6'
+                            borderColor: theme.border.default,
+                            backgroundColor: theme.bg.secondary,
+                            color: theme.text.primary,
+                            focusRingColor: theme.colors.accent
                           }}
                           placeholder="Enter boxes"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Strips per Box *</label>
+                        <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Strips per Box *</label>
                         <input
                           type="number"
                           required
                           min="1"
                           value={newProductForm.strips_per_box || ""}
                           onChange={(e) => handleNewProductInputChange("strips_per_box", e.target.value)}
-                          className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                           style={{ 
-                            borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                            backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                            color: isDarkMode ? '#f8fafc' : '#0f172a',
-                            focusRingColor: '#3b82f6'
+                            borderColor: theme.border.default,
+                            backgroundColor: theme.bg.secondary,
+                            color: theme.text.primary,
+                            focusRingColor: theme.colors.accent
                           }}
                           placeholder="Enter strips per box"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Tablets per Strip *</label>
+                        <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Tablets per Strip *</label>
                         <input
                           type="number"
                           required
                           min="1"
                           value={newProductForm.tablets_per_strip || ""}
                           onChange={(e) => handleNewProductInputChange("tablets_per_strip", e.target.value)}
-                          className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                           style={{ 
-                            borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                            backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                            color: isDarkMode ? '#f8fafc' : '#0f172a',
-                            focusRingColor: '#3b82f6'
+                            borderColor: theme.border.default,
+                            backgroundColor: theme.bg.secondary,
+                            color: theme.text.primary,
+                            focusRingColor: theme.colors.accent
                           }}
                           placeholder="Enter tablets per strip"
                         />
@@ -5634,37 +5007,37 @@ function Warehouse() {
                   {newProductForm.product_type === "Non-Medicine" && newProductForm.configMode === "bulk" && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Number of Boxes *</label>
+                        <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Number of Boxes *</label>
                         <input
                           type="number"
                           required
                           min="1"
                           value={newProductForm.boxes || ""}
                           onChange={(e) => handleNewProductInputChange("boxes", e.target.value)}
-                          className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                           style={{ 
-                            borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                            backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                            color: isDarkMode ? '#f8fafc' : '#0f172a',
-                            focusRingColor: '#3b82f6'
+                            borderColor: theme.border.default,
+                            backgroundColor: theme.bg.secondary,
+                            color: theme.text.primary,
+                            focusRingColor: theme.colors.accent
                           }}
                           placeholder="Enter boxes"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Pieces per Box *</label>
+                        <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Pieces per Box *</label>
                         <input
                           type="number"
                           required
                           min="1"
                           value={newProductForm.pieces_per_pack || ""}
                           onChange={(e) => handleNewProductInputChange("pieces_per_pack", e.target.value)}
-                          className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                          className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                           style={{ 
-                            borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                            backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                            color: isDarkMode ? '#f8fafc' : '#0f172a',
-                            focusRingColor: '#3b82f6'
+                            borderColor: theme.border.default,
+                            backgroundColor: theme.bg.secondary,
+                            color: theme.text.primary,
+                            focusRingColor: theme.colors.accent
                           }}
                           placeholder="Enter pieces per box"
                         />
@@ -5675,7 +5048,7 @@ function Warehouse() {
                   {/* Pieces Mode Configuration */}
                   {newProductForm.configMode === "pieces" && (
                     <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>
                         Total {newProductForm.product_type === "Medicine" ? "Tablets" : "Pieces"} *
                       </label>
                       <input
@@ -5690,12 +5063,12 @@ function Warehouse() {
                             handleNewProductInputChange("total_pieces", e.target.value);
                           }
                         }}
-                        className="w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all duration-200 hover:border-opacity-80 theme-input"
+                        className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                         style={{ 
-                          borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                          backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                          color: isDarkMode ? '#f8fafc' : '#0f172a',
-                          focusRingColor: '#3b82f6'
+                          borderColor: theme.border.default,
+                          backgroundColor: theme.bg.secondary,
+                          color: theme.text.primary,
+                          focusRingColor: theme.colors.accent
                         }}
                         placeholder={`Enter total ${newProductForm.product_type === "Medicine" ? "tablets" : "pieces"}`}
                       />
@@ -5726,7 +5099,7 @@ function Warehouse() {
 
             {/* Initial Stock field removed - now handled by bulk configuration fields above */}
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Brand</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Brand</label>
               <div className="relative">
                 <input
                   type="text"
@@ -5738,136 +5111,14 @@ function Warehouse() {
                     handleNewProductInputChange("brand_search", searchTerm);
                     
                     // Clear brand_id to indicate this will be a new brand
-                    handleNewProductInputChange("brand_id", null);
-                    
-                    // Clear any existing timeout
-                    if (window.brandCreationTimeout) {
-                      clearTimeout(window.brandCreationTimeout);
-                    }
-                    
-                    // Auto-create brand after user stops typing for 1 second
-                    if (searchTerm && searchTerm.trim().length >= 2) {
-                      window.brandCreationTimeout = setTimeout(async () => {
-                        const existingBrand = brandsData.find(brand => 
-                          brand.brand.toLowerCase() === searchTerm.toLowerCase()
-                        );
-                        
-                        if (!existingBrand) {
-                          console.log("🆕 Auto-creating brand after timeout:", searchTerm);
-                          try {
-                            const brandResponse = await handleApiCall("add_brand", {
-                              brand_name: searchTerm
-                            });
-                            
-                            if (brandResponse.success) {
-                              const newBrandId = brandResponse.brand_id;
-                              console.log("✅ New brand auto-created with ID:", newBrandId);
-                              handleNewProductInputChange("brand_id", newBrandId);
-                              safeToast("success", `Brand "${searchTerm}" created automatically!`);
-                              
-                              // Reload brands data to include the new brand
-                              await loadData("brands");
-                            } else {
-                              console.error("❌ Failed to auto-create brand:", brandResponse.message);
-                            }
-                          } catch (error) {
-                            console.error("❌ Error auto-creating brand:", error);
-                          }
-                        }
-                      }, 1000); // 1 second delay
-                    }
-                  }}
-                  onKeyDown={async (e) => {
-                    // Create brand when user presses Enter and brand doesn't exist
-                    if (e.key === 'Enter' && newProductForm.brand_search && newProductForm.brand_search.trim()) {
-                      console.log("🔍 Enter pressed, checking brand:", newProductForm.brand_search);
-                      console.log("🔍 Available brands:", brandsData);
-                      
-                      const existingBrand = brandsData.find(brand => 
-                        brand.brand.toLowerCase() === newProductForm.brand_search.toLowerCase()
-                      );
-                      
-                      console.log("🔍 Existing brand found:", existingBrand);
-                      
-                      if (!existingBrand) {
-                        e.preventDefault();
-                        console.log("🆕 Auto-creating brand on Enter:", newProductForm.brand_search);
-                        try {
-                          const brandResponse = await handleApiCall("add_brand", {
-                            brand_name: newProductForm.brand_search
-                          });
-                          
-                          console.log("📡 Brand API Response:", brandResponse);
-                          
-                          if (brandResponse.success) {
-                            const newBrandId = brandResponse.brand_id;
-                            console.log("✅ New brand created with ID:", newBrandId);
-                            handleNewProductInputChange("brand_id", newBrandId);
-                            safeToast("success", `Brand "${newProductForm.brand_search}" created successfully!`);
-                            
-                            // Reload brands data to include the new brand
-                            await loadData("brands");
-                          } else {
-                            console.error("❌ Failed to create brand:", brandResponse.message);
-                            safeToast("error", `Failed to create brand "${newProductForm.brand_search}": ${brandResponse.message}`);
-                          }
-                        } catch (error) {
-                          console.error("❌ Error creating brand:", error);
-                          safeToast("error", `Error creating brand "${newProductForm.brand_search}": ${error.message}`);
-                        }
-                      } else {
-                        console.log("ℹ️ Brand already exists:", existingBrand);
-                      }
-                    }
-                  }}
-                  onBlur={async () => {
-                    // Create brand when user clicks away and brand doesn't exist
-                    if (newProductForm.brand_search && newProductForm.brand_search.trim()) {
-                      console.log("🔍 Blur event, checking brand:", newProductForm.brand_search);
-                      console.log("🔍 Current brand_id:", newProductForm.brand_id);
-                      
-                      const existingBrand = brandsData.find(brand => 
-                        brand.brand.toLowerCase() === newProductForm.brand_search.toLowerCase()
-                      );
-                      
-                      console.log("🔍 Existing brand found:", existingBrand);
-                      
-                      if (!existingBrand && !newProductForm.brand_id) {
-                        console.log("🆕 Auto-creating brand on blur:", newProductForm.brand_search);
-                        try {
-                          const brandResponse = await handleApiCall("add_brand", {
-                            brand_name: newProductForm.brand_search
-                          });
-                          
-                          console.log("📡 Brand API Response:", brandResponse);
-                          
-                          if (brandResponse.success) {
-                            const newBrandId = brandResponse.brand_id;
-                            console.log("✅ New brand created with ID:", newBrandId);
-                            handleNewProductInputChange("brand_id", newBrandId);
-                            safeToast("success", `Brand "${newProductForm.brand_search}" created successfully!`);
-                            
-                            // Reload brands data to include the new brand
-                            await loadData("brands");
-                          } else {
-                            console.error("❌ Failed to create brand:", brandResponse.message);
-                            safeToast("error", `Failed to create brand "${newProductForm.brand_search}": ${brandResponse.message}`);
-                          }
-                        } catch (error) {
-                          console.error("❌ Error creating brand:", error);
-                          safeToast("error", `Error creating brand "${newProductForm.brand_search}": ${error.message}`);
-                        }
-                      } else {
-                        console.log("ℹ️ Brand already exists or brand_id already set:", existingBrand, newProductForm.brand_id);
-                      }
-                    }
+                    handleNewProductInputChange("brand_id", "");
                   }}
                   className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                   style={{ 
-                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                    backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                    color: isDarkMode ? '#f8fafc' : '#0f172a',
-                    focusRingColor: '#3b82f6'
+                    borderColor: theme.border.default,
+                    backgroundColor: theme.bg.secondary,
+                    color: theme.text.primary,
+                    focusRingColor: theme.colors.accent
                   }}
                 />
                 {/* Suggestions dropdown */}
@@ -5883,7 +5134,7 @@ function Warehouse() {
                           key={brand.brand_id}
                           className="px-3 py-2 cursor-pointer"
                           style={{ 
-                            color: isDarkMode ? '#f8fafc' : '#0f172a',
+                            color: theme.text.primary,
                             ':hover': { backgroundColor: theme.bg.hover }
                           }}
                           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bg.hover}
@@ -5904,35 +5155,15 @@ function Warehouse() {
                       <div
                         className="px-3 py-2 cursor-pointer border-t"
                         style={{ 
-                          color: isDarkMode ? '#f8fafc' : '#0f172a',
+                          color: theme.text.primary,
                           backgroundColor: theme.colors.success + '20',
                           borderColor: theme.border.default
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.success + '30'}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.success + '20'}
-                        onClick={async () => {
+                        onClick={() => {
                           console.log("🆕 Creating new brand:", newProductForm.brand_search);
-                          try {
-                            const brandResponse = await handleApiCall("add_brand", {
-                              brand_name: newProductForm.brand_search
-                            });
-                            
-                            if (brandResponse.success) {
-                              const newBrandId = brandResponse.brand_id;
-                              console.log("✅ New brand created with ID:", newBrandId);
-                              handleNewProductInputChange("brand_id", newBrandId);
-                              safeToast("success", `Brand "${newProductForm.brand_search}" created successfully!`);
-                              
-                              // Reload brands data to include the new brand
-                              await loadData("brands");
-                            } else {
-                              console.error("❌ Failed to create brand:", brandResponse.message);
-                              safeToast("error", `Failed to create brand "${newProductForm.brand_search}": ${brandResponse.message}`);
-                            }
-                          } catch (error) {
-                            console.error("❌ Error creating brand:", error);
-                            safeToast("error", `Error creating brand "${newProductForm.brand_search}": ${error.message}`);
-                          }
+                          handleNewProductInputChange("brand_id", ""); // Clear brand_id to indicate new brand
                         }}
                       >
                         ➕ Create new brand: "{newProductForm.brand_search}"
@@ -5942,20 +5173,20 @@ function Warehouse() {
                 )}
               </div>
               <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
-                Type brand name - new brands are created automatically after 1 second of no typing.
+                Type to see suggestions or enter a new brand name to create it automatically.
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Supplier</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Supplier</label>
               <select
                 value={newProductForm.supplier_id || ""}
                 onChange={(e) => handleNewProductInputChange("supplier_id", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               >
                 <option value="">Select Supplier</option>
@@ -5967,7 +5198,7 @@ function Warehouse() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Expiration Date</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Expiration Date</label>
               <input
                 type="date"
                 value={newProductForm.expiration || ""}
@@ -5983,10 +5214,10 @@ function Warehouse() {
                 min={new Date().toISOString().split('T')[0]}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
               <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
@@ -5999,7 +5230,7 @@ function Warehouse() {
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Batch Reference</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Batch Reference</label>
               <input
                 type="text"
                 value={newProductForm.batch || ""}
@@ -6007,21 +5238,32 @@ function Warehouse() {
                   handleNewProductInputChange("batch", e.target.value);
                   setCurrentBatchNumber(e.target.value); // Update current batch number
                 }}
-                placeholder="Auto-generated batch reference"
+                placeholder="Enter batch reference or leave empty for auto-generation"
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
-              <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
-                Auto-generated batch reference - you can edit if needed
+              <button
+                type="button"
+                onClick={() => {
+                  const newBatch = generateBatchRef();
+                  handleNewProductInputChange("batch", newBatch);
+                  setCurrentBatchNumber(newBatch); // Update current batch number
+                }}
+                className="mt-1 px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300"
+              >
+                Generate New Batch
+              </button>
+              <p className="text-xs text-gray-500 mt-1">
+                Leave empty to use current batch or enter custom reference
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Order Number</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Order Number</label>
               <input
                 type="text"
                 value={newProductForm.order_number || ""}
@@ -6029,10 +5271,10 @@ function Warehouse() {
                 placeholder="Enter order number"
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
             </div>
@@ -6047,17 +5289,17 @@ function Warehouse() {
               <p className="text-xs text-gray-500 mt-1">Automatically set to current date</p>
             </div>
             <div className="md:col-span-3">
-              <label className="block text-sm font-medium mb-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Description</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Description</label>
               <textarea
                 rows={3}
                 value={newProductForm.description || ""}
                 onChange={(e) => handleNewProductInputChange("description", e.target.value)}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                  backgroundColor: isDarkMode ? '#334155' : '#ffffff',
-                  color: isDarkMode ? '#f8fafc' : '#0f172a',
-                  focusRingColor: '#3b82f6'
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.secondary,
+                  color: theme.text.primary,
+                  focusRingColor: theme.colors.accent
                 }}
               />
             </div>
@@ -6128,11 +5370,6 @@ function Warehouse() {
                   {temporaryProducts.length} product(s) in batch
                 </span>
               )}
-              {updateStockProducts.length > 0 && (
-                <span className="text-sm text-blue-600">
-                  {updateStockProducts.length} product(s) in update stock batch
-                </span>
-              )}
             </div>
             <div className="flex space-x-4">
               {temporaryProducts.length > 0 && (
@@ -6143,16 +5380,6 @@ function Warehouse() {
                 >
                   <Package className="h-4 w-4 mr-2" />
                   View Batch ({temporaryProducts.length})
-                </button>
-              )}
-              {updateStockProducts.length > 0 && (
-                <button
-                  type="button"
-                  onClick={openUpdateStockBatchModal}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
-                >
-                  <Package className="h-4 w-4 mr-2" />
-                  View Update Stock Batch ({updateStockProducts.length})
                 </button>
               )}
               <button
@@ -6244,22 +5471,22 @@ function Warehouse() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.info + '20', borderColor: theme.colors.info + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.info }}>Product Info</h4>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Barcode: {selectedProductForFifo.barcode}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Category: {selectedProductForFifo.category}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Total Stock: {selectedProductForFifo.quantity}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Barcode: {selectedProductForFifo.barcode}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Category: {selectedProductForFifo.category}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Stock: {selectedProductForFifo.quantity}</p>
                     </div>
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.success + '20', borderColor: theme.colors.success + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.success }}>Stock Status</h4>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Status: {getStockStatus(selectedProductForFifo.quantity)}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>SRP: ₱{Number.parseFloat(selectedProductForFifo?.srp || selectedProductForFifo?.unit_price || 0).toFixed(2)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Status: {getStockStatus(selectedProductForFifo.quantity)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>SRP: ₱{Number.parseFloat(selectedProductForFifo.srp || selectedProductForFifo.unit_price || 0).toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.warning + '20', borderColor: theme.colors.warning + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.warning }}>FIFO Summary</h4>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Batches: {fifoStockData.length}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Available: {fifoStockData.reduce((sum, batch) => sum + parseInt(batch.available_quantity || 0), 0)}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Total Value: ₱{fifoStockData.reduce((sum, batch) => sum + (Number.parseFloat(batch.unit_cost || 0) * Number.parseFloat(batch.available_quantity || 0)), 0).toFixed(2)}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Oldest Batch: {fifoStockData.length > 0 ? new Date(fifoStockData[0].batch_date || fifoStockData[0].entry_date).toLocaleDateString() : 'N/A'}</p>
-                      <p className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Newest Batch: {fifoStockData.length > 0 ? new Date(fifoStockData[fifoStockData.length - 1].batch_date || fifoStockData[fifoStockData.length - 1].entry_date).toLocaleDateString() : 'N/A'}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Batches: {fifoStockData.length}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Available: {fifoStockData.reduce((sum, batch) => sum + parseInt(batch.available_quantity || 0), 0)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Value: ₱{fifoStockData.reduce((sum, batch) => sum + (Number.parseFloat(batch.unit_cost || 0) * Number.parseFloat(batch.available_quantity || 0)), 0).toFixed(2)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Oldest Batch: {fifoStockData.length > 0 ? new Date(fifoStockData[0].batch_date || fifoStockData[0].entry_date).toLocaleDateString() : 'N/A'}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Newest Batch: {fifoStockData.length > 0 ? new Date(fifoStockData[fifoStockData.length - 1].batch_date || fifoStockData[fifoStockData.length - 1].entry_date).toLocaleDateString() : 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -6309,7 +5536,7 @@ function Warehouse() {
                             ₱{Number.parseFloat(batch.unit_cost || 0).toFixed(2)}
                           </td>
                           <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
-                            {batch?.srp && batch.srp > 0 ? `₱${Number.parseFloat(batch.srp).toFixed(2)}` : 'N/A'}
+                            {batch.srp && batch.srp > 0 ? `₱${Number.parseFloat(batch.srp).toFixed(2)}` : 'N/A'}
                           </td>
                           <td className="px-3 py-2 font-medium" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
                             ₱{(Number.parseFloat(batch.unit_cost || 0) * Number.parseFloat(batch.available_quantity || 0)).toFixed(2)}
@@ -6431,7 +5658,7 @@ function Warehouse() {
                         })()
                       }
                     </p>
-                    <p className="text-sm" style={{ color: theme.text.primary }}>SRP: ₱{Number.parseFloat(selectedProductForHistory?.srp || 0).toFixed(2)}</p>
+                    <p className="text-sm" style={{ color: theme.text.primary }}>SRP: ₱{Number.parseFloat(selectedProductForHistory.srp || 0).toFixed(2)}</p>
                   </div>
                   <div className="p-4 rounded-lg border" 
                        style={{ 
@@ -6474,55 +5701,55 @@ function Warehouse() {
                     <div className="overflow-x-auto">
                     <table className="w-full border-collapse border" 
                            style={{ 
-                             color: isDarkMode ? '#f8fafc' : '#0f172a',
+                             color: theme.text.primary,
                              borderColor: theme.border.default 
                            }}>
                       <thead>
                         <tr style={{ backgroundColor: theme.bg.hover }}>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Batch Reference</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Expiry Date</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Type</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Quantity Change</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Remaining Qty</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>SRP</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Batch Reference</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Notes</th>
                           <th className="border px-3 py-2 text-left text-sm font-semibold" 
                               style={{ 
-                                borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
                               }}>Created By</th>
                         </tr>
                       </thead>
@@ -6536,14 +5763,14 @@ function Warehouse() {
                               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 0 ? 'transparent' : theme.bg.hover + '30'}>
                             <td className="border px-3 py-2 text-sm font-mono text-blue-600" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>
                               {index + 1}
                             </td>
                             <td className="border px-3 py-2 text-sm" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
+                                  borderColor: theme.border.default,
                                   color: movement.expiration_date ? 
                                     (isProductExpired(movement.expiration_date) ? theme.colors.danger :
                                      isProductExpiringSoon(movement.expiration_date) ? theme.colors.warning :
@@ -6572,36 +5799,36 @@ function Warehouse() {
                             </td>
                             <td className="border px-3 py-2 text-center font-medium" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>
                               {movement.remaining_quantity}
                             </td>
                             <td className="border px-3 py-2" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>
-                              ₱{Number.parseFloat(batch?.fifo_srp || batch?.srp || batch?.unit_cost || 0).toFixed(2)}
+                              ₱{Number.parseFloat(batch.fifo_srp || batch.srp || batch.unit_cost || 0).toFixed(2)}
                             </td>
                             <td className="border px-3 py-2 font-mono text-sm" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>
                               {movement.batch_reference || movement.reference_no || 'N/A'}
                             </td>
                             <td className="border px-3 py-2 text-sm" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#cbd5e1' : '#475569' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.secondary 
                                 }}>
                               {movement.notes || 'N/A'}
                             </td>
                             <td className="border px-3 py-2 text-sm" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>
                               {movement.created_by || 'System'}
                             </td>
@@ -6618,60 +5845,60 @@ function Warehouse() {
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse border" 
                              style={{ 
-                               color: isDarkMode ? '#f8fafc' : '#0f172a',
+                               color: theme.text.primary,
                                borderColor: theme.border.default 
                              }}>
                         <thead>
                           <tr style={{ backgroundColor: theme.bg.hover }}>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Batch Number</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Date Added</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Expiry Date</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Type</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Quantity Change</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Remaining Qty</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>SRP</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Batch Reference</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Notes</th>
                             <th className="border px-3 py-2 text-left text-sm font-semibold" 
                                 style={{ 
-                                  borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                  color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary 
                                 }}>Created By</th>
                           </tr>
                         </thead>
@@ -6686,22 +5913,22 @@ function Warehouse() {
                                   onMouseLeave={(e) => e.target.style.backgroundColor = index % 2 === 0 ? 'transparent' : theme.bg.hover + '30'}>
                                 <td className="border px-3 py-2 text-sm font-mono text-blue-600" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.primary 
                                     }}>
                                   {index + 1}
                                 </td>
                                 <td className="border px-3 py-2 text-sm" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.primary 
                                     }}>
                                   {batch.fifo_entry_date ? new Date(batch.fifo_entry_date).toLocaleDateString() : 
                                    batch.batch_date ? new Date(batch.batch_date).toLocaleDateString() : 'N/A'}
                                 </td>
                                 <td className="border px-3 py-2 text-sm" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
+                                      borderColor: theme.border.default,
                                       color: batch.expiration_date ? 
                                         (isProductExpired(batch.expiration_date) ? theme.colors.danger :
                                          isProductExpiringSoon(batch.expiration_date) ? theme.colors.warning :
@@ -6728,36 +5955,36 @@ function Warehouse() {
                                 </td>
                                 <td className="border px-3 py-2 text-center font-medium" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.primary 
                                     }}>
                                   {batch.available_quantity || 0}
                                 </td>
                                 <td className="border px-3 py-2" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.primary 
                                     }}>
-                                  ₱{Number.parseFloat(batch?.fifo_srp || batch?.srp || batch?.unit_cost || 0).toFixed(2)}
+                                  ₱{Number.parseFloat(batch.fifo_srp || batch.srp || batch.unit_cost || 0).toFixed(2)}
                                 </td>
                                 <td className="border px-3 py-2 font-mono text-sm" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.primary 
                                     }}>
                                   {batch.batch_reference || 'N/A'}
                                 </td>
                                 <td className="border px-3 py-2 text-sm" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#cbd5e1' : '#475569' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.secondary 
                                     }}>
                                   {batch.available_quantity > 0 ? 'Active FIFO batch' : 'Consumed FIFO batch'}
                                 </td>
                                 <td className="border px-3 py-2 text-sm" 
                                     style={{ 
-                                      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                      color: isDarkMode ? '#f8fafc' : '#0f172a' 
+                                      borderColor: theme.border.default,
+                                      color: theme.text.primary 
                                     }}>
                                   {batch.entry_by || 'System'}
                                 </td>
@@ -6767,8 +5994,8 @@ function Warehouse() {
                             <tr>
                               <td colSpan="8" className="border px-3 py-2 text-center" 
                                   style={{ 
-                                    borderColor: isDarkMode ? '#475569' : '#e2e8f0',
-                                    color: isDarkMode ? '#cbd5e1' : '#475569' 
+                                    borderColor: theme.border.default,
+                                    color: theme.text.secondary 
                                   }}>
                                 No FIFO batches available
                               </td>
@@ -6783,7 +6010,7 @@ function Warehouse() {
                 {!showCurrentFifoData && quantityHistoryData.length === 0 && (
                   <div className="text-center py-8">
                     <Package className="h-12 w-12 mx-auto mb-4" style={{ color: theme.text.muted }} />
-                    <p style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>No quantity history available for this product.</p>
+                    <p style={{ color: theme.text.secondary }}>No quantity history available for this product.</p>
                     <p className="text-sm mt-2" style={{ color: theme.text.muted }}>Quantity changes will appear here after stock updates.</p>
                   </div>
                 )}
@@ -6817,7 +6044,7 @@ function Warehouse() {
                 ) : (
                   <>
                     <div className="mb-6">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-blue-50 rounded-lg">
                         <div className="text-center">
                           <div className="text-2xl font-bold text-blue-600">{temporaryProducts.length}</div>
                           <div className="text-sm text-blue-700">Total Products</div>
@@ -6825,17 +6052,28 @@ function Warehouse() {
                         <div className="text-center">
                           <div className="text-2xl font-bold text-green-600">
                             {temporaryProducts.reduce((sum, p) => {
-                              const totalPieces = p?.product_type === "Medicine" 
-                                ? parseInt(p?.total_tablets || 0)  // Total tablets for medicine
-                                : parseInt(p?.total_pieces || 0);  // Total pieces for non-medicine
+                              const totalPieces = p.product_type === "Medicine" 
+                                ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
+                                : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
                               return sum + totalPieces;
                             }, 0)}
                           </div>
                           <div className="text-sm text-green-700">Total Pieces</div>
                         </div>
                         <div className="text-center">
+                          <div className="text-2xl font-bold text-purple-600">
+                            ₱{temporaryProducts.reduce((sum, p) => {
+                              const totalPieces = p.product_type === "Medicine" 
+                                ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
+                                : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
+                              return sum + ((parseFloat(p.srp) || 0) * totalPieces);
+                            }, 0).toFixed(2)}
+                          </div>
+                          <div className="text-sm text-purple-700">Total Value</div>
+                        </div>
+                        <div className="text-center">
                           <div className="text-2xl font-bold text-orange-600">
-                            {new Set(temporaryProducts.map(p => p?.category).filter(Boolean)).size}
+                            {new Set(temporaryProducts.map(p => p.category)).size}
                           </div>
                           <div className="text-sm text-orange-700">Categories</div>
                         </div>
@@ -6852,6 +6090,7 @@ function Warehouse() {
                             <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Brand</th>
                             <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Quantity</th>
                             <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">SRP</th>
+                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Total Value</th>
                             <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Expiration</th>
                             <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Type</th>
                             <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Actions</th>
@@ -6864,38 +6103,38 @@ function Warehouse() {
                                 {index + 1}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 font-medium text-gray-900">
-                                {product?.product_name || "N/A"}
+                                {product.product_name}
                               </td>
                               <td className="border border-gray-300 px-3 py-2">
                                 <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                                  {product?.category || "N/A"}
+                                  {product.category}
                                 </span>
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-gray-900">
-                                {product?.brand_search || product?.brand_id || "N/A"}
+                                {product.brand_search || product.brand_id || "N/A"}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
-                                {product?.product_type === "Medicine" 
-                                  ? `${product?.total_tablets || 0} tablets`
-                                  : `${product?.total_pieces || 0} pieces`
-                                }
+                                {product.quantity}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
-                                ₱{parseFloat(product?.srp || 0).toFixed(2)}
+                                ₱{parseFloat(product.srp || 0).toFixed(2)}
+                              </td>
+                              <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
+                                ₱{((parseFloat(product.srp || 0)) * (parseInt(product.quantity || 0))).toFixed(2)}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center" 
                                   style={{ 
-                                    color: product?.expiration ? 
+                                    color: product.expiration ? 
                                       (isProductExpired(product.expiration) ? theme.colors.danger :
                                        isProductExpiringSoon(product.expiration) ? theme.colors.warning :
                                        theme.text.primary) : theme.text.primary
                                   }}>
-                                {product?.expiration ? new Date(product.expiration).toLocaleDateString() : 'N/A'}
+                                {product.expiration ? new Date(product.expiration).toLocaleDateString() : 'N/A'}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center">
                                 {(() => {
-                                  const bulk = Number(product?.bulk || 0);
-                                  const prescription = Number(product?.prescription || 0);
+                                  const bulk = Number(product.bulk);
+                                  const prescription = Number(product.prescription);
                                   if (bulk && prescription) {
                                     return <span className="inline-flex px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">Bulk & Rx</span>;
                                   } else if (bulk) {
@@ -6909,7 +6148,7 @@ function Warehouse() {
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center">
                                 <button
-                                  onClick={() => removeTemporaryProduct(product?.temp_id)}
+                                  onClick={() => removeTemporaryProduct(product.temp_id)}
                                   className="text-red-600 hover:text-red-900 p-1"
                                   title="Remove from batch"
                                 >
@@ -6943,204 +6182,6 @@ function Warehouse() {
                           className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50"
                         >
                           {loading ? "Saving..." : `Save Batch (${temporaryProducts.length} products)`}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Update Stock Batch Modal */}
-        {showUpdateStockBatchModal && (
-          <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[99999]">
-            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-gray-200/50">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Update Stock Batch - {updateStockProducts.length} Product(s)
-                  </h3>
-                  {updateStockProducts.length > 0 && (
-                    <p className="text-sm text-gray-600 mt-1">
-                      Batch Reference: <span className="font-mono font-semibold text-blue-600">{updateStockProducts[0]?.batch_reference || "N/A"}</span>
-                    </p>
-                  )}
-                </div>
-                <button onClick={closeUpdateStockBatchModal} className="text-gray-400 hover:text-gray-600">
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-
-              <div className="p-6">
-                {updateStockProducts.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">No products in update stock batch yet.</p>
-                    <p className="text-sm text-gray-400 mt-2">Add products using the "Update Stock" modal.</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mb-6">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-blue-50 rounded-lg">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{updateStockProducts.length}</div>
-                          <div className="text-sm text-blue-700">Total Products</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">
-                            {updateStockProducts.reduce((sum, p) => sum + parseInt(p?.quantity || 0), 0)}
-                          </div>
-                          <div className="text-sm text-green-700">Total Pieces</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-purple-600">
-                            ₱{updateStockProducts.reduce((sum, p) => sum + (parseFloat(p?.srp || 0) * parseInt(p?.quantity || 0)), 0).toFixed(2)}
-                          </div>
-                          <div className="text-sm text-purple-700">Total Value</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">
-                            {new Set(updateStockProducts.map(p => p?.category).filter(Boolean)).size}
-                          </div>
-                          <div className="text-sm text-orange-700">Categories</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse border border-gray-300">
-                        <thead>
-                          <tr className="bg-gray-100">
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">#</th>
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Product Name</th>
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Category</th>
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Brand</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Quantity</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">SRP</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Total Value</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Expiration</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Type</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {updateStockProducts.map((product, index) => (
-                            <tr key={product.temp_id} className="hover:bg-gray-50">
-                              <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
-                                {index + 1}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 font-medium text-gray-900">
-                                {product?.product_name || "N/A"}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2">
-                                <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                                  {product?.category || "N/A"}
-                                </span>
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-gray-900">
-                                {product?.brand_search || "N/A"}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
-                                {product?.product_type === "Medicine" 
-                                  ? `${product?.quantity || 0} tablets`
-                                  : `${product?.quantity || 0} pieces`
-                                }
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
-                                ₱{parseFloat(product?.srp || 0).toFixed(2)}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
-                                ₱{(parseFloat(product?.srp || 0) * parseInt(product?.quantity || 0)).toFixed(2)}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center" 
-                                  style={{ 
-                                    color: product?.expiration ? 
-                                      (isProductExpired(product.expiration) ? theme.colors.danger :
-                                       isProductExpiringSoon(product.expiration) ? theme.colors.warning :
-                                       theme.text.primary) : theme.text.primary
-                                  }}>
-                                {product?.expiration ? new Date(product.expiration).toLocaleDateString() : 'N/A'}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center">
-                                {(() => {
-                                  const bulk = Number(product?.bulk || 0);
-                                  const prescription = Number(product?.prescription || 0);
-                                  if (bulk && prescription) {
-                                    return <span className="inline-flex px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">Bulk & Rx</span>;
-                                  } else if (bulk) {
-                                    return <span className="inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">Bulk</span>;
-                                  } else if (prescription) {
-                                    return <span className="inline-flex px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">Rx</span>;
-                                  } else {
-                                    return <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">Regular</span>;
-                                  }
-                                })()}
-                              </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center">
-                                <button
-                                  onClick={() => removeUpdateStockProduct(product?.temp_id)}
-                                  className="text-red-600 hover:text-red-900 p-1"
-                                  title="Remove from batch"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="flex justify-between items-center mt-6 pt-6 border-t border-gray-200">
-                      <div className="text-sm text-gray-600">
-                        <p>• Products are stored temporarily until you save the batch</p>
-                        <p>• You can add more products or remove existing ones</p>
-                        <p>• All products will be updated in database when you click "Save Batch"</p>
-                      </div>
-                      <div className="flex space-x-4">
-                        <button
-                          type="button"
-                          onClick={closeUpdateStockBatchModal}
-                          className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
-                          Close
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            closeUpdateStockBatchModal();
-                            // Reset update stock form for next product
-                            setExistingProduct(null);
-                            setNewStockQuantity("");
-                            setNewStockBoxes("");
-                            setNewStockStripsPerBox("");
-                            setNewStockTabletsPerStrip("");
-                            setNewStockPiecesPerPack("");
-                            setNewStockExpiration("");
-                            setNewSrp("");
-                            setEditSrpEnabled(false);
-                            // Keep same batch reference as first product in batch
-                            const currentBatchRef = updateStockProducts.length > 0 ? updateStockProducts[0]?.batch_reference : generateBatchRef();
-                            setNewStockBatchReference(currentBatchRef);
-                            setUseSameBatch(false);
-                            setSelectedExistingBatch(null);
-                            setExistingBatches([]);
-                            setStockUpdateConfigMode("pieces");
-                            setShowUpdateStockModal(true);
-                          }}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
-                        >
-                          Add More Products
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveUpdateStockBatch}
-                          disabled={loading}
-                          className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50"
-                        >
-                          {loading ? "Saving..." : `Save Batch (${updateStockProducts.length} products)`}
                         </button>
                       </div>
                     </div>
@@ -7203,11 +6244,7 @@ function Warehouse() {
                                   value="bulk"
                                   checked={productTypeForm.configMode === "bulk"}
                                   onChange={(e) => handleProductTypeInputChange("configMode", e.target.value)}
-                                  className="h-4 w-4 focus:ring-blue-500"
-                    style={{ 
-                      accentColor: '#3b82f6',
-                      borderColor: isDarkMode ? '#475569' : '#d1d5db'
-                    }}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                                 />
                                 <label htmlFor="bulkMode" className="text-sm font-medium text-gray-700">
                                   📦 Bulk Mode (Boxes × Strips/Pieces)
@@ -7221,11 +6258,7 @@ function Warehouse() {
                                   value="pieces"
                                   checked={productTypeForm.configMode === "pieces"}
                                   onChange={(e) => handleProductTypeInputChange("configMode", e.target.value)}
-                                  className="h-4 w-4 focus:ring-blue-500"
-                    style={{ 
-                      accentColor: '#3b82f6',
-                      borderColor: isDarkMode ? '#475569' : '#d1d5db'
-                    }}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                                 />
                                 <label htmlFor="piecesMode" className="text-sm font-medium text-gray-700">
                                   🔢 Pieces Mode (Direct Total Input)
@@ -7466,19 +6499,19 @@ function Warehouse() {
                     <h4 className="font-medium mb-2" style={{ color: theme.colors.warning }}>⚠️ Expiring Batch Information</h4>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Batch Number:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Batch Number:</span>
                         <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.expiring_batch.batch_number || selectedExpiringProduct.expiring_batch.batch_id}</span>
                       </div>
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Batch Reference:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Batch Reference:</span>
                         <span className="ml-2 font-mono" style={{ color: theme.text.primary }}>{selectedExpiringProduct.expiring_batch.batch_reference}</span>
                       </div>
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Quantity:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Quantity:</span>
                         <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.expiring_batch.quantity} units</span>
                       </div>
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Days Until Expiry:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Days Until Expiry:</span>
                         <span className="ml-2 font-bold" style={{ color: theme.colors.danger }}>{selectedExpiringProduct.expiring_batch.days_until_expiry} days</span>
                       </div>
                     </div>
@@ -7488,27 +6521,27 @@ function Warehouse() {
                     <h4 className="font-medium mb-2" style={{ color: theme.colors.info }}>📋 Product Information</h4>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Product Name:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Product Name:</span>
                         <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.product_name}</span>
                       </div>
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Category:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Category:</span>
                         <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.category}</span>
                       </div>
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Total Stock:</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>Total Stock:</span>
                         <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.quantity} units</span>
                       </div>
                       <div>
-                        <span className="font-medium" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>SRP:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>₱{selectedExpiringProduct?.srp || selectedExpiringProduct?.unit_price || 0}</span>
+                        <span className="font-medium" style={{ color: theme.text.secondary }}>SRP:</span>
+                        <span className="ml-2" style={{ color: theme.text.primary }}>₱{selectedExpiringProduct.srp || selectedExpiringProduct.unit_price || 0}</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="rounded-lg p-4" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default, border: '1px solid' }}>
                     <h4 className="font-medium mb-2" style={{ color: theme.text.primary }}>💡 Recommended Actions</h4>
-                    <ul className="text-sm space-y-1" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                    <ul className="text-sm space-y-1" style={{ color: theme.text.secondary }}>
                       <li>• Consider moving this batch to the front for immediate sale</li>
                       <li>• Check if this batch can be transferred to other locations</li>
                       <li>• Review if the product needs to be discounted for quick sale</li>
@@ -7544,7 +6577,7 @@ function Warehouse() {
                 <div className="space-y-4">
                   <div className="rounded-lg p-4" style={{ backgroundColor: theme.colors.info + '20', borderColor: theme.colors.info + '40', border: '1px solid' }}>
                     <h4 className="font-medium mb-2" style={{ color: theme.colors.info }}>📦 Available Batches</h4>
-                    <div className="text-sm" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>
+                    <div className="text-sm" style={{ color: theme.text.secondary }}>
                       Found {fifoStockData.length} batch(es) for this product
                     </div>
                   </div>
@@ -7555,11 +6588,11 @@ function Warehouse() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr style={{ borderBottom: `1px solid ${theme.border.default}` }}>
-                            <th className="text-left py-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Batch #</th>
-                            <th className="text-left py-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Reference</th>
-                            <th className="text-left py-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Quantity</th>
-                            <th className="text-left py-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Expiry Date</th>
-                            <th className="text-left py-2" style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>Days Left</th>
+                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Batch #</th>
+                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Reference</th>
+                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Quantity</th>
+                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Expiry Date</th>
+                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Days Left</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -7624,7 +6657,7 @@ function Warehouse() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p style={{ color: isDarkMode ? '#cbd5e1' : '#475569' }}>No batch information available for this product.</p>
+                  <p style={{ color: theme.text.secondary }}>No batch information available for this product.</p>
                   <button
                     onClick={closeExpiringBatchModal}
                     className="mt-4 px-4 py-2 rounded-md transition-colors"
@@ -7640,174 +6673,9 @@ function Warehouse() {
           </div>
         </div>
       )}
-
-      {/* View Batch Modal */}
-      {showViewBatchModal && viewBatchData && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="rounded-lg shadow-xl max-w-2xl w-full mx-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
-            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: theme.border.default }}>
-              <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                {viewBatchData.isUpdateStock ? "Review Stock Update" : "Batch Updated Successfully"}
-              </h3>
-              <button onClick={closeViewBatchModal} className="text-gray-400 hover:text-gray-600">
-                <X className="h-6 w-6" />
-              </button>
             </div>
-            
-            <div className="p-6">
-              <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: theme.bg.secondary }}>
-                <div className="flex items-center mb-3">
-                  <div className={`w-3 h-3 rounded-full mr-3 ${viewBatchData.isUpdateStock ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
-                  <h4 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                    {viewBatchData.product?.product_name || 'N/A'}
-                  </h4>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium" style={{ color: theme.text.muted }}>Batch Reference:</span>
-                    <p className="font-semibold" style={{ color: theme.text.primary }}>{viewBatchData.batchReference}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium" style={{ color: theme.text.muted }}>Quantity Added:</span>
-                    <p className="font-semibold" style={{ color: theme.text.primary }}>
-                      {viewBatchData.quantityAdded} {viewBatchData.product?.product_type === "Medicine" ? "tablets" : "pieces"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="font-medium" style={{ color: theme.text.muted }}>Batch Type:</span>
-                    <p className="font-semibold" style={{ color: theme.text.primary }}>
-                      {viewBatchData.batchType === "existing" ? "Added to Existing Batch" : "New Batch Created"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="font-medium" style={{ color: theme.text.muted }}>Expiration Date:</span>
-                    <p className="font-semibold" style={{ color: theme.text.primary }}>
-                      {viewBatchData.expirationDate ? new Date(viewBatchData.expirationDate).toLocaleDateString() : 'N/A'}
-                    </p>
-                  </div>
-                </div>
-                
-                {viewBatchData?.srp && (
-                  <div className="mt-4 pt-4 border-t" style={{ borderColor: theme.border.default }}>
-                    <span className="font-medium" style={{ color: theme.text.muted }}>Updated SRP:</span>
-                    <p className="font-semibold text-lg" style={{ color: theme.colors.success }}>
-                      ₱{parseFloat(viewBatchData.srp).toFixed(2)}
-                    </p>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex justify-between items-center">
-                <div className="text-sm" style={{ color: theme.text.muted }}>
-                  {viewBatchData.isUpdateStock ? (
-                    <>
-                      <p>• Review the details above before confirming</p>
-                      <p>• Stock will be updated after confirmation</p>
-                    </>
-                  ) : (
-                    <>
-                      <p>• Batch has been automatically logged</p>
-                      <p>• FIFO tracking is now active</p>
-                    </>
-                  )}
-                </div>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={closeViewBatchModal}
-                    className="px-4 py-2 rounded-md transition-colors"
-                    style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary, border: `1px solid ${theme.border.default}` }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.primary}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.secondary}
-                  >
-                    {viewBatchData.isUpdateStock ? "Cancel" : "Close"}
-                  </button>
-                  {viewBatchData.isUpdateStock ? (
-                    <button
-                      onClick={async () => {
-                        // Execute the actual stock update
-                        setLoading(true);
-                        try {
-                          const response = await updateProductStock(
-                            viewBatchData.updateParams.productId,
-                            viewBatchData.updateParams.quantity,
-                            viewBatchData.updateParams.batchRef,
-                            viewBatchData.updateParams.expirationDate,
-                            0, // Unit cost
-                            viewBatchData.updateParams.srpValue,
-                            viewBatchData.updateParams.currentUser
-                          );
-                          
-                          if (response.success) {
-                            safeToast("success", "Stock updated successfully!");
-                            
-                            // Refresh data
-                            await loadData("products");
-                            await refreshOldestBatchData();
-                            
-                            // Update the modal to show success
-                            setViewBatchData(prev => ({
-                              ...prev,
-                              isUpdateStock: false // Change to success state
-                            }));
-                          } else {
-                            safeToast("error", response.message || "Failed to update stock");
-                          }
-                        } catch (error) {
-                          console.error("Error updating stock:", error);
-                          safeToast("error", "Failed to update stock");
-                        } finally {
-                          setLoading(false);
-                        }
-                      }}
-                      disabled={loading}
-                      className="px-4 py-2 rounded-md transition-colors text-white"
-                      style={{ backgroundColor: theme.colors.success }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme.colors.successHover || theme.colors.success}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = theme.colors.success}
-                    >
-                      {loading ? "Updating..." : "Confirm Update"}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        closeViewBatchModal();
-                        // Reset the update stock modal to allow for new product scanning
-                        setExistingProduct(null);
-                        setNewStockQuantity("");
-                        setNewStockBoxes("");
-                        setNewStockStripsPerBox("");
-                        setNewStockTabletsPerStrip("");
-                        setNewStockPiecesPerPack("");
-                        setNewStockExpiration("");
-                        setNewSrp("");
-                        setEditSrpEnabled(false);
-                        setNewStockBatchReference("");
-                        setUseSameBatch(false);
-                        setSelectedExistingBatch(null);
-                        setExistingBatches([]);
-                        setStockUpdateConfigMode("pieces");
-                        // Open the update stock modal for new product scanning
-                        setTimeout(() => {
-                          openUpdateStockModal({});
-                        }, 100);
-                      }}
-                      className="px-4 py-2 rounded-md transition-colors text-white"
-                      style={{ backgroundColor: theme.colors.accent }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme?.colors?.accentHover || theme?.colors?.accent || '#3b82f6'}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = theme.colors.accent}
-                    >
-                      Continue Adding
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+       
+   )
 }
 
 export default Warehouse;

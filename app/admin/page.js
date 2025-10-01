@@ -34,6 +34,62 @@ import ActivityLogsReport from './components/ActivityLogsReport';
 import ReturnManagement from './components/ReturnManagement';
 
 const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+const LOGIN_API_URL = "http://localhost/Enguio_Project/Api/login.php";
+
+// Logout function
+const logoutUser = async () => {
+  try {
+    // Get user data from sessionStorage
+    const userData = sessionStorage.getItem('user_data');
+    const empId = userData ? JSON.parse(userData).user_id : null;
+    
+    console.log('Logout attempt - User data:', userData);
+    console.log('Logout attempt - Emp ID:', empId);
+    
+    // Call logout API
+    const response = await fetch(LOGIN_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        action: 'logout',
+        emp_id: empId 
+      })
+    });
+    
+    const result = await response.json();
+    console.log('Logout API response:', result);
+    
+    if (result.success) {
+      // Clear all stored data
+      sessionStorage.clear();
+      localStorage.removeItem('pos-terminal');
+      localStorage.removeItem('pos-cashier');
+      localStorage.removeItem('pos-emp-id');
+      
+      // Redirect to login page
+      window.location.href = '/';
+      return true;
+    } else {
+      console.error('Logout failed:', result.message);
+      // Still clear local data and redirect even if API fails
+      sessionStorage.clear();
+      localStorage.removeItem('pos-terminal');
+      localStorage.removeItem('pos-cashier');
+      localStorage.removeItem('pos-emp-id');
+      window.location.href = '/';
+      return false;
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Clear local data and redirect even if there's an error
+    sessionStorage.clear();
+    localStorage.removeItem('pos-terminal');
+    localStorage.removeItem('pos-cashier');
+    localStorage.removeItem('pos-emp-id');
+    window.location.href = '/';
+    return false;
+  }
+};
 
 // Helper: get current session user (for logging)
 async function getCurrentUser() {
@@ -54,6 +110,9 @@ async function getCurrentUser() {
 // Helper: record login/logout as generic activity (more portable)
 async function recordActivity({ activityType, description, tableName = null, recordId = null }) {
   try {
+    // Get current user data from sessionStorage
+    const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+    
     const response = await fetch(API_BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -62,7 +121,11 @@ async function recordActivity({ activityType, description, tableName = null, rec
         activity_type: activityType,
         description: description,
         table_name: tableName,
-        record_id: recordId
+        record_id: recordId,
+        user_id: userData.user_id || userData.emp_id,
+        username: userData.username,
+        role: userData.role,
+        employee_name: userData.full_name || userData.username
       })
     });
     const responseText = await response.text();
@@ -161,10 +224,8 @@ function AdminContent() {
 
   const confirmLogout = async () => {
     try {
-      await recordLogin({ loginType: 'LOGOUT', status: 'SUCCESS' });
       setShowLogoutConfirm(false);
-      // Redirect to login page or handle logout
-      window.location.href = '/login';
+      await logoutUser();
     } catch (error) {
       console.error('Logout error:', error);
       setShowLogoutConfirm(false);

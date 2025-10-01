@@ -18,11 +18,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   const [selectedCashier, setSelectedCashier] = useState(null);
   const [cashierDetails, setCashierDetails] = useState(null);
   const [cashierDetailsLoading, setCashierDetailsLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [newDataAvailable, setNewDataAvailable] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [lastDataCount, setLastDataCount] = useState(0);
   const [currentUserData, setCurrentUserData] = useState(null);
@@ -94,13 +91,24 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       if (res.data?.success) {
         const newData = res.data.data || [];
         
+        // Handle login logs data structure (has online_users and all_logs)
+        let processedData = newData;
+        if (reportType === 'login_logs' && newData.online_users) {
+          // For login logs, use all_logs for the table display but online_users for cards
+          processedData = newData.all_logs || [];
+        }
+        
         // Debug logging
         console.log(`✅ ${reportType} report data received:`, {
-          dataCount: newData.length,
+          dataCount: Array.isArray(processedData) ? processedData.length : (processedData.all_logs?.length || 0),
           hasNewData: res.data.has_new_data,
           isAutoRefresh,
           dateRange: `${dateRange.startDate} to ${dateRange.endDate}`,
-          sampleData: newData[0] || 'No data'
+          sampleData: Array.isArray(processedData) ? (processedData[0] || 'No data') : processedData,
+          loginLogsStructure: reportType === 'login_logs' ? {
+            onlineUsers: newData.online_users?.length || 0,
+            allLogs: newData.all_logs?.length || 0
+          } : null
         });
         
         // Check if there's new data available (for auto-refresh)
@@ -138,14 +146,15 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         }
         
         // Track data count changes for better detection
-        const currentDataCount = newData.length;
+        const currentDataCount = Array.isArray(processedData) ? processedData.length : (processedData.all_logs?.length || 0);
         if (isAutoRefresh && currentDataCount > lastDataCount) {
           setLastDataCount(currentDataCount);
           setNewDataAvailable(true);
           setNotificationCount(prev => prev + 1);
         }
         
-        setReportData(newData);
+        // Store the full data structure for login logs, processed data for others
+        setReportData(reportType === 'login_logs' ? newData : processedData);
         setReportError(null);
         setLastRefresh(new Date());
       } else {
@@ -252,18 +261,16 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
     }
   }, [dateRange]);
 
-  // Auto-refresh effect for real-time updates
+  // Auto-refresh for Login Logs Report every 5 seconds
   useEffect(() => {
-    if (!autoRefresh || (reportType !== 'sales' && reportType !== 'cashier_performance' && reportType !== 'login_logs')) {
-      return;
+    if (reportType === 'login_logs') {
+      const interval = setInterval(() => {
+        fetchReportData();
+      }, 5000); // Refresh every 5 seconds
+
+      return () => clearInterval(interval);
     }
-
-    const interval = setInterval(() => {
-      fetchReportData(0, true); // Auto-refresh with isAutoRefresh = true
-    }, refreshInterval);
-
-    return () => clearInterval(interval);
-  }, [autoRefresh, refreshInterval, reportType, dateRange]);
+  }, [reportType, dateRange]);
 
   // Handle new data notification
   const handleRefreshData = () => {
@@ -290,7 +297,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'cashier_performance':
         return ['Cashier Name', 'Transactions Count', 'Total Sales', 'Average Transaction', 'Unique Products Sold'];
       case 'login_logs':
-        return ['Date', 'Time', 'Employee Name', 'Username', 'Role', 'Action', 'Login Status', 'Location', 'Terminal', 'Description'];
+        return ['Date', 'Time', 'Employee Name', 'Username', 'Role', 'Action', 'Login Status', 'Location', 'Terminal', 'Session Duration', 'Description'];
       case 'activity_logs':
         return ['Date', 'Time', 'Employee Name', 'Username', 'Role', 'Action', 'Description', 'Location', 'Terminal', 'Status'];
       default:
@@ -523,6 +530,18 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         return row[columnKey] || '🏢 Main Office';
       case 'terminal':
         return row[columnKey] || '💻 System Terminal';
+      case 'session_duration':
+        const duration = row[columnKey];
+        if (!duration || duration === 0) return '📊 N/A';
+        
+        const hours = Math.floor(duration / 60);
+        const minutes = duration % 60;
+        
+        if (hours > 0) {
+          return `⏱️ ${hours}h ${minutes}m`;
+        } else {
+          return `⏱️ ${minutes}m`;
+        }
       case 'description':
         const description = row[columnKey];
         if (!description) return '📄 System Activity';
@@ -619,88 +638,104 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               boxShadow: `0 10px 25px ${theme.shadow}`
             }}
           >
-            <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>Date Range</h3>
+            <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>
+              {reportType === 'activity_logs' ? 'Activity Logs - Today Only' : 'Date Range'}
+            </h3>
+            {reportType === 'activity_logs' && (
+              <div className="mb-3 p-3 rounded-md" style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}>
+                <p className="text-sm font-medium">📅 Activity Logs automatically show today's activities only</p>
+                <p className="text-xs mt-1">Real-time system activities from tbl_activity_log table</p>
+              </div>
+            )}
             <div className="flex gap-4 items-center">
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
-                <input
-                  type="date"
-                  value={dateRange.startDate}
-                  onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                  className="px-3 py-2 border rounded-md"
-                  style={{
-                    backgroundColor: theme.bg.input,
-                    borderColor: theme.border.default,
-                    color: theme.text.primary
-                  }}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
-                <input
-                  type="date"
-                  value={dateRange.endDate}
-                  onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                  className="px-3 py-2 border rounded-md"
-                  style={{
-                    backgroundColor: theme.bg.input,
-                    borderColor: theme.border.default,
-                    color: theme.text.primary
-                  }}
-                />
-              </div>
-              <button
-                onClick={() => {
-                  const yesterday = new Date();
-                  yesterday.setDate(yesterday.getDate() - 1);
-                  setDateRange({
-                    startDate: yesterday.toISOString().split('T')[0],
-                    endDate: new Date().toISOString().split('T')[0]
-                  });
-                }}
-                disabled={reportDataLoading}
-                className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                style={{
-                  backgroundColor: theme.colors.success,
-                  color: 'white'
-                }}
-              >
-                Last 24 Hours
-              </button>
-              <button
-                onClick={() => {
-                  const sevenDaysAgo = new Date();
-                  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                  setDateRange({
-                    startDate: sevenDaysAgo.toISOString().split('T')[0],
-                    endDate: new Date().toISOString().split('T')[0]
-                  });
-                }}
-                disabled={reportDataLoading}
-                className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                style={{
-                  backgroundColor: theme.colors.accent,
-                  color: theme.text.primary
-                }}
-              >
-                Last 7 Days
-              </button>
-              <button
-                onClick={() => {
-                  setDateRange({
-                    startDate: '2024-01-01',
-                    endDate: '2025-12-31'
-                  });
-                }}
-                disabled={reportDataLoading}
-                className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                style={{
-                  backgroundColor: theme.colors.warning || '#f59e0b',
-                  color: 'white'
-                }}
-              >
-                All Time
-              </button>
+              {reportType !== 'activity_logs' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
+                    <input
+                      type="date"
+                      value={dateRange.startDate}
+                      onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="px-3 py-2 border rounded-md"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
+                    <input
+                      type="date"
+                      value={dateRange.endDate}
+                      onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="px-3 py-2 border rounded-md"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              {reportType !== 'activity_logs' && (
+                <>
+                  <button
+                    onClick={() => {
+                      const yesterday = new Date();
+                      yesterday.setDate(yesterday.getDate() - 1);
+                      setDateRange({
+                        startDate: yesterday.toISOString().split('T')[0],
+                        endDate: new Date().toISOString().split('T')[0]
+                      });
+                    }}
+                    disabled={reportDataLoading}
+                    className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
+                    style={{
+                      backgroundColor: theme.colors.success,
+                      color: 'white'
+                    }}
+                  >
+                    Last 24 Hours
+                  </button>
+                  <button
+                    onClick={() => {
+                      const sevenDaysAgo = new Date();
+                      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                      setDateRange({
+                        startDate: sevenDaysAgo.toISOString().split('T')[0],
+                        endDate: new Date().toISOString().split('T')[0]
+                      });
+                    }}
+                    disabled={reportDataLoading}
+                    className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
+                    style={{
+                      backgroundColor: theme.colors.accent,
+                      color: theme.text.primary
+                    }}
+                  >
+                    Last 7 Days
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDateRange({
+                        startDate: '2024-01-01',
+                        endDate: '2025-12-31'
+                      });
+                    }}
+                    disabled={reportDataLoading}
+                    className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
+                    style={{
+                      backgroundColor: theme.colors.warning || '#f59e0b',
+                      color: 'white'
+                    }}
+                  >
+                    All Time
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => generateReport()}
                 disabled={reportDataLoading}
@@ -713,58 +748,9 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 {reportDataLoading ? 'Generating...' : 'Generate Report'}
               </button>
               
-              {/* Auto-refresh controls for sales, cashier performance, and login logs reports */}
-              {(reportType === 'sales' || reportType === 'cashier_performance' || reportType === 'login_logs') && (
-                <>
-                  <div className="flex items-center space-x-2">
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={autoRefresh}
-                        onChange={(e) => setAutoRefresh(e.target.checked)}
-                        className="rounded"
-                      />
-                      <span className="text-sm font-medium" style={{ color: theme.text.secondary }}>
-                        Auto-refresh
-                      </span>
-                    </label>
-                    <select
-                      value={refreshInterval}
-                      onChange={(e) => setRefreshInterval(parseInt(e.target.value))}
-                      className="px-2 py-1 border rounded text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    >
-                      <option value={10000}>10 seconds</option>
-                      <option value={30000}>30 seconds</option>
-                      <option value={60000}>1 minute</option>
-                      <option value={300000}>5 minutes</option>
-                    </select>
-                  </div>
-                  
-                  <div className="text-xs" style={{ color: theme.text.secondary }}>
-                    Last updated: {lastRefresh.toLocaleTimeString()}
-                  </div>
-                  
-                  {/* Debug Mode Toggle */}
-                  <div className="flex items-center space-x-2">
-                    <label className="flex items-center space-x-1">
-                      <input
-                        type="checkbox"
-                        checked={debugMode}
-                        onChange={(e) => setDebugMode(e.target.checked)}
-                        className="rounded text-xs"
-                      />
-                      <span className="text-xs font-medium" style={{ color: theme.text.secondary }}>
-                        Debug Mode
-                      </span>
-                    </label>
-                  </div>
-                </>
-              )}
+              <div className="text-xs" style={{ color: theme.text.secondary }}>
+                Last updated: {lastRefresh.toLocaleTimeString()}
+              </div>
             </div>
           </div>
         </div>
@@ -897,15 +883,17 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           </div>
         )}
 
-        {/* Summary Cards for Login Logs Report */}
-        {reportType === 'login_logs' && reportData.length > 0 && (
+        {/* Summary Cards for Login Logs Report - Show Only Online Users */}
+        {reportType === 'login_logs' && (Array.isArray(reportData) ? reportData.length > 0 : (reportData.all_logs?.length > 0 || reportData.online_users?.length > 0)) && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">👥</div>
                 <div>
                   <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Activities</p>
-                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{reportData.length}</p>
+                  <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                    {Array.isArray(reportData) ? reportData.length : (reportData.all_logs?.length || 0)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -915,7 +903,9 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 <div>
                   <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Currently Online</p>
                   <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                    {reportData.filter(item => item.login_status === 'ONLINE').length}
+                    {Array.isArray(reportData) 
+                      ? reportData.filter(item => item.login_status === 'ONLINE').length 
+                      : (reportData.online_users?.length || 0)}
                   </p>
                 </div>
               </div>
@@ -924,9 +914,11 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               <div className="flex items-center">
                 <div className="text-3xl mr-3">👑</div>
                 <div>
-                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Administrators</p>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Online Admins</p>
                   <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                    {reportData.filter(item => item.role === 'admin').length}
+                    {Array.isArray(reportData) 
+                      ? reportData.filter(item => item.login_status === 'ONLINE' && item.role === 'admin').length
+                      : (reportData.online_users?.filter(item => item.role === 'admin').length || 0)}
                   </p>
                 </div>
               </div>
@@ -935,9 +927,11 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🏢</div>
                 <div>
-                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Unique Locations</p>
+                  <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Active Locations</p>
                   <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                    {new Set(reportData.map(item => item.location).filter(Boolean)).size}
+                    {Array.isArray(reportData) 
+                      ? new Set(reportData.filter(item => item.login_status === 'ONLINE').map(item => item.location).filter(Boolean)).size
+                      : new Set((reportData.online_users || []).map(item => item.location).filter(Boolean)).size}
                   </p>
                 </div>
               </div>
@@ -1056,7 +1050,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         >
           <div className="p-6">
             <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>
-              {reportName} - {dateRange.startDate} to {dateRange.endDate}
+              {reportName} - {reportType === 'activity_logs' ? 'Today Only' : `${dateRange.startDate} to ${dateRange.endDate}`}
             </h3>
 
             {reportDataLoading ? (
@@ -1080,7 +1074,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   Try Again
                 </button>
               </div>
-            ) : reportData.length > 0 ? (
+            ) : (Array.isArray(reportData) ? reportData.length > 0 : (reportData.all_logs?.length > 0 || reportData.online_users?.length > 0)) ? (
               <div className="max-h-[600px] overflow-y-auto">
                 <table className="w-full caption-bottom text-sm">
                   <thead className="[&_tr]:border-b sticky top-0" style={{ backgroundColor: theme.bg.card }}>
@@ -1093,7 +1087,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                     </tr>
                   </thead>
                   <tbody className="[&_tr:last-child]:border-0">
-                    {reportData.map((row, index) => (
+                    {(Array.isArray(reportData) ? reportData : (reportData.all_logs || [])).map((row, index) => (
                       <tr key={index} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                         {getReportColumns().map((column, colIndex) => (
                           <td key={colIndex} className="p-4 align-middle" style={{ color: theme.text.secondary }}>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captcha Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        .result { margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>Captcha Test</h1>
+    
+    <div class="test-section">
+        <h3>Test Captcha Generation</h3>
+        <button onclick="testCaptcha()">Generate Captcha</button>
+        <div id="captcha-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test Captcha with Answer</h3>
+        <input type="text" id="captcha-answer" placeholder="Enter captcha answer">
+        <button onclick="testCaptchaWithAnswer()">Test with Answer</button>
+        <div id="answer-result" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = "http://localhost/Enguio_Project/Api/login.php";
+        let currentCaptchaAnswer = '';
+
+        async function testCaptcha() {
+            try {
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'generate_captcha' })
+                });
+                
+                const data = await response.json();
+                const resultDiv = document.getElementById('captcha-result');
+                
+                if (data.success) {
+                    currentCaptchaAnswer = data.answer;
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <strong>Captcha Generated Successfully!</strong><br>
+                            Question: ${data.question}<br>
+                            Answer: ${data.answer}<br>
+                            Type: ${typeof data.answer}
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('captcha-result').innerHTML = `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testCaptchaWithAnswer() {
+            const userAnswer = document.getElementById('captcha-answer').value;
+            
+            if (!userAnswer) {
+                document.getElementById('answer-result').innerHTML = '<div class="error">Please enter an answer</div>';
+                return;
+            }
+
+            if (!currentCaptchaAnswer) {
+                document.getElementById('answer-result').innerHTML = '<div class="error">Please generate a captcha first</div>';
+                return;
+            }
+
+            const resultDiv = document.getElementById('answer-result');
+            
+            if (userAnswer.toString() === currentCaptchaAnswer.toString()) {
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <strong>Correct Answer!</strong><br>
+                        Your answer: ${userAnswer}<br>
+                        Correct answer: ${currentCaptchaAnswer}<br>
+                        Match: ${userAnswer.toString() === currentCaptchaAnswer.toString()}
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <strong>Wrong Answer!</strong><br>
+                        Your answer: ${userAnswer}<br>
+                        Correct answer: ${currentCaptchaAnswer}<br>
+                        Match: ${userAnswer.toString() === currentCaptchaAnswer.toString()}
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-generate captcha on page load
+        window.onload = function() {
+            testCaptcha();
+        };
+    </script>
+</body>
+</html>

@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import { toast } from 'react-toastify';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+const API_BASE_URL = "http://localhost/Enguio_Project/Api/login.php";
 
 export default function LoginForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [showCaptcha, setShowCaptcha] = useState(false);
   const [captchaQuestion, setCaptchaQuestion] = useState("");
@@ -27,7 +28,9 @@ export default function LoginForm() {
 
   // Auto-show captcha once both username and password are filled
   useEffect(() => {
+    console.log('Username:', username, 'Password:', password, 'ShowCaptcha:', showCaptcha);
     if (username.trim() && password.trim() && !showCaptcha) {
+      console.log('Showing captcha...');
       setShowCaptcha(true);
       generateCaptcha();
     }
@@ -35,13 +38,17 @@ export default function LoginForm() {
 
   const generateCaptcha = async () => {
     try {
+      console.log("Generating captcha...");
       const response = await axios.post(API_BASE_URL, {
         action: "generate_captcha"
       });
       
+      console.log("Captcha API response:", response.data);
+      
       if (response.data.success) {
         setCaptchaQuestion(response.data.question);
         setCaptchaAnswer(response.data.answer.toString());
+        console.log("Captcha generated:", response.data.question, "Answer:", response.data.answer);
         if (debugMode) {
           setDebugInfo(`Generated: ${response.data.question} | Answer: ${response.data.answer} | Type: ${typeof response.data.answer}`);
         }
@@ -53,6 +60,7 @@ export default function LoginForm() {
       const num2 = Math.floor(Math.random() * 10) + 1;
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);
       setCaptchaAnswer((num1 + num2).toString());
+      console.log("Fallback captcha generated:", num1, "+", num2, "=", num1 + num2);
       if (debugMode) {
         setDebugInfo(`Fallback: ${num1} + ${num2} = ${num1 + num2}`);
       }
@@ -117,11 +125,9 @@ export default function LoginForm() {
     }
 
     // Debug: Log captcha values
-    if (debugMode) {
-      console.log("Captcha Input:", captchaInput, "Type:", typeof captchaInput);
-      console.log("Captcha Answer:", captchaAnswer, "Type:", typeof captchaAnswer);
-      testCaptchaComparison();
-    }
+    console.log("Captcha Input:", captchaInput, "Type:", typeof captchaInput);
+    console.log("Captcha Answer:", captchaAnswer, "Type:", typeof captchaAnswer);
+    console.log("String comparison:", captchaInput.toString(), "===", captchaAnswer.toString(), "=", captchaInput.toString() === captchaAnswer.toString());
     
     if (captchaInput.toString() !== captchaAnswer.toString()) {
       const msg = "Incorrect captcha answer. Please try again.";
@@ -135,6 +141,15 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
+      console.log("Sending login request with:", {
+        action: "login",
+        username: username,
+        password: password,
+        captcha: captchaInput,
+        captchaAnswer: captchaAnswer,
+        route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
+      });
+      
       const res = await axios.post(API_BASE_URL, {
         action: "login",
         username: username,
@@ -144,6 +159,8 @@ export default function LoginForm() {
         // Provide route hint so backend can map location/terminal and save shift
         route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
       });
+
+      console.log("Login response:", res.data);
 
       if (res.data.success) {
         const role = res.data.role;
@@ -192,10 +209,7 @@ export default function LoginForm() {
           toast.warn('No role detected. Redirecting to admin.');
         }
 
-        // Tell backend the final target so it can register terminal/location
-        try {
-          await axios.post(API_BASE_URL, { action: 'register_terminal_route', route: target });
-        } catch (_) {}
+        // Terminal/location is now handled automatically in the login process
 
         // Try router push, then hard redirect fallback
         router.push(target);
@@ -318,16 +332,51 @@ export default function LoginForm() {
             <label htmlFor="password" className="block text-sm font-medium text-gray-900 mb-2">
               Password
             </label>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 transition-colors text-gray-900 placeholder-gray-500 bg-white"
-              placeholder="Enter your password"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full px-4 py-3 pr-12 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 transition-colors text-gray-900 placeholder-gray-500 bg-white"
+                placeholder="Enter your password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Manual captcha trigger button */}
+          {!showCaptcha && username.trim() && password.trim() && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCaptcha(true);
+                  generateCaptcha();
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Show Security Check
+              </button>
+            </div>
+          )}
 
           {showCaptcha && (
             <div

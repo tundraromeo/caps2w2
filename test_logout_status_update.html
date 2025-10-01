@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logout Status Update Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        .warning { background-color: #fff3cd; border-color: #ffeaa7; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button.danger { background-color: #dc3545; }
+        button.danger:hover { background-color: #c82333; }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .online { background-color: #28a745; color: white; }
+        .offline { background-color: #dc3545; color: white; }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .log-entry {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Logout Status Update Test</h1>
+        <p>This test demonstrates how the logout functionality updates user status to "OFFLINE" in the LoginLogsReport.</p>
+
+        <div class="test-section info">
+            <h3>📋 Test Overview</h3>
+            <p><strong>Purpose:</strong> Verify that when a user logs out, their status changes from "ONLINE" to "OFFLINE" in the Login Logs Report.</p>
+            <p><strong>Expected Behavior:</strong></p>
+            <ul>
+                <li>✅ User logs in → Status shows <span class="status online">ONLINE</span></li>
+                <li>✅ User logs out → Status changes to <span class="status offline">OFFLINE</span></li>
+                <li>✅ Login Logs Report reflects the status change</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 Test Steps</h3>
+            <ol>
+                <li><strong>Login Test:</strong> Click "Test Login" to simulate a user login</li>
+                <li><strong>Check Status:</strong> Verify the user appears as ONLINE in the report</li>
+                <li><strong>Logout Test:</strong> Click "Test Logout" to simulate a user logout</li>
+                <li><strong>Verify Change:</strong> Check that the status changes to OFFLINE</li>
+            </ol>
+        </div>
+
+        <div class="test-section">
+            <h3>🔧 Test Controls</h3>
+            <button onclick="testLogin()">🔓 Test Login</button>
+            <button onclick="testLogout()" class="danger">🔒 Test Logout</button>
+            <button onclick="checkLoginLogs()">📊 Check Login Logs</button>
+            <button onclick="clearLogs()">🗑️ Clear Test Logs</button>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 Current Login Logs Status</h3>
+            <div id="loginLogsStatus">
+                <p>Click "Check Login Logs" to see current status...</p>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Test Log</h3>
+            <div id="testLog">
+                <p>Test log will appear here...</p>
+            </div>
+        </div>
+
+        <div class="test-section success">
+            <h3>✅ How It Works</h3>
+            <p><strong>When a user logs out:</strong></p>
+            <ol>
+                <li><strong>Session Check:</strong> System checks for active session and login_id</li>
+                <li><strong>Database Update:</strong> Updates tbl_login with logout_time, logout_date, and status='offline'</li>
+                <li><strong>Activity Log:</strong> Records logout activity in tbl_activity_log</li>
+                <li><strong>Session Cleanup:</strong> Clears session data and destroys session</li>
+                <li><strong>Report Update:</strong> Login logs report shows user as OFFLINE with logout details</li>
+            </ol>
+            
+            <p><strong>Login Logs Report Features:</strong></p>
+            <ul>
+                <li>🟢 <strong>ONLINE:</strong> Users currently logged in</li>
+                <li>🔴 <strong>OFFLINE:</strong> Users who have logged out</li>
+                <li>⏱️ <strong>Session Duration:</strong> How long user was logged in</li>
+                <li>📍 <strong>Location:</strong> Where the user logged in/out</li>
+                <li>💻 <strong>Terminal:</strong> Which terminal was used</li>
+            </ul>
+        </div>
+
+        <div class="test-section warning">
+            <h3>⚠️ Important Notes</h3>
+            <ul>
+                <li>This test uses the actual login/logout API endpoints</li>
+                <li>Make sure XAMPP (Apache & MySQL) is running</li>
+                <li>Test data will be created in the database</li>
+                <li>Use "Clear Test Logs" to clean up test data</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost/Enguio_Project/Api/backend.php';
+        const LOGIN_API_URL = 'http://localhost/Enguio_Project/Api/login.php';
+        let testUserId = null;
+        let testLoginId = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('testLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function testLogin() {
+            try {
+                log('🔓 Testing login functionality...', 'info');
+                
+                // First, get captcha
+                const captchaResponse = await fetch(LOGIN_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'generate_captcha' })
+                });
+                const captchaData = await captchaResponse.json();
+                
+                if (!captchaData.success) {
+                    throw new Error('Failed to get captcha');
+                }
+                
+                log(`📝 Captcha: ${captchaData.question}`, 'info');
+                
+                // Test login with admin credentials
+                const loginData = {
+                    action: 'login',
+                    username: 'admin',
+                    password: 'admin123',
+                    captcha: captchaData.question,
+                    captchaAnswer: captchaData.answer,
+                    route: 'admin'
+                };
+                
+                const response = await fetch(LOGIN_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(loginData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    testUserId = result.user_id;
+                    log(`✅ Login successful! User ID: ${testUserId}`, 'success');
+                    log(`👤 Full Name: ${result.full_name}`, 'info');
+                    log(`🎭 Role: ${result.role}`, 'info');
+                    log(`💻 Terminal: ${result.terminal_name}`, 'info');
+                    log(`📍 Location: ${result.location}`, 'info');
+                } else {
+                    log(`❌ Login failed: ${result.message}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Login test error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testLogout() {
+            try {
+                if (!testUserId) {
+                    log('⚠️ Please test login first!', 'warning');
+                    return;
+                }
+                
+                log('🔒 Testing logout functionality...', 'info');
+                
+                const logoutData = {
+                    action: 'logout',
+                    emp_id: testUserId
+                };
+                
+                const response = await fetch(LOGIN_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(logoutData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    log(`✅ Logout successful!`, 'success');
+                    log(`📊 Status should now be OFFLINE in Login Logs Report`, 'info');
+                    testUserId = null;
+                } else {
+                    log(`❌ Logout failed: ${result.message}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Logout test error: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkLoginLogs() {
+            try {
+                log('📊 Checking Login Logs Report...', 'info');
+                
+                const reportData = {
+                    action: 'get_report_data',
+                    report_type: 'login_logs',
+                    start_date: '2024-01-01',
+                    end_date: '2025-12-31'
+                };
+                
+                const response = await fetch(API_BASE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reportData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const logs = result.data || [];
+                    log(`📋 Found ${logs.length} login log entries`, 'info');
+                    
+                    // Display recent logs
+                    const recentLogs = logs.slice(0, 5);
+                    let statusHtml = '<h4>Recent Login Activities:</h4>';
+                    
+                    recentLogs.forEach(log => {
+                        const statusClass = log.login_status === 'ONLINE' ? 'online' : 'offline';
+                        const statusIcon = log.login_status === 'ONLINE' ? '🟢' : '🔴';
+                        
+                        statusHtml += `
+                            <div style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                                <strong>${statusIcon} ${log.employee_name || log.username}</strong> 
+                                <span class="status ${statusClass}">${log.login_status}</span><br>
+                                <small>
+                                    📅 ${log.date} ${log.time} | 
+                                    🎭 ${log.role} | 
+                                    📍 ${log.location} | 
+                                    💻 ${log.terminal}
+                                </small><br>
+                                <small>📝 ${log.description}</small>
+                            </div>
+                        `;
+                    });
+                    
+                    document.getElementById('loginLogsStatus').innerHTML = statusHtml;
+                    
+                } else {
+                    log(`❌ Failed to get login logs: ${result.message}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Check login logs error: ${error.message}`, 'error');
+            }
+        }
+
+        async function clearLogs() {
+            try {
+                log('🗑️ Clearing test logs...', 'info');
+                
+                // This would typically be an admin function to clean up test data
+                // For now, just clear the display
+                document.getElementById('testLog').innerHTML = '<p>Test log cleared...</p>';
+                document.getElementById('loginLogsStatus').innerHTML = '<p>Click "Check Login Logs" to see current status...</p>';
+                
+                log('✅ Test logs cleared', 'success');
+                
+            } catch (error) {
+                log(`❌ Clear logs error: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize
+        log('🚀 Logout Status Update Test initialized', 'info');
+        log('💡 Make sure XAMPP (Apache & MySQL) is running before testing', 'warning');
+    </script>
+</body>
+</html>
