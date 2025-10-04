@@ -28,7 +28,7 @@ const NotificationIndicator = ({
       case 'exclamation':
         return <FaExclamationTriangle className={`${sizeClasses[size]} text-red-500 animate-pulse`} />;
       case 'bell':
-        return <FaBell className={`${sizeClasses[size]} text-blue-500 animate-pulse`} />;
+        return <FaBell className={`${sizeClasses[size]} text-gray-500 animate-pulse`} />;
       default:
         return <FaExclamationTriangle className={`${sizeClasses[size]} text-red-500 animate-pulse`} />;
     }

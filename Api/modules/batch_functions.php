@@ -24,7 +24,7 @@ function getTransferBatchDetails($conn, $data) {
                     tbd.quantity as batch_quantity,
                     tbd.srp as batch_srp,
                     tbd.expiration_date,
-                    fs.unit_cost,
+                    fs.srp,
                     fs.available_quantity
                 FROM tbl_transfer_batch_details tbd
                 LEFT JOIN tbl_fifo_stock fs ON tbd.batch_id = fs.batch_id
@@ -124,7 +124,7 @@ function getIndividualBatchDetails($conn, $data) {
                 btd.batch_id,
                 btd.batch_reference,
                 btd.quantity_used as batch_quantity,
-                btd.unit_cost,
+                btd.srp,
                 btd.srp as batch_srp,
                 btd.expiration_date,
                 btd.status,
@@ -166,7 +166,7 @@ function getBatchTransferDetailsByProduct($conn, $data) {
                 btd.batch_id,
                 btd.batch_reference,
                 btd.quantity_used as batch_quantity,
-                btd.unit_cost,
+                btd.srp,
                 btd.srp as batch_srp,
                 btd.expiration_date,
                 btd.status,
@@ -247,7 +247,7 @@ function getBatchTransfersByLocation($conn, $data) {
                 btd.batch_id,
                 btd.batch_reference,
                 btd.quantity_used as batch_quantity,
-                btd.unit_cost,
+                btd.srp,
                 btd.srp as batch_srp,
                 btd.expiration_date,
                 btd.status,
@@ -456,7 +456,7 @@ function duplicateProductBatches($conn, $data) {
         foreach ($batch_ids as $batch_id) {
             // Get the original batch details
             $stmt = $conn->prepare("
-                SELECT batch_reference, available_quantity, unit_cost, srp, expiration_date, entry_date, location_id
+                SELECT batch_reference, available_quantity, srp, expiration_date, entry_date, location_id
                 FROM tbl_fifo_stock 
                 WHERE batch_id = ?
             ");
@@ -469,15 +469,14 @@ function duplicateProductBatches($conn, $data) {
                 
                 $insert_stmt = $conn->prepare("
                     INSERT INTO tbl_fifo_stock 
-                    (product_id, batch_reference, available_quantity, unit_cost, srp, expiration_date, entry_date, location_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (product_id, batch_reference, available_quantity, srp, expiration_date, entry_date, location_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 ");
                 
                 $insert_stmt->execute([
                     $product_id,
                     $new_batch_reference,
                     $original_batch['available_quantity'],
-                    $original_batch['unit_cost'],
                     $original_batch['srp'],
                     $original_batch['expiration_date'],
                     $original_batch['entry_date'],
@@ -512,7 +511,7 @@ function addBatchEntry($conn, $data) {
         $batch_reference = $data['batch_reference'] ?? '';
         $product_id = $data['product_id'] ?? 0;
         $quantity = $data['quantity'] ?? 0;
-        $unit_cost = $data['unit_cost'] ?? 0;
+        $srp = $data['srp'] ?? 0;
         $srp = $data['srp'] ?? 0;
         $expiration_date = $data['expiration_date'] ?? null;
         $location_id = $data['location_id'] ?? 0;
@@ -525,15 +524,14 @@ function addBatchEntry($conn, $data) {
         // Insert new batch
         $stmt = $conn->prepare("
             INSERT INTO tbl_fifo_stock 
-            (product_id, batch_reference, available_quantity, unit_cost, srp, expiration_date, entry_date, location_id)
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)
+            (product_id, batch_reference, available_quantity, srp, expiration_date, entry_date, location_id)
+            VALUES (?, ?, ?, ?, ?, NOW(), ?)
         ");
         
         $stmt->execute([
             $product_id,
             $batch_reference,
             $quantity,
-            $unit_cost,
             $srp,
             $expiration_date,
             $location_id
@@ -747,7 +745,7 @@ function get_fifo_stock($conn, $data) {
         $total_quantity = array_sum(array_column($batches, 'available_quantity'));
         $total_value = 0;
         foreach ($batches as $batch) {
-            $total_value += $batch['available_quantity'] * $batch['unit_cost'];
+            $total_value += $batch['available_quantity'] * $batch['srp'];
         }
         
         echo json_encode([
@@ -788,12 +786,21 @@ function get_products_oldest_batch($conn, $data) {
                 COALESCE(s.supplier_name, '') as supplier_name,
                 MIN(fs.expiration_date) as earliest_expiry,
                 MIN(fs.batch_reference) as oldest_batch_ref,
-                DATEDIFF(MIN(fs.expiration_date), CURDATE()) as days_until_expiry
+                DATEDIFF(MIN(fs.expiration_date), CURDATE()) as days_until_expiry,
+                COALESCE(NULLIF(first_batch.first_batch_srp, 0), p.srp) as first_batch_srp
             FROM tbl_product p
             LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id AND fs.available_quantity > 0
             LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+            LEFT JOIN (
+                SELECT 
+                    fs2.product_id,
+                    fs2.srp as first_batch_srp,
+                    ROW_NUMBER() OVER (PARTITION BY fs2.product_id ORDER BY fs2.entry_date ASC, fs2.fifo_id ASC) as rn
+                FROM tbl_fifo_stock fs2
+                WHERE fs2.available_quantity > 0 AND fs2.srp > 0
+            ) first_batch ON p.product_id = first_batch.product_id AND first_batch.rn = 1
             WHERE p.status = 'active'
         ";
         
@@ -885,7 +892,7 @@ function add_batch_entry($conn, $data) {
         $product_id = $data['product_id'] ?? 0;
         $batch_reference = $data['batch_reference'] ?? '';
         $quantity = $data['quantity'] ?? 0;
-        $unit_cost = $data['unit_cost'] ?? 0;
+        $srp = $data['srp'] ?? 0;
         $srp = $data['srp'] ?? 0;
         $expiration_date = $data['expiration_date'] ?? null;
         $entry_by = $data['entry_by'] ?? 'admin';
@@ -906,7 +913,6 @@ function add_batch_entry($conn, $data) {
                 batch_reference VARCHAR(100),
                 original_quantity DECIMAL(10,2) NOT NULL,
                 available_quantity DECIMAL(10,2) NOT NULL,
-                unit_cost DECIMAL(10,2) DEFAULT 0.00,
                 srp DECIMAL(10,2) DEFAULT 0.00,
                 expiration_date DATE NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -919,10 +925,10 @@ function add_batch_entry($conn, $data) {
         // Insert batch entry
         $stmt = $conn->prepare("
             INSERT INTO tbl_fifo_stock 
-            (product_id, batch_reference, original_quantity, available_quantity, unit_cost, srp, expiration_date) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (product_id, batch_reference, original_quantity, available_quantity, srp, expiration_date) 
+            VALUES (?, ?, ?, ?, ?, ?)
         ");
-        $stmt->execute([$product_id, $batch_reference, $quantity, $quantity, $unit_cost, $srp, $expiration_date]);
+        $stmt->execute([$product_id, $batch_reference, $quantity, $quantity, $srp, $expiration_date]);
         
         $batch_id = $conn->lastInsertId();
         
@@ -937,7 +943,7 @@ function add_batch_entry($conn, $data) {
         // Log stock movement
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
-            (product_id, batch_id, movement_type, quantity, remaining_quantity, unit_cost, 
+            (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
              expiration_date, reference_no, notes, created_by)
             VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?, ?)
         ");
@@ -946,7 +952,7 @@ function add_batch_entry($conn, $data) {
             $batch_id,
             $quantity,
             $quantity,
-            $unit_cost,
+            $srp,
             $expiration_date,
             $batch_reference,
             "Batch entry added",
@@ -1036,7 +1042,7 @@ function consume_stock_fifo($conn, $data) {
             // Log stock movement
             $logStmt = $conn->prepare("
                 INSERT INTO tbl_stock_movements 
-                (product_id, batch_id, movement_type, quantity, remaining_quantity, unit_cost, 
+                (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
                  expiration_date, reference_no, notes, created_by)
                 VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
             ");
@@ -1045,7 +1051,7 @@ function consume_stock_fifo($conn, $data) {
                 $batch['batch_id'],
                 $consume_from_batch,
                 $new_available,
-                $batch['unit_cost'],
+                $batch['srp'],
                 $batch['expiration_date'],
                 $reference_no,
                 $notes ?: "FIFO consumption",
@@ -1107,7 +1113,7 @@ function duplicate_product_batches($conn, $data) {
         foreach ($batch_ids as $batch_id) {
             // Get original batch details
             $batchStmt = $conn->prepare("
-                SELECT batch_reference, original_quantity, available_quantity, unit_cost, srp, expiration_date
+                SELECT batch_reference, original_quantity, available_quantity, srp, expiration_date
                 FROM tbl_fifo_stock 
                 WHERE batch_id = ? AND product_id = ?
             ");
@@ -1120,15 +1126,14 @@ function duplicate_product_batches($conn, $data) {
                 
                 $duplicateStmt = $conn->prepare("
                     INSERT INTO tbl_fifo_stock 
-                    (product_id, batch_reference, original_quantity, available_quantity, unit_cost, srp, expiration_date) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (product_id, batch_reference, original_quantity, available_quantity, srp, expiration_date) 
+                    VALUES (?, ?, ?, ?, ?, ?)
                 ");
                 $duplicateStmt->execute([
                     $product_id,
                     $new_reference,
                     $batch['original_quantity'],
                     $batch['available_quantity'],
-                    $batch['unit_cost'],
                     $batch['srp'],
                     $batch['expiration_date']
                 ]);
@@ -1272,7 +1277,6 @@ function create_transfer_batch_details_table($conn, $data) {
                 batch_id INT,
                 batch_reference VARCHAR(100),
                 quantity DECIMAL(10,2) NOT NULL,
-                unit_cost DECIMAL(10,2) DEFAULT 0.00,
                 srp DECIMAL(10,2) DEFAULT 0.00,
                 expiration_date DATE NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

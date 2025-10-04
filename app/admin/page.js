@@ -13,10 +13,14 @@ import NotificationPanel from './components/NotificationPanel';
 import NotificationTestPanel from './components/NotificationTestPanel';
 import NotificationTestComponent from './components/NotificationTestComponent';
 import RealtimeNotificationService from './components/RealtimeNotificationService';
+import ReturnNotificationService from './components/ReturnNotificationService';
 
 // Import all components
 import Dashboard from './components/Dashboard';
 import Warehouse from './components/Warehouse';
+// Import store components
+import ConvenienceStore from './components/ConvenienceStore';
+import PharmacyStore from './components/PharmacyStore';
 import UserManagement from './components/UserManagement';
 import Reports from './components/Reports';
 import Logs from './components/Logs';
@@ -155,24 +159,24 @@ function MobileHeaderWithNotifications({ onMenuClick, onNotificationClick }) {
   const { hasAnyNotifications } = useNotification();
   
   return (
-    <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: 'var(--inventory-bg-secondary)', borderBottom: '1px solid var(--inventory-border)' }}>
+    <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: 'var(--admin-bg-secondary)', borderBottom: '1px solid var(--admin-border)' }}>
       <button
         onClick={onMenuClick}
         className="p-2 rounded"
         aria-label="Open menu"
-        style={{ color: 'var(--inventory-text-primary)' }}
+        style={{ color: 'var(--admin-text-primary)' }}
       >
         {/* simple hamburger */}
-        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
-        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
-        <span className="block w-6 h-0.5" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
+        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--admin-text-primary)' }}></span>
+        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--admin-text-primary)' }}></span>
+        <span className="block w-6 h-0.5" style={{ backgroundColor: 'var(--admin-text-primary)' }}></span>
       </button>
-      <div className="font-semibold" style={{ color: 'var(--inventory-text-primary)' }}>Admin</div>
+      <div className="font-semibold" style={{ color: 'var(--admin-text-primary)' }}>Admin</div>
       <button
         onClick={onNotificationClick}
         className="p-2 rounded relative"
         aria-label="Notification Center"
-        style={{ color: 'var(--inventory-text-primary)' }}
+        style={{ color: 'var(--admin-text-primary)' }}
       >
         <FaBell />
         {hasAnyNotifications() && (
@@ -197,6 +201,8 @@ function AdminContent() {
   const componentMap = {
     Dashboard: <Dashboard />,
     products: <Warehouse />,
+    ConvenienceStore: <ConvenienceStore />,
+    PharmacyStore: <PharmacyStore />,
     User: <UserManagement />,
     "Return Management": <ReturnManagement />,
     Reports: <Reports />,
@@ -263,10 +269,11 @@ function AdminContent() {
   }, []);
 
   return (
-    <div className="flex h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
+    <div className="flex h-screen" style={{ backgroundColor: 'var(--admin-bg-primary)' }}>
       {/* Notification Services */}
       <NotificationManager />
       <RealtimeNotificationService />
+      <ReturnNotificationService />
       
       {/* Mobile top bar */}
       <MobileHeaderWithNotifications 
@@ -292,22 +299,15 @@ function AdminContent() {
         <div
           onClick={() => setIsMobileSidebarOpen(false)}
           className="fixed inset-0 z-30 md:hidden"
-          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
         />
       )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pt-16 md:pt-6" style={{ backgroundColor: 'var(--inventory-bg-secondary)' }}>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pt-16 md:pt-6" style={{ backgroundColor: 'var(--admin-bg-secondary)' }}>
           <div className="w-full min-w-0 overflow-x-auto md:overflow-visible">
-            {/* Debug info */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="mb-4 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm">
-                <strong>Debug:</strong> Rendering component: "{activeComponent}" | 
-                Available: {Object.keys(componentMap).join(', ')}
-              </div>
-            )}
             {componentMap[activeComponent] || <Dashboard />}
           </div>
         </main>

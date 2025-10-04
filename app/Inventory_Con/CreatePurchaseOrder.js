@@ -32,6 +32,7 @@ import {
 // Define API base URLs at the top of the file
 const API_BASE_SIMPLE = "http://localhost/Enguio_Project/Api/purchase_order_api_simple.php";
 const API_BASE = "http://localhost/Enguio_Project/Api/purchase_order_api.php";
+const CREATE_PO_API = "http://localhost/Enguio_Project/Api/create_purchase_order_api.php";
 
 function CreatePurchaseOrder() {
   // Tab stateasy
@@ -152,7 +153,7 @@ function CreatePurchaseOrder() {
   // Create Purchase Order functions
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=suppliers`);
+      const response = await fetch(`${CREATE_PO_API}?action=suppliers`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -268,7 +269,7 @@ function CreatePurchaseOrder() {
          }))
        };
 
-      const response = await fetch(`${API_BASE_SIMPLE}?action=create_purchase_order`, {
+      const response = await fetch(`${CREATE_PO_API}?action=create_purchase_order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

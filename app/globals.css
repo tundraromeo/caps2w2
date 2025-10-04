@@ -13,17 +13,35 @@
   --border-color: #e5e7eb;
   --shadow-color: rgba(0, 0, 0, 0.1);
   
-  /* Inventory Theme Variables - Default to Dark Mode */
-  --inventory-bg-primary: #0f172a;
-  --inventory-bg-secondary: #1e293b;
-  --inventory-bg-card: #334155;
-  --inventory-bg-hover: #475569;
-  --inventory-text-primary: #f8fafc;
-  --inventory-text-secondary: #cbd5e1;
-  --inventory-text-muted: #94a3b8;
-  --inventory-border: #475569;
-  --inventory-border-light: #64748b;
-  --inventory-shadow: rgba(0, 0, 0, 0.3);
+  /* Admin Theme Variables - Default to Light Mode */
+  --admin-bg-primary: #ffffff;
+  --admin-bg-secondary: #f8fafc;
+  --admin-bg-card: #ffffff;
+  --admin-bg-hover: #f1f5f9;
+  --admin-text-primary: #0f172a;
+  --admin-text-secondary: #475569;
+  --admin-text-muted: #64748b;
+  --admin-border: #e2e8f0;
+  --admin-border-light: #f1f5f9;
+  --admin-shadow: rgba(0, 0, 0, 0.1);
+  --admin-accent: #3b82f6;
+  --admin-accent-hover: #2563eb;
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-danger: #ef4444;
+  --admin-info: #06b6d4;
+
+  /* Inventory Theme Variables - Default to Light Mode */
+  --inventory-bg-primary: #ffffff;
+  --inventory-bg-secondary: #f8fafc;
+  --inventory-bg-card: #ffffff;
+  --inventory-bg-hover: #f1f5f9;
+  --inventory-text-primary: #0f172a;
+  --inventory-text-secondary: #475569;
+  --inventory-text-muted: #64748b;
+  --inventory-border: #e2e8f0;
+  --inventory-border-light: #f1f5f9;
+  --inventory-shadow: rgba(0, 0, 0, 0.1);
   --inventory-accent: #3b82f6;
   --inventory-accent-hover: #2563eb;
   --inventory-success: #10b981;
@@ -41,8 +59,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #ffffff;
+    --foreground: #171717;
   }
 }
 
@@ -87,8 +105,35 @@ html, body {
 
 /* Dark theme styles */
 .dark-theme {
-  --background: #1f2937;
-  --foreground: #f9fafb;
+  --background: #0f172a;
+  --foreground: #f8fafc;
+}
+
+/* Admin Dark Theme Styles */
+.admin-dark-theme {
+  --admin-bg-primary: #0f172a;
+  --admin-bg-secondary: #1e293b;
+  --admin-bg-card: #334155;
+  --admin-bg-hover: #475569;
+  --admin-text-primary: #f8fafc;
+  --admin-text-secondary: #cbd5e1;
+  --admin-text-muted: #94a3b8;
+  --admin-border: #475569;
+  --admin-border-light: #64748b;
+  --admin-shadow: rgba(0, 0, 0, 0.3);
+}
+
+.admin-light-theme {
+  --admin-bg-primary: #ffffff;
+  --admin-bg-secondary: #f8fafc;
+  --admin-bg-card: #ffffff;
+  --admin-bg-hover: #f1f5f9;
+  --admin-text-primary: #0f172a;
+  --admin-text-secondary: #475569;
+  --admin-text-muted: #64748b;
+  --admin-border: #e2e8f0;
+  --admin-border-light: #f1f5f9;
+  --admin-shadow: rgba(0, 0, 0, 0.1);
 }
 
 /* Inventory Dark Theme Styles */
@@ -116,6 +161,61 @@ html, body {
   --inventory-border: #e2e8f0;
   --inventory-border-light: #f1f5f9;
   --inventory-shadow: rgba(0, 0, 0, 0.1);
+}
+
+/* Admin themed utility classes */
+.admin-surface {
+  background-color: var(--admin-bg-primary);
+  color: var(--admin-text-primary);
+}
+
+.admin-card {
+  background-color: var(--admin-bg-card);
+  color: var(--admin-text-primary);
+  border: 1px solid var(--admin-border);
+  box-shadow: 0 10px 25px var(--admin-shadow);
+}
+
+.admin-muted {
+  color: var(--admin-text-secondary);
+}
+
+.admin-input,
+.admin-select,
+.admin-textarea {
+  background-color: var(--admin-bg-secondary);
+  color: var(--admin-text-primary);
+  border: 1px solid var(--admin-border);
+}
+
+.admin-input:focus,
+.admin-select:focus,
+.admin-textarea:focus {
+  outline: none;
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--admin-accent) 30%, transparent);
+}
+
+.admin-button-primary {
+  background-color: var(--admin-accent);
+  color: #fff;
+}
+
+.admin-button-primary:hover {
+  background-color: var(--admin-accent-hover);
+}
+
+.admin-button-danger {
+  background-color: var(--admin-danger);
+  color: #fff;
+}
+
+.admin-button-danger:hover {
+  background-color: #dc2626;
+}
+
+.admin-separator {
+  border-color: var(--admin-border);
 }
 
 /* Inventory themed utility classes (no functional impact) */
@@ -174,6 +274,55 @@ html, body {
 }
 
 /* Container-scoped overrides to dark-theme common Tailwind classes */
+.admin-surface {
+  background-color: var(--admin-bg-primary);
+  color: var(--admin-text-primary);
+}
+
+.admin-surface .bg-white,
+.admin-surface .bg-gray-50,
+.admin-surface .bg-blue-50,
+.admin-surface .from-blue-50,
+.admin-surface .to-indigo-50 {
+  background-color: var(--admin-bg-card) !important;
+  background-image: none !important;
+}
+
+.admin-surface .text-gray-900 {
+  color: var(--admin-text-primary) !important;
+}
+.admin-surface .text-gray-700,
+.admin-surface .text-gray-600,
+.admin-surface .text-gray-500,
+.admin-surface .text-gray-400 {
+  color: var(--admin-text-secondary) !important;
+}
+
+.admin-surface .border-gray-300,
+.admin-surface .border-gray-200,
+.admin-surface .border-blue-200,
+.admin-surface .divide-gray-100,
+.admin-surface .divide-gray-200 {
+  border-color: var(--admin-border) !important;
+}
+
+.admin-surface input,
+.admin-surface select,
+.admin-surface textarea {
+  background-color: var(--admin-bg-secondary) !important;
+  color: var(--admin-text-primary) !important;
+  border-color: var(--admin-border) !important;
+}
+
+.admin-surface input::placeholder,
+.admin-surface textarea::placeholder {
+  color: var(--admin-text-muted) !important;
+}
+
+.admin-surface thead {
+  background-color: var(--admin-bg-secondary) !important;
+}
+
 .inventory-surface {
   background-color: var(--inventory-bg-primary);
   color: var(--inventory-text-primary);

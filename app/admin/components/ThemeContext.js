@@ -12,82 +12,82 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode for inventory
+  const [isDarkMode, setIsDarkMode] = useState(false); // Default to light mode for admin
 
   useEffect(() => {
     // Check if user has a saved theme preference
-    const savedTheme = localStorage.getItem('enguio-inventory-theme');
+    const savedTheme = localStorage.getItem('enguio-admin-theme');
     if (savedTheme) {
       setIsDarkMode(savedTheme === 'dark');
+    } else {
+      // Apply default theme
+      applyAdminTheme(false);
     }
-    
-    // Apply theme immediately
-    applyInventoryTheme(true);
   }, []);
 
-  const applyInventoryTheme = (darkMode) => {
+  const applyAdminTheme = (darkMode) => {
     const root = document.documentElement;
     
     if (darkMode) {
-      // Dark theme for inventory
-      root.style.setProperty('--inventory-bg-primary', '#0f172a');
-      root.style.setProperty('--inventory-bg-secondary', '#1e293b');
-      root.style.setProperty('--inventory-bg-card', '#334155');
-      root.style.setProperty('--inventory-bg-hover', '#475569');
-      root.style.setProperty('--inventory-text-primary', '#f8fafc');
-      root.style.setProperty('--inventory-text-secondary', '#cbd5e1');
-      root.style.setProperty('--inventory-text-muted', '#94a3b8');
-      root.style.setProperty('--inventory-border', '#475569');
-      root.style.setProperty('--inventory-border-light', '#64748b');
-      root.style.setProperty('--inventory-shadow', 'rgba(0, 0, 0, 0.3)');
-      root.style.setProperty('--inventory-accent', '#3b82f6');
-      root.style.setProperty('--inventory-accent-hover', '#2563eb');
-      root.style.setProperty('--inventory-success', '#10b981');
-      root.style.setProperty('--inventory-warning', '#f59e0b');
-      root.style.setProperty('--inventory-danger', '#ef4444');
-      root.style.setProperty('--inventory-info', '#06b6d4');
+      // Dark theme for admin
+      root.style.setProperty('--admin-bg-primary', '#0f172a');
+      root.style.setProperty('--admin-bg-secondary', '#1e293b');
+      root.style.setProperty('--admin-bg-card', '#334155');
+      root.style.setProperty('--admin-bg-hover', '#475569');
+      root.style.setProperty('--admin-text-primary', '#f8fafc');
+      root.style.setProperty('--admin-text-secondary', '#cbd5e1');
+      root.style.setProperty('--admin-text-muted', '#94a3b8');
+      root.style.setProperty('--admin-border', '#475569');
+      root.style.setProperty('--admin-border-light', '#64748b');
+      root.style.setProperty('--admin-shadow', 'rgba(0, 0, 0, 0.3)');
+      root.style.setProperty('--admin-accent', '#3b82f6');
+      root.style.setProperty('--admin-accent-hover', '#2563eb');
+      root.style.setProperty('--admin-success', '#10b981');
+      root.style.setProperty('--admin-warning', '#f59e0b');
+      root.style.setProperty('--admin-danger', '#ef4444');
+      root.style.setProperty('--admin-info', '#06b6d4');
       
-      document.body.classList.add('inventory-dark-theme');
-      document.body.classList.remove('inventory-light-theme');
+      document.body.classList.add('admin-dark-theme');
+      document.body.classList.remove('admin-light-theme');
     } else {
-      // Light theme for inventory
-      root.style.setProperty('--inventory-bg-primary', '#ffffff');
-      root.style.setProperty('--inventory-bg-secondary', '#f8fafc');
-      root.style.setProperty('--inventory-bg-card', '#ffffff');
-      root.style.setProperty('--inventory-bg-hover', '#f1f5f9');
-      root.style.setProperty('--inventory-text-primary', '#0f172a');
-      root.style.setProperty('--inventory-text-secondary', '#475569');
-      root.style.setProperty('--inventory-text-muted', '#64748b');
-      root.style.setProperty('--inventory-border', '#e2e8f0');
-      root.style.setProperty('--inventory-border-light', '#f1f5f9');
-      root.style.setProperty('--inventory-shadow', 'rgba(0, 0, 0, 0.1)');
-      root.style.setProperty('--inventory-accent', '#3b82f6');
-      root.style.setProperty('--inventory-accent-hover', '#2563eb');
-      root.style.setProperty('--inventory-success', '#10b981');
-      root.style.setProperty('--inventory-warning', '#f59e0b');
-      root.style.setProperty('--inventory-danger', '#ef4444');
-      root.style.setProperty('--inventory-info', '#06b6d4');
+      // Light theme for admin
+      root.style.setProperty('--admin-bg-primary', '#ffffff');
+      root.style.setProperty('--admin-bg-secondary', '#f8fafc');
+      root.style.setProperty('--admin-bg-card', '#ffffff');
+      root.style.setProperty('--admin-bg-hover', '#f1f5f9');
+      root.style.setProperty('--admin-text-primary', '#0f172a');
+      root.style.setProperty('--admin-text-secondary', '#475569');
+      root.style.setProperty('--admin-text-muted', '#64748b');
+      root.style.setProperty('--admin-border', '#e2e8f0');
+      root.style.setProperty('--admin-border-light', '#f1f5f9');
+      root.style.setProperty('--admin-shadow', 'rgba(0, 0, 0, 0.1)');
+      root.style.setProperty('--admin-accent', '#3b82f6');
+      root.style.setProperty('--admin-accent-hover', '#2563eb');
+      root.style.setProperty('--admin-success', '#10b981');
+      root.style.setProperty('--admin-warning', '#f59e0b');
+      root.style.setProperty('--admin-danger', '#ef4444');
+      root.style.setProperty('--admin-info', '#06b6d4');
       
-      document.body.classList.remove('inventory-dark-theme');
-      document.body.classList.add('inventory-light-theme');
+      document.body.classList.remove('admin-dark-theme');
+      document.body.classList.add('admin-light-theme');
     }
   };
 
   const toggleTheme = () => {
     const newDarkMode = !isDarkMode;
     setIsDarkMode(newDarkMode);
-    applyInventoryTheme(newDarkMode);
-    localStorage.setItem('enguio-inventory-theme', newDarkMode ? 'dark' : 'light');
+    applyAdminTheme(newDarkMode);
+    localStorage.setItem('enguio-admin-theme', newDarkMode ? 'dark' : 'light');
   };
 
   const setTheme = (darkMode) => {
     setIsDarkMode(darkMode);
-    applyInventoryTheme(darkMode);
-    localStorage.setItem('enguio-inventory-theme', darkMode ? 'dark' : 'light');
+    applyAdminTheme(darkMode);
+    localStorage.setItem('enguio-admin-theme', darkMode ? 'dark' : 'light');
   };
 
   useEffect(() => {
-    applyInventoryTheme(isDarkMode);
+    applyAdminTheme(isDarkMode);
   }, [isDarkMode]);
 
   const value = {
@@ -96,35 +96,35 @@ export const ThemeProvider = ({ children }) => {
     setTheme,
     theme: {
       bg: {
-        primary: 'var(--inventory-bg-primary)',
-        secondary: 'var(--inventory-bg-secondary)',
-        card: 'var(--inventory-bg-card)',
-        hover: 'var(--inventory-bg-hover)',
-        input: 'var(--inventory-bg-card)',
-        modal: 'var(--inventory-bg-card)',
+        primary: 'var(--admin-bg-primary)',
+        secondary: 'var(--admin-bg-secondary)',
+        card: 'var(--admin-bg-card)',
+        hover: 'var(--admin-bg-hover)',
+        input: 'var(--admin-bg-card)',
+        modal: 'var(--admin-bg-card)',
       },
       text: {
-        primary: 'var(--inventory-text-primary)',
-        secondary: 'var(--inventory-text-secondary)',
-        muted: 'var(--inventory-text-muted)',
+        primary: 'var(--admin-text-primary)',
+        secondary: 'var(--admin-text-secondary)',
+        muted: 'var(--admin-text-muted)',
       },
       border: {
-        default: 'var(--inventory-border)',
-        light: 'var(--inventory-border-light)',
-        input: 'var(--inventory-border)',
+        default: 'var(--admin-border)',
+        light: 'var(--admin-border-light)',
+        input: 'var(--admin-border)',
       },
       shadow: {
-        lg: 'var(--inventory-shadow)',
+        lg: 'var(--admin-shadow)',
       },
       colors: {
-        accent: 'var(--inventory-accent)',
-        accentHover: 'var(--inventory-accent-hover)',
-        success: 'var(--inventory-success)',
+        accent: 'var(--admin-accent)',
+        accentHover: 'var(--admin-accent-hover)',
+        success: 'var(--admin-success)',
         successBg: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.1)',
-        warning: 'var(--inventory-warning)',
+        warning: 'var(--admin-warning)',
         warningBg: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.1)',
-        danger: 'var(--inventory-danger)',
-        info: 'var(--inventory-info)',
+        danger: 'var(--admin-danger)',
+        info: 'var(--admin-info)',
       }
     }
   };

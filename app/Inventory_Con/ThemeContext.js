@@ -12,17 +12,17 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode for inventory
+  const [isDarkMode, setIsDarkMode] = useState(false); // Default to light mode for inventory
 
   useEffect(() => {
     // Check if user has a saved theme preference
     const savedTheme = localStorage.getItem('enguio-inventory-theme');
     if (savedTheme) {
       setIsDarkMode(savedTheme === 'dark');
+    } else {
+      // Apply default theme
+      applyInventoryTheme(false);
     }
-    
-    // Apply theme immediately
-    applyInventoryTheme(true);
   }, []);
 
   const applyInventoryTheme = (darkMode) => {

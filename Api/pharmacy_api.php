@@ -13,7 +13,7 @@ header('Content-Type: application/json');
 // Enable CORS
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Cache-Control');
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);
@@ -114,12 +114,15 @@ try {
                     p.status,
                     s.supplier_name,
                     p.expiration,
-                    l.location_name
+                    l.location_name,
+                    COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_srp_value
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id
                 WHERE $where
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -205,7 +208,7 @@ try {
                     tbd.batch_id,
                     tbd.batch_reference,
                     tbd.quantity as batch_quantity,
-                    fs.unit_cost,
+                    fs.srp,
                     tbd.srp as batch_srp,
                     tbd.expiration_date,
                     'Available' as status,
@@ -234,7 +237,7 @@ try {
                         fs.batch_id,
                         CONCAT('BR-', fs.batch_id) as batch_reference,
                         td.qty as batch_quantity,
-                        fs.unit_cost,
+                        fs.srp,
                         p.unit_price as batch_srp,
                         fs.expiration_date,
                         'Available' as status,
@@ -265,7 +268,7 @@ try {
                 'total_transfers' => count($batchDetails),
                 'total_quantity' => array_sum(array_column($batchDetails, 'batch_quantity')),
                 'total_value' => array_sum(array_map(function($batch) {
-                    return $batch['batch_quantity'] * ($batch['unit_cost'] ?? 0);
+                    return $batch['batch_quantity'] * ($batch['srp'] ?? 0);
                 }, $batchDetails))
             ];
             
@@ -295,7 +298,7 @@ try {
                         tbd.quantity as batch_quantity,
                         tbd.srp as batch_srp,
                         tbd.expiration_date,
-                        fs.unit_cost,
+                        fs.srp,
                         fs.available_quantity
                     FROM tbl_transfer_batch_details tbd
                     LEFT JOIN tbl_fifo_stock fs ON tbd.batch_id = fs.batch_id

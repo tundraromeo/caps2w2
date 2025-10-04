@@ -35,7 +35,7 @@ const NotificationPanel = ({ isOpen, onClose }) => {
       count: notifications.reports.count + systemUpdates.count,
       hasNotifications: notifications.reports.hasUpdates || systemUpdates.hasUpdates,
       details: notifications.reports,
-      color: 'text-blue-500'
+      color: 'text-gray-500'
     },
     {
       key: 'logs',
@@ -124,7 +124,7 @@ const NotificationPanel = ({ isOpen, onClose }) => {
         })}
         {systemUpdates.hasUpdates && (
           <div className="flex justify-between">
-            <span className="text-blue-500">🔄 System Updates:</span>
+            <span className="text-gray-500">🔄 System Updates:</span>
             <span className="font-semibold">{systemUpdates.count}</span>
           </div>
         )}
@@ -156,7 +156,7 @@ const NotificationPanel = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-gray-200 bg-opacity-50 z-50 flex items-center justify-center">
       <div 
         className="w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto rounded-lg shadow-lg"
         style={{ backgroundColor: theme.bg.card }}

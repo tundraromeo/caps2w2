@@ -11,6 +11,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once 'conn.php';
 
+// Helper function to get employee details for stock movement logging
+function getEmployeeDetails($conn, $employee_id_or_username) {
+    try {
+        $empStmt = $conn->prepare("SELECT emp_id, username, CONCAT(Fname, ' ', Lname) as full_name, role_id FROM tbl_employee WHERE emp_id = ? OR username = ? LIMIT 1");
+        $empStmt->execute([$employee_id_or_username, $employee_id_or_username]);
+        $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Map role_id to role name
+        $roleMapping = [
+            1 => 'Cashier',
+            2 => 'Inventory Manager', 
+            3 => 'Supervisor',
+            4 => 'Admin',
+            5 => 'Manager'
+        ];
+        $empRole = $roleMapping[$empData['role_id'] ?? 4] ?? 'Admin';
+        $empName = $empData['full_name'] ?? $employee_id_or_username;
+        
+        return [
+            'emp_id' => $empData['emp_id'] ?? $employee_id_or_username,
+            'emp_name' => $empName,
+            'emp_role' => $empRole,
+            'formatted_name' => "{$empName} ({$empRole})"
+        ];
+    } catch (Exception $e) {
+        return [
+            'emp_id' => $employee_id_or_username,
+            'emp_name' => $employee_id_or_username,
+            'emp_role' => 'Admin',
+            'formatted_name' => "{$employee_id_or_username} (Admin)"
+        ];
+    }
+}
+
 $raw = file_get_contents('php://input');
 $data = json_decode($raw, true);
 if (!is_array($data)) { $data = []; }
@@ -59,7 +93,7 @@ switch ($action) {
                 INSERT INTO tbl_pos_returns 
                 (return_id, original_transaction_id, reason, method, item_condition, location_name, terminal_name, 
                  user_id, username, total_refund, status)
-                VALUES (?, ?, ?, 'refund', 'good', ?, ?, ?, ?, ?, 'completed')
+                VALUES (?, ?, ?, 'refund', 'good', ?, ?, ?, ?, ?, 'pending')
             ");
             $stmt->execute([
                 $return_number, 
@@ -110,31 +144,11 @@ switch ($action) {
                     $item['total_amount']
                 ]);
                 
-                // Update product stock in the ORIGINAL location (add back the returned quantity)
-                $stmt = $conn->prepare("
-                    UPDATE tbl_product 
-                    SET quantity = quantity + ?
-                    WHERE product_id = ? AND location_id = ?
-                ");
-                $result = $stmt->execute([$item['return_quantity'], $item['product_id'], $returnLocationId]);
-                $rowsAffected = $stmt->rowCount();
+                // NOTE: Stock update is now handled in approve_return action after admin approval
+                // Stock will be updated when admin approves the return in Return Management
                 
-                // Log the stock update for debugging
-                error_log("Stock update for product {$item['product_id']}: +{$item['return_quantity']} at location {$returnLocationId} ({$returnLocationName}). Rows affected: {$rowsAffected}");
-                
-                // Insert stock movement record with original location
-                $stmt = $conn->prepare("
-                    INSERT INTO tbl_stock_movements 
-                    (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
-                    VALUES (?, 'IN', ?, ?, NOW(), ?, ?)
-                ");
-                $stmt->execute([
-                    $item['product_id'],
-                    $item['return_quantity'],
-                    $return_number,
-                    $processed_by,
-                    "Customer return to {$returnLocationName}: " . $return_reason
-                ]);
+                // Log that return item was created (stock update will happen after approval)
+                error_log("Return item created for product {$item['product_id']}: {$item['return_quantity']} units (pending approval)");
                 
                 // Update or remove sales details based on return quantity
                 $stmt = $conn->prepare("
@@ -192,12 +206,17 @@ switch ($action) {
             // Commit transaction
             $conn->commit();
             
+            // Trigger notification event for new return
+            // This will be picked up by the notification system
+            error_log("New return created: {$return_number} from {$location_name} - Amount: {$total_return_amount}");
+            
             echo json_encode([
                 "success" => true,
                 "message" => "Return processed successfully",
                 "return_number" => $return_number,
                 "return_id" => $return_id,
-                "total_amount" => $total_return_amount
+                "total_amount" => $total_return_amount,
+                "notification_triggered" => true
             ]);
             
         } catch (Exception $e) {
@@ -234,7 +253,9 @@ switch ($action) {
                 ORDER BY pr.created_at DESC
                 LIMIT ? OFFSET ?
             ");
-            $stmt->execute([$limit, $offset]);
+            $stmt->bindParam(1, $limit, PDO::PARAM_INT);
+            $stmt->bindParam(2, $offset, PDO::PARAM_INT);
+            $stmt->execute();
             $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             echo json_encode([
@@ -277,7 +298,9 @@ switch ($action) {
                 ORDER BY pr.created_at DESC
                 LIMIT ? OFFSET ?
             ");
-            $stmt->execute([$limit, $offset]);
+            $stmt->bindParam(1, $limit, PDO::PARAM_INT);
+            $stmt->bindParam(2, $offset, PDO::PARAM_INT);
+            $stmt->execute();
             $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             echo json_encode([
@@ -316,7 +339,9 @@ switch ($action) {
                 ORDER BY pr.created_at DESC
                 LIMIT ? OFFSET ?
             ");
-            $stmt->execute([$limit, $offset]);
+            $stmt->bindParam(1, $limit, PDO::PARAM_INT);
+            $stmt->bindParam(2, $offset, PDO::PARAM_INT);
+            $stmt->execute();
             $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             echo json_encode([
@@ -384,6 +409,9 @@ switch ($action) {
             // Start transaction
             $conn->beginTransaction();
             
+            // Get employee details for proper logging
+            $empDetails = getEmployeeDetails($conn, $approved_by);
+            
             // Get return details
             $stmt = $conn->prepare("
                 SELECT pr.*, pri.product_id, pri.quantity, pri.price, pri.total
@@ -433,7 +461,7 @@ switch ($action) {
                     ");
                     $stmt->execute([$item['quantity'], $item['product_id'], $location_id]);
                     
-                    // Insert stock movement record
+                    // Insert stock movement record with proper employee details
                     $stmt = $conn->prepare("
                         INSERT INTO tbl_stock_movements 
                         (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
@@ -443,8 +471,8 @@ switch ($action) {
                         $item['product_id'],
                         $item['quantity'],
                         $return_id,
-                        $approved_by_username,
-                        "Return approved - stock restored: " . $notes
+                        $empDetails['emp_id'], // Use numeric employee ID instead of formatted name
+                        "Return approved by {$empDetails['emp_role']} - stock restored: " . $notes
                     ]);
                     
                     $restored_items[] = $item['product_id'];
@@ -518,6 +546,117 @@ switch ($action) {
         }
         break;
         
+    case 'get_transaction_details':
+        try {
+            $transaction_id = $data['transaction_id'] ?? '';
+            if (empty($transaction_id)) {
+                echo json_encode(['success' => false, 'message' => 'Transaction ID is required']);
+                break;
+            }
+
+            // Find transaction by reference number (TXN format)
+            $stmt = $conn->prepare("
+                SELECT 
+                    t.transaction_id,
+                    t.date,
+                    t.time,
+                    t.payment_type,
+                    h.total_amount,
+                    h.reference_number,
+                    h.terminal_id
+                FROM tbl_pos_transaction t
+                JOIN tbl_pos_sales_header h ON t.transaction_id = h.transaction_id
+                WHERE h.reference_number = ?
+            ");
+            $stmt->execute([$transaction_id]);
+            $transaction = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$transaction) {
+                echo json_encode(['success' => false, 'message' => 'Transaction not found']);
+                break;
+            }
+
+            // Get transaction items
+            $itemsStmt = $conn->prepare("
+                SELECT 
+                    d.product_id,
+                    d.quantity,
+                    d.price,
+                    p.product_name,
+                    p.barcode
+                FROM tbl_pos_sales_details d
+                JOIN tbl_product p ON d.product_id = p.product_id
+                WHERE d.sales_header_id = (
+                    SELECT sales_header_id FROM tbl_pos_sales_header 
+                    WHERE transaction_id = ?
+                )
+                ORDER BY d.sales_details_id
+            ");
+            $itemsStmt->execute([$transaction['transaction_id']]);
+            $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                'success' => true,
+                'transaction' => [
+                    ...$transaction,
+                    'items' => $items
+                ]
+            ]);
+
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+
+    case 'get_recent_transactions':
+        try {
+            $limit = (int)($data['limit'] ?? 20);
+            $location_name = $data['location_name'] ?? '';
+
+            $whereClause = "";
+            $params = [];
+            
+            if (!empty($location_name)) {
+                $whereClause = "WHERE h.reference_number IS NOT NULL";
+            }
+
+            $stmt = $conn->prepare("
+                SELECT 
+                    t.transaction_id,
+                    t.date,
+                    t.time,
+                    t.payment_type,
+                    h.total_amount,
+                    h.reference_number,
+                    h.terminal_id,
+                    (SELECT COUNT(*) FROM tbl_pos_sales_details d WHERE d.sales_header_id = h.sales_header_id) as item_count
+                FROM tbl_pos_transaction t
+                JOIN tbl_pos_sales_header h ON t.transaction_id = h.transaction_id
+                $whereClause
+                ORDER BY t.transaction_id DESC
+                LIMIT ?
+            ");
+            
+            $params[] = $limit;
+            $stmt->execute($params);
+            $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                'success' => true,
+                'transactions' => $transactions
+            ]);
+
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid action']);
         break;

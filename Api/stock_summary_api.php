@@ -227,7 +227,6 @@ switch ($action) {
                     br.brand,
                     ss.available_quantity as summary_available,
                     ss.total_quantity as summary_total,
-                    ss.unit_cost as summary_unit_cost,
                     ss.srp as summary_srp,
                     ss.expiration_date as summary_expiration,
                     ss.batch_reference,
@@ -300,7 +299,7 @@ switch ($action) {
             $movement_type = $data['movement_type'] ?? 'IN';
             $quantity = $data['quantity'] ?? 0;
             $notes = $data['notes'] ?? '';
-            $unit_cost = $data['unit_cost'] ?? 0;
+            $srp = $data['srp'] ?? 0;
             $expiration_date = $data['expiration_date'] ?? null;
             $created_by = $data['created_by'] ?? 'admin';
             $reference_no = $data['reference_no'] ?? '';
@@ -370,24 +369,23 @@ switch ($action) {
             $movementStmt = $conn->prepare("
                 INSERT INTO tbl_stock_movements (
                     product_id, batch_id, movement_type, quantity, remaining_quantity,
-                    unit_cost, expiration_date, reference_no, notes, created_by
+                        srp, expiration_date, reference_no, notes, created_by
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $movementStmt->execute([
                 $product_id, $batch_id, $movement_type, $quantity, $new_quantity,
-                $unit_cost, $expiration_date, $reference_no, $notes, $created_by
+                $srp, $expiration_date, $reference_no, $notes, $created_by
             ]);
             
             // Create or update stock summary record
             $summaryStmt = $conn->prepare("
                 INSERT INTO tbl_stock_summary (
-                    product_id, batch_id, available_quantity, unit_cost, srp,
+                    product_id, batch_id, available_quantity, srp,
                     expiration_date, batch_reference, total_quantity
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     available_quantity = available_quantity + VALUES(available_quantity),
                     total_quantity = total_quantity + VALUES(total_quantity),
-                    unit_cost = VALUES(unit_cost),
                     srp = VALUES(srp),
                     last_updated = CURRENT_TIMESTAMP
             ");
@@ -398,7 +396,7 @@ switch ($action) {
             $batch_ref = $batchRefStmt->fetchColumn();
             
             $summaryStmt->execute([
-                $product_id, $batch_id, $quantity, $unit_cost, $unit_cost * 1.5, // Default SRP
+                $product_id, $batch_id, $quantity, $srp,
                 $expiration_date, $batch_ref, $quantity
             ]);
             
@@ -467,7 +465,7 @@ switch ($action) {
                 $movementStmt = $conn->prepare("
                     INSERT INTO tbl_stock_movements (
                         product_id, batch_id, movement_type, quantity, remaining_quantity,
-                        unit_cost, expiration_date, reference_no, notes, created_by
+                        srp, expiration_date, reference_no, notes, created_by
                     ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?, 'System Sync')
                 ");
                 $movementStmt->execute([
@@ -478,10 +476,10 @@ switch ($action) {
                 
                 // Create stock summary
                 $summaryStmt = $conn->prepare("
-                    INSERT INTO tbl_stock_summary (
-                        product_id, batch_id, available_quantity, unit_cost, srp,
-                        expiration_date, batch_reference, total_quantity
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tbl_stock_summary (
+                    product_id, batch_id, available_quantity, srp,
+                    expiration_date, batch_reference, total_quantity
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ");
                 
                 $batchRefStmt = $conn->prepare("SELECT batch FROM tbl_batch WHERE batch_id = ?");

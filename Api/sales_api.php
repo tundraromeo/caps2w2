@@ -1,59 +1,733 @@
 <?php
+/**
+ * Sales API - Handles all POS and sales related operations
+ * Direct implementation instead of proxy to backend.php
+ */
+
+// Start output buffering to prevent unwanted output
+ob_start();
+
+// Set content type to JSON
 header('Content-Type: application/json');
+
+// Enable CORS
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
+// Disable error display to prevent HTML in JSON response
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
+// Log errors to a file for debugging
+ini_set('log_errors', 1);
+ini_set('error_log', 'php_errors.log');
+
+// Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
 
-// Proxy-only router to preserve existing logic in Api/backend.php
-$raw = file_get_contents('php://input');
-$data = json_decode($raw, true);
-if (!is_array($data)) { $data = []; }
-$action = $_GET['action'] ?? ($data['action'] ?? '');
+// Only allow POST requests
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+    exit();
+}
 
-$allowed = [
-    'get_discounts',
-    'check_barcode',
-    'save_pos_sale',
-    'save_pos_transaction',
-    'get_pos_sales',
-    'update_product_stock',
-    'reduce_product_stock',
-    'get_pos_inventory',
-    'get_locations',
-    'get_report_data',
-    'generate_report',
-    'get_report_details'
-];
+// Database connection using PDO
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "enguio2";
 
-if (!in_array($action, $allowed, true)) {
-    echo json_encode(['success' => false, 'error' => 'Invalid action']);
+try {
+    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (Exception $e) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Database connection error: " . $e->getMessage()
+    ]);
     exit;
 }
 
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-$basePath = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/Api/sales_api.php'), '/\\');
-$backendUrl = $scheme . '://' . $host . $basePath . '/backend.php';
+// Clear any output that might have been generated
+ob_clean();
 
-$ch = curl_init($backendUrl);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $raw);
-$response = curl_exec($ch);
-if ($response === false) {
-    $err = curl_error($ch);
-    curl_close($ch);
-    echo json_encode(['success' => false, 'error' => $err]);
-    exit;
+// Get JSON input
+$input = file_get_contents('php://input');
+$data = json_decode($input, true);
+
+if (json_last_error() !== JSON_ERROR_NONE) {
+    echo json_encode(['success' => false, 'message' => 'Invalid JSON input: ' . json_last_error_msg()]);
+    exit();
 }
-curl_close($ch);
-echo $response;
+
+$action = $data['action'] ?? '';
+
+try {
+    switch ($action) {
+        case 'get_discounts':
+            // Get all discount types
+            $stmt = $conn->prepare("SELECT DISTINCT type FROM tbl_discount ORDER BY type ASC");
+            $stmt->execute();
+            $discounts = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $discounts
+            ]);
+            break;
+
+        case 'check_barcode':
+            // Check if barcode exists
+            $barcode = $data['barcode'] ?? '';
+            
+            if (empty($barcode)) {
+                echo json_encode(['success' => false, 'message' => 'Barcode is required']);
+                break;
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT p.*, l.location_name 
+                FROM tbl_product p 
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id 
+                WHERE p.barcode = ? 
+                LIMIT 1
+            ");
+            $stmt->execute([$barcode]);
+            $product = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($product) {
+                echo json_encode([
+                    "success" => true,
+                    "found" => true,
+                    "product" => $product
+                ]);
+            } else {
+                echo json_encode([
+                    "success" => true,
+                    "found" => false,
+                    "message" => "Product not found"
+                ]);
+            }
+            break;
+
+        case 'save_pos_sale':
+            try {
+                $client_txn_id = $data['transactionId'] ?? '';
+                $total_amount = (float)($data['totalAmount'] ?? 0);
+                $reference_number = $data['referenceNumber'] ?? '';
+                $terminal_name = trim($data['terminalName'] ?? 'POS Terminal');
+                $items = $data['items'] ?? [];
+                $payment_method = strtolower(trim($data['paymentMethod'] ?? ($reference_number ? 'gcash' : 'cash')));
+
+                if (!is_array($items) || count($items) === 0) {
+                    echo json_encode(["success" => false, "message" => "No items to save."]); 
+                    break;
+                }
+
+                // Start transaction
+                $conn->beginTransaction();
+
+                // Ensure terminal exists or create one
+                $termStmt = $conn->prepare("SELECT terminal_id FROM tbl_pos_terminal WHERE terminal_name = ? LIMIT 1");
+                $termStmt->execute([$terminal_name]);
+                $terminal = $termStmt->fetch(PDO::FETCH_ASSOC);
+                if ($terminal && isset($terminal['terminal_id'])) {
+                    $terminal_id = (int)$terminal['terminal_id'];
+                } else {
+                    // shift_id is required; default to 1
+                    $insTerm = $conn->prepare("INSERT INTO tbl_pos_terminal (terminal_name, shift_id) VALUES (?, 1)");
+                    $insTerm->execute([$terminal_name]);
+                    $terminal_id = (int)$conn->lastInsertId();
+                }
+
+                // Map to enum in schema: ('cash','card','Gcash')
+                $payment_enum = ($payment_method === 'gcash') ? 'Gcash' : (($payment_method === 'card') ? 'card' : 'cash');
+
+                // Create transaction row (schema: transaction_id, date, time, emp_id, payment_type)
+                $txnStmt = $conn->prepare("INSERT INTO tbl_pos_transaction (date, time, emp_id, payment_type) VALUES (CURDATE(), CURTIME(), 1, ?)");
+                $txnStmt->execute([$payment_enum]);
+                $transaction_id = (int)$conn->lastInsertId();
+
+                // If no reference number was provided (cash), store the client txn id so we can locate it later if needed
+                $header_reference = $reference_number !== null && $reference_number !== '' ? $reference_number : ($client_txn_id ?: '');
+
+                // Create sales header
+                $hdrStmt = $conn->prepare("INSERT INTO tbl_pos_sales_header (transaction_id, total_amount, reference_number, terminal_id) VALUES (?, ?, ?, ?)");
+                $hdrStmt->execute([$transaction_id, $total_amount, $header_reference, $terminal_id]);
+                $sales_header_id = (int)$conn->lastInsertId();
+
+                // Insert each item into details (quantity already updated by convenience_store_api.php or pharmacy_api.php)
+                $dtlStmt = $conn->prepare("INSERT INTO tbl_pos_sales_details (sales_header_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
+
+                foreach ($items as $it) {
+                    $pid = (int)($it['product_id'] ?? $it['id'] ?? 0);
+                    $qty = (int)($it['quantity'] ?? 0);
+                    $price = (float)($it['price'] ?? 0);
+                    if ($pid <= 0 || $qty <= 0) { continue; }
+                    $dtlStmt->execute([$sales_header_id, $pid, $qty, $price]);
+                    // Note: Product quantity is already updated by convenience_store_api.php or pharmacy_api.php
+                    // to avoid double deduction
+                }
+
+                // Log activity to system activity logs
+                try {
+                    // Get employee details for logging (using emp_id = 1 as default)
+                    $empStmt = $conn->prepare("SELECT username, CONCAT(Fname, ' ', Lname) as full_name, 'Cashier' as role FROM tbl_employee WHERE emp_id = 1");
+                    $empStmt->execute();
+                    $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    // Insert activity log
+                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())");
+                    $logStmt->execute([
+                        ':user_id' => 1,
+                        ':username' => $empData['username'] ?? 'Unknown',
+                        ':role' => $empData['role'] ?? 'Cashier',
+                        ':activity_type' => 'POS_SALE_SAVED',
+                        ':activity_description' => "POS Sale completed: ₱{$total_amount} ({$payment_enum}, " . count($items) . " items) - Terminal: {$terminal_name}",
+                        ':table_name' => 'tbl_pos_transaction',
+                        ':record_id' => $transaction_id
+                    ]);
+                    
+                } catch (Exception $logError) {
+                    error_log("Activity logging error: " . $logError->getMessage());
+                }
+
+                $conn->commit();
+                echo json_encode([
+                    "success" => true,
+                    "message" => "POS sale saved",
+                    "data" => [
+                        "transaction_id" => $transaction_id,
+                        "sales_header_id" => $sales_header_id,
+                        "terminal_id" => $terminal_id
+                    ]
+                ]);
+            } catch (Exception $e) {
+                if (isset($conn)) { $conn->rollback(); }
+                echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
+            }
+            break;
+
+        case 'save_pos_transaction':
+            try {
+                $client_txn_id = $data['transactionId'] ?? '';
+                $payment_type = strtolower(trim($data['paymentType'] ?? 'cash'));
+                $payment_enum = ($payment_type === 'gcash') ? 'Gcash' : (($payment_type === 'card') ? 'card' : 'cash');
+
+                // Try to locate the sales header by using the client transaction id stored in reference_number (for cash)
+                $findStmt = $conn->prepare("SELECT transaction_id FROM tbl_pos_sales_header WHERE reference_number = ? ORDER BY sales_header_id DESC LIMIT 1");
+                $findStmt->execute([$client_txn_id]);
+                $row = $findStmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($row && isset($row['transaction_id'])) {
+                    $upd = $conn->prepare("UPDATE tbl_pos_transaction SET payment_type = ? WHERE transaction_id = ?");
+                    $upd->execute([$payment_enum, (int)$row['transaction_id']]);
+                    echo json_encode(["success" => true, "message" => "Payment type updated."]);
+                } else {
+                    // Fallback: update the latest transaction today
+                    $upd = $conn->prepare("UPDATE tbl_pos_transaction SET payment_type = ? WHERE date = CURDATE() ORDER BY transaction_id DESC LIMIT 1");
+                    $upd->execute([$payment_enum]);
+                    echo json_encode(["success" => true, "message" => "Payment type updated (latest transaction)." ]);
+                }
+            } catch (Exception $e) {
+                echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
+            }
+            break;
+
+        case 'get_pos_sales':
+            try {
+                $limit = isset($data['limit']) ? (int)$data['limit'] : 50;
+                $location = $data['location'] ?? null;
+                $date = $data['date'] ?? null;
+                
+                $whereClause = "WHERE 1=1";
+                $params = [];
+                
+                if ($location) {
+                    $whereClause .= " AND th.transaction_id IN (SELECT transaction_id FROM tbl_pos_transaction WHERE payment_type LIKE :location)";
+                    $params[':location'] = "%{$location}%";
+                }
+                
+                if ($date) {
+                    $whereClause .= " AND DATE(t.date) = :date";
+                    $params[':date'] = $date;
+                }
+                
+                $sql = "
+                    SELECT 
+                        t.transaction_id,
+                        t.date,
+                        t.time,
+                        t.payment_type,
+                        t.emp_id,
+                        e.username AS cashier,
+                        e.shift_id,
+                        s.shifts AS shift_name,
+                        th.total_amount,
+                        th.reference_number,
+                        term.terminal_name,
+                        COUNT(td.product_id) as items_count,
+                        GROUP_CONCAT(CONCAT(p.product_name, ' x', td.quantity, ' @₱', td.price) SEPARATOR ', ') as items_summary
+                    FROM tbl_pos_transaction t
+                    JOIN tbl_pos_sales_header th ON t.transaction_id = th.transaction_id
+                    JOIN tbl_pos_terminal term ON th.terminal_id = term.terminal_id
+                    LEFT JOIN tbl_employee e ON t.emp_id = e.emp_id
+                    LEFT JOIN tbl_shift s ON e.shift_id = s.shift_id
+                    LEFT JOIN tbl_pos_sales_details td ON th.sales_header_id = td.sales_header_id
+                    LEFT JOIN tbl_product p ON td.product_id = p.product_id
+                    {$whereClause}
+                    GROUP BY t.transaction_id, t.date, t.time, t.payment_type, t.emp_id, e.username, e.shift_id, s.shifts, th.total_amount, th.reference_number, term.terminal_name
+                    ORDER BY t.date DESC, t.time DESC
+                    LIMIT :limit
+                ";
+                
+                $stmt = $conn->prepare($sql);
+                $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+                foreach ($params as $key => $value) {
+                    $stmt->bindValue($key, $value);
+                }
+                $stmt->execute();
+                
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode([ 'success' => true, 'data' => $rows ]);
+                
+            } catch (Exception $e) {
+                echo json_encode([ 'success' => false, 'message' => 'Database error: ' . $e->getMessage() ]);
+            }
+            break;
+
+        case 'update_product_stock':
+            try {
+                $product_id = $data['product_id'] ?? 0;
+                $quantity = $data['quantity'] ?? 0;
+                
+                if ($product_id <= 0) {
+                    echo json_encode(['success' => false, 'message' => 'Invalid product ID']);
+                    break;
+                }
+                
+                $stmt = $conn->prepare("UPDATE tbl_product SET quantity = ? WHERE product_id = ?");
+                $stmt->execute([$quantity, $product_id]);
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Product stock updated successfully'
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            break;
+
+        case 'reduce_product_stock':
+            try {
+                $product_id = $data['product_id'] ?? 0;
+                $quantity = $data['quantity'] ?? 0;
+                
+                if ($product_id <= 0 || $quantity <= 0) {
+                    echo json_encode(['success' => false, 'message' => 'Invalid product ID or quantity']);
+                    break;
+                }
+                
+                $stmt = $conn->prepare("UPDATE tbl_product SET quantity = GREATEST(0, quantity - ?) WHERE product_id = ?");
+                $stmt->execute([$quantity, $product_id]);
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Product stock reduced successfully'
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            break;
+
+        case 'get_pos_inventory':
+            try {
+                $location = $data['location'] ?? null;
+                $search = $data['search'] ?? '';
+                
+                $where = "WHERE 1=1";
+                $params = [];
+                
+                if ($location) {
+                    $where .= " AND l.location_name LIKE ?";
+                    $params[] = "%{$location}%";
+                }
+                
+                if (!empty($search)) {
+                    $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ?)";
+                    $searchParam = "%{$search}%";
+                    $params[] = $searchParam;
+                    $params[] = $searchParam;
+                }
+                
+                $stmt = $conn->prepare("
+                    SELECT 
+                        p.product_id,
+                        p.product_name,
+                        p.barcode,
+                        p.quantity,
+                        p.unit_price,
+                        p.srp,
+                        l.location_name,
+                        b.brand,
+                        s.supplier_name
+                    FROM tbl_product p
+                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                    {$where}
+                    ORDER BY p.product_name ASC
+                ");
+                $stmt->execute($params);
+                $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                echo json_encode([
+                    'success' => true,
+                    'data' => $products
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            break;
+
+        case 'get_locations':
+            try {
+                $stmt = $conn->prepare("SELECT location_id, location_name FROM tbl_location ORDER BY location_name ASC");
+                $stmt->execute();
+                $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                echo json_encode([
+                    'success' => true,
+                    'data' => $locations
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            break;
+
+        case 'get_today_sales':
+            try {
+                $cashier_username = $data['cashier_username'] ?? 'Admin';
+                $location_name = $data['location_name'] ?? '';
+                $terminal_name = $data['terminal_name'] ?? '';
+                
+                // Get today's date
+                $today = date('Y-m-d');
+                
+                // Build the query to get today's sales data based on actual database schema
+                $sql = "
+                    SELECT 
+                        COUNT(DISTINCT pt.transaction_id) as total_transactions,
+                        COALESCE(SUM(psh.total_amount), 0) as total_sales,
+                        COALESCE(SUM(CASE WHEN pt.payment_type = 'cash' THEN psh.total_amount ELSE 0 END), 0) as cash_sales,
+                        COALESCE(SUM(CASE WHEN pt.payment_type = 'Gcash' THEN psh.total_amount ELSE 0 END), 0) as gcash_sales,
+                        COALESCE(SUM(CASE WHEN pt.payment_type = 'card' THEN psh.total_amount ELSE 0 END), 0) as card_sales,
+                        0 as total_discount
+                    FROM tbl_pos_transaction pt
+                    LEFT JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
+                    LEFT JOIN tbl_employee e ON pt.emp_id = e.emp_id
+                    WHERE DATE(pt.date) = :today
+                ";
+                
+                $params = [':today' => $today];
+                
+                // Add cashier filter if provided (but allow showing all sales for debugging)
+                if (!empty($cashier_username) && $cashier_username !== 'Admin' && $cashier_username !== 'all') {
+                    $sql .= " AND e.username = :username";
+                    $params[':username'] = $cashier_username;
+                }
+                
+                $stmt = $conn->prepare($sql);
+                $stmt->execute($params);
+                $salesData = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                // Since there's no discount_amount column in tbl_pos_sales_header,
+                // we'll set total_discount to 0 for now
+                $salesData['total_discount'] = 0;
+                
+                echo json_encode([
+                    "success" => true,
+                    "data" => $salesData,
+                    "date" => $today,
+                    "cashier" => $cashier_username,
+                    "location" => $location_name,
+                    "terminal" => $terminal_name,
+                    "note" => "Location and terminal filtering not available in current schema"
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Error fetching today's sales: " . $e->getMessage()
+                ]);
+            }
+            break;
+
+        case 'log_activity':
+            try {
+                $activity_type = $data['activity_type'] ?? '';
+                $description = $data['description'] ?? '';
+                $table_name = $data['table_name'] ?? '';
+                $record_id = $data['record_id'] ?? null;
+                $user_id = $data['user_id'] ?? 1;
+                $username = $data['username'] ?? 'System';
+                $role = $data['role'] ?? 'System';
+                
+                $stmt = $conn->prepare("
+                    INSERT INTO tbl_activity_log (
+                        user_id, username, role, activity_type, activity_description, 
+                        table_name, record_id, date_created, time_created, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), CURTIME(), NOW())
+                ");
+                $stmt->execute([$user_id, $username, $role, $activity_type, $description, $table_name, $record_id]);
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Activity logged successfully'
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+            }
+            break;
+
+        case 'get_report_data':
+            try {
+                $report_type = $data['report_type'] ?? 'all';
+                $start_date = $data['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
+                $end_date = $data['end_date'] ?? date('Y-m-d');
+                
+                // Get stock movements as reports
+                $stmt = $conn->prepare("
+                    SELECT 
+                        sm.movement_id,
+                        CONCAT('Stock ', 
+                            CASE sm.movement_type 
+                                WHEN 'IN' THEN 'In Report'
+                                WHEN 'OUT' THEN 'Out Report'
+                                WHEN 'ADJUSTMENT' THEN 'Adjustment Report'
+                                WHEN 'TRANSFER' THEN 'Transfer Report'
+                                ELSE CONCAT(sm.movement_type, ' Report')
+                            END
+                        ) as title,
+                        CASE sm.movement_type 
+                            WHEN 'IN' THEN 'Stock In Report'
+                            WHEN 'OUT' THEN 'Stock Out Report'
+                            WHEN 'ADJUSTMENT' THEN 'Stock Adjustment Report'
+                            WHEN 'TRANSFER' THEN 'Transfer Report'
+                            ELSE CONCAT(sm.movement_type, ' Report')
+                        END as type,
+                        CONCAT('Report for ', p.product_name, ' - ', sm.movement_type, ' movement') as description,
+                        COALESCE(sm.created_by, 'System') as generatedBy,
+                        DATE(sm.movement_date) as date,
+                        TIME(sm.movement_date) as time,
+                        'Completed' as status,
+                        'PDF' as format,
+                        '2.5 MB' as fileSize
+                    FROM tbl_stock_movements sm
+                    JOIN tbl_product p ON sm.product_id = p.product_id
+                    WHERE DATE(sm.movement_date) BETWEEN ? AND ?
+                    ORDER BY sm.movement_date DESC
+                    LIMIT 50
+                ");
+                $stmt->execute([$start_date, $end_date]);
+                $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Get analytics data
+                $analytics = [];
+                
+                // Total products
+                $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
+                $stmt->execute();
+                $totalProducts = $stmt->fetch()['total'];
+                
+                // Low stock items (quantity <= 10)
+                $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_product WHERE quantity <= 10 AND (status IS NULL OR status <> 'archived')");
+                $stmt->execute();
+                $lowStockItems = $stmt->fetch()['total'];
+                
+                // Out of stock items
+                $stmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_product WHERE quantity = 0 AND (status IS NULL OR status <> 'archived')");
+                $stmt->execute();
+                $outOfStockItems = $stmt->fetch()['total'];
+                
+                // Total inventory value
+                $stmt = $conn->prepare("SELECT COALESCE(SUM(quantity * unit_price), 0) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
+                $stmt->execute();
+                $totalValue = $stmt->fetch()['total'];
+                
+                $analytics = [
+                    'totalProducts' => (int)$totalProducts,
+                    'lowStockItems' => (int)$lowStockItems,
+                    'outOfStockItems' => (int)$outOfStockItems,
+                    'totalValue' => (float)$totalValue
+                ];
+                
+                // Get top categories
+                $stmt = $conn->prepare("
+                    SELECT 
+                        p.category as category_name,
+                        COUNT(*) as product_count,
+                        ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM tbl_product WHERE status IS NULL OR status <> 'archived')), 1) as percentage
+                    FROM tbl_product p
+                    WHERE p.status IS NULL OR p.status <> 'archived'
+                    AND p.category IS NOT NULL AND p.category <> ''
+                    GROUP BY p.category
+                    ORDER BY product_count DESC
+                    LIMIT 6
+                ");
+                $stmt->execute();
+                $topCategories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                echo json_encode([
+                    'success' => true,
+                    'reports' => $reports,
+                    'analytics' => $analytics,
+                    'topCategories' => $topCategories
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Error fetching reports data: ' . $e->getMessage(),
+                    'reports' => [],
+                    'analytics' => [
+                        'totalProducts' => 0,
+                        'lowStockItems' => 0,
+                        'outOfStockItems' => 0,
+                        'totalValue' => 0
+                    ],
+                    'topCategories' => []
+                ]);
+            }
+            break;
+
+        case 'get_report_details':
+            try {
+                $report_id = $data['report_id'] ?? 0;
+                
+                if ($report_id <= 0) {
+                    echo json_encode(['success' => false, 'message' => 'Invalid report ID']);
+                    break;
+                }
+                
+                // Get report details from stock movements
+                $stmt = $conn->prepare("
+                    SELECT 
+                        sm.movement_id,
+                        p.product_name,
+                        p.barcode,
+                        p.category,
+                        sm.quantity,
+                        p.unit_price,
+                        sm.movement_type,
+                        sm.reference_no,
+                        DATE(sm.movement_date) as date,
+                        TIME(sm.movement_date) as time,
+                        COALESCE(l.location_name, 'Warehouse') as location_name,
+                        COALESCE(s.supplier_name, 'Unknown') as supplier_name,
+                        COALESCE(b.brand, 'Generic') as brand,
+                        p.expiration as expiration_date,
+                        sm.notes
+                    FROM tbl_stock_movements sm
+                    JOIN tbl_product p ON sm.product_id = p.product_id
+                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                    LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    WHERE sm.movement_id = ?
+                ");
+                $stmt->execute([$report_id]);
+                $details = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                if (empty($details)) {
+                    // Try to get from transfer reports
+                    $transferStmt = $conn->prepare("
+                        SELECT 
+                            th.transfer_header_id as movement_id,
+                            p.product_name,
+                            p.barcode,
+                            p.category,
+                            td.qty as quantity,
+                            p.unit_price,
+                            'TRANSFER' as movement_type,
+                            th.reference_number as reference_no,
+                            DATE(th.date) as date,
+                            TIME(th.date) as time,
+                            COALESCE(l.location_name, 'Warehouse') as location_name,
+                            COALESCE(s.supplier_name, 'Unknown') as supplier_name,
+                            COALESCE(b.brand, 'Generic') as brand,
+                            p.expiration as expiration_date,
+                            th.notes
+                        FROM tbl_transfer_header th
+                        JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
+                        JOIN tbl_product p ON td.product_id = p.product_id
+                        LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                        LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                        LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                        WHERE th.transfer_header_id = ?
+                    ");
+                    $transferStmt->execute([$report_id]);
+                    $details = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
+                }
+                
+                echo json_encode([
+                    'success' => true,
+                    'details' => $details,
+                    'report_id' => $report_id
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Error fetching report details: ' . $e->getMessage(),
+                    'details' => []
+                ]);
+            }
+            break;
+
+        case 'generate_report':
+            try {
+                $report_type = $data['report_type'] ?? '';
+                $generated_by = $data['generated_by'] ?? 'System';
+                $parameters = $data['parameters'] ?? [];
+                
+                // This can be extended to create PDF reports, Excel exports, etc.
+                // For now, just return success message
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Report generated successfully',
+                    'report_type' => $report_type,
+                    'generated_by' => $generated_by,
+                    'parameters' => $parameters,
+                    'report_id' => time() // Generate a unique ID
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Error generating report: ' . $e->getMessage()
+                ]);
+            }
+            break;
+
+        default:
+            echo json_encode(['success' => false, 'message' => 'Unknown action: ' . $action]);
+            break;
+    }
+    
+} catch (Exception $e) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Database error: ' . $e->getMessage()
+    ]);
+}
 ?>
-
-

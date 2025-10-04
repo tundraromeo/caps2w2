@@ -1,29 +1,13 @@
-"use client";
-
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import { useState, useEffect } from "react";
+import { FaArchive } from "react-icons/fa";
+import { Package, Clock, Bell, BellRing, AlertCircle, Search, CheckCircle, History, X } from "lucide-react";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import {
-  ChevronUp,
-  ChevronDown,
-  Plus,
-  X,
-  Search,
-  Package,
-  CheckCircle,
-  AlertCircle,
-  Clock,
-  Bell,
-  BellRing,
-  History,
-} from "lucide-react";
-import { FaArchive } from "react-icons/fa";
 import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
 import NotificationSystem from "./NotificationSystem";
 
-function ConvenienceInventory() {
+function ConvenienceStore() {
   const { theme } = useTheme();
   const { settings, isProductExpiringSoon, isProductExpired, getExpiryStatus, isStockLow } = useSettings();
   const [products, setProducts] = useState([]);
@@ -52,7 +36,6 @@ function ConvenienceInventory() {
   const [batchTransferData, setBatchTransferData] = useState([]);
   const [batchTransferSummary, setBatchTransferSummary] = useState({});
   const [loadingBatchTransfers, setLoadingBatchTransfers] = useState(false);
-  
   
   // Notification states
   const [showNotifications, setShowNotifications] = useState(false);
@@ -172,12 +155,11 @@ function ConvenienceInventory() {
         if (convenienceLocation) {
           console.log("📍 Found convenience location:", convenienceLocation);
           setConvenienceLocationId(convenienceLocation.location_id);
+          return convenienceLocation.location_id;
         } else {
           console.warn("⚠️ No convenience store location found");
           console.warn("⚠️ Available locations:", response.data.map(loc => loc.location_name));
         }
-        
-        return convenienceLocation?.location_id || null;
       } else {
         console.warn("⚠️ Failed to load locations:", response.message);
       }
@@ -616,7 +598,6 @@ function ConvenienceInventory() {
     setBatchTransferSummary({});
   };
 
-
   const categories = [...new Set(products.filter(p => p && p.category).map(p => {
     // Handle both string and object category formats
     if (typeof p.category === 'string') {
@@ -630,7 +611,7 @@ function ConvenienceInventory() {
   // --- Dashboard Statistics Calculation ---
   // Calculate total store value
   const totalStoreValue = products.reduce(
-    (sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.quantity || 0)),
+    (sum, p) => sum + (Number(p.unit_price || 0) * Number(p.quantity || 0)),
     0
   );
   // For demo, use static percentage changes
@@ -688,7 +669,6 @@ function ConvenienceInventory() {
               <Package className="h-4 w-4" />
               <span className="text-sm font-medium">Batch Transfers</span>
             </button>
-
 
             {/* Notification Bell */}
             <div className="relative notification-dropdown">
@@ -1035,7 +1015,7 @@ function ConvenienceInventory() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || 0).toFixed(2)}
+                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || product.unit_price || 0).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || product.brand || "Unknown"}
@@ -1238,7 +1218,7 @@ function ConvenienceInventory() {
                       <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Available QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
@@ -1435,7 +1415,7 @@ function ConvenienceInventory() {
                       <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Available QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
@@ -1716,10 +1696,9 @@ function ConvenienceInventory() {
           </div>
         </div>
       )}
-
     </div>
     </div>
   );
 }
 
-export default ConvenienceInventory;
+export default ConvenienceStore;

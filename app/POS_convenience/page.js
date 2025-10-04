@@ -41,6 +41,7 @@ export default function POS() {
   const [salesHistory, setSalesHistory] = useState([]); // Persisted in localStorage
   const [historySelectedIndex, setHistorySelectedIndex] = useState(0);
   const [historyMode, setHistoryMode] = useState('sales'); // 'sales' | 'items'
+  const [showTodayOnly, setShowTodayOnly] = useState(true); // Filter for today's sales only
   const [historyItemSelectedIndex, setHistoryItemSelectedIndex] = useState(0);
   const [showReturnQtyModal, setShowReturnQtyModal] = useState(false);
   const [returnModal, setReturnModal] = useState({ transactionId: null, productId: null, max: 0 });
@@ -48,6 +49,7 @@ export default function POS() {
   const [showClearCartModal, setShowClearCartModal] = useState(false);
   const [showCustomerReturnModal, setShowCustomerReturnModal] = useState(false);
   const [showReturnConfirmModal, setShowReturnConfirmModal] = useState(false);
+  const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
   const [customerReturnData, setCustomerReturnData] = useState({
     transactionId: '',
     returnReason: '',
@@ -57,6 +59,23 @@ export default function POS() {
   const returnReasonRef = useRef(null);
   const transactionIdRef = useRef(null);
   const [returnQuantities, setReturnQuantities] = useState({});
+
+  // Exchange state
+  const [showExchangeModal, setShowExchangeModal] = useState(false);
+  const [exchangeData, setExchangeData] = useState({
+    originalTransactionId: '',
+    originalTransaction: null,
+    selectedItems: [],
+    newItems: [],
+    priceDifference: 0,
+    requiresManagerApproval: false
+  });
+  const [exchangeQuantities, setExchangeQuantities] = useState({});
+  const [exchangeNewItemQuantities, setExchangeNewItemQuantities] = useState({});
+  const [showExchangeConfirmModal, setShowExchangeConfirmModal] = useState(false);
+  const [isExchangeProcessing, setIsExchangeProcessing] = useState(false);
+  const [managerApproval, setManagerApproval] = useState(false);
+  const [managerUsername, setManagerUsername] = useState('');
 
   // Logout state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -87,6 +106,25 @@ export default function POS() {
     totalDiscount: 0,
     loading: false
   });
+
+  // Focus modal when it opens for keyboard events
+  useEffect(() => {
+    if (showTotalSalesModal) {
+      const modalElement = document.querySelector('[data-modal="sales-modal"]');
+      if (modalElement) {
+        modalElement.focus();
+      }
+    }
+  }, [showTotalSalesModal]);
+
+  // Clear old sales history with wrong date format
+  const clearOldSalesHistory = () => {
+    if (confirm('Clear all sales history? This will remove old sales with incorrect date format.')) {
+      localStorage.removeItem('pos-sales-history');
+      setSalesHistory([]);
+      console.log('🗑️ Cleared old sales history');
+    }
+  };
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [discountType, setDiscountType] = useState(null); // string label from DB or 'PWD' | 'Senior' | null
   const [discountSelection, setDiscountSelection] = useState('PWD');
@@ -280,44 +318,102 @@ export default function POS() {
 
   const normalizeProducts = (rows) => {
     if (!Array.isArray(rows)) return [];
-    return rows.map((d) => {
-      const id = d.id ?? d.product_id ?? d.productId;
+    
+    // First, group products by name to handle duplicates
+    const productGroups = {};
+    rows.forEach((d) => {
       const name = d.name ?? d.product_name ?? d.productName ?? '';
-      // Prioritize srp over unit_price when unit_price is 0 or null
-      const unitPrice = Number(d.unit_price) || 0;
-      const srp = Number(d.srp) || 0;
-      const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
-      console.log(`🔍 Price debug for ${name}:`, {
-        unit_price: d.unit_price,
-        srp: d.srp,
-        price: d.price,
-        unitPrice: unitPrice,
-        srp: srp,
-        priceRaw: priceRaw,
-        rawData: d
+      const id = d.id ?? d.product_id ?? d.productId;
+      
+      if (!productGroups[name]) {
+        productGroups[name] = [];
+      }
+      productGroups[name].push(d);
+    });
+    
+    // Log duplicate detection
+    const duplicates = Object.keys(productGroups).filter(name => productGroups[name].length > 1);
+    if (duplicates.length > 0) {
+      console.log(`🔄 Found ${duplicates.length} duplicate product(s):`, duplicates);
+      duplicates.forEach(name => {
+        console.log(`  - ${name}: ${productGroups[name].length} entries, combining quantities`);
       });
-      const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
-      const category = d.category ?? d.category_name ?? 'Uncategorized';
-      const location = d.location_name ?? d.location ?? null;
-      const description = d.description ?? '';
-      const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
-      const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
+    }
+    
+    // Process each group and combine duplicates
+    const processedProducts = [];
+    Object.keys(productGroups).forEach(productName => {
+      const group = productGroups[productName];
       
-      // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
-      const requiresPrescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
-      
-      return {
-        id: Number(id ?? 0) || id,
-        name: String(name),
-        price: Number(priceRaw) || 0,
-        quantity: Number(quantityRaw) || 0,
-        category: String(category),
-        description: String(description),
-        location_name: location ? String(location) : null,
-        requires_prescription: requiresPrescription,
-        is_bulk: Boolean(isBulkProduct)
-      };
-    }).filter(p => p && p.id && p.name);
+      if (group.length === 1) {
+        // Single product, process normally
+        const d = group[0];
+        const id = d.id ?? d.product_id ?? d.productId;
+        const name = d.name ?? d.product_name ?? d.productName ?? '';
+        // Prioritize srp over unit_price when unit_price is 0 or null
+        const unitPrice = Number(d.unit_price) || 0;
+        const srp = Number(d.srp) || 0;
+        const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
+        const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
+        const category = d.category ?? d.category_name ?? 'Uncategorized';
+        const location = d.location_name ?? d.location ?? null;
+        const description = d.description ?? '';
+        const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
+        const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
+        
+        // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
+        const requiresPrescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
+        
+        processedProducts.push({
+          id: Number(id ?? 0) || id,
+          name: String(name),
+          price: Number(priceRaw) || 0,
+          quantity: Number(quantityRaw) || 0,
+          category: String(category),
+          description: String(description),
+          location_name: location ? String(location) : null,
+          requires_prescription: requiresPrescription,
+          is_bulk: Boolean(isBulkProduct)
+        });
+      } else {
+        // Multiple products with same name, combine them
+        const combinedProduct = group.reduce((combined, d) => {
+          const id = d.id ?? d.product_id ?? d.productId;
+          const name = d.name ?? d.product_name ?? d.productName ?? '';
+          const unitPrice = Number(d.unit_price) || 0;
+          const srp = Number(d.srp) || 0;
+          const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
+          const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
+          const category = d.category ?? d.category_name ?? 'Uncategorized';
+          const location = d.location_name ?? d.location ?? null;
+          const description = d.description ?? '';
+          const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
+          const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
+          
+          // Use the first product's ID and details, but combine quantities
+          if (!combined.id) {
+            combined.id = Number(id ?? 0) || id;
+            combined.name = String(name);
+            combined.price = Number(priceRaw) || 0;
+            combined.category = String(category);
+            combined.description = String(description);
+            combined.location_name = location ? String(location) : null;
+            combined.requires_prescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
+            combined.is_bulk = Boolean(isBulkProduct);
+            combined.quantity = 0;
+          }
+          
+          // Sum up quantities from all duplicate entries
+          combined.quantity += Number(quantityRaw) || 0;
+          
+          return combined;
+        }, {});
+        
+        processedProducts.push(combinedProduct);
+      }
+    });
+    
+    return processedProducts.filter(p => p && p.id && p.name);
   };
 
   // Generate search suggestions based on current products
@@ -1016,6 +1112,13 @@ export default function POS() {
         return;
       }
 
+      // Global toggle for Exchange modal via Alt+E
+      if (e.altKey && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        setShowExchangeModal(prev => !prev);
+        return;
+      }
+
       // Global logout via Alt+L
       if (e.altKey && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault();
@@ -1182,9 +1285,26 @@ export default function POS() {
         return; // block other shortcuts while customer return modal open
       }
 
+      // Handle keys inside Exchange Modal
+      if (showExchangeModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowExchangeModal(false);
+          return;
+        }
+        if (e.key === 'Enter' && e.altKey) {
+          e.preventDefault();
+          processExchange();
+          return;
+        }
+        return; // block other shortcuts while exchange modal open
+      }
+
       // Handle keys inside Today's Total Sales Modal
       if (showTotalSalesModal) {
+        console.log('🔑 Key pressed in sales modal:', e.key);
         if (e.key === 'Escape') {
+          console.log('🚪 Closing sales modal via ESC');
           e.preventDefault();
           setShowTotalSalesModal(false);
           return;
@@ -1304,18 +1424,21 @@ export default function POS() {
         }
         if (["Tab", "ArrowDown", "s", "S"].includes(e.key)) {
           e.preventDefault();
-          if (checkoutFocusIndex === 3) {
-            setCheckoutFocusIndex(4);
+          // Sequential navigation flow
+          if (checkoutFocusIndex === 0) {
+            setCheckoutFocusIndex(1); // Amount Paid → Payment Method
             return;
           }
-          // If currently on Cash button and payment method is selected, go directly to Checkout button
           if (checkoutFocusIndex === 1 && paymentMethod === 'cash') {
-            setCheckoutFocusIndex(4);
+            setCheckoutFocusIndex(4); // Cash → Checkout
             return;
           }
-          // If currently on GCash button and payment method is selected, go to reference input
           if (checkoutFocusIndex === 2 && paymentMethod === 'gcash') {
-            setCheckoutFocusIndex(3);
+            setCheckoutFocusIndex(3); // GCash → Reference
+            return;
+          }
+          if (checkoutFocusIndex === 3) {
+            setCheckoutFocusIndex(4); // Reference → Checkout
             return;
           }
           // If cart is present and not already in cart focus, go to cart first
@@ -1335,50 +1458,60 @@ export default function POS() {
         }
         if (["ArrowUp", "w", "W"].includes(e.key)) {
           e.preventDefault();
-          // If on checkout button, move to previous logical field
+          // Sequential navigation flow (reverse)
           if (checkoutFocusIndex === 4) {
             if (paymentMethod === 'gcash' && showRefInput) {
-              setCheckoutFocusIndex(3); // GCash Ref
+              setCheckoutFocusIndex(3); // Checkout → GCash Ref
+            } else if (paymentMethod === 'cash') {
+              setCheckoutFocusIndex(1); // Checkout → Cash
             } else {
-              setCheckoutFocusIndex(0); // Amount Paid
+              setCheckoutFocusIndex(0); // Checkout → Amount Paid
             }
+            return;
+          }
+          if (checkoutFocusIndex === 3) {
+            setCheckoutFocusIndex(2); // GCash Ref → GCash
+            return;
+          }
+          if (checkoutFocusIndex === 2) {
+            setCheckoutFocusIndex(1); // GCash → Cash
+            return;
+          }
+          if (checkoutFocusIndex === 1) {
+            setCheckoutFocusIndex(0); // Payment Method → Amount Paid
             return;
           }
           setCheckoutFocusIndex((prev) => (prev - 1) < 0 ? maxFocus : prev - 1);
           return;
         }
-        // New: Left/Right arrows toggle between Cash and GCash buttons
-        if (["ArrowLeft", "a", "A", "ArrowRight", "d", "D"].includes(e.key)) {
-          if (checkoutFocusIndex === 1) { // Cash button
-            e.preventDefault();
-            setCheckoutFocusIndex(2); // Move to GCash
-            return;
-          }
-          if (checkoutFocusIndex === 2) { // GCash button
-            e.preventDefault();
-            setCheckoutFocusIndex(1); // Move to Cash
-            return;
-          }
-          // Only allow navigation back to product side from input or checkout button
-          if (["ArrowLeft", "a", "A"].includes(e.key) && (checkoutFocusIndex === 0 || checkoutFocusIndex === maxFocus)) {
-            setNavigationIndex(1);
-            return;
-          }
-        }
+        // Left/Right arrows handled in main switch statement below
         if (e.key === "Enter") {
           e.preventDefault();
-          if (checkoutFocusIndex === 1) {
+          // Sequential navigation with Enter key
+          if (checkoutFocusIndex === 0) {
+            // Amount Paid → Payment Method
+            setCheckoutFocusIndex(1);
+            setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+          } else if (checkoutFocusIndex === 1) {
             setPaymentMethod('cash'); 
             setShowRefInput(false);
-            // Auto-checkout for cash payment
-            setTimeout(() => {
-              handleCheckout();
-            }, 100);
+            // Cash → Checkout
+            setCheckoutFocusIndex(4);
+            setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
           } else if (checkoutFocusIndex === 2) {
             setPaymentMethod('gcash'); 
+            setAmountPaid(payableTotal.toString()); // Auto-set amount for GCash
             setShowRefInput(true); 
-            setCheckoutFocusIndex(3); // Move to reference number input
-          } else if (checkoutFocusIndex === 4 || (checkoutFocusIndex === 3 && paymentMethod !== 'gcash')) {
+            // GCash → Reference
+            setCheckoutFocusIndex(3);
+            setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);
+          } else if (checkoutFocusIndex === 3) {
+            // Reference → Checkout
+            if (referenceNumber.trim()) {
+              setCheckoutFocusIndex(4);
+              setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+            }
+          } else if (checkoutFocusIndex === 4) {
             handleCheckout();
           }
           return;
@@ -1424,7 +1557,16 @@ export default function POS() {
         case 'a':
         case 'A':
           e.preventDefault();
-          if (navigationIndex === 1 && selectedIndex > 0) {
+          console.log('🔑 ArrowLeft pressed - navigationIndex:', navigationIndex, 'checkoutFocusIndex:', checkoutFocusIndex);
+          if (navigationIndex === 2 && (checkoutFocusIndex === 1 || checkoutFocusIndex === 2)) {
+            // Handle payment method navigation in checkout
+            console.log('💳 Toggling payment method');
+            if (checkoutFocusIndex === 1) {
+              setCheckoutFocusIndex(2); // Move to GCash
+            } else if (checkoutFocusIndex === 2) {
+              setCheckoutFocusIndex(1); // Move to Cash
+            }
+          } else if (navigationIndex === 1 && selectedIndex > 0) {
             // Move left in product grid
             setSelectedIndex(prev => prev - 1);
           } else if (navigationIndex === 2) {
@@ -1437,9 +1579,18 @@ export default function POS() {
         case 'd':
         case 'D':
           e.preventDefault();
-          if (navigationIndex === 1) {
+          console.log('🔑 ArrowRight pressed - navigationIndex:', navigationIndex, 'checkoutFocusIndex:', checkoutFocusIndex);
+          if (navigationIndex === 2 && (checkoutFocusIndex === 1 || checkoutFocusIndex === 2)) {
+            // Handle payment method navigation in checkout
+            console.log('💳 Toggling payment method');
+            if (checkoutFocusIndex === 1) {
+              setCheckoutFocusIndex(2); // Move to GCash
+            } else if (checkoutFocusIndex === 2) {
+              setCheckoutFocusIndex(1); // Move to Cash
+            }
+          } else if (navigationIndex === 1) {
             // Jump directly to checkout amount input
-              setNavigationIndex(2);
+            setNavigationIndex(2);
             setCheckoutFocusIndex(0);
           }
           break;
@@ -1621,9 +1772,38 @@ export default function POS() {
         console.error(`❌ ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale failed:`, json1.message);
         throw new Error(json1.message || 'Sale processing failed');
       }
+
+      // Now save the sale to POS sales tables
+      console.log('🔄 Saving sale to POS sales tables...');
+      const salesRes = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_pos_sale',
+          transactionId: transactionId,
+          totalAmount: payableTotal,
+          referenceNumber: paymentMethod === 'gcash' ? referenceNumber : null,
+          terminalName: terminalToUse,
+          paymentMethod: paymentMethod,
+          items: cart.map(it => ({ 
+            product_id: it.product.id, 
+            quantity: it.quantity, 
+            price: it.product.price 
+          }))
+        })
+      });
+      const salesJson = await salesRes.json().catch(() => ({}));
+      console.log('✅ POS sale saved:', salesJson);
+      
+      if (!salesJson.success) {
+        console.error('❌ Failed to save POS sale:', salesJson.message);
+        throw new Error(salesJson.message || 'Failed to save POS sale record');
+      }
+
+      // Log activity
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+        await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1641,7 +1821,7 @@ export default function POS() {
     } catch (e) {
       console.warn('save_pos_sale failed:', e);
       try {
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+        await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1805,7 +1985,7 @@ export default function POS() {
     if (!transactionId.trim()) return;
     
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+      const response = await fetch('http://localhost/Enguio_Project/Api/pos_return_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1819,10 +1999,10 @@ export default function POS() {
         const transaction = data.transaction;
         const items = transaction.items || [];
         
-        // Initialize return quantities with original quantities
+        // Initialize return quantities to 0 (user needs to set what they want to return)
         const initialQuantities = {};
         items.forEach(item => {
-          initialQuantities[item.product_id] = item.quantity;
+          initialQuantities[item.product_id] = 0;
         });
         setReturnQuantities(initialQuantities);
         
@@ -1844,7 +2024,7 @@ export default function POS() {
 
   const loadRecentTransactions = async () => {
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+      const response = await fetch('http://localhost/Enguio_Project/Api/pos_return_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1946,8 +2126,8 @@ export default function POS() {
         }).filter(item => item.return_quantity > 0) // Only include items with return quantity > 0
       };
 
-      console.log('Calling sales_api.php for return processing with data:', returnData);
-      const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+      console.log('Calling pos_return_api.php for return processing with data:', returnData);
+      const response = await fetch('http://localhost/Enguio_Project/Api/pos_return_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1959,7 +2139,7 @@ export default function POS() {
 
       const result = await response.json();
       if (result.success) {
-        alert(`Return submitted successfully!\nReturn Number: ${returnNumber}\nStatus: Pending Admin Approval\n\nThe return has been submitted and is waiting for admin approval before stock is restored.`);
+        alert(`Return submitted successfully!\nReturn Number: ${returnNumber}\nStatus: Pending Admin Approval\n\n✅ Return request created\n⏳ Waiting for admin approval\n📋 Check Return Management for status\n\nStock will be restored only after admin approval.`);
         setShowCustomerReturnModal(false);
         setShowReturnConfirmModal(false);
         setCustomerReturnData({ transactionId: '', returnReason: '', customReason: '', items: [] });
@@ -1968,6 +2148,16 @@ export default function POS() {
         // Refresh product stock and sales history
         await loadAllProducts();
         await loadRecentTransactions(); // Refresh recent transactions to show updated data
+        
+        // Trigger notification event for admin panel
+        window.dispatchEvent(new CustomEvent('returnCreated', {
+          detail: {
+            type: 'new_return',
+            returnNumber: returnNumber,
+            amount: result.total_amount,
+            location: returnData.location_name
+          }
+        }));
         
         // Update local sales history if it exists
         const localHistory = JSON.parse(localStorage.getItem('pos-sales-history') || '[]');
@@ -2009,24 +2199,293 @@ export default function POS() {
     }
   };
 
+  // Exchange Functions
+  const openExchangeModal = () => {
+    setExchangeData({
+      originalTransactionId: '',
+      originalTransaction: null,
+      selectedItems: [],
+      newItems: [],
+      priceDifference: 0,
+      requiresManagerApproval: false
+    });
+    setExchangeQuantities({});
+    setExchangeNewItemQuantities({});
+    setManagerApproval(false);
+    setManagerUsername('');
+    setShowExchangeModal(true);
+  };
+
+  const searchTransactionForExchange = async (transactionId) => {
+    if (!transactionId.trim()) return;
+    
+    try {
+      const response = await fetch('http://localhost/Enguio_Project/Api/pos_exchange_api.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'get_transaction_for_exchange',
+          transaction_id: transactionId
+        })
+      });
+      
+      const result = await response.json();
+      if (result.success) {
+        setExchangeData(prev => ({
+          ...prev,
+          originalTransaction: result.transaction,
+          selectedItems: result.transaction.items || []
+        }));
+        
+        // Initialize exchange quantities to 0
+        const initialQuantities = {};
+        result.transaction.items.forEach(item => {
+          initialQuantities[item.product_id] = 0;
+        });
+        setExchangeQuantities(initialQuantities);
+      } else {
+        alert(`Transaction not found: ${result.message}`);
+        setExchangeData(prev => ({ ...prev, originalTransaction: null, selectedItems: [] }));
+      }
+    } catch (error) {
+      console.error('Error searching transaction:', error);
+      alert('Error searching transaction. Please try again.');
+    }
+  };
+
+  const addNewItemToExchange = (product) => {
+    const quantity = exchangeNewItemQuantities[product.id] || 1;
+    const existingItemIndex = exchangeData.newItems.findIndex(item => item.id === product.id);
+    
+    if (existingItemIndex >= 0) {
+      // Update existing item quantity
+      const updatedItems = [...exchangeData.newItems];
+      updatedItems[existingItemIndex] = {
+        ...updatedItems[existingItemIndex],
+        quantity: updatedItems[existingItemIndex].quantity + quantity,
+        total: (updatedItems[existingItemIndex].quantity + quantity) * product.selling_price
+      };
+      setExchangeData(prev => ({ ...prev, newItems: updatedItems }));
+    } else {
+      // Add new item
+      const newItem = {
+        id: product.id,
+        product_id: product.id,
+        name: product.product_name,
+        product_name: product.product_name,
+        price: product.selling_price,
+        quantity: quantity,
+        total: quantity * product.selling_price,
+        barcode: product.barcode
+      };
+      setExchangeData(prev => ({ ...prev, newItems: [...prev.newItems, newItem] }));
+    }
+    
+    // Reset quantity input
+    setExchangeNewItemQuantities(prev => ({ ...prev, [product.id]: 1 }));
+    calculateExchangePriceDifference();
+  };
+
+  const removeNewItemFromExchange = (productId) => {
+    setExchangeData(prev => ({
+      ...prev,
+      newItems: prev.newItems.filter(item => item.id !== productId)
+    }));
+    calculateExchangePriceDifference();
+  };
+
+  const updateNewItemQuantity = (productId, newQuantity) => {
+    const quantity = Math.max(1, newQuantity);
+    setExchangeData(prev => ({
+      ...prev,
+      newItems: prev.newItems.map(item =>
+        item.id === productId
+          ? { ...item, quantity, total: quantity * item.price }
+          : item
+      )
+    }));
+    calculateExchangePriceDifference();
+  };
+
+  const calculateExchangePriceDifference = () => {
+    const totalOriginalValue = exchangeData.selectedItems.reduce((sum, item) => {
+      const exchangeQty = exchangeQuantities[item.product_id] || 0;
+      return sum + (item.price * exchangeQty);
+    }, 0);
+    
+    const totalNewValue = exchangeData.newItems.reduce((sum, item) => sum + item.total, 0);
+    const priceDifference = totalNewValue - totalOriginalValue;
+    const requiresManagerApproval = priceDifference > 0;
+    
+    setExchangeData(prev => ({
+      ...prev,
+      priceDifference,
+      requiresManagerApproval
+    }));
+  };
+
+  const processExchange = async () => {
+    if (!exchangeData.originalTransactionId || !exchangeData.originalTransaction) {
+      alert('Please enter and search for a valid transaction ID.');
+      return;
+    }
+    
+    // Check if any items are selected for exchange
+    const hasSelectedItems = exchangeData.selectedItems.some(item => {
+      const exchangeQty = exchangeQuantities[item.product_id] || 0;
+      return exchangeQty > 0;
+    });
+    
+    if (!hasSelectedItems) {
+      alert('Please select items to exchange.');
+      return;
+    }
+    
+    if (exchangeData.newItems.length === 0) {
+      alert('Please add items to exchange for.');
+      return;
+    }
+    
+    // Check if manager approval is required
+    if (exchangeData.requiresManagerApproval && !managerApproval) {
+      alert('Manager approval is required for higher price exchange. Please get manager approval first.');
+      return;
+    }
+    
+    setShowExchangeConfirmModal(true);
+  };
+
+  const confirmProcessExchange = async () => {
+    try {
+      setIsExchangeProcessing(true);
+      
+      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+      
+      // Prepare exchange items (items being returned)
+      const exchangeItems = exchangeData.selectedItems
+        .filter(item => (exchangeQuantities[item.product_id] || 0) > 0)
+        .map(item => ({
+          product_id: item.product_id,
+          quantity: exchangeQuantities[item.product_id],
+          price: item.price,
+          total: item.price * exchangeQuantities[item.product_id]
+        }));
+      
+      // Prepare new items (items being exchanged for)
+      const newItems = exchangeData.newItems.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.price,
+        total: item.total
+      }));
+      
+      const exchangeDataPayload = {
+        action: 'process_exchange',
+        original_transaction_id: exchangeData.originalTransactionId,
+        exchange_items: exchangeItems,
+        new_items: newItems,
+        location_name: locationName,
+        terminal_name: terminalName,
+        processed_by: userData.username || 'Admin',
+        manager_approval: managerApproval,
+        manager_username: managerUsername
+      };
+      
+      console.log('Processing exchange with data:', exchangeDataPayload);
+      
+      const response = await fetch('http://localhost/Enguio_Project/Api/pos_exchange_api.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exchangeDataPayload)
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        const message = result.price_difference > 0 
+          ? `Exchange completed successfully!\nExchange Number: ${result.exchange_number}\nPrice Difference: +₱${result.price_difference.toFixed(2)} (Customer pays extra)`
+          : result.price_difference < 0
+          ? `Exchange completed successfully!\nExchange Number: ${result.exchange_number}\nPrice Difference: -₱${Math.abs(result.price_difference).toFixed(2)} (No refund given)`
+          : `Exchange completed successfully!\nExchange Number: ${result.exchange_number}\nPrice Difference: ₱0.00 (Equal exchange)`;
+        
+        alert(message);
+        
+        // Close modals and reset state
+        setShowExchangeModal(false);
+        setShowExchangeConfirmModal(false);
+        setExchangeData({
+          originalTransactionId: '',
+          originalTransaction: null,
+          selectedItems: [],
+          newItems: [],
+          priceDifference: 0,
+          requiresManagerApproval: false
+        });
+        setExchangeQuantities({});
+        setExchangeNewItemQuantities({});
+        setManagerApproval(false);
+        setManagerUsername('');
+        
+        // Refresh product stock
+        await loadAllProducts();
+        
+        // Trigger notification event
+        window.dispatchEvent(new CustomEvent('exchangeCreated', {
+          detail: {
+            type: 'new_exchange',
+            exchangeNumber: result.exchange_number,
+            priceDifference: result.price_difference,
+            location: locationName
+          }
+        }));
+        
+      } else {
+        if (result.requires_manager_approval) {
+          alert(`Manager approval required for higher price exchange.\nPrice difference: +₱${result.price_difference.toFixed(2)}\nPlease get manager approval and try again.`);
+        } else {
+          alert(`Failed to process exchange: ${result.message || 'Unknown error'}`);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error processing exchange:', error);
+      alert('Error processing exchange. Please try again.');
+    } finally {
+      setIsExchangeProcessing(false);
+    }
+  };
+
   // Fetch today's total sales for current cashier
   const fetchTodaySales = async () => {
+    console.log('🔄 fetchTodaySales called');
     setTodaySalesData(prev => ({ ...prev, loading: true }));
     
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-      const username = userData.username || 'Admin';
+      const username = 'all'; // Always show all sales for today
+      
+      console.log('👤 User data:', userData);
+      console.log('👤 Username:', username);
+      console.log('📍 Location:', locationName);
+      console.log('💻 Terminal:', terminalName);
+      
+      const requestBody = {
+        action: 'get_today_sales',
+        cashier_username: username,
+        location_name: locationName,
+        terminal_name: terminalName
+      };
+      
+      console.log('📤 API Request:', requestBody);
       
       const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get_today_sales',
-          cashier_username: username,
-          location_name: locationName,
-          terminal_name: terminalName
-        })
+        body: JSON.stringify(requestBody)
       });
+      
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response ok:', response.ok);
       
       const data = await response.json();
       console.log('📊 Sales API Response:', data);
@@ -2034,14 +2493,18 @@ export default function POS() {
       if (data?.success && data?.data) {
         const salesData = data.data;
         console.log('📈 Sales Data:', salesData);
-        setTodaySalesData({
+        
+        const newSalesData = {
           totalSales: Number(salesData.total_sales || 0),
           totalTransactions: Number(salesData.total_transactions || 0),
           cashSales: Number(salesData.cash_sales || 0),
           gcashSales: Number(salesData.gcash_sales || 0),
           totalDiscount: Number(salesData.total_discount || 0),
           loading: false
-        });
+        };
+        
+        console.log('💾 Setting sales data:', newSalesData);
+        setTodaySalesData(newSalesData);
       } else {
         console.log('⚠️ No sales data found or API error:', data);
         // Set default values if no data found
@@ -2055,7 +2518,7 @@ export default function POS() {
         });
       }
     } catch (error) {
-      console.error('Error fetching today sales:', error);
+      console.error('❌ Error fetching today sales:', error);
       setTodaySalesData({
         totalSales: 0,
         totalTransactions: 0,
@@ -2115,14 +2578,20 @@ export default function POS() {
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     
+    // Prevent multiple simultaneous executions
+    if (isCheckoutProcessing) return;
+    setIsCheckoutProcessing(true);
+    
     // Validate payment
     if (!amountPaid || isNaN(amountPaid) || parseFloat(amountPaid) < payableTotal) {
       alert('Please enter a valid amount that covers the total cost.');
+      setIsCheckoutProcessing(false);
       return;
     }
     
     if (paymentMethod === 'gcash' && !referenceNumber.trim()) {
       alert('Please enter GCash reference number.');
+      setIsCheckoutProcessing(false);
       return;
     }
     
@@ -2132,7 +2601,7 @@ export default function POS() {
     // Persist this sale in local history regardless of print success
     const saleRecord = {
       transactionId: printResult?.transactionId,
-      date: new Date().toLocaleDateString(),
+      date: new Date().toLocaleDateString('en-CA'), // Use consistent YYYY-MM-DD format
       time: new Date().toLocaleTimeString(),
       items: cart.map(item => ({
         id: item.product.id,
@@ -2226,6 +2695,9 @@ export default function POS() {
         alert(`Transaction completed but printing failed: ${printResult.message}\n\nCheck the receipts folder for saved receipt.`);
       }, 2500); // Show after thank you modal
     }
+    
+    // Reset processing state
+    setIsCheckoutProcessing(false);
   };
 
   useEffect(() => {
@@ -2734,17 +3206,9 @@ export default function POS() {
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            // If GCash is already selected, move to ref input; otherwise move focus to payment method selection
-                            if (paymentMethod === 'gcash') {
-                              if (!showRefInput) {
-                                setShowRefInput(true);
-                              }
-                              setCheckoutFocusIndex(3);
-                              setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);
-                            } else {
-                              setCheckoutFocusIndex(1);
-                              setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
-                            }
+                            // Sequential navigation: Amount Paid → Payment Method
+                            setCheckoutFocusIndex(1);
+                            setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
                           }
                         }}
                         onBlur={() => { justBlurredAmountPaid.current = true; }}
@@ -2760,6 +3224,20 @@ export default function POS() {
                           type="button"
                           className={`flex-1 py-3 rounded-lg text-base font-bold transition-colors ${paymentMethod === 'cash' ? 'bg-gray-800 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${checkoutFocusIndex === 1 ? 'ring-2 ring-blue-500' : ''}`}
                           onClick={() => { setPaymentMethod('cash'); setShowRefInput(false); }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              setPaymentMethod('cash');
+                              setShowRefInput(false);
+                              // Sequential navigation: Payment Method → Checkout
+                              setCheckoutFocusIndex(4);
+                              setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                            } else if (e.key === 'ArrowRight') {
+                              e.preventDefault();
+                              setCheckoutFocusIndex(2);
+                              setTimeout(() => { try { gcashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                            }
+                          }}
                         >
                           💵 Cash
                         </button>
@@ -2768,6 +3246,21 @@ export default function POS() {
                           type="button"
                           className={`flex-1 py-3 rounded-lg text-base font-bold transition-colors ${paymentMethod === 'gcash' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${checkoutFocusIndex === 2 ? 'ring-2 ring-blue-500' : ''}`}
                           onClick={() => { setPaymentMethod('gcash'); setShowRefInput(true); setCheckoutFocusIndex(3); }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              setPaymentMethod('gcash');
+                              setShowRefInput(true);
+                              setAmountPaid(payableTotal.toString()); // Auto-set amount for GCash
+                              // Sequential navigation: Payment Method → GCash Reference
+                              setCheckoutFocusIndex(3);
+                              setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);
+                            } else if (e.key === 'ArrowLeft') {
+                              e.preventDefault();
+                              setCheckoutFocusIndex(1);
+                              setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                            }
+                          }}
                         >
                           📱 GCash
                         </button>
@@ -2787,10 +3280,11 @@ export default function POS() {
                           onKeyDown={e => { 
                             if (e.key === 'Enter') { 
                               e.preventDefault(); 
-                              // Auto-checkout for GCash payment after reference number
-                              setTimeout(() => {
-                                handleCheckout();
-                              }, 100);
+                              // Sequential navigation: GCash Reference → Checkout
+                              if (referenceNumber.trim()) {
+                                setCheckoutFocusIndex(4);
+                                setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                              }
                             } 
                           }}
                           className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
@@ -2831,6 +3325,12 @@ export default function POS() {
                 ref={checkoutBtnRef}
                 id="checkout-button"
                 onClick={handleCheckout}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleCheckout();
+                  }
+                }}
                 className={`w-full py-4 rounded-xl text-white text-xl font-bold shadow-lg hover:shadow-xl transition-all duration-200 ${
                   checkoutFocusIndex === 4 ? 'bg-gray-900 ring-4 ring-blue-500' : 'bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black'
                 }`}
@@ -2897,6 +3397,13 @@ export default function POS() {
             </button>
             <button
               type="button"
+              className="px-5 py-3 rounded bg-purple-600 text-white hover:bg-purple-700 text-base"
+              onClick={openExchangeModal}
+            >
+              Exchange Only (Alt+E)
+            </button>
+            <button
+              type="button"
               className="px-5 py-3 rounded bg-green-600 text-white hover:bg-green-700 text-base"
               onClick={() => {
                 setShowTotalSalesModal(true);
@@ -2909,19 +3416,60 @@ export default function POS() {
         </div>
       </div>
       {showHistoryModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm z-50">
+        <div className="fixed inset-0 flex items-center justify-center bg-transparent backdrop-blur-sm z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden border-2 border-gray-300">
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <h3 className="text-xl font-bold">Sales History</h3>
-              <div className="text-sm text-gray-500">Alt+H to close</div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showTodayOnly}
+                    onChange={(e) => setShowTodayOnly(e.target.checked)}
+                    className="rounded"
+                  />
+                  Today Only
+                </label>
+                <button
+                  onClick={clearOldSalesHistory}
+                  className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                  title="Clear old sales with wrong date format"
+                >
+                  Clear Old Data
+                </button>
+                <div className="text-sm text-gray-500">Alt+H to close</div>
+              </div>
             </div>
             <div className="flex">
               <div className="w-1/2 border-r max-h-[70vh] overflow-y-auto">
-                {salesHistory.length === 0 ? (
-                  <div className="p-6 text-gray-500 text-center">No sales yet</div>
-                ) : (
-                  <ul>
-                    {salesHistory.map((sale, idx) => (
+                {(() => {
+                  // Filter sales based on today only checkbox
+                  const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                  console.log('📅 Today filter date:', today);
+                  console.log('📊 Total sales history:', salesHistory.length);
+                  console.log('🔍 Sales history dates:', salesHistory.map(s => ({ id: s.transactionId, date: s.date })));
+                  
+                  const filteredSales = showTodayOnly 
+                    ? salesHistory.filter(sale => {
+                        const matches = sale.date === today;
+                        console.log(`🔍 Sale ${sale.transactionId}: date="${sale.date}", matches today: ${matches}`);
+                        return matches;
+                      })
+                    : salesHistory;
+                  
+                  console.log('✅ Filtered sales count:', filteredSales.length);
+                  
+                  if (filteredSales.length === 0) {
+                    return (
+                      <div className="p-6 text-gray-500 text-center">
+                        {showTodayOnly ? "No sales today" : "No sales yet"}
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <ul>
+                      {filteredSales.map((sale, idx) => (
                       <li
                         key={`${sale.transactionId}-${idx}`}
                         className={`px-4 py-3 border-b cursor-pointer ${historySelectedIndex === idx && historyMode === 'sales' ? 'bg-blue-50 ring-2 ring-blue-300' : ''}`}
@@ -2938,26 +3486,36 @@ export default function POS() {
                         </div>
                         <div className="text-xs text-gray-500 mt-1">{sale.paymentMethod}</div>
                       </li>
-                    ))}
-                  </ul>
-                )}
+                      ))}
+                    </ul>
+                  );
+                })()}
               </div>
               <div className="w-1/2 max-h-[70vh] overflow-y-auto">
-                {salesHistory[historySelectedIndex] ? (
+                {(() => {
+                  // Get filtered sales for the right panel
+                  const filteredSales = showTodayOnly 
+                    ? salesHistory.filter(sale => {
+                        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+                        return sale.date === today;
+                      })
+                    : salesHistory;
+                  
+                  return filteredSales[historySelectedIndex] ? (
                   <div className="p-4">
                     <div className="mb-2">
                       <div className="text-sm text-gray-600">Transaction</div>
-                      <div className="font-semibold">{salesHistory[historySelectedIndex].transactionId}</div>
+                      <div className="font-semibold">{filteredSales[historySelectedIndex].transactionId}</div>
                     </div>
                     <div className="mb-2 grid grid-cols-3 gap-2 text-sm text-gray-700">
-                      <div>Date: {salesHistory[historySelectedIndex].date}</div>
-                      <div>Time: {salesHistory[historySelectedIndex].time}</div>
-                      <div>Payment: {salesHistory[historySelectedIndex].paymentMethod}</div>
+                      <div>Date: {filteredSales[historySelectedIndex].date}</div>
+                      <div>Time: {filteredSales[historySelectedIndex].time}</div>
+                      <div>Payment: {filteredSales[historySelectedIndex].paymentMethod}</div>
                     </div>
                     <div className="border rounded-lg">
                       <div className="px-3 py-2 font-semibold bg-gray-50">Items</div>
                       <ul>
-                        {salesHistory[historySelectedIndex].items?.map((it, i) => {
+                        {filteredSales[historySelectedIndex].items?.map((it, i) => {
                           const returnedQty = Number(it.returnedQuantity || 0);
                           const remaining = Math.max(0, Number(it.quantity || 0) - returnedQty);
                           return (
@@ -2968,13 +3526,6 @@ export default function POS() {
                               </div>
                               <div className="flex items-center gap-3">
                                 <span>₱{Number(it.total || (it.price * it.quantity)).toFixed(2)}</span>
-                                <button
-                                  className="px-3 py-1 rounded bg-red-600 text-white disabled:opacity-50"
-                                  disabled={remaining <= 0}
-                                  onClick={() => openReturnQtyModal(salesHistory[historySelectedIndex].transactionId, it.id)}
-                                >
-                                  Return
-                                </button>
                               </div>
                             </li>
                           );
@@ -2983,7 +3534,7 @@ export default function POS() {
                     </div>
                     <div className="flex justify-between items-center mt-3 font-semibold">
                       <span>Total</span>
-                      <span>₱{Number(salesHistory[historySelectedIndex].subtotal || 0).toFixed(2)}</span>
+                      <span>₱{Number(filteredSales[historySelectedIndex].subtotal || 0).toFixed(2)}</span>
                     </div>
                     <div className="mt-4 flex gap-2">
                       <button
@@ -2993,11 +3544,12 @@ export default function POS() {
                         Close
                       </button>
                     </div>
-                    <div className="text-xs text-gray-500 mt-2">Use Up/Down to navigate. Enter: select sale or return selected item. ESC: go back/close.</div>
+                    <div className="text-xs text-gray-500 mt-2">Use Up/Down to navigate. Enter: select sale. ESC: close.</div>
                   </div>
-                ) : (
-                  <div className="p-6 text-gray-500">Select a sale to view details</div>
-                )}
+                  ) : (
+                    <div className="p-6 text-gray-500">Select a sale to view details</div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -3171,14 +3723,14 @@ export default function POS() {
         </div>
       )}
       {showCustomerReturnModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-[80]">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden border-2 border-gray-300">
-            <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50">
+        <div className="fixed inset-0 flex items-center justify-center z-[80] p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[95vh] flex flex-col border-2 border-gray-300">
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50 flex-shrink-0">
               <h3 className="text-xl font-bold text-gray-900">Customer Return Processing</h3>
               <div className="text-sm text-gray-500">Alt+R to close</div>
             </div>
             
-            <div className="p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Transaction ID Search */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3385,7 +3937,7 @@ export default function POS() {
               {customerReturnData.items.length > 0 && (
                 <div>
                   <h4 className="text-lg font-semibold text-gray-800 mb-3">Transaction Items:</h4>
-                  <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 max-h-60 overflow-y-auto">
+                  <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4">
                     <div className="space-y-3">
                       {customerReturnData.items.map((item, index) => {
                         const returnQty = returnQuantities[item.product_id] || 0;
@@ -3547,8 +4099,11 @@ export default function POS() {
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
+            </div>
+            
+            {/* Action Buttons - Fixed at bottom */}
+            <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50 p-6">
+              <div className="flex gap-3 justify-end mb-4">
                 <button
                   className="px-6 py-3 rounded-lg bg-gray-300 border-2 border-gray-500 text-gray-800 font-bold hover:bg-gray-400"
                   onClick={() => setShowCustomerReturnModal(false)}
@@ -3563,7 +4118,7 @@ export default function POS() {
                   Process Return
                 </button>
               </div>
-
+              
               <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
                 <strong>Instructions:</strong><br/>
                 • Enter the transaction ID from the original sale<br/>
@@ -3577,7 +4132,7 @@ export default function POS() {
       )}
 
       {showThankYouModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm z-50">
+        <div className="fixed inset-0 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-xl shadow-2xl text-center border-2 border-gray-300">
             <h2 className="text-3xl font-bold mb-4 text-gray-700">Thank you for purchasing!</h2>
             <p className="text-gray-600 text-lg">Transaction completed successfully.</p>
@@ -3595,7 +4150,19 @@ export default function POS() {
       )}
 
       {showTotalSalesModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-transparent backdrop-blur-sm z-[90]">
+        <div 
+          className="fixed inset-0 flex items-center justify-center bg-transparent backdrop-blur-sm z-[90]"
+          data-modal="sales-modal"
+          onKeyDown={(e) => {
+            console.log('🔑 Modal container key pressed:', e.key);
+            if (e.key === 'Escape') {
+              console.log('🚪 Closing modal from container');
+              e.preventDefault();
+              setShowTotalSalesModal(false);
+            }
+          }}
+          tabIndex={-1}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border-2 border-gray-300">
             <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-green-50 to-green-100">
               <h3 className="text-2xl font-bold text-gray-900">📊 Today's Sales Summary</h3>
@@ -3788,6 +4355,7 @@ export default function POS() {
           </div>
         </div>
       )}
+
       {/* Return Confirmation Modal */}
       {showReturnConfirmModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
@@ -3868,6 +4436,332 @@ export default function POS() {
               >
                 Clear Cart
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exchange Modal */}
+      {showExchangeModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-[80] p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[95vh] flex flex-col border-2 border-gray-300">
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50 flex-shrink-0">
+              <h3 className="text-xl font-bold text-gray-900">Exchange Only - No Refund Policy</h3>
+              <div className="text-sm text-gray-500">Alt+E to close</div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Transaction ID Search */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Original Receipt Number:
+                </label>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    placeholder="Enter original transaction ID (e.g., TXN123456)"
+                    value={exchangeData.originalTransactionId}
+                    onChange={(e) => setExchangeData(prev => ({ ...prev, originalTransactionId: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (exchangeData.originalTransactionId.trim()) {
+                          searchTransactionForExchange(exchangeData.originalTransactionId.trim());
+                        }
+                      }
+                    }}
+                    className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  />
+                  <button
+                    onClick={() => searchTransactionForExchange(exchangeData.originalTransactionId)}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-base font-bold"
+                  >
+                    🔍 Search
+                  </button>
+                </div>
+              </div>
+
+              {/* Original Transaction Details */}
+              {exchangeData.originalTransaction && (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <h4 className="text-lg font-bold text-blue-900 mb-3">Original Transaction Details</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div><strong>Date:</strong> {exchangeData.originalTransaction.date}</div>
+                    <div><strong>Time:</strong> {exchangeData.originalTransaction.time}</div>
+                    <div><strong>Reference:</strong> {exchangeData.originalTransaction.reference_number}</div>
+                    <div><strong>Total:</strong> ₱{exchangeData.originalTransaction.total_amount}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Two Column Layout */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Column - Items to Exchange */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-bold text-gray-900">Items to Exchange (Return)</h4>
+                  {exchangeData.selectedItems.length > 0 ? (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {exchangeData.selectedItems.map((item, index) => (
+                        <div key={item.product_id} className="bg-gray-50 border rounded-lg p-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-gray-900">{item.product_name}</div>
+                              <div className="text-sm text-gray-600">₱{item.price} each</div>
+                              <div className="text-sm text-gray-600">Available: {item.quantity}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-gray-700">Qty to exchange:</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.quantity}
+                              value={exchangeQuantities[item.product_id] || 0}
+                              onChange={(e) => {
+                                const qty = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantity));
+                                setExchangeQuantities(prev => ({ ...prev, [item.product_id]: qty }));
+                                calculateExchangePriceDifference();
+                              }}
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-500 text-center py-8">
+                      Search for a transaction to see items
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column - New Items */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-bold text-gray-900">New Items (Exchange For)</h4>
+                  
+                  {/* Product Search */}
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Search products..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                      {products
+                        .filter(product => 
+                          product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          product.barcode.includes(searchTerm)
+                        )
+                        .slice(0, 10)
+                        .map(product => (
+                          <div key={product.id} className="bg-white border rounded p-2 text-xs">
+                            <div className="font-semibold truncate">{product.product_name}</div>
+                            <div className="text-gray-600">₱{product.selling_price}</div>
+                            <div className="flex items-center gap-1 mt-1">
+                              <input
+                                type="number"
+                                min="1"
+                                value={exchangeNewItemQuantities[product.id] || 1}
+                                onChange={(e) => setExchangeNewItemQuantities(prev => ({ 
+                                  ...prev, 
+                                  [product.id]: Math.max(1, parseInt(e.target.value) || 1) 
+                                }))}
+                                className="w-12 px-1 py-0.5 border rounded text-xs"
+                              />
+                              <button
+                                onClick={() => addNewItemToExchange(product)}
+                                className="px-2 py-0.5 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+                              >
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* Selected New Items */}
+                  {exchangeData.newItems.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {exchangeData.newItems.map((item, index) => (
+                        <div key={item.id} className="bg-green-50 border border-green-200 rounded-lg p-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-gray-900">{item.product_name}</div>
+                              <div className="text-sm text-gray-600">₱{item.price} each</div>
+                            </div>
+                            <button
+                              onClick={() => removeNewItemFromExchange(item.id)}
+                              className="text-red-600 hover:text-red-800 text-sm"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-gray-700">Quantity:</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => updateNewItemQuantity(item.id, parseInt(e.target.value) || 1)}
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                            />
+                            <span className="text-sm font-semibold text-green-600">
+                              Total: ₱{item.total.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-500 text-center py-8">
+                      Add items to exchange for
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Price Difference Summary */}
+              {exchangeData.selectedItems.length > 0 && exchangeData.newItems.length > 0 && (
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+                  <h4 className="text-lg font-bold text-yellow-900 mb-3">Exchange Summary</h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <div className="font-semibold text-gray-700">Original Value:</div>
+                      <div className="text-lg font-bold text-blue-600">
+                        ₱{exchangeData.selectedItems.reduce((sum, item) => {
+                          const qty = exchangeQuantities[item.product_id] || 0;
+                          return sum + (item.price * qty);
+                        }, 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-gray-700">New Value:</div>
+                      <div className="text-lg font-bold text-green-600">
+                        ₱{exchangeData.newItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-gray-700">Price Difference:</div>
+                      <div className={`text-lg font-bold ${
+                        exchangeData.priceDifference > 0 ? 'text-red-600' : 
+                        exchangeData.priceDifference < 0 ? 'text-orange-600' : 'text-gray-600'
+                      }`}>
+                        {exchangeData.priceDifference > 0 ? '+' : ''}₱{exchangeData.priceDifference.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {exchangeData.priceDifference > 0 ? 'Customer pays extra' : 
+                         exchangeData.priceDifference < 0 ? 'No refund given' : 'Equal exchange'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {exchangeData.requiresManagerApproval && (
+                    <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded-lg">
+                      <div className="flex items-center gap-2 text-red-800">
+                        <span className="text-lg">⚠️</span>
+                        <span className="font-semibold">Manager Approval Required</span>
+                      </div>
+                      <div className="text-sm text-red-700 mt-1">
+                        Higher price exchange requires manager approval
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        <input
+                          type="text"
+                          placeholder="Manager username"
+                          value={managerUsername}
+                          onChange={(e) => setManagerUsername(e.target.value)}
+                          className="w-full px-3 py-2 border rounded text-sm"
+                        />
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={managerApproval}
+                            onChange={(e) => setManagerApproval(e.target.checked)}
+                            className="rounded"
+                          />
+                          Manager approval confirmed
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowExchangeModal(false)}
+                  className="px-6 py-3 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={processExchange}
+                  disabled={!exchangeData.originalTransaction || exchangeData.newItems.length === 0}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Process Exchange
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exchange Confirmation Modal */}
+      {showExchangeConfirmModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border-4 border-purple-500">
+            <div className="text-center">
+              <div className="text-4xl mb-4">🔄</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">
+                Confirm Exchange Processing
+              </h3>
+              
+              <div className="text-left mb-6 space-y-2">
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">Original Transaction:</span>
+                  <span className="text-gray-900">{exchangeData.originalTransactionId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">Items to exchange:</span>
+                  <span className="text-gray-900">
+                    {exchangeData.selectedItems.filter(item => (exchangeQuantities[item.product_id] || 0) > 0).length}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">New items:</span>
+                  <span className="text-gray-900">{exchangeData.newItems.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700">Price difference:</span>
+                  <span className={`font-bold ${
+                    exchangeData.priceDifference > 0 ? 'text-red-600' : 
+                    exchangeData.priceDifference < 0 ? 'text-orange-600' : 'text-gray-600'
+                  }`}>
+                    {exchangeData.priceDifference > 0 ? '+' : ''}₱{exchangeData.priceDifference.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => setShowExchangeConfirmModal(false)}
+                  className="px-6 py-3 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmProcessExchange}
+                  disabled={isExchangeProcessing}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold transition-colors disabled:opacity-50"
+                >
+                  {isExchangeProcessing ? 'Processing...' : 'Confirm Exchange'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

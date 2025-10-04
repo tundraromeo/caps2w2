@@ -227,8 +227,8 @@ class ReportsModule {
                 p.product_name,
                 p.barcode,
                 sm.quantity,
-                sm.unit_cost as unit_price,
-                (sm.quantity * sm.unit_cost) as total_value,
+                sm.srp as unit_price,
+                (sm.quantity * sm.srp) as total_value,
                 s.supplier_name,
                 sm.reference_no,
                 sm.notes,
@@ -255,13 +255,53 @@ class ReportsModule {
                 p.product_name,
                 p.barcode,
                 sm.quantity,
-                sm.unit_cost as unit_price,
-                (sm.quantity * sm.unit_cost) as total_value,
-                sm.created_by as cashier,
+                sm.srp as unit_price,
+                (sm.quantity * sm.srp) as total_value,
                 sm.reference_no,
-                sm.notes as customer_info
+                sm.notes as customer_info,
+                sm.movement_id,
+                -- Determine the actual cashier/employee who performed the action
+                CASE 
+                    WHEN sm.created_by = 'POS System' THEN 
+                        CASE 
+                            WHEN pt.emp_id IS NOT NULL THEN CONCAT(COALESCE(e.Fname, ''), ' ', COALESCE(e.Lname, ''))
+                            ELSE 'POS System'
+                        END
+                    WHEN sm.created_by = 'Pharmacy Cashier' THEN 'Pharmacy Cashier'
+                    WHEN sm.created_by = 'Inventory Manager' THEN 'Inventory Manager'
+                    WHEN sm.created_by = 'Admin' THEN 'Admin'
+                    ELSE COALESCE(sm.created_by, 'System')
+                END as adjusted_by,
+                -- Additional context for better identification
+                CASE 
+                    WHEN sm.created_by = 'POS System' AND pt.emp_id IS NOT NULL THEN 
+                        CONCAT('Cashier ', COALESCE(e.Fname, ''), ' ', COALESCE(e.Lname, ''), ' (', COALESCE(e.username, 'Unknown'), ')')
+                    WHEN sm.created_by = 'POS System' THEN 'POS System'
+                    WHEN sm.created_by = 'Pharmacy Cashier' THEN 'Pharmacy Cashier'
+                    WHEN sm.created_by = 'Inventory Manager' THEN 'Inventory Manager'
+                    WHEN sm.created_by = 'Admin' THEN 'Admin'
+                    ELSE COALESCE(sm.created_by, 'System')
+                END as adjusted_by_detailed,
+                -- Movement type for display
+                CASE sm.movement_type
+                    WHEN 'OUT' THEN 'Stock Out'
+                    WHEN 'IN' THEN 'Stock In'
+                    WHEN 'ADJUSTMENT' THEN 'Stock Adjustment'
+                    ELSE sm.movement_type
+                END as adjustment_type,
+                -- Reason for the movement
+                CASE 
+                    WHEN sm.notes LIKE '%POS Sale%' THEN 'POS Sale'
+                    WHEN sm.notes LIKE '%Manual%' THEN 'Manual Adjustment'
+                    WHEN sm.notes LIKE '%Transfer%' THEN 'Stock Transfer'
+                    ELSE COALESCE(sm.notes, 'System Adjustment')
+                END as reason
             FROM tbl_stock_movements sm
             JOIN tbl_product p ON sm.product_id = p.product_id
+            -- Try to get the actual employee who made the POS transaction
+            LEFT JOIN tbl_pos_sales_header psh ON sm.reference_no = psh.reference_number
+            LEFT JOIN tbl_pos_transaction pt ON psh.transaction_id = pt.transaction_id
+            LEFT JOIN tbl_employee e ON pt.emp_id = e.emp_id
             WHERE sm.movement_type = 'OUT'
             AND DATE(sm.movement_date) BETWEEN ? AND ?
             ORDER BY sm.movement_date DESC
@@ -494,15 +534,7 @@ class ReportsModule {
             $this->checkForNewCashierData($startDate, $endDate);
         }
         
-        // First, let's check if there's any data at all
-        $countStmt = $this->conn->prepare("SELECT COUNT(*) as total FROM tbl_pos_sales_header");
-        $countStmt->execute();
-        $result = $countStmt->fetch();
-        $totalSales = $result['total'];
-        
-        if ($totalSales == 0) {
-            return [];
-        }
+        // Show all cashiers regardless of whether they have made sales
         
         $stmt = $this->conn->prepare("
             SELECT 
@@ -511,21 +543,21 @@ class ReportsModule {
                 COALESCE(e.username, 'Unknown') as cashier_username,
                 e.email,
                 e.contact_num,
-                COUNT(DISTINCT psh.sales_header_id) as transactions_count,
-                COALESCE(SUM(psh.total_amount), 0) as total_sales,
-                COALESCE(AVG(psh.total_amount), 0) as average_transaction,
-                COUNT(DISTINCT psd.product_id) as unique_products_sold,
-                MIN(pt.date) as first_sale_date,
-                MAX(pt.date) as last_sale_date
+                COUNT(DISTINCT CASE WHEN pt.date BETWEEN ? AND ? THEN psh.sales_header_id END) as transactions_count,
+                COALESCE(SUM(CASE WHEN pt.date BETWEEN ? AND ? THEN psh.total_amount ELSE 0 END), 0) as total_sales,
+                COALESCE(AVG(CASE WHEN pt.date BETWEEN ? AND ? THEN psh.total_amount END), 0) as average_transaction,
+                COUNT(DISTINCT CASE WHEN pt.date BETWEEN ? AND ? THEN psd.product_id END) as unique_products_sold,
+                MIN(CASE WHEN pt.date BETWEEN ? AND ? THEN pt.date END) as first_sale_date,
+                MAX(CASE WHEN pt.date BETWEEN ? AND ? THEN pt.date END) as last_sale_date
             FROM tbl_employee e
             LEFT JOIN tbl_pos_transaction pt ON e.emp_id = pt.emp_id
             LEFT JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
             LEFT JOIN tbl_pos_sales_details psd ON psh.sales_header_id = psd.sales_header_id
-            WHERE e.role_id = 3 AND pt.date BETWEEN ? AND ?
+            WHERE e.role_id = 3 AND e.status = 'Active'
             GROUP BY e.emp_id, e.Fname, e.Lname, e.username, e.email, e.contact_num
             ORDER BY total_sales DESC
         ");
-        $stmt->execute([$startDate, $endDate]);
+        $stmt->execute([$startDate, $endDate, $startDate, $endDate, $startDate, $endDate, $startDate, $endDate, $startDate, $endDate, $startDate, $endDate]);
         $reportData = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // If no data for the specific date range, try to get recent data
@@ -547,7 +579,7 @@ class ReportsModule {
                 LEFT JOIN tbl_pos_transaction pt ON e.emp_id = pt.emp_id
                 LEFT JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
                 LEFT JOIN tbl_pos_sales_details psd ON psh.sales_header_id = psd.sales_header_id
-                WHERE e.role_id = 3 AND pt.date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                WHERE e.role_id = 3 AND e.status = 'Active'
                 GROUP BY e.emp_id, e.Fname, e.Lname, e.username, e.email, e.contact_num
                 ORDER BY total_sales DESC
                 LIMIT 10

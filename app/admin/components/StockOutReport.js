@@ -187,12 +187,11 @@ function StockOutReport() {
       case 'reason':
         // Map notes field to reason with appropriate values
         const notes = row['notes'] || '';
-        if (notes.includes('POS Sale')) {
+        // Prioritize POS Sale detection
+        if (notes.includes('POS Sale') || notes.includes('FIFO Consumption') || notes.includes('sold')) {
           return '🛒 POS Sale';
         } else if (notes.includes('Transfer') || notes.includes('transfer')) {
           return '🚚 Transfer Product from Warehouse to Convenience/Pharmacy';
-        } else if (notes.includes('FIFO Consumption')) {
-          return '🛒 POS Sale';
         } else if (notes.includes('Synced')) {
           return '🔄 System Sync';
         } else if (notes) {
@@ -228,6 +227,26 @@ function StockOutReport() {
         
         // Determine the best employee information to display
         const getUserDisplay = () => {
+          const notes = row['notes'] || '';
+          const isPOSSale = notes.includes('POS Sale') || notes.includes('FIFO Consumption') || notes.includes('sold');
+          
+          // For POS sales, prioritize cashier/POS terminal users
+          if (isPOSSale) {
+            // 1. Priority for POS sales: Look for POS terminal users first
+            if (loggedInUser && loggedInUser.trim() !== '' && (loginRole?.toLowerCase().includes('cashier') || posTerminalName)) {
+              const role = getRoleDisplay(loginRole || displayRole || userRole);
+              const shiftInfo = getShiftDisplay();
+              return `👤 ${role}${role ? ' ' : ''}${loggedInUser.trim()}${shiftInfo}`;
+            }
+            
+            // 2. Priority for POS sales: Use adjusted_by if it's a cashier
+            if (adjustedBy && adjustedBy.trim() !== '' && (displayRole?.toLowerCase().includes('cashier') || userRole?.toLowerCase().includes('cashier'))) {
+              const role = getRoleDisplay(displayRole || loginRole || userRole);
+              const shiftInfo = getShiftDisplay();
+              return `👤 ${role}${role ? ' ' : ''}${adjustedBy.trim()}${shiftInfo}`;
+            }
+          }
+          
           // 1. Priority: Use adjusted_by field (complete employee name from API)
           if (adjustedBy && adjustedBy.trim() !== '') {
             const role = getRoleDisplay(displayRole || loginRole || userRole);

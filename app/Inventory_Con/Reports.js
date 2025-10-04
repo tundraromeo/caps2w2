@@ -26,7 +26,7 @@ import { useSettings } from './SettingsContext';
 import { useNotification } from './NotificationContext';
 
 const Reports = () => {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode, theme } = useTheme();
   const { settings } = useSettings();
   const { updateReportsNotifications, updateSystemUpdates, systemUpdates, hasReportsUpdates, clearNotifications, clearSystemUpdates } = useNotification();
   const [reports, setReports] = useState([]);
@@ -214,7 +214,7 @@ const Reports = () => {
     if (isDarkMode) {
       switch (type) {
         case "Stock In Report":
-          return "bg-blue-900 text-blue-200 border border-blue-700";
+          return "bg-gray-900 text-gray-200 border border-gray-700";
         case "Stock Out Report":
           return "bg-red-900 text-red-200 border border-red-700";
         case "Stock Adjustment Report":
@@ -227,7 +227,7 @@ const Reports = () => {
     } else {
       switch (type) {
         case "Stock In Report":
-          return "bg-blue-100 text-blue-800 border border-blue-300";
+          return "bg-gray-100 text-gray-800 border border-gray-300";
         case "Stock Out Report":
           return "bg-red-100 text-red-800 border border-red-300";
         case "Stock Adjustment Report":
@@ -352,8 +352,6 @@ const Reports = () => {
       tempDiv.style.fontSize = '12px';
       tempDiv.style.lineHeight = '1.4';
       
-      // Calculate totals
-      const totalValue = reportDetails.reduce((sum, item) => sum + parseFloat(item.total_value || 0), 0);
       
       // Create PDF content
       tempDiv.innerHTML = `
@@ -402,8 +400,7 @@ const Reports = () => {
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Barcode</th>
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Category</th>
               <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Qty</th>
-              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Unit Price</th>
-              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Total Value</th>
+              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">SRP</th>
               <th style="padding: 8px 4px; text-align: center; font-weight: bold; border: 1px solid #000000; color: #000000;">Movement</th>
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Ref No</th>
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Date</th>
@@ -419,8 +416,7 @@ const Reports = () => {
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.barcode || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.category || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">${item.quantity?.toLocaleString() || ''}</td>
-                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">₱${parseFloat(item.unit_price || 0).toFixed(2)}</td>
-                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;"><strong>₱${parseFloat(item.total_value || 0).toFixed(2)}</strong></td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">₱${parseFloat(item.srp || 0).toFixed(2)}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: center; color: #000000;">${item.movement_type || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.reference_no || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.date || ''}</td>
@@ -432,9 +428,7 @@ const Reports = () => {
           </tbody>
           <tfoot>
             <tr style="background: #e0e0e0; color: #000000; font-weight: bold;">
-              <td colspan="5" style="padding: 6px 4px; border: 1px solid #000000; text-align: right; color: #000000;"><strong>GRAND TOTAL:</strong></td>
-              <td style="padding: 6px 4px; border: 1px solid #000000; text-align: right; color: #000000;"><strong>₱${totalValue.toFixed(2)}</strong></td>
-              <td colspan="6" style="padding: 6px 4px; border: 1px solid #000000;"></td>
+              <td colspan="12" style="padding: 6px 4px; border: 1px solid #000000; text-align: center; color: #000000;"><strong>End of Report</strong></td>
             </tr>
           </tfoot>
         </table>
@@ -516,8 +510,6 @@ const Reports = () => {
       tempDiv.style.fontSize = '12px';
       tempDiv.style.lineHeight = '1.4';
       
-      // Calculate totals
-      const totalValue = reportDetails.reduce((sum, item) => sum + parseFloat(item.total_value || 0), 0);
       
       // Create PDF content with professional formatting
       tempDiv.innerHTML = `
@@ -566,8 +558,7 @@ const Reports = () => {
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Barcode</th>
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Category</th>
               <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Qty</th>
-              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Unit Price</th>
-              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Total Value</th>
+              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">SRP</th>
               <th style="padding: 8px 4px; text-align: center; font-weight: bold; border: 1px solid #000000; color: #000000;">Movement</th>
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Ref No</th>
               <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Date</th>
@@ -583,8 +574,7 @@ const Reports = () => {
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.barcode || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.category || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">${item.quantity?.toLocaleString() || ''}</td>
-                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">₱${parseFloat(item.unit_price || 0).toFixed(2)}</td>
-                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;"><strong>₱${parseFloat(item.total_value || 0).toFixed(2)}</strong></td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">₱${parseFloat(item.srp || 0).toFixed(2)}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: center; color: #000000;">${item.movement_type || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.reference_no || ''}</td>
                 <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.date || ''}</td>
@@ -596,9 +586,7 @@ const Reports = () => {
           </tbody>
           <tfoot>
             <tr style="background: #e0e0e0; color: #000000; font-weight: bold;">
-              <td colspan="5" style="padding: 6px 4px; border: 1px solid #000000; text-align: right; color: #000000;"><strong>GRAND TOTAL:</strong></td>
-              <td style="padding: 6px 4px; border: 1px solid #000000; text-align: right; color: #000000;"><strong>₱${totalValue.toFixed(2)}</strong></td>
-              <td colspan="6" style="padding: 6px 4px; border: 1px solid #000000;"></td>
+              <td colspan="12" style="padding: 6px 4px; border: 1px solid #000000; text-align: center; color: #000000;"><strong>End of Report</strong></td>
             </tr>
           </tfoot>
         </table>
@@ -688,7 +676,7 @@ const Reports = () => {
 
   // Generate colors for categories
   const categoryColors = [
-    "bg-green-500", "bg-blue-500", "bg-yellow-500", 
+    "bg-green-500", "bg-gray-500", "bg-yellow-500", 
     "bg-purple-500", "bg-red-500", "bg-indigo-500"
   ];
 
@@ -791,7 +779,8 @@ const Reports = () => {
           <button 
             onClick={() => handleGenerateReport('inventory_summary')}
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-white rounded-md disabled:opacity-50 transition-colors"
+            style={{ backgroundColor: theme.colors.accent }}
           >
             <FaChartBar className="h-4 w-4" />
             {isLoading ? 'Generating...' : 'Generate Report'}
@@ -800,7 +789,7 @@ const Reports = () => {
       </div>
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-purple-50 dark:from-gray-900/20 dark:to-purple-900/20 rounded-xl border border-gray-200 dark:border-gray-800">
         <div className="flex items-center gap-3">
           <div className={`w-3 h-3 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -810,8 +799,8 @@ const Reports = () => {
             (Every {refreshInterval / 1000}s)
           </span>
           {isLoading && (
-            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
               <span className="text-xs font-medium">Updating...</span>
             </div>
           )}
@@ -827,9 +816,9 @@ const Reports = () => {
           <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-blue-600/20"></div>
           <div className="relative flex items-center justify-between">
             <div>
-              <p className="text-blue-100 text-sm font-medium mb-1">Total Products</p>
+              <p className="text-gray-100 text-sm font-medium mb-1">Total Products</p>
               <p className="text-3xl font-bold">{analyticsData.totalProducts?.toLocaleString() || 0}</p>
-              <p className="text-blue-200 text-xs mt-1">Active inventory items</p>
+              <p className="text-gray-200 text-xs mt-1">Active inventory items</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
               <BarChart3 className="h-8 w-8 text-white" />
@@ -955,7 +944,7 @@ const Reports = () => {
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search Reports</label>
               <div className="relative group">
-                <FaFilter className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                <FaFilter className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-gray-500 transition-colors" />
               <input
                 type="text"
                   placeholder="Search by title, type, or description..."
@@ -1105,7 +1094,7 @@ const Reports = () => {
                       <div className="flex justify-center gap-1">
                       <button 
                         onClick={() => handleViewDetails(item)}
-                          className="p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all duration-200 group"
+                          className="p-2 text-gray-500 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-900/20 rounded-lg transition-all duration-200 group"
                           title="View Details"
                       >
                           <FaEye className="h-4 w-4 group-hover:scale-110 transition-transform" />
@@ -1157,9 +1146,10 @@ const Reports = () => {
                           onClick={() => setPage(pageNum)}
                           className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                             pageNum === page
-                              ? 'bg-blue-600 text-white shadow-lg'
+                              ? 'text-white shadow-lg'
                               : 'text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
                           }`}
+                          style={pageNum === page ? { backgroundColor: theme.colors.accent } : {}}
                         >
                           {pageNum}
                         </button>
@@ -1183,7 +1173,7 @@ const Reports = () => {
 
       {/* Report Details Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-gray-200 bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
@@ -1209,18 +1199,18 @@ const Reports = () => {
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-500"></div>
                   <span className="ml-3 text-slate-600 dark:text-slate-300">Loading report details...</span>
                 </div>
               ) : (
                 <div className="space-y-6">
                   {/* Report Information */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="bg-gray-50 dark:bg-gray-900/20 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
                       <div className="flex items-center gap-2">
-                        <FaInfoCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        <FaInfoCircle className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                     <div>
-                          <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Report Type</p>
+                          <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Report Type</p>
                           <p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedReport?.type}</p>
                         </div>
                         </div>
@@ -1297,8 +1287,7 @@ const Reports = () => {
                               <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Barcode</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Category</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Quantity</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Unit Price</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Total Value</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">SRP</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Movement Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Reference No</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Date</th>
@@ -1317,14 +1306,13 @@ const Reports = () => {
                                 <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.barcode || ''}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.category || ''}</td>
                                 <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.quantity || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">₱{parseFloat(item.unit_price || 0).toFixed(2)}</td>
-                                <td className="px-3 py-2 text-sm font-semibold text-green-600 dark:text-green-400">₱{parseFloat(item.total_value || 0).toFixed(2)}</td>
+                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">₱{parseFloat(item.srp || 0).toFixed(2)}</td>
                                 <td className="px-3 py-2 text-sm">
                                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                                     item.movement_type === 'IN' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
                                     item.movement_type === 'OUT' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
                                     item.movement_type === 'ADJUSTMENT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                    'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                    'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
                                   }`}>
                                     {item.movement_type || ''}
                                   </span>
@@ -1342,11 +1330,7 @@ const Reports = () => {
                           </tbody>
                           <tfoot className="bg-green-50 dark:bg-green-900/20">
                             <tr>
-                              <td colSpan="5" className="px-3 py-2 text-right text-sm font-semibold text-slate-900 dark:text-white">Total:</td>
-                              <td className="px-3 py-2 text-sm font-bold text-green-600 dark:text-green-400">
-                                ₱{reportDetails.reduce((sum, item) => sum + parseFloat(item.total_value || 0), 0).toFixed(2)}
-                              </td>
-                              <td colSpan="9" className="px-3 py-2"></td>
+                              <td colSpan="13" className="px-3 py-2 text-center text-sm font-semibold text-slate-900 dark:text-white">End of Report</td>
                             </tr>
                           </tfoot>
                         </table>

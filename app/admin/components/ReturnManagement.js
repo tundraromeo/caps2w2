@@ -1,8 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTheme } from './ThemeContext';
+import { useNotification } from './NotificationContext';
 
 export default function ReturnManagement() {
+  const { theme } = useTheme();
+  const { markNotificationAsViewed, getTotalNotifications } = useNotification();
   const [activeTab, setActiveTab] = useState('pending');
   const [pendingReturns, setPendingReturns] = useState([]);
   const [returnHistory, setReturnHistory] = useState([]);
@@ -27,6 +31,11 @@ export default function ReturnManagement() {
       loadReturnHistory();
     }
   }, [activeTab]);
+
+  // Clear return notifications when component is viewed
+  useEffect(() => {
+    markNotificationAsViewed('returns');
+  }, [markNotificationAsViewed]);
 
   const loadPendingReturns = async () => {
     setLoading(true);
@@ -139,6 +148,9 @@ export default function ReturnManagement() {
         setApprovalNotes('');
         loadPendingReturns();
         
+        // Clear return notifications after approval
+        markNotificationAsViewed('returns');
+        
         // Trigger inventory refresh for the specific location
         if (data.location_name) {
           // Dispatch custom event to notify inventory components
@@ -185,6 +197,9 @@ export default function ReturnManagement() {
         setShowDetailsModal(false);
         setRejectionReason('');
         loadPendingReturns();
+        
+        // Clear return notifications after rejection
+        markNotificationAsViewed('returns');
       } else {
         alert(`Failed to reject return: ${data.message}`);
       }
@@ -210,7 +225,7 @@ export default function ReturnManagement() {
       pending: 'bg-yellow-100 text-yellow-800',
       approved: 'bg-green-100 text-green-800',
       rejected: 'bg-red-100 text-red-800',
-      completed: 'bg-blue-100 text-blue-800',
+      completed: 'bg-gray-100 text-gray-800',
       cancelled: 'bg-gray-100 text-gray-800'
     };
     
@@ -245,10 +260,18 @@ export default function ReturnManagement() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Return Management</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-800">Return Management</h1>
+          {getTotalNotifications('returns') > 0 && (
+            <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+              {getTotalNotifications('returns')} New
+            </span>
+          )}
+        </div>
         <button
           onClick={() => activeTab === 'pending' ? loadPendingReturns() : loadReturnHistory()}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="px-4 py-2 text-white rounded-lg transition-colors"
+          style={{ backgroundColor: theme.colors.accent }}
         >
           Refresh
         </button>
@@ -262,9 +285,10 @@ export default function ReturnManagement() {
               onClick={() => setActiveTab('pending')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'pending'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-transparent text-gray-500'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
+              style={activeTab === 'pending' ? { borderBottomColor: theme.colors.accent, color: theme.colors.accent } : {}}
             >
               Pending Returns ({pendingReturns.length})
             </button>
@@ -272,9 +296,10 @@ export default function ReturnManagement() {
               onClick={() => setActiveTab('history')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'history'
-                  ? 'border-blue-500 text-blue-600'
+                  ? 'border-transparent text-gray-500'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
+              style={activeTab === 'history' ? { borderBottomColor: theme.colors.accent, color: theme.colors.accent } : {}}
             >
               Return History ({returnHistory.length})
             </button>
@@ -335,7 +360,7 @@ export default function ReturnManagement() {
       {/* Returns Table */}
       {loading ? (
         <div className="text-center py-8">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderBottomColor: theme.colors.accent }}></div>
           <p className="mt-2 text-gray-600">Loading returns...</p>
         </div>
       ) : (
@@ -414,7 +439,7 @@ export default function ReturnManagement() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => showReturnDetails(returnItem)}
-                          className="text-blue-600 hover:text-blue-900"
+                          style={{ color: theme.colors.accent }}
                         >
                           View Details
                         </button>

@@ -1,4 +1,5 @@
 "use client";
+// Version: 2024-12-19 - Fixed API endpoints
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { 
@@ -70,8 +71,9 @@ const StockAdjustment = () => {
   // API Functions
   const handleApiCall = async (action, data = {}) => {
     try {
-      // Use the consolidated stock adjustment API
-      const response = await fetch('/Api/stock_adjustment_consolidated.php', {
+      console.log(`🔄 API Call: ${action}`, data);
+      // Use the main backend API
+      const response = await fetch('/Api/backend.php', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -81,6 +83,10 @@ const StockAdjustment = () => {
           ...data
         }),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
       const result = await response.json();
       
@@ -99,48 +105,38 @@ const StockAdjustment = () => {
   const fetchAdjustments = async () => {
     setIsLoading(true);
     try {
-      console.log('🔄 Fetching comprehensive stock adjustment data...');
+      console.log('🔄 Fetching stock adjustment data...');
       
-      // Use the comprehensive API that gets data from all sources
-      const result = await handleApiCall('get_all_stock_adjustment_data', {
-        start_date: '2020-01-01', // Wide range to get all data
-        end_date: new Date().toISOString().split('T')[0]
+      // Use the correct API endpoint from backend.php
+      const result = await handleApiCall('get_stock_adjustments', {
+        search: searchTerm,
+        type: selectedType === 'all' ? 'all' : selectedType === 'Stock In' ? 'IN' : 'OUT',
+        status: selectedStatus,
+        page: page,
+        limit: rowsPerPage
       });
       
       if (result.success) {
         let allData = result.data || [];
-        const summary = result.summary || {};
         
-        console.log('📊 Comprehensive Data Summary:', summary);
         console.log('📈 Total records:', allData.length);
         
-        // Filter data based on selected type
-        if (selectedType !== 'all') {
-          allData = allData.filter(item => item.adjustment_type === selectedType);
-        }
+        // Process the data to match expected format
+        const processedData = allData.map(item => ({
+          ...item,
+          source: 'stock_adjustment',
+          full_date: item.movement_date,
+          date: item.movement_date ? new Date(item.movement_date).toLocaleDateString() : '',
+          time: item.movement_date ? new Date(item.movement_date).toLocaleTimeString() : '',
+          adjustment_type: item.adjustment_type === 'Addition' ? 'Stock In' : 
+                          item.adjustment_type === 'Subtraction' ? 'Stock Out' : item.adjustment_type
+        }));
         
-        // Apply search filter
-        if (searchTerm) {
-          allData = allData.filter(item => 
-            item.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            item.product_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            item.reason?.toLowerCase().includes(searchTerm.toLowerCase())
-          );
-        }
+        setAdjustments(processedData);
+        setFilteredAdjustments(processedData);
+        setTotalRecords(result.total || processedData.length);
         
-        // Apply status filter
-        if (selectedStatus !== 'all') {
-          allData = allData.filter(item => item.status === selectedStatus);
-        }
-        
-        // Sort by date (newest first)
-        allData.sort((a, b) => new Date(b.full_date || b.date) - new Date(a.full_date || a.date));
-        
-        setAdjustments(allData);
-        setFilteredAdjustments(allData);
-        setTotalRecords(allData.length);
-        
-        console.log('✅ Stock adjustments fetched successfully:', allData.length, 'records');
+        console.log('✅ Stock adjustments fetched successfully:', processedData.length, 'records');
       } else {
         throw new Error(result.message || 'Failed to fetch stock adjustments');
       }
@@ -159,12 +155,21 @@ const StockAdjustment = () => {
   const fetchStats = async () => {
     try {
       const result = await handleApiCall('get_stock_adjustment_stats');
-      setStats(result.data || {
-        total_adjustments: 0,
-        additions: 0,
-        subtractions: 0,
-        net_quantity: 0
-      });
+      if (result.success && result.data) {
+        setStats({
+          total_adjustments: result.data.total_adjustments || 0,
+          additions: result.data.additions || 0,
+          subtractions: result.data.subtractions || 0,
+          net_quantity: result.data.net_quantity || 0
+        });
+      } else {
+        setStats({
+          total_adjustments: 0,
+          additions: 0,
+          subtractions: 0,
+          net_quantity: 0
+        });
+      }
     } catch (error) {
       console.error('Failed to fetch stats:', error);
       setStats({

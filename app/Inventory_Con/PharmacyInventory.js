@@ -17,6 +17,7 @@ import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
 import { useNotification } from "./NotificationContext";
 import NotificationSystem from "./NotificationSystem";
+import { useAPI } from '../hooks/useAPI';
 
 const PharmacyInventory = () => {
   const { theme } = useTheme();
@@ -42,6 +43,7 @@ const PharmacyInventory = () => {
   const [showCurrentFifoData, setShowCurrentFifoData] = useState(false);
   const [fifoStockData, setFifoStockData] = useState([]);
   
+  
   // Notification states
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState({
@@ -50,24 +52,157 @@ const PharmacyInventory = () => {
     outOfStock: []
   });
 
-  const API_BASE_URL = "http://localhost/Enguio_Project/Api/pharmacy_api.php";
+  // Use the centralized API hook
+  const { api, loading: apiLoading, error: apiError } = useAPI();
 
-  // API function
+  // API function - using direct API calls for pharmacy operations
   async function handleApiCall(action, data = {}) {
-    const payload = { action, ...data };
-    console.log("🚀 API Call Payload:", payload);
+    console.log("🚀 API Call Payload:", { action, ...data });
 
     try {
-      const response = await fetch(API_BASE_URL, {
+      let response;
+      
+      // Route to appropriate API method based on action
+      switch (action) {
+        case 'get_locations':
+          // Try centralized API first, fallback to batch tracking
+          try {
+            response = await api.getLocations();
+          } catch (err) {
+            console.warn("Centralized API failed, using batch tracking API:", err);
+            response = await fetchBatchTrackingAPI(action, data);
+          }
+          break;
+          
+        case 'get_pharmacy_products':
+          // Use pharmacy API directly for better SRP value calculation
+          response = await fetchPharmacyAPI(action, data);
+          break;
+          
+        case 'get_location_products':
+          // Try centralized API first, fallback to batch tracking
+          try {
+            response = await api.getProducts(data);
+          } catch (err) {
+            console.warn("Centralized API failed, using batch tracking API:", err);
+            response = await fetchBatchTrackingAPI(action, data);
+          }
+          break;
+          
+        case 'delete_product':
+          // Try centralized API first, fallback to batch tracking
+          try {
+            response = await api.archivePharmacyProduct(data.product_id);
+          } catch (err) {
+            console.warn("Centralized API failed, using batch tracking API:", err);
+            response = await fetchBatchTrackingAPI(action, data);
+          }
+          break;
+          
+        case 'get_fifo_stock':
+          // Try centralized API first, fallback to batch tracking
+          try {
+            response = await api.getFIFOStock(data.product_id, data.location_id);
+          } catch (err) {
+            console.warn("Centralized API failed, using batch tracking API:", err);
+            response = await fetchBatchTrackingAPI(action, data);
+          }
+          break;
+          
+        default:
+          // Use direct API call for batch tracking specific actions
+          response = await fetchBatchTrackingAPI(action, data);
+      }
+
+      console.log("✅ API Success Response:", response);
+      return response || { success: false, message: "No response received" };
+      
+    } catch (error) {
+      console.error("❌ API Call Error:", error);
+      return {
+        success: false,
+        message: error.message || "Network error",
+        error: "REQUEST_ERROR",
+      };
+    }
+  }
+
+  // Function for pharmacy API calls (for SRP value calculation)
+  async function fetchPharmacyAPI(action, data = {}) {
+    const API_BASE_URL = "http://localhost/Enguio_Project/Api/pharmacy_api.php";
+    
+    try {
+      // Add cache-busting parameter
+      const timestamp = new Date().getTime();
+      const url = `${API_BASE_URL}?t=${timestamp}`;
+      
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ action, ...data }),
+        credentials: 'omit'
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
+      }
+
       const resData = await response.json();
-      console.log("✅ API Success Response:", resData);
+      console.log("✅ Pharmacy API Success Response:", resData);
+
+      if (resData && typeof resData === "object") {
+        if (!resData.success) {
+          console.warn("⚠️ Pharmacy API responded with failure:", resData.message || resData);
+        }
+        return resData;
+      } else {
+        console.warn("⚠️ Unexpected pharmacy API response format:", resData);
+        return {
+          success: false,
+          message: "Unexpected response format",
+          data: resData,
+        };
+      }
+    } catch (error) {
+      console.error("❌ Pharmacy API Call Error:", error);
+      
+      // Provide more specific error information
+      if (error.message.includes('Failed to fetch')) {
+        throw new Error("Cannot connect to Pharmacy API server. Please check if XAMPP is running and accessible.");
+      }
+      
+      throw error;
+    }
+  }
+
+  // Fallback function for direct API calls
+  async function fetchBatchTrackingAPI(action, data = {}) {
+    const API_BASE_URL = "http://localhost/Enguio_Project/Api/batch_tracking.php";
+    
+    try {
+      // Add cache-busting parameter
+      const timestamp = new Date().getTime();
+      const url = `${API_BASE_URL}?t=${timestamp}`;
+      
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
+        },
+        body: JSON.stringify({ action, ...data }),
+        credentials: 'omit'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
+      }
+
+      const resData = await response.json();
+      console.log("✅ Fallback API Success Response:", resData);
 
       if (resData && typeof resData === "object") {
         if (!resData.success) {
@@ -83,12 +218,98 @@ const PharmacyInventory = () => {
         };
       }
     } catch (error) {
-      console.error("❌ API Call Error:", error);
-      return {
-        success: false,
-        message: error.message,
-        error: "REQUEST_ERROR",
-      };
+      console.error("❌ Fallback API Call Error:", error);
+      
+      // Provide more specific error information
+      if (error.message.includes('Failed to fetch')) {
+        throw new Error("Cannot connect to API server. Please check if XAMPP is running and accessible.");
+      }
+      
+      throw error;
+    }
+  }
+
+  // Function to fetch transferred batches using the new API
+  async function fetchTransferredBatches(data = {}) {
+    const API_BASE_URL = "http://localhost/Enguio_Project/Api/get_transferred_batches_api.php";
+    
+    try {
+      const timestamp = new Date().getTime();
+      const url = `${API_BASE_URL}?t=${timestamp}`;
+      
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
+        },
+        body: JSON.stringify({ action: 'get_transferred_batches', ...data }),
+        credentials: 'omit'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
+      }
+
+      const resData = await response.json();
+      console.log("✅ Transferred Batches API Success Response:", resData);
+
+      if (resData && typeof resData === "object") {
+        if (!resData.success) {
+          console.warn("⚠️ API responded with failure:", resData.message || resData);
+        }
+        return resData;
+      } else {
+        console.warn("⚠️ Unexpected API response format:", resData);
+        return {
+          success: false,
+          message: "Unexpected response format",
+          data: resData,
+        };
+      }
+    } catch (error) {
+      console.error("❌ Transferred Batches API Call Error:", error);
+      
+      if (error.message.includes('Failed to fetch')) {
+        throw new Error("Cannot connect to Transferred Batches API server. Please check if XAMPP is running and accessible.");
+      }
+      
+      throw error;
+    }
+  }
+
+  // Function to populate missing batch details
+  async function populateMissingBatchDetails() {
+    const API_BASE_URL = "http://localhost/Enguio_Project/Api/get_transferred_batches_api.php";
+    
+    try {
+      const timestamp = new Date().getTime();
+      const url = `${API_BASE_URL}?t=${timestamp}`;
+      
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache"
+        },
+        body: JSON.stringify({ 
+          action: 'populate_missing_batch_details',
+          location_name: 'pharmacy'
+        }),
+        credentials: 'omit'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
+      }
+
+      const resData = await response.json();
+      console.log("✅ Populate Missing Batch Details API Response:", resData);
+
+      return resData;
+    } catch (error) {
+      console.error("❌ Populate Missing Batch Details API Call Error:", error);
+      throw error;
     }
   }
 
@@ -140,69 +361,86 @@ const PharmacyInventory = () => {
     }
   }
 
-  // Load pharmacy location ID
+  // Test API connection
+  // Simple API connection test
+  const testAPIConnection = async () => {
+    try {
+      const response = await fetch('http://localhost/Enguio_Project/Api/batch_tracking.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test' })
+      });
+      
+      if (response.ok) {
+        console.log("✅ API connected successfully");
+        return true;
+      } else {
+        throw new Error(`Server error: ${response.status}`);
+      }
+    } catch (error) {
+      console.error("❌ API connection failed:", error);
+      toast.error("Cannot connect to server. Please check if XAMPP is running.");
+      return false;
+    }
+  };
+
+  // Simple function to get pharmacy location
   const loadPharmacyLocation = async () => {
     try {
-      const response = await handleApiCall("get_locations");
-      if (response.success && Array.isArray(response.data)) {
-        const pharmacyLocation = response.data.find(loc => 
-          loc.location_name.toLowerCase().includes('pharmacy')
-        );
-        if (pharmacyLocation) {
-          setPharmacyLocationId(pharmacyLocation.location_id);
-          return pharmacyLocation.location_id;
+      const response = await fetch('http://localhost/Enguio_Project/Api/batch_tracking.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get_locations' })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        const pharmacy = data.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
+        if (pharmacy) {
+          setPharmacyLocationId(pharmacy.location_id);
         }
+        
+        return pharmacy?.location_id || null;
       }
     } catch (error) {
       console.error("Error loading pharmacy location:", error);
+      toast.error("Failed to load pharmacy location");
     }
     return null;
   };
 
-  // Load products for pharmacy
+  // Simple function to load products
   const loadProducts = async () => {
     if (!pharmacyLocationId) return;
     
     setIsLoading(true);
     try {
-      // Try the new pharmacy-specific API first
-      const response = await handleApiCall("get_pharmacy_products", {
-        location_name: "pharmacy"
+      const response = await fetch('http://localhost/Enguio_Project/Api/batch_tracking.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'get_pharmacy_products',
+          location_name: 'pharmacy'
+        })
       });
       
-      if (response.success && Array.isArray(response.data)) {
-        console.log("✅ Loaded pharmacy products:", response.data.length);
+      const data = await response.json();
+      if (data.success && data.data) {
         // Filter out archived products
-        const activeProducts = response.data.filter(
-          (product) => (product.status || "").toLowerCase() !== "archived"
+        const activeProducts = data.data.filter(product => 
+          product.status !== 'archived'
         );
-        console.log("✅ Active pharmacy products after filtering:", activeProducts.length);
+        
+        // Debug: Log first few products to check SRP values
+        console.log("🔍 First 3 products with SRP data:", activeProducts.slice(0, 3).map(p => ({
+          name: p.product_name,
+          srp: p.srp,
+          first_batch_srp: p.first_batch_srp,
+          total_srp_value: p.total_srp_value
+        })));
+        
         setInventory(activeProducts);
         setFilteredInventory(activeProducts);
-        calculateNotifications(activeProducts);
-      } else {
-        // Fallback to the original API
-        const fallbackResponse = await handleApiCall("get_location_products", {
-          location_id: pharmacyLocationId,
-          search: searchTerm,
-          category: selectedCategory
-        });
-        
-        if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
-          console.log("✅ Loaded pharmacy products (fallback):", fallbackResponse.data.length);
-          // Filter out archived products
-          const activeProducts = fallbackResponse.data.filter(
-            (product) => (product.status || "").toLowerCase() !== "archived"
-          );
-          console.log("✅ Active pharmacy products after filtering (fallback):", activeProducts.length);
-          setInventory(activeProducts);
-          setFilteredInventory(activeProducts);
-          calculateNotifications(activeProducts);
-        } else {
-          console.warn("⚠️ No products found for pharmacy");
-          setInventory([]);
-          setFilteredInventory([]);
-        }
       }
     } catch (error) {
       console.error("Error loading products:", error);
@@ -214,6 +452,7 @@ const PharmacyInventory = () => {
     }
   };
 
+  // Initialize component
   useEffect(() => {
     const initialize = async () => {
       const locationId = await loadPharmacyLocation();
@@ -223,12 +462,6 @@ const PharmacyInventory = () => {
     };
     initialize();
   }, [pharmacyLocationId]);
-
-  useEffect(() => {
-    if (pharmacyLocationId) {
-      loadProducts();
-    }
-  }, [searchTerm, selectedCategory, pharmacyLocationId]);
 
   // Auto-refresh products every 5 seconds to catch new transfers and POS sales
   useEffect(() => {
@@ -390,8 +623,15 @@ const PharmacyInventory = () => {
       console.log("Loading batch transfer details for product ID:", productId);
       console.log("Pharmacy location ID:", pharmacyLocationId);
       
-      // Get batch transfer details from tbl_batch_transfer_details
-      const response = await handleApiCall("get_pharmacy_batch_details", {
+      // First, try to populate missing batch details
+      try {
+        await populateMissingBatchDetails();
+      } catch (error) {
+        console.warn("Failed to populate missing batch details:", error);
+      }
+      
+      // Get batch transfer details using the new API
+      const response = await fetchTransferredBatches({
         location_id: pharmacyLocationId,
         product_id: productId
       });
@@ -399,18 +639,15 @@ const PharmacyInventory = () => {
       console.log("Batch transfer details response:", response);
       
       if (response.success && response.data) {
-        // Handle both data structures - direct array or object with batch_details
-        const batchDetails = Array.isArray(response.data) 
-          ? response.data 
-          : response.data.batch_details || [];
-        const summary = response.data.summary || {};
+        const batchDetails = response.data || [];
+        const summary = response.summary || {};
         
         console.log("Batch transfer data received:", response.data);
         console.log("Batch details:", batchDetails);
         console.log("Summary:", summary);
         
         if (batchDetails.length > 0) {
-          console.log("✅ Found batch transfer details from tbl_batch_transfer_details");
+          console.log("✅ Found batch transfer details");
           displayBatchTransferDetails(batchDetails, summary);
         } else {
           console.log("⚠️ No batch transfer details found, showing empty state");
@@ -418,17 +655,11 @@ const PharmacyInventory = () => {
         }
       } else {
         console.error("Error loading batch transfer details:", response.message);
-        const tableDiv = document.getElementById('transferHistoryTable');
-        if (tableDiv) {
-          tableDiv.innerHTML = '<div className="text-center py-4 text-red-500">Error loading batch transfer details: ' + response.message + '</div>';
-        }
+        displayBatchTransferDetails([], {});
       }
     } catch (error) {
       console.error("Error loading batch transfer details:", error);
-      const tableDiv = document.getElementById('transferHistoryTable');
-      if (tableDiv) {
-        tableDiv.innerHTML = '<div className="text-center py-4 text-red-500">Error: ' + error.message + '</div>';
-      }
+      displayBatchTransferDetails([], {});
     } finally {
       setLoadingBatch(false);
     }
@@ -444,6 +675,7 @@ const PharmacyInventory = () => {
     // This function is kept for backward compatibility but now redirects to batch transfer details
     displayBatchTransferDetails(transferLogs, {});
   };
+
 
   const categories = [...new Set(inventory.map(p => {
     // Handle both string and object category formats
@@ -649,7 +881,7 @@ const PharmacyInventory = () => {
             <div className="ml-4">
               <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
               <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                ₱{inventory.reduce((sum, p) => sum + (Number(p.unit_price || 0) * Number(p.quantity || 0)), 0).toFixed(2)}
+                ₱{inventory.reduce((sum, p) => sum + Number(p.first_batch_srp || 0), 0).toFixed(2)}
               </p>
             </div>
           </div>
@@ -736,6 +968,9 @@ const PharmacyInventory = () => {
                   SUPPLIER
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
+                  DAYS TO EXPIRY
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   ACTIONS
                 </th>
               </tr>
@@ -743,7 +978,7 @@ const PharmacyInventory = () => {
             <tbody className="divide-y" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.light }}>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
+                  <td colSpan={9} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
                     Loading products...
                   </td>
                 </tr>
@@ -776,10 +1011,28 @@ const PharmacyInventory = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                        ₱{Number.parseFloat(item.unit_price || 0).toFixed(2)}
+                        ₱{Number.parseFloat(item.first_batch_srp || 0).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                         {item.supplier_name || "N/A"}
+                      </td>
+                      <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
+                        {(() => {
+                          if (!item.expiration) return 'N/A';
+                          const today = new Date();
+                          const expiry = new Date(item.expiration);
+                          const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                          
+                          if (daysUntilExpiry < 0) {
+                            return <span style={{ color: theme.colors.danger }}>Expired ({Math.abs(daysUntilExpiry)} days ago)</span>;
+                          } else if (daysUntilExpiry <= 7) {
+                            return <span style={{ color: theme.colors.warning }}>{daysUntilExpiry} days</span>;
+                          } else if (daysUntilExpiry <= 30) {
+                            return <span style={{ color: theme.colors.info }}>{daysUntilExpiry} days</span>;
+                          } else {
+                            return <span style={{ color: theme.colors.success }}>{daysUntilExpiry} days</span>;
+                          }
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-center">
                         <div className="flex justify-center gap-2">
@@ -809,7 +1062,7 @@ const PharmacyInventory = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center">
+                  <td colSpan={9} className="px-6 py-8 text-center">
                     <div className="flex flex-col items-center space-y-3">
                       <Package className="h-12 w-12" style={{ color: theme.text.muted }} />
                       <div style={{ color: theme.text.secondary }}>
@@ -976,7 +1229,7 @@ const PharmacyInventory = () => {
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900">Batch Information</h4>
-                      <p className="text-sm text-orange-600">Batches Used: {quantityHistoryData.length}</p>
+                      <p className="text-sm text-orange-600">Batches Transferred: {quantityHistoryData.length}</p>
                       <p className="text-sm text-orange-600">FIFO Order: Active</p>
                     </div>
                   </div>
@@ -995,8 +1248,9 @@ const PharmacyInventory = () => {
                       <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Available QTY</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transfer Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
                       </tr>
@@ -1004,7 +1258,7 @@ const PharmacyInventory = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {loadingBatch ? (
                         <tr>
-                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center space-y-2">
                               <Package className="h-8 w-8 text-gray-400" />
                               <p className="text-lg font-medium text-gray-900">Loading batch details...</p>
@@ -1016,7 +1270,7 @@ const PharmacyInventory = () => {
                         quantityHistoryData.map((batch, index) => {
                           const expiryDate = batch.expiration_date && batch.expiration_date !== 'null' ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A';
                           const quantityUsed = batch.batch_quantity || batch.quantity || 0;
-                          const unitCost = batch.unit_cost || 0;
+                          const unitCost = batch.unit_cost || batch.srp || 0;
                           const batchReference = batch.batch_reference || `BR-${batch.batch_id || index + 1}`;
                           const isConsumed = quantityUsed > 0;
                           const isOldest = index === 0;
@@ -1024,9 +1278,10 @@ const PharmacyInventory = () => {
                           const isExpiringSoon = batch.expiration_date && batch.expiration_date !== 'null' && 
                             new Date(batch.expiration_date) > new Date() && 
                             new Date(batch.expiration_date) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+                          const transferDate = batch.transfer_date ? new Date(batch.transfer_date).toLocaleDateString() : 'N/A';
                           
                           return (
-                            <tr key={batch.batch_transfer_id || batch.batch_id || index} className={`hover:bg-gray-50 ${isOldest ? 'bg-yellow-50 border-l-4 border-yellow-400 ring-2 ring-yellow-200' : ''}`}>
+                            <tr key={`${batch.product_id}_${batch.batch_id}_${index}_${batch.transfer_date}`} className={`hover:bg-gray-50 ${isOldest ? 'bg-yellow-50 border-l-4 border-yellow-400 ring-2 ring-yellow-200' : ''}`}>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 <div className="flex items-center justify-center gap-2">
                                   <span className={`font-bold ${isOldest ? 'text-yellow-600' : 'text-gray-600'}`}>
@@ -1057,6 +1312,9 @@ const PharmacyInventory = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 ₱{Number.parseFloat(unitCost).toFixed(2)}
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
+                                {transferDate}
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
                                 <div className="flex flex-col items-center">
                                   <span className={isExpired ? 'text-red-600 font-semibold' : isExpiringSoon ? 'text-orange-600 font-semibold' : ''}>
@@ -1084,7 +1342,7 @@ const PharmacyInventory = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center space-y-2">
                               <Package className="h-8 w-8 text-gray-400" />
                               <p className="text-lg font-medium text-gray-900">No detailed batch information available</p>
@@ -1107,7 +1365,7 @@ const PharmacyInventory = () => {
                     <span className="ml-2 font-semibold text-gray-900">{selectedProductForHistory.quantity || 0} pieces</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Batches Used:</span>
+                    <span className="text-gray-600">Batches Transferred:</span>
                     <span className="ml-2 font-semibold text-gray-900">{quantityHistoryData.length}</span>
                   </div>
                   <div>
@@ -1126,6 +1384,7 @@ const PharmacyInventory = () => {
           </div>
         </div>
       )}
+
 
     </div>
   );

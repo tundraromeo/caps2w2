@@ -64,6 +64,20 @@ const Sidebar = ({
       notificationDetails: notifications.warehouse
     },
     { 
+      label: "Convenience Store", 
+      icon: <FaStore />, 
+      key: "ConvenienceStore",
+      hasNotifications: getTotalNotifications('convenience') > 0,
+      notificationCount: getTotalNotifications('convenience')
+    },
+    { 
+      label: "Pharmacy Store", 
+      icon: <FaStore />, 
+      key: "PharmacyStore",
+      hasNotifications: getTotalNotifications('pharmacy') > 0,
+      notificationCount: getTotalNotifications('pharmacy')
+    },
+    { 
       label: "User Management", 
       icon: <FaUsers />, 
       key: "User",
@@ -169,6 +183,10 @@ const Sidebar = ({
     // Auto-clear notifications when navigating to a section
     if (componentKey === 'products') {
       markNotificationAsViewed('warehouse');
+    } else if (componentKey === 'ConvenienceStore') {
+      markNotificationAsViewed('convenience');
+    } else if (componentKey === 'PharmacyStore') {
+      markNotificationAsViewed('pharmacy');
     } else if (componentKey === 'Reports') {
       markNotificationAsViewed('reports');
       clearSystemUpdates();

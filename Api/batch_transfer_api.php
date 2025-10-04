@@ -77,7 +77,6 @@ function getBatchTransferDetails($data) {
                 btd.batch_id,
                 btd.batch_reference,
                 btd.quantity_used,
-                btd.unit_cost,
                 btd.srp,
                 btd.expiration_date,
                 btd.status,
@@ -139,7 +138,6 @@ function createBatchTransferDetail($data) {
         $batch_id = $data['batch_id'] ?? 0;
         $batch_reference = $data['batch_reference'] ?? '';
         $quantity_used = $data['quantity_used'] ?? 0;
-        $unit_cost = $data['unit_cost'] ?? 0.00;
         $srp = $data['srp'] ?? 0.00;
         $expiration_date = $data['expiration_date'] ?? null;
         $location_id = $data['location_id'] ?? 0;
@@ -152,13 +150,13 @@ function createBatchTransferDetail($data) {
         
         $stmt = $conn->prepare("
             INSERT INTO tbl_batch_transfer_details 
-            (product_id, batch_id, batch_reference, quantity_used, unit_cost, srp, expiration_date, status, location_id, transfer_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            (product_id, batch_id, batch_reference, quantity_used, srp, expiration_date, status, location_id, transfer_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ");
         
         $stmt->execute([
             $product_id, $batch_id, $batch_reference, $quantity_used, 
-            $unit_cost, $srp, $expiration_date, $status, $location_id
+            $srp, $expiration_date, $status, $location_id
         ]);
         
         echo json_encode([

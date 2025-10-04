@@ -285,7 +285,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'stock_in':
         return ['Date', 'Time', 'Product Name', 'Barcode', 'Quantity', 'Unit Price', 'Total Value', 'Supplier', 'Reference No', 'Received By'];
       case 'stock_out':
-        return ['Date', 'Time', 'Product Name', 'Barcode', 'Quantity', 'Unit Price', 'Total Value', 'Cashier', 'Customer Info', 'Reference No'];
+        return ['Date', 'Time', 'Product Name', 'Barcode', 'Adjustment Type', 'Quantity', 'Unit Price', 'Total Value', 'Reason', 'Adjusted By', 'Reference No'];
       case 'sales':
         return ['Date', 'Time', 'Reference No', 'Total Amount', 'Items Sold', 'Products', 'Payment Type', 'Cashier', 'Terminal'];
       case 'inventory_balance':
@@ -330,7 +330,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           return (
             <button
               onClick={() => fetchCashierDetails(row['emp_id'])}
-              className="text-blue-600 hover:text-blue-800 underline cursor-pointer font-medium"
+              className="underline cursor-pointer font-medium"
               style={{ color: theme.colors.accent }}
             >
               {row[columnKey] || row['cashier_username'] || row['cashier_name'] || '👤 System User'}
@@ -388,7 +388,31 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'reason':
         return row[columnKey] || '📝 System Adjustment';
       case 'adjusted_by':
-        // Priority order: employee_name, created_by, user_id, username, then specific system users
+        // For stock reports, use the enhanced adjusted_by field from the backend
+        const adjustedBy = row['adjusted_by'] || '';
+        const adjustedByDetailed = row['adjusted_by_detailed'] || '';
+        
+        // Use the detailed version if available, otherwise use the simple version
+        const displayName = adjustedByDetailed || adjustedBy;
+        
+        if (displayName && displayName.trim() !== '') {
+          // Add appropriate emoji based on the type
+          if (displayName.toLowerCase().includes('cashier')) {
+            return `💰 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('admin')) {
+            return `👑 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('inventory')) {
+            return `📦 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('pharmacy')) {
+            return `💊 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('pos system')) {
+            return `🤖 POS System`;
+          } else {
+            return `👤 ${displayName.trim()}`;
+          }
+        }
+        
+        // Fallback to original logic for other reports
         const employeeName = row['employee_name'] || '';
         const createdBy = row['created_by'] || '';
         const userId = row['user_id'] || '';

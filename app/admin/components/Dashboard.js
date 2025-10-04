@@ -73,7 +73,7 @@ function Dashboard() {
     },
     {
       title: "Product 'Medicine A' restocked",
-      color: "bg-blue-500",
+      color: "bg-gray-500",
     },
     {
       title: "Customer 'John Doe' registered",
@@ -115,14 +115,9 @@ function Dashboard() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
-      <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
+      <div className="p-6" style={{ backgroundColor: 'white' }}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center space-x-6 mb-4">
-              <span className="border-b-2 pb-1" style={{ color: theme.text.primary, borderColor: theme.text.primary }}>Admin Overview</span>
-              <span style={{ color: theme.text.secondary }}>System Management</span>
-              <span style={{ color: theme.text.secondary }}>User Analytics</span>
-            </div>
             <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Admin Dashboard</h1>
           </div>
         </div>

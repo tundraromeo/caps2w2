@@ -327,6 +327,7 @@ function Warehouse() {
     
     // Current user/employee information for tracking who created/modified items
     const [currentUser, setCurrentUser] = useState("admin"); // Default user, can be updated
+    const [userRole, setUserRole] = useState("admin"); // Store user role
 
     const [newProductForm, setNewProductForm] = useState({
       product_name: "",
@@ -357,21 +358,48 @@ function Warehouse() {
     
     // Get current user from localStorage or session
     useEffect(() => {
-      const userSession = localStorage.getItem('user_session');
+      // Check sessionStorage first (from login)
+      const userSession = sessionStorage.getItem('user_data');
       if (userSession) {
         try {
           const userData = JSON.parse(userSession);
+          if (userData.role) {
+            setUserRole(userData.role);
+            // Set currentUser based on role
+            if (userData.role.toLowerCase() === 'admin') {
+              setCurrentUser("admin");
+            } else if (userData.role.toLowerCase() === 'inventory manager') {
+              setCurrentUser("inventory");
+            } else {
+              // For other roles, use username or full_name
+              setCurrentUser(userData.username || userData.full_name || "admin");
+            }
+          }
+          // Fallback to old logic if role is not available
           if (userData.employee_name || userData.username) {
             setCurrentUser(userData.employee_name || userData.username);
           }
         } catch (error) {
           console.log("Could not parse user session, using default");
         }
+      } else {
+        // Fallback to localStorage
+        const userSession = localStorage.getItem('user_session');
+        if (userSession) {
+          try {
+            const userData = JSON.parse(userSession);
+            if (userData.employee_name || userData.username) {
+              setCurrentUser(userData.employee_name || userData.username);
+            }
+          } catch (error) {
+            console.log("Could not parse user session, using default");
+          }
+        }
       }
       
-      // Also check for saved employee name
+      // Also check for saved employee name (but prioritize role-based setting)
       const savedEmployee = localStorage.getItem('warehouse_employee');
-      if (savedEmployee) {
+      if (savedEmployee && !userSession) {
         setCurrentUser(savedEmployee);
       }
     }, []);
@@ -1389,6 +1417,15 @@ function Warehouse() {
         if (response.success && Array.isArray(response.data)) {
           console.log("✅ Products with oldest batch loaded:", response.data.length, "products");
           
+          // Debug: Log first few products to check SRP and expiry data
+          console.log("🔍 First 3 warehouse products with SRP data:", response.data.slice(0, 3).map(p => ({
+            name: p.product_name,
+            srp: p.srp,
+            first_batch_srp: p.first_batch_srp,
+            days_until_expiry: p.days_until_expiry,
+            earliest_expiry: p.earliest_expiry
+          })));
+          
           // Process the data to ensure proper field mapping for expiration
           const processedProducts = response.data.map(product => {
             // Handle different expiration date formats from backend - prioritize database values
@@ -1417,10 +1454,21 @@ function Warehouse() {
               oldest_batch_expiration: expiration,
               oldest_batch_entry_date: product.entry_date || product.oldest_batch_entry_date || null,
               oldest_batch_unit_cost: product.unit_cost || product.oldest_batch_unit_cost || product.srp || 0,
+              // Ensure first_batch_srp is preserved
+              first_batch_srp: product.first_batch_srp || product.srp || 0,
             };
           });
           
           console.log("📦 Processed", processedProducts.length, "products with batch info");
+          
+          // Debug: Log processed products to check SRP data
+          console.log("🔍 First 3 processed products with SRP data:", processedProducts.slice(0, 3).map(p => ({
+            name: p.product_name,
+            srp: p.srp,
+            first_batch_srp: p.first_batch_srp,
+            days_until_expiry: p.days_until_expiry
+          })));
+          
           return processedProducts;
         } else {
           console.warn("⚠️ Failed to load products with oldest batch, falling back to regular products");
@@ -1463,7 +1511,9 @@ function Warehouse() {
                     oldest_batch_expiration: batchExpiration,
                     oldest_batch_entry_date: oldestBatch.entry_date,
                     oldest_batch_unit_cost: oldestBatch.unit_cost,
-                    total_fifo_batches: fifoResponse.data.length
+                    total_fifo_batches: fifoResponse.data.length,
+                    // Use first_batch_srp from main API (original first batch by entry date)
+                    first_batch_srp: product.first_batch_srp || oldestBatch.srp || product.srp || 0
                   };
                 } else {
                   // Handle expiration from product data
@@ -1483,7 +1533,9 @@ function Warehouse() {
                     oldest_batch_expiration: null,
                     oldest_batch_entry_date: null,
                     oldest_batch_unit_cost: product.srp || product.unit_price,
-                    total_fifo_batches: 0
+                    total_fifo_batches: 0,
+                    // Add first batch SRP from product data
+                    first_batch_srp: product.srp || product.unit_price || 0
                   };
                 }
               } catch (error) {
@@ -1500,7 +1552,9 @@ function Warehouse() {
                 return {
                   ...product,
                   // Ensure expiration field is available even on error
-                  expiration: errorExpiration
+                  expiration: errorExpiration,
+                  // Add first batch SRP from product data on error
+                  first_batch_srp: product.srp || product.unit_price || 0
                 };
               }
             })
@@ -2715,10 +2769,11 @@ function Warehouse() {
                       }}
                       title="Click to edit your name for tracking purposes"
                     />
-                    {currentUser !== "admin" && (
+                    {currentUser !== (userRole.toLowerCase() === 'admin' ? "admin" : "inventory") && (
                       <button
                         onClick={() => {
-                          setCurrentUser("admin");
+                          const defaultUser = userRole.toLowerCase() === 'admin' ? "admin" : "inventory";
+                          setCurrentUser(defaultUser);
                           localStorage.removeItem('warehouse_employee');
                         }}
                         className="text-xs px-1"
@@ -3057,7 +3112,7 @@ function Warehouse() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{((product.product_quantity || product.quantity || 0) * (Number.parseFloat(product.srp || 0))).toFixed(2)}
+                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || 0).toFixed(2)}
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || "N/A"}
@@ -3104,46 +3159,42 @@ function Warehouse() {
                     </td>
                     <td className="px-3 py-2 text-center">
                       {(() => {
-                        if (product.earliest_expiration) {
-                          const today = new Date();
-                          const expiryDate = new Date(product.earliest_expiration);
-                          const daysUntilExpiry = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
-                          
-                          if (daysUntilExpiry < 0) {
-                            return (
-                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
-                                backgroundColor: theme.colors.danger + '20',
-                                color: theme.colors.danger
-                              }}>
-                                EXPIRED
-                              </span>
-                            );
-                          } else if (daysUntilExpiry <= 30) {
-                            return (
-                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
-                                backgroundColor: theme.colors.warning + '20',
-                                color: theme.colors.warning
-                              }}>
-                                {daysUntilExpiry} days
-                              </span>
-                            );
-                          } else {
-                            return (
-                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
-                                backgroundColor: theme.colors.success + '20',
-                                color: theme.colors.success
-                              }}>
-                                {daysUntilExpiry} days
-                              </span>
-                            );
-                          }
-                        } else {
+                        const daysUntilExpiry = product.days_until_expiry;
+                        
+                        if (daysUntilExpiry === null || daysUntilExpiry === undefined) {
                           return (
                             <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
                               backgroundColor: theme.bg.secondary,
                               color: theme.text.muted
                             }}>
                               N/A
+                            </span>
+                          );
+                        } else if (daysUntilExpiry < 0) {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.colors.danger + '20',
+                              color: theme.colors.danger
+                            }}>
+                              EXPIRED
+                            </span>
+                          );
+                        } else if (daysUntilExpiry <= 30) {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.colors.warning + '20',
+                              color: theme.colors.warning
+                            }}>
+                              {daysUntilExpiry} days
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.colors.success + '20',
+                              color: theme.colors.success
+                            }}>
+                              {daysUntilExpiry} days
                             </span>
                           );
                         }
@@ -4108,7 +4159,7 @@ function Warehouse() {
                     readOnly
                     className="w-full px-3 py-2 border rounded-md text-sm"
                     placeholder="SRP"
-                    value={`₱${Number.parseFloat(existingProduct.srp || existingProduct.unit_price || 0).toFixed(2)}`}
+                    value={`₱${Number.parseFloat(existingProduct.srp || 0).toFixed(2)}`}
                     style={{ 
                       borderColor: theme.border.default,
                       backgroundColor: theme.bg.hover,
@@ -5478,7 +5529,7 @@ function Warehouse() {
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.success + '20', borderColor: theme.colors.success + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.success }}>Stock Status</h4>
                       <p className="text-sm" style={{ color: theme.text.secondary }}>Status: {getStockStatus(selectedProductForFifo.quantity)}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>SRP: ₱{Number.parseFloat(selectedProductForFifo.srp || selectedProductForFifo.unit_price || 0).toFixed(2)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>SRP: ₱{Number.parseFloat(selectedProductForFifo.srp || 0).toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.warning + '20', borderColor: theme.colors.warning + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.warning }}>FIFO Summary</h4>

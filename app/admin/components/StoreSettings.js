@@ -16,15 +16,6 @@ function StoreSettings() {
     tax_rate: '',
     currency: 'PHP',
     timezone: 'Asia/Manila',
-    business_hours: {
-      monday: { open: '08:00', close: '20:00', closed: false },
-      tuesday: { open: '08:00', close: '20:00', closed: false },
-      wednesday: { open: '08:00', close: '20:00', closed: false },
-      thursday: { open: '08:00', close: '20:00', closed: false },
-      friday: { open: '08:00', close: '20:00', closed: false },
-      saturday: { open: '08:00', close: '18:00', closed: false },
-      sunday: { open: '09:00', close: '17:00', closed: false }
-    },
     notifications: {
       low_stock: true,
       expiry_alerts: true,
@@ -75,18 +66,6 @@ function StoreSettings() {
     }
   };
 
-  const handleBusinessHoursChange = (day, field, value) => {
-    setSettings(prev => ({
-      ...prev,
-      business_hours: {
-        ...prev.business_hours,
-        [day]: {
-          ...prev.business_hours[day],
-          [field]: value
-        }
-      }
-    }));
-  };
 
   const handleSaveSettings = async () => {
     try {
@@ -111,7 +90,6 @@ function StoreSettings() {
 
   const tabs = [
     { id: 'general', label: 'General', icon: '⚙️' },
-    { id: 'business', label: 'Business Hours', icon: '🕒' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'system', label: 'System', icon: '💻' }
   ];
@@ -266,67 +244,6 @@ function StoreSettings() {
               </div>
             )}
 
-            {activeTab === 'business' && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Business Hours</h3>
-                
-                <div className="space-y-4">
-                  {Object.entries(settings.business_hours).map(([day, hours]) => (
-                    <div key={day} className="flex items-center gap-4 p-4 border rounded-lg" style={{ borderColor: theme.border.default }}>
-                      <div className="w-24">
-                        <label className="block text-sm font-medium capitalize" style={{ color: theme.text.primary }}>
-                          {day}
-                        </label>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={!hours.closed}
-                          onChange={(e) => handleBusinessHoursChange(day, 'closed', !e.target.checked)}
-                          className="rounded"
-                        />
-                        <span className="text-sm" style={{ color: theme.text.secondary }}>Open</span>
-                      </div>
-                      
-                      {!hours.closed && (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm" style={{ color: theme.text.secondary }}>From:</label>
-                            <input
-                              type="time"
-                              value={hours.open}
-                              onChange={(e) => handleBusinessHoursChange(day, 'open', e.target.value)}
-                              className="px-2 py-1 border rounded text-sm"
-                              style={{
-                                backgroundColor: theme.bg.input,
-                                borderColor: theme.border.input,
-                                color: theme.text.primary
-                              }}
-                            />
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm" style={{ color: theme.text.secondary }}>To:</label>
-                            <input
-                              type="time"
-                              value={hours.close}
-                              onChange={(e) => handleBusinessHoursChange(day, 'close', e.target.value)}
-                              className="px-2 py-1 border rounded text-sm"
-                              style={{
-                                backgroundColor: theme.bg.input,
-                                borderColor: theme.border.input,
-                                color: theme.text.primary
-                              }}
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {activeTab === 'notifications' && (
               <div className="space-y-6">
@@ -355,7 +272,7 @@ function StoreSettings() {
                           className="sr-only peer"
                         />
                         <div 
-                          className="w-11 h-6 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+                          className="w-11 h-6 peer-focus:outline-none peer-focus:ring-4 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:border after:rounded-full after:h-5 after:w-5 after:transition-all"
                           style={{
                             backgroundColor: theme.bg.hover,
                             '--tw-ring-color': theme.colors.accent

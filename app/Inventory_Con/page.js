@@ -142,7 +142,7 @@ export default function InventoryPage() {
           <div
             onClick={() => setIsMobileSidebarOpen(false)}
             className="fixed inset-0 z-30 md:hidden"
-            style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+            style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
           />
         )}
         

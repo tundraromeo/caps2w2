@@ -6,7 +6,6 @@ import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
 import NotificationSystem from "./NotificationSystem";
 
-
 import {
   ChevronUp,
   ChevronDown,
@@ -29,6 +28,7 @@ import {
   Clock,
   AlertCircle,
   CheckCircle,
+  Calendar,
 } from "lucide-react";
 
 // API Configuratio
@@ -50,24 +50,6 @@ function safeToast(type, message) {
   }
 }
 
-// Server connectivity check function
-async function checkServerConnectivity() {
-  try {
-    const response = await fetch("http://localhost/Enguio_Project/Api/backend.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ action: "ping" }),
-      signal: AbortSignal.timeout(5000) // 5 second timeout
-    });
-    return response.ok;
-  } catch (error) {
-    console.warn("⚠️ Server connectivity check failed:", error.message);
-    return false;
-  }
-}
-
 // API function
 async function handleApiCall(action, data = {}) {
   const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
@@ -76,34 +58,16 @@ async function handleApiCall(action, data = {}) {
 
   try {
     console.log("📡 Making API request to:", API_BASE_URL);
-    
-    // Add timeout to prevent hanging requests
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      console.log("⏰ Request timeout reached, aborting request");
-      controller.abort();
-    }, 15000); // 15 second timeout
-    
     const response = await fetch(API_BASE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
-      signal: controller.signal
     });
-    
-    // Clear timeout since request completed successfully
-    clearTimeout(timeoutId);
 
     console.log("📡 HTTP Response Status:", response.status);
-    
-    // Safely log headers without causing issues
-    try {
-      console.log("📡 HTTP Response Headers:", Object.fromEntries(response.headers.entries()));
-    } catch (headerError) {
-      console.log("📡 HTTP Response Headers: [Unable to log headers]");
-    }
+    console.log("📡 HTTP Response Headers:", response.headers);
 
     // Check if response is ok
     if (!response.ok) {
@@ -113,17 +77,6 @@ async function handleApiCall(action, data = {}) {
     // Get response text first to check if it's valid JSON
     const responseText = await response.text();
     console.log("📡 Raw Response Text:", responseText);
-
-    // Check if response is empty or only whitespace
-    if (!responseText || responseText.trim() === '') {
-      console.error("❌ API returned empty response");
-      return {
-        success: false,
-        message: "Server returned empty response. Please check server status.",
-        error: "EMPTY_RESPONSE",
-        rawResponse: "Empty response"
-      };
-    }
 
     // Check if response starts with HTML tags (indicating PHP error)
     if (responseText.trim().startsWith('<') || responseText.includes('<br />') || responseText.includes('<b>')) {
@@ -149,20 +102,10 @@ async function handleApiCall(action, data = {}) {
     } catch (jsonError) {
       console.error("❌ Failed to parse JSON response:", jsonError);
       console.error("❌ Response text:", responseText);
-      console.error("❌ Response length:", responseText.length);
-      console.error("❌ Response type:", typeof responseText);
-      
-      // Provide more specific error message based on the error type
-      let errorMessage = "Invalid JSON response from server";
-      if (jsonError.message.includes("Unexpected end of JSON input")) {
-        errorMessage = "Server returned incomplete JSON response. This may indicate a server error or connection issue.";
-      } else if (jsonError.message.includes("Unexpected token")) {
-        errorMessage = "Server returned malformed JSON response. This may indicate a PHP error.";
-      }
       
       return {
         success: false,
-        message: errorMessage,
+        message: "Invalid JSON response from server",
         error: "JSON_PARSE_ERROR",
         rawResponse: responseText.substring(0, 500)
       };
@@ -192,30 +135,10 @@ async function handleApiCall(action, data = {}) {
       message: error.message,
       stack: error.stack
     });
-    
-    // Provide more specific error messages based on error type
-    let errorMessage = error.message;
-    let errorType = "REQUEST_ERROR";
-    
-    if (error.name === "AbortError") {
-      errorMessage = "Request timed out. Please check your server connection.";
-      errorType = "TIMEOUT_ERROR";
-    } else if (error.message.includes("Failed to fetch")) {
-      errorMessage = "Unable to connect to server. Please ensure XAMPP Apache is running and the API endpoint is accessible.";
-      errorType = "CONNECTION_ERROR";
-    } else if (error.message.includes("NetworkError")) {
-      errorMessage = "Network error occurred. Please check your internet connection.";
-      errorType = "NETWORK_ERROR";
-    } else if (error.message.includes("CORS")) {
-      errorMessage = "CORS error occurred. Please check server configuration.";
-      errorType = "CORS_ERROR";
-    }
-    
     return {
       success: false,
-      message: errorMessage,
-      error: errorType,
-      originalError: error.message
+      message: error.message,
+      error: "REQUEST_ERROR",
     };
   }
 }
@@ -404,6 +327,7 @@ function Warehouse() {
     
     // Current user/employee information for tracking who created/modified items
     const [currentUser, setCurrentUser] = useState("admin"); // Default user, can be updated
+    const [userRole, setUserRole] = useState("admin"); // Store user role
 
     const [newProductForm, setNewProductForm] = useState({
       product_name: "",
@@ -434,41 +358,60 @@ function Warehouse() {
     
     // Get current user from localStorage or session
     useEffect(() => {
-      const userSession = localStorage.getItem('user_session');
+      // Check sessionStorage first (from login)
+      const userSession = sessionStorage.getItem('user_data');
       if (userSession) {
         try {
           const userData = JSON.parse(userSession);
+          if (userData.role) {
+            setUserRole(userData.role);
+            // Set currentUser based on role
+            if (userData.role.toLowerCase() === 'admin') {
+              setCurrentUser("admin");
+            } else if (userData.role.toLowerCase() === 'inventory manager') {
+              setCurrentUser("inventory");
+            } else {
+              // For other roles, use username or full_name
+              setCurrentUser(userData.username || userData.full_name || "admin");
+            }
+          }
+          // Fallback to old logic if role is not available
           if (userData.employee_name || userData.username) {
             setCurrentUser(userData.employee_name || userData.username);
           }
         } catch (error) {
           console.log("Could not parse user session, using default");
         }
+      } else {
+        // Fallback to localStorage
+        const userSession = localStorage.getItem('user_session');
+        if (userSession) {
+          try {
+            const userData = JSON.parse(userSession);
+            if (userData.employee_name || userData.username) {
+              setCurrentUser(userData.employee_name || userData.username);
+            }
+          } catch (error) {
+            console.log("Could not parse user session, using default");
+          }
+        }
       }
       
-      // Also check for saved employee name
+      // Also check for saved employee name (but prioritize role-based setting)
       const savedEmployee = localStorage.getItem('warehouse_employee');
-      if (savedEmployee) {
+      if (savedEmployee && !userSession) {
         setCurrentUser(savedEmployee);
       }
     }, []);
 
-    // Initialize transfer batch details table and check server connectivity
+    // Initialize transfer batch details table
     useEffect(() => {
       const initializeTransferBatchTable = async () => {
         try {
-          // Check server connectivity first
-          const isServerOnline = await checkServerConnectivity();
-          if (!isServerOnline) {
-            safeToast("error", "⚠️ Server is not accessible. Please ensure XAMPP Apache is running.");
-            return;
-          }
-          
           await handleApiCall("create_transfer_batch_details_table");
           console.log("✅ Transfer batch details table initialized");
         } catch (error) {
           console.error("❌ Error initializing transfer batch details table:", error);
-          safeToast("error", "❌ Failed to initialize system. Please check server connection.");
         }
       };
       
@@ -550,7 +493,6 @@ function Warehouse() {
     const [stats, setStats] = useState({
       totalProducts: 0,
       totalSuppliers: 0,
-      storageCapacity: 0,
       warehouseValue: 0,
       totalQuantity: 0,
       lowStockItems: 0,
@@ -764,8 +706,6 @@ function Warehouse() {
           return currentDate < earliestDate ? current : earliest;
         });
         return earliestBatch.expiration_date;
-      } else if (fifoResponse.warning) {
-        console.warn("⚠️ getEarliestExpiringBatch: No FIFO data available for product", productId);
       }
     } catch (error) {
       console.error("Error getting earliest expiring batch:", error);
@@ -780,25 +720,16 @@ function Warehouse() {
     console.log("🔔 Expiry alerts enabled:", settings.expiryAlerts);
     console.log("🔔 Expiry warning days:", settings.expiryWarningDays);
 
-    try {
-      // Get earliest expiring dates for all products
-      const productsWithEarliestExpiry = await Promise.all(
-        productList.map(async (product) => {
-          try {
-            const earliestExpiry = await getEarliestExpiringBatch(product.product_id);
-            return {
-              ...product,
-              earliest_expiration: earliestExpiry || product.expiration
-            };
-          } catch (error) {
-            console.warn("⚠️ Error getting expiration for product", product.product_id, ":", error.message);
-            return {
-              ...product,
-              earliest_expiration: product.expiration
-            };
-          }
-        })
-      );
+    // Get earliest expiring dates for all products
+    const productsWithEarliestExpiry = await Promise.all(
+      productList.map(async (product) => {
+        const earliestExpiry = await getEarliestExpiringBatch(product.product_id);
+        return {
+          ...product,
+          earliest_expiration: earliestExpiry || product.expiration
+        };
+      })
+    );
 
     // Debug: Check products with expiration dates
     const productsWithExpiration = productsWithEarliestExpiry.filter(product => product.earliest_expiration);
@@ -871,19 +802,6 @@ function Warehouse() {
         lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
         outOfStock
       });
-    } catch (error) {
-      console.error("❌ Error calculating notifications:", error);
-      // Set empty notifications to prevent app crash
-      setNotifications({
-        expiring: [],
-        expired: [],
-        lowStock: [],
-        outOfStock: []
-      });
-      
-      // Show user-friendly error message
-      safeToast("error", "Unable to calculate notifications. Please check server connection.");
-    }
     }
   
     // FIXED Data Loading Functions
@@ -1057,17 +975,11 @@ function Warehouse() {
   // Calculate total quantity from product quantity
   const totalProductQuantity = products.reduce((sum, product) => sum + (Number(product.product_quantity || product.quantity || 0)), 0);
   
-  // Assume max capacity is 1000 products for demonstration
-  const maxCapacity = 1000;
-  const usedCapacity = totalProductQuantity;
-  const storageCapacity = Math.min(100, Math.round((usedCapacity / maxCapacity) * 100));
-  
   setStats((prev) => ({
     ...prev,
     totalQuantity: totalProductQuantity,
     totalProductQuantity: totalProductQuantity,
     warehouseValue: totalValue,
-    storageCapacity: storageCapacity,
   }))
 }
   
@@ -1489,30 +1401,10 @@ function Warehouse() {
         console.log("Calling get_fifo_stock API with product_id:", productId);
         const response = await handleApiCall("get_fifo_stock", { product_id: productId });
         console.log("get_fifo_stock API response:", response);
-        
-        // Handle different error types gracefully
-        if (!response.success) {
-          console.warn("⚠️ get_fifo_stock API returned error:", response.message);
-          // Return empty data instead of failing completely
-          return { 
-            success: true, 
-            data: [], 
-            message: response.message || "No FIFO stock data available",
-            warning: true
-          };
-        }
-        
         return response;
       } catch (error) {
         console.error("Error getting FIFO stock:", error);
-        // Return empty data instead of failing completely
-        return { 
-          success: true, 
-          data: [], 
-          message: "Unable to fetch FIFO stock data",
-          error: error.message,
-          warning: true
-        };
+        return { success: false, error: error.message };
       }
     }
 
@@ -1524,6 +1416,15 @@ function Warehouse() {
         
         if (response.success && Array.isArray(response.data)) {
           console.log("✅ Products with oldest batch loaded:", response.data.length, "products");
+          
+          // Debug: Log first few products to check SRP and expiry data
+          console.log("🔍 First 3 warehouse products with SRP data:", response.data.slice(0, 3).map(p => ({
+            name: p.product_name,
+            srp: p.srp,
+            first_batch_srp: p.first_batch_srp,
+            days_until_expiry: p.days_until_expiry,
+            earliest_expiry: p.earliest_expiry
+          })));
           
           // Process the data to ensure proper field mapping for expiration
           const processedProducts = response.data.map(product => {
@@ -1553,10 +1454,21 @@ function Warehouse() {
               oldest_batch_expiration: expiration,
               oldest_batch_entry_date: product.entry_date || product.oldest_batch_entry_date || null,
               oldest_batch_unit_cost: product.unit_cost || product.oldest_batch_unit_cost || product.srp || 0,
+              // Ensure first_batch_srp is preserved
+              first_batch_srp: product.first_batch_srp || product.srp || 0,
             };
           });
           
           console.log("📦 Processed", processedProducts.length, "products with batch info");
+          
+          // Debug: Log processed products to check SRP data
+          console.log("🔍 First 3 processed products with SRP data:", processedProducts.slice(0, 3).map(p => ({
+            name: p.product_name,
+            srp: p.srp,
+            first_batch_srp: p.first_batch_srp,
+            days_until_expiry: p.days_until_expiry
+          })));
+          
           return processedProducts;
         } else {
           console.warn("⚠️ Failed to load products with oldest batch, falling back to regular products");
@@ -1599,7 +1511,9 @@ function Warehouse() {
                     oldest_batch_expiration: batchExpiration,
                     oldest_batch_entry_date: oldestBatch.entry_date,
                     oldest_batch_unit_cost: oldestBatch.unit_cost,
-                    total_fifo_batches: fifoResponse.data.length
+                    total_fifo_batches: fifoResponse.data.length,
+                    // Use first_batch_srp from main API (original first batch by entry date)
+                    first_batch_srp: product.first_batch_srp || oldestBatch.srp || product.srp || 0
                   };
                 } else {
                   // Handle expiration from product data
@@ -1619,7 +1533,9 @@ function Warehouse() {
                     oldest_batch_expiration: null,
                     oldest_batch_entry_date: null,
                     oldest_batch_unit_cost: product.srp || product.unit_price,
-                    total_fifo_batches: 0
+                    total_fifo_batches: 0,
+                    // Add first batch SRP from product data
+                    first_batch_srp: product.srp || product.unit_price || 0
                   };
                 }
               } catch (error) {
@@ -1636,7 +1552,9 @@ function Warehouse() {
                 return {
                   ...product,
                   // Ensure expiration field is available even on error
-                  expiration: errorExpiration
+                  expiration: errorExpiration,
+                  // Add first batch SRP from product data on error
+                  first_batch_srp: product.srp || product.unit_price || 0
                 };
               }
             })
@@ -2456,7 +2374,6 @@ function Warehouse() {
               ...prev,
               totalProducts: response.totalProducts ?? prev.totalProducts,
               totalSuppliers: response.totalSuppliers ?? prev.totalSuppliers,
-              storageCapacity: response.storageCapacity ?? prev.storageCapacity,
               warehouseValue: response.warehouseValue ?? prev.warehouseValue,
               totalQuantity: response.totalQuantity ?? prev.totalQuantity,
               lowStockItems: response.lowStockItems ?? prev.lowStockItems,
@@ -2601,7 +2518,13 @@ function Warehouse() {
             <div className="relative notification-dropdown">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2 rounded-full hover:bg-opacity-10 hover:bg-gray-500 transition-colors"
+                className="relative p-2 rounded-full hover:bg-opacity-10 transition-colors"
+                style={{ 
+                  backgroundColor: 'transparent',
+                  '--hover-bg': theme.bg.hover
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                 title="View Notifications"
               >
                 {alertCount > 0 ? (
@@ -2846,10 +2769,11 @@ function Warehouse() {
                       }}
                       title="Click to edit your name for tracking purposes"
                     />
-                    {currentUser !== "admin" && (
+                    {currentUser !== (userRole.toLowerCase() === 'admin' ? "admin" : "inventory") && (
                       <button
                         onClick={() => {
-                          setCurrentUser("admin");
+                          const defaultUser = userRole.toLowerCase() === 'admin' ? "admin" : "inventory";
+                          setCurrentUser(defaultUser);
                           localStorage.removeItem('warehouse_employee');
                         }}
                         className="text-xs px-1"
@@ -2894,12 +2818,11 @@ function Warehouse() {
 
         {/* Stats Cards */}
         <div className="px-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[
               { title: "Total Products", value: stats.totalProducts, icon: Package, color: "blue" },
               { title: "Product Qty", value: (stats.totalProductQuantity || 0).toLocaleString(), icon: Package, color: "indigo" },
               { title: "Total Suppliers", value: stats.totalSuppliers, icon: User, color: "orange" },
-              { title: "Storage Capacity", value: `${stats.storageCapacity}%`, icon: Truck, color: "yellow" },
               {
                 title: "Warehouse Value",
                 value: `₱${stats.warehouseValue.toLocaleString()}`,
@@ -3093,13 +3016,14 @@ function Warehouse() {
                 <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>TYPE</th>
                 <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>STATUS</th>
                 <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>STOCK STATUS</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>DAYS TO EXPIRY</th>
                 <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody className="divide-y" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.light }}>
               {inventoryData.length === 0 ? (
                 <tr>
-                  <td colSpan="12" className="px-3 py-6 text-center">
+                  <td colSpan="13" className="px-3 py-6 text-center">
                     <div className="flex flex-col items-center space-y-3">
                       <Package className="h-12 w-12" style={{ color: theme.text.muted }} />
                       <div style={{ color: theme.text.secondary }}>
@@ -3188,7 +3112,7 @@ function Warehouse() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{((product.product_quantity || product.quantity || 0) * (Number.parseFloat(product.srp || 0))).toFixed(2)}
+                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || 0).toFixed(2)}
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || "N/A"}
@@ -3234,9 +3158,55 @@ function Warehouse() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-center">
+                      {(() => {
+                        const daysUntilExpiry = product.days_until_expiry;
+                        
+                        if (daysUntilExpiry === null || daysUntilExpiry === undefined) {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.bg.secondary,
+                              color: theme.text.muted
+                            }}>
+                              N/A
+                            </span>
+                          );
+                        } else if (daysUntilExpiry < 0) {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.colors.danger + '20',
+                              color: theme.colors.danger
+                            }}>
+                              EXPIRED
+                            </span>
+                          );
+                        } else if (daysUntilExpiry <= 30) {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.colors.warning + '20',
+                              color: theme.colors.warning
+                            }}>
+                              {daysUntilExpiry} days
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
+                              backgroundColor: theme.colors.success + '20',
+                              color: theme.colors.success
+                            }}>
+                              {daysUntilExpiry} days
+                            </span>
+                          );
+                        }
+                      })()}
+                    </td>
+                    <td className="px-3 py-2 text-center">
                       <div className="flex justify-center gap-1">
                         <button onClick={() => openQuantityHistoryModal(product)} className="p-1" style={{ color: theme.colors.success }} title="View Quantity History">
                           <Package className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => openExpiringBatchModal(product)} className="p-1" style={{ color: theme.colors.info }} title="View Batch Details">
+                          <Calendar className="h-4 w-4" />
                         </button>
                         <button onClick={() => openEditProductModal(product)} className="p-1" style={{ color: theme.colors.accent }} title="Edit Product">
                           <Edit className="h-4 w-4" />
@@ -3270,7 +3240,7 @@ function Warehouse() {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full" style={{ color: theme.text.primary }}>
-                    <thead style={{ backgroundColor: theme.bg.secondary, borderBottom: `1px solid ${theme.border.default}` }}>
+                    <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>SUPPLIER NAME</th>
                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>CONTACT</th>
@@ -3761,10 +3731,22 @@ function Warehouse() {
         {/* Edit Product Modal */}
         {showEditProductModal && (
           <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border border-gray-200/50">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
-                <h3 className="text-lg font-semibold text-gray-900">Edit Product</h3>
-                <button onClick={closeEditProductModal} className="text-gray-400 hover:text-gray-600">
+            <div className="rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border" style={{ 
+              backgroundColor: theme.bg.card, 
+              borderColor: theme.border.default 
+            }}>
+              <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ 
+                backgroundColor: theme.bg.card, 
+                borderColor: theme.border.default 
+              }}>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Edit Product</h3>
+                <button 
+                  onClick={closeEditProductModal} 
+                  className="transition-colors"
+                  style={{ color: theme.text.muted }}
+                  onMouseEnter={(e) => e.target.style.color = theme.text.primary}
+                  onMouseLeave={(e) => e.target.style.color = theme.text.muted}
+                >
                   <X className="h-6 w-6" />
                 </button>
               </div>
@@ -3773,33 +3755,51 @@ function Warehouse() {
                 <form onSubmit={handleUpdateProduct} className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Product Name *</label>
                     <input
                       type="text"
                       required
                       value={editProductFormData.product_name || ""}
                       onChange={(e) => handleEditProductInputChange("product_name", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     />
                   </div>
   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Barcode</label>
                     <input
                       type="text"
                       value={editProductFormData.barcode || ""}
                       onChange={(e) => handleEditProductInputChange("barcode", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Category *</label>
                     <select
                       required
                       value={editProductFormData.category || ""}
                       onChange={(e) => handleEditProductInputChange("category", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     >
                       <option value="">Select Category</option>
                       {categoriesData.map((category) => (
@@ -3811,33 +3811,51 @@ function Warehouse() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Suggested Retail Price (SRP)</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Suggested Retail Price (SRP)</label>
                     <input
                       type="number"
                       step="0.01"
                       value={editProductFormData.srp || ""}
                       onChange={(e) => handleEditProductInputChange("srp", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Quantity *</label>
                     <input
                       type="number"
                       required
                       value={editProductFormData.quantity || ""}
                       onChange={(e) => handleEditProductInputChange("quantity", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Brand</label>
                     <select
                       value={editProductFormData.brand_id || ""}
                       onChange={(e) => handleEditProductInputChange("brand_id", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     >
                       <option value="">Select Brand</option>
                       {brandsData.map((brand) => (
@@ -3849,11 +3867,17 @@ function Warehouse() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                    <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Supplier</label>
                     <select
                       value={editProductFormData.supplier_id || ""}
                       onChange={(e) => handleEditProductInputChange("supplier_id", e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
                     >
                       <option value="">Select Supplier</option>
                       {suppliersData.map((supplier) => (
@@ -3921,9 +3945,13 @@ function Warehouse() {
                           id="editPrescription"
                           checked={editProductFormData.prescription === 1}
                           onChange={(e) => handleEditProductInputChange("prescription", e.target.checked ? 1 : 0)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 rounded focus:ring-2"
+                          style={{ 
+                            accentColor: theme.colors.accent,
+                            borderColor: theme.border.default
+                          }}
                         />
-                        <label htmlFor="editPrescription" className="text-sm font-medium text-gray-700">
+                        <label htmlFor="editPrescription" className="text-sm font-medium" style={{ color: theme.text.secondary }}>
                           Prescription Required
                         </label>
                       </div>
@@ -3933,9 +3961,13 @@ function Warehouse() {
                           id="editBulk"
                           checked={editProductFormData.bulk === 1}
                           onChange={(e) => handleEditProductInputChange("bulk", e.target.checked ? 1 : 0)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 rounded focus:ring-2"
+                          style={{ 
+                            accentColor: theme.colors.accent,
+                            borderColor: theme.border.default
+                          }}
                         />
-                        <label htmlFor="editBulk" className="text-sm font-medium text-gray-700">
+                        <label htmlFor="editBulk" className="text-sm font-medium" style={{ color: theme.text.secondary }}>
                           Bulk Product
                         </label>
                       </div>
@@ -3947,14 +3979,27 @@ function Warehouse() {
                   <button
                     type="button"
                     onClick={closeEditProductModal}
-                    className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                    className="px-4 py-2 border rounded-md transition-colors"
+                    style={{ 
+                      borderColor: theme.border.default,
+                      backgroundColor: theme.bg.secondary,
+                      color: theme.text.primary
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.secondary}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50"
+                    className="px-4 py-2 rounded-md transition-colors disabled:opacity-50"
+                    style={{ 
+                      backgroundColor: theme.colors.accent,
+                      color: theme.text.primary
+                    }}
+                    onMouseEnter={(e) => !loading && (e.target.style.backgroundColor = theme.colors.accent + 'dd')}
+                    onMouseLeave={(e) => !loading && (e.target.style.backgroundColor = theme.colors.accent)}
                   >
                     {loading ? "Updating..." : "Update Product"}
                   </button>
@@ -4114,7 +4159,7 @@ function Warehouse() {
                     readOnly
                     className="w-full px-3 py-2 border rounded-md text-sm"
                     placeholder="SRP"
-                    value={`₱${Number.parseFloat(existingProduct.srp || existingProduct.unit_price || 0).toFixed(2)}`}
+                    value={`₱${Number.parseFloat(existingProduct.srp || 0).toFixed(2)}`}
                     style={{ 
                       borderColor: theme.border.default,
                       backgroundColor: theme.bg.hover,
@@ -5484,7 +5529,7 @@ function Warehouse() {
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.success + '20', borderColor: theme.colors.success + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.success }}>Stock Status</h4>
                       <p className="text-sm" style={{ color: theme.text.secondary }}>Status: {getStockStatus(selectedProductForFifo.quantity)}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>SRP: ₱{Number.parseFloat(selectedProductForFifo.srp || selectedProductForFifo.unit_price || 0).toFixed(2)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>SRP: ₱{Number.parseFloat(selectedProductForFifo.srp || 0).toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.warning + '20', borderColor: theme.colors.warning + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.warning }}>FIFO Summary</h4>
@@ -6683,5 +6728,4 @@ function Warehouse() {
        
    )
 }
-
 export default Warehouse;

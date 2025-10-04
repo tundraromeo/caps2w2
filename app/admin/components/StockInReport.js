@@ -199,7 +199,18 @@ function StockInReport() {
       case 'product_name':
         return row.product_name || 'N/A';
       case 'reason':
-        return row.notes || 'N/A';
+        // Map notes field to reason with appropriate values for stock-in
+        const notes = row['notes'] || '';
+        if (notes.includes('Stock added') || notes.includes('delivery') || notes.includes('received')) {
+          return '📦 Stock Received';
+        } else if (notes.includes('Transfer') || notes.includes('transfer')) {
+          return '🚚 Stock Transfer';
+        } else if (notes.includes('Adjustment') || notes.includes('adjustment')) {
+          return '🔧 Manual Adjustment';
+        } else if (notes) {
+          return notes;
+        }
+        return '📝 System Addition';
       case 'adjusted_by':
         // Get all available employee information from API response
         const adjustedBy = row['adjusted_by'] || ''; // Complete employee name from API
@@ -229,6 +240,26 @@ function StockInReport() {
         
         // Determine the best employee information to display
         const getUserDisplay = () => {
+          const notes = row['notes'] || '';
+          const isStockIn = row['movement_type'] === 'IN' || row['adjustment_type'] === 'Addition';
+          
+          // For stock-in transactions, prioritize inventory/admin users
+          if (isStockIn) {
+            // 1. Priority for stock-in: Look for inventory/admin users first
+            if (loggedInUser && loggedInUser.trim() !== '' && (loginRole?.toLowerCase().includes('inventory') || loginRole?.toLowerCase().includes('admin') || loginRole?.toLowerCase().includes('manager'))) {
+              const role = getRoleDisplay(loginRole || displayRole || userRole);
+              const shiftInfo = getShiftDisplay();
+              return `👤 ${role}${role ? ' ' : ''}${loggedInUser.trim()}${shiftInfo}`;
+            }
+            
+            // 2. Priority for stock-in: Use adjusted_by if it's inventory/admin
+            if (adjustedBy && adjustedBy.trim() !== '' && (displayRole?.toLowerCase().includes('inventory') || displayRole?.toLowerCase().includes('admin') || userRole?.toLowerCase().includes('inventory') || userRole?.toLowerCase().includes('admin'))) {
+              const role = getRoleDisplay(displayRole || loginRole || userRole);
+              const shiftInfo = getShiftDisplay();
+              return `👤 ${role}${role ? ' ' : ''}${adjustedBy.trim()}${shiftInfo}`;
+            }
+          }
+          
           // 1. Priority: Use adjusted_by field (complete employee name from API)
           if (adjustedBy && adjustedBy.trim() !== '') {
             const role = getRoleDisplay(displayRole || loginRole || userRole);

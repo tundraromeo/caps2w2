@@ -39,6 +39,7 @@ function getStockStatusSQL($quantityField, $lowStockThreshold = 10) {
     END";
 }
 
+
 // Database connection using PDO
 $servername = "localhost";
 $username = "root";
@@ -58,6 +59,40 @@ try {
 
 // Clear any output that might have been generated
 ob_clean();
+
+// Helper function to get employee details for stock movement logging
+function getEmployeeDetails($conn, $employee_id_or_username) {
+    try {
+        $empStmt = $conn->prepare("SELECT emp_id, username, CONCAT(Fname, ' ', Lname) as full_name, role_id FROM tbl_employee WHERE emp_id = ? OR username = ? LIMIT 1");
+        $empStmt->execute([$employee_id_or_username, $employee_id_or_username]);
+        $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Map role_id to role name
+        $roleMapping = [
+            1 => 'Cashier',
+            2 => 'Inventory Manager', 
+            3 => 'Supervisor',
+            4 => 'Admin',
+            5 => 'Manager'
+        ];
+        $empRole = $roleMapping[$empData['role_id'] ?? 4] ?? 'Admin';
+        $empName = $empData['full_name'] ?? $employee_id_or_username;
+        
+        return [
+            'emp_id' => $empData['emp_id'] ?? $employee_id_or_username,
+            'emp_name' => $empName,
+            'emp_role' => $empRole,
+            'formatted_name' => "{$empName} ({$empRole})"
+        ];
+    } catch (Exception $e) {
+        return [
+            'emp_id' => $employee_id_or_username,
+            'emp_name' => $employee_id_or_username,
+            'emp_role' => 'Admin',
+            'formatted_name' => "{$employee_id_or_username} (Admin)"
+        ];
+    }
+}
 
 // Read and decode incoming JSON request
 $rawData = file_get_contents("php://input");
@@ -1730,7 +1765,7 @@ try {
                     $movementStmt = $conn->prepare("
                         INSERT INTO tbl_stock_movements (
                             product_id, batch_id, movement_type, quantity, remaining_quantity,
-                            unit_cost, expiration_date, reference_no, created_by
+                            srp, expiration_date, reference_no, created_by
                         ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?)
                     ");
                     $movementStmt->execute([
@@ -1738,21 +1773,20 @@ try {
                         $unit_price, $expiration, $reference, $entry_by
                     ]);
                     
-                    // Create stock summary record with the new unit_cost and srp
+                    // Create stock summary record with the new srp
                     $summaryStmt = $conn->prepare("
                         INSERT INTO tbl_stock_summary (
-                            product_id, batch_id, available_quantity, unit_cost, srp,
+                            product_id, batch_id, available_quantity, srp,
                             expiration_date, batch_reference, total_quantity
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         ON DUPLICATE KEY UPDATE
                             available_quantity = available_quantity + VALUES(available_quantity),
                             total_quantity = total_quantity + VALUES(total_quantity),
-                            unit_cost = VALUES(unit_cost),
                             srp = VALUES(srp),
                             last_updated = CURRENT_TIMESTAMP
                     ");
                     $summaryStmt->execute([
-                        $product_id, $batch_id, $quantity, $unit_price, $srp,
+                        $product_id, $batch_id, $quantity, $srp,
                         $expiration, $reference, $quantity
                     ]);
                     
@@ -1760,12 +1794,12 @@ try {
                     try {
                         $fifoStmt = $conn->prepare("
                             INSERT INTO tbl_fifo_stock (
-                                product_id, batch_id, available_quantity, unit_cost, srp, expiration_date, batch_reference, entry_date, entry_by
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)
+                                product_id, batch_id, available_quantity, srp, expiration_date, batch_reference, entry_date, entry_by
+                            ) VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?)
                         ");
                         
                         $fifoStmt->execute([
-                            $product_id, $batch_id, $quantity, $unit_price, $srp, $expiration, $reference, $entry_by
+                            $product_id, $batch_id, $quantity, $srp, $expiration, $reference, $entry_by
                         ]);
                         
                         $fifo_created = true;
@@ -1931,7 +1965,7 @@ case 'get_fifo_stock_status':
                 fs.batch_reference,
                 fs.quantity,
                 fs.available_quantity,
-                fs.unit_cost,
+                fs.srp,
                 fs.expiration_date,
                 fs.entry_date,
                 p.product_name,
@@ -1980,7 +2014,7 @@ case 'get_fifo_stock_status':
                 'entry_date' => $entry['entry_date'],
                 'fifo_rank' => $fifo_rank,
                 'batch_id' => $entry['batch_id'],
-                'unit_cost' => $entry['unit_cost'],
+                'srp' => $entry['srp'],
                 'expiration_date' => $entry['expiration_date']
             ];
             
@@ -2017,7 +2051,7 @@ case 'check_fifo_availability':
                 fs.batch_reference,
                 fs.quantity,
                 fs.available_quantity,
-                fs.unit_cost,
+                fs.srp,
                 fs.expiration_date,
                 fs.entry_date,
                 p.product_name,
@@ -2060,7 +2094,7 @@ case 'check_fifo_availability':
                 'entry_date' => $entry['entry_date'],
                 'fifo_rank' => $fifo_rank,
                 'batch_id' => $entry['batch_id'],
-                'unit_cost' => $entry['unit_cost'],
+                'srp' => $entry['srp'],
                 'expiration_date' => $entry['expiration_date']
             ];
             
@@ -2113,7 +2147,7 @@ case 'get_products_oldest_batch_for_transfer':
                 l.location_name,
                 p.quantity as total_quantity,
                 p.quantity as oldest_batch_quantity,
-                p.unit_price as unit_cost,
+                p.srp as srp,
                 'N/A' as batch_reference,
                 'N/A' as entry_date,
                 'N/A' as expiration_date,
@@ -2166,22 +2200,23 @@ case 'get_products_oldest_batch_for_transfer':
                     p.description,
                     COALESCE(b.brand, '') as brand,
                     COALESCE(s.supplier_name, '') as supplier_name,
-                    COALESCE(oldest_batch.unit_cost, p.unit_price) as unit_price,
-                    COALESCE(oldest_batch.unit_cost, p.srp, p.unit_price) as srp,
+                    COALESCE(oldest_available_batch.srp, p.srp) as unit_price,
+                    COALESCE(oldest_available_batch.srp, p.srp) as srp,
+                    COALESCE(oldest_available_batch.srp, p.srp) as first_batch_srp,
                     p.location_id,
                     l.location_name,
                     p.stock_status,
                     p.date_added,
                     p.status,
-                    -- Oldest batch information
-                    oldest_batch.batch_id,
-                    oldest_batch.batch_reference,
-                    oldest_batch.entry_date,
-                    oldest_batch.expiration_date,
-                    oldest_batch.quantity as oldest_batch_quantity,
-                    oldest_batch.unit_cost,
-                    oldest_batch.entry_time,
-                    oldest_batch.entry_by,
+                    -- Oldest available batch information
+                    oldest_available_batch.batch_id as oldest_batch_id,
+                    oldest_available_batch.batch_reference as oldest_batch_reference,
+                    oldest_available_batch.entry_date as oldest_batch_entry_date,
+                    oldest_available_batch.expiration_date as oldest_batch_expiration,
+                    oldest_available_batch.quantity as oldest_batch_quantity,
+                    oldest_available_batch.srp as oldest_batch_srp,
+                    oldest_available_batch.entry_time,
+                    oldest_available_batch.entry_by,
                     -- Total quantity across all batches
                     total_qty.total_quantity,
                     -- Count of total batches
@@ -2192,26 +2227,25 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
-                -- Get oldest batch for each product
+                -- Get oldest AVAILABLE batch for each product (from tbl_fifo_stock)
                 LEFT JOIN (
                     SELECT 
-                        ss.product_id,
-                        ss.batch_id,
-                        bt.batch as batch_reference,
-                        bt.entry_date,
-                        bt.entry_time,
-                        bt.entry_by,
-                        ss.expiration_date,
-                        ss.available_quantity as quantity,
-                        ss.unit_cost,
+                        fs.product_id,
+                        fs.batch_id,
+                        fs.batch_reference,
+                        fs.entry_date,
+                        fs.entry_date as entry_time,
+                        fs.entry_by,
+                        fs.expiration_date,
+                        fs.available_quantity as quantity,
+                        fs.srp,
                         ROW_NUMBER() OVER (
-                            PARTITION BY ss.product_id 
-                            ORDER BY bt.entry_date ASC, bt.batch_id ASC
+                            PARTITION BY fs.product_id 
+                            ORDER BY fs.entry_date ASC, fs.batch_id ASC
                         ) as batch_rank
-                    FROM tbl_stock_summary ss
-                    INNER JOIN tbl_batch bt ON ss.batch_id = bt.batch_id
-                    WHERE ss.available_quantity > 0
-                ) oldest_batch ON p.product_id = oldest_batch.product_id AND oldest_batch.batch_rank = 1
+                    FROM tbl_fifo_stock fs
+                    WHERE fs.available_quantity > 0  -- Only get batches with available stock
+                ) oldest_available_batch ON p.product_id = oldest_available_batch.product_id AND oldest_available_batch.batch_rank = 1
                 -- Get total quantities
                 LEFT JOIN (
                     SELECT 
@@ -3049,7 +3083,7 @@ case 'get_products_oldest_batch_for_transfer':
                             fs.batch_id,
                             fs.batch_reference,
                             fs.available_quantity,
-                            fs.unit_cost
+                            fs.srp
                         FROM tbl_fifo_stock fs
                         JOIN tbl_batch b ON fs.batch_id = b.batch_id
                         JOIN tbl_product p ON fs.product_id = p.product_id
@@ -3128,7 +3162,7 @@ case 'get_products_oldest_batch_for_transfer':
                         $consumed_batches[] = [
                             'batch_reference' => $batch['batch_reference'],
                             'quantity' => $batch_quantity,
-                            'unit_cost' => $batch['unit_cost']
+                            'srp' => $batch['srp']
                         ];
                         
                         $remaining_transfer_qty -= $batch_quantity;
@@ -4086,12 +4120,11 @@ case 'get_products_oldest_batch_for_transfer':
             $new_quantity = $data['new_quantity'] ?? 0;
             $batch_reference = $data['batch_reference'] ?? '';
             $expiration_date = $data['expiration_date'] ?? null;
-            $unit_cost = $data['unit_cost'] ?? 0;
             $new_srp = $data['new_srp'] ?? null;
             $entry_by = $data['entry_by'] ?? 'admin';
             
-            // Use unit_cost as srp if new_srp is not provided
-            $srp = $new_srp ?? $unit_cost;
+            // Use new_srp if provided, otherwise use 0
+            $srp = $new_srp ?? 0;
             
             if ($product_id <= 0 || $new_quantity <= 0) {
                 echo json_encode([
@@ -4155,12 +4188,12 @@ case 'get_products_oldest_batch_for_transfer':
                 $fifoStmt = $conn->prepare("
                     INSERT INTO tbl_fifo_stock (
                         product_id, batch_id, batch_reference, quantity, available_quantity,
-                        unit_cost, srp, expiration_date, entry_date, entry_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)
+                        srp, expiration_date, entry_date, entry_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)
                 ");
                 $fifoStmt->execute([
                     $product_id, $batch_id, $batch_reference, $new_quantity, $new_quantity,
-                    $unit_cost, $srp, $expiration_date, $entry_by
+                    $srp, $expiration_date, $entry_by
                 ]);
             }
             
@@ -4168,14 +4201,15 @@ case 'get_products_oldest_batch_for_transfer':
             $movementStmt = $conn->prepare("
                 INSERT INTO tbl_stock_movements (
                     product_id, batch_id, movement_type, quantity, remaining_quantity,
-                    expiration_date, reference_no, notes, created_by
-                ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?)
+                        srp, expiration_date, reference_no, notes, created_by
+                ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?, ?)
             ");
             $movementStmt->execute([
                 $product_id,
                 $batch_id ?: $productDetails['batch_id'],
                 $quantity_change,
                 $old_quantity + $new_quantity,
+                $srp,
                 $expiration_date,
                 $batch_reference,
                 "Stock added: +{$quantity_change} units. Old: {$old_quantity}, New: " . ($old_quantity + $new_quantity),
@@ -4283,8 +4317,8 @@ case 'get_products_oldest_batch_for_transfer':
                 $movementStmt = $conn->prepare("
                     INSERT INTO tbl_stock_movements (
                         product_id, batch_id, movement_type, quantity, remaining_quantity,
-                        unit_cost, reference_no, notes, created_by
-                    ) VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?)
+                        srp, reference_no, notes, created_by
+                    ) VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $movementStmt->execute([
                     $product_id,
@@ -4388,7 +4422,7 @@ case 'get_products_oldest_batch_for_transfer':
             $movementStmt = $conn->prepare("
                 INSERT INTO tbl_stock_movements (
                     product_id, batch_id, movement_type, quantity, remaining_quantity,
-                    unit_cost, expiration_date, reference_no, notes, created_by
+                        srp, expiration_date, reference_no, notes, created_by
                 ) VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
             ");
             $movementStmt->execute([
@@ -4593,7 +4627,7 @@ case 'get_products_oldest_batch_for_transfer':
                     sm.movement_type,
                     sm.quantity as quantity_change,
                     sm.remaining_quantity,
-                    sm.unit_cost,
+                    sm.srp,
                     sm.movement_date,
                     sm.reference_no,
                     sm.notes,
@@ -4741,7 +4775,7 @@ case 'get_products_oldest_batch_for_transfer':
                     fs.batch_id as batch_number,
                     fs.batch_reference,
                     fs.available_quantity,
-                    fs.unit_cost,
+                    fs.srp,
                     fs.srp as fifo_srp,
                     COALESCE(fs.srp, p.srp, p.unit_price) AS srp,
                     fs.expiration_date,
@@ -4802,7 +4836,7 @@ case 'get_products_oldest_batch_for_transfer':
                     fs.batch_id,
                     fs.batch_reference,
                     fs.available_quantity,
-                    fs.unit_cost
+                    fs.srp
                 FROM tbl_fifo_stock fs
                 JOIN tbl_batch b ON fs.batch_id = b.batch_id
                 WHERE fs.product_id = ? AND fs.available_quantity > 0
@@ -4848,7 +4882,7 @@ case 'get_products_oldest_batch_for_transfer':
                 $consumed_batches[] = [
                     'batch_reference' => $batch['batch_reference'],
                     'quantity' => $batch_quantity,
-                    'unit_cost' => $batch['unit_cost']
+                    'srp' => $batch['srp']
                 ];
                 
                 $remaining_quantity -= $batch_quantity;
@@ -4909,7 +4943,7 @@ case 'get_products_oldest_batch_for_transfer':
                     fs.batch_id,
                     fs.batch_reference,
                     fs.available_quantity,
-                    fs.unit_cost
+                    fs.srp
                 FROM tbl_fifo_stock fs
                 JOIN tbl_batch b ON fs.batch_id = b.batch_id
                 WHERE fs.product_id = ? AND fs.available_quantity > 0
@@ -4960,7 +4994,7 @@ case 'get_products_oldest_batch_for_transfer':
                 $consumed_batches[] = [
                     'batch_reference' => $batch['batch_reference'],
                     'quantity' => $batch_quantity,
-                    'unit_cost' => $batch['unit_cost']
+                    'srp' => $batch['srp']
                 ];
                 
                 $remaining_quantity -= $batch_quantity;
@@ -6353,7 +6387,7 @@ case 'get_products_oldest_batch_for_transfer':
                     sm.notes,
                     sm.created_by,
                     l.location_name,
-                    (sm.quantity * sm.unit_cost) as total_cost
+                    (sm.quantity * sm.srp) as total_cost
                 FROM tbl_stock_movements sm
                 JOIN tbl_product p ON sm.product_id = p.product_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -6462,7 +6496,7 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 // Get quantity from FIFO stock if available
                 $fifoStmt = $conn->prepare("
-                    SELECT quantity, available_quantity, unit_cost, srp, expiration_date
+                    SELECT quantity, available_quantity, srp, expiration_date
                     FROM tbl_fifo_stock 
                     WHERE product_id = ? AND batch_id = ?
                 ");
@@ -6471,7 +6505,7 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 // Use FIFO data if available, otherwise use defaults
                 $quantity = $fifoStock ? $fifoStock['available_quantity'] : 100; // Default quantity
-                $unit_cost = $fifoStock ? $fifoStock['unit_cost'] : $productDetails['unit_price'];
+                $srp_value = $fifoStock ? $fifoStock['srp'] : $productDetails['srp'];
                 $srp = $fifoStock ? $fifoStock['srp'] : $productDetails['srp'];
                 $expiration = $fifoStock ? $fifoStock['expiration_date'] : $batchDetails['entry_date'];
                 
@@ -6495,7 +6529,7 @@ case 'get_products_oldest_batch_for_transfer':
                     $productDetails['bulk'],
                     $expiration,
                     $quantity,
-                    $unit_cost,
+                    $srp_value,
                     $srp,
                     $brand_id, // Use validated brand_id
                     $batchDetails['supplier_id'] ?: $supplier_id, // Use validated supplier_id
@@ -6660,229 +6694,8 @@ case 'get_products_oldest_batch_for_transfer':
             echo json_encode([ 'success' => false, 'message' => 'Database error: ' . $e->getMessage(), 'data' => [] ]);
         }
         break;
-    case 'save_pos_sale':
-            try {
-                // Expected payload: transactionId (client ref), totalAmount, referenceNumber, terminalName, paymentMethod, location_name, items:[{product_id, quantity, price}]
-                $clientTxnId = $data['transactionId'] ?? '';
-                $totalAmount = isset($data['totalAmount']) ? (float)$data['totalAmount'] : 0.0;
-                $referenceNumber = $data['referenceNumber'] ?? '';
-                $terminalName = trim($data['terminalName'] ?? 'Convenience POS');
-                $paymentMethodRaw = (string)($data['paymentMethod'] ?? 'cash');
-                $locationName = $data['location_name'] ?? 'Unknown Location';
-                $items = $data['items'] ?? [];
 
-                if ($totalAmount <= 0 || !is_array($items) || count($items) === 0) {
-                    echo json_encode([ 'success' => false, 'message' => 'Invalid sale payload' ]);
-                    break;
-                }
-
-                $conn->beginTransaction();
-
-                // Ensure terminal exists or create it
-                $stmt = $conn->prepare("SELECT terminal_id FROM tbl_pos_terminal WHERE terminal_name = :name LIMIT 1");
-                $stmt->execute([ ':name' => $terminalName ]);
-                $terminalId = $stmt->fetchColumn();
-                if (!$terminalId) {
-                    // Default shift_id to 1 if unknown
-                    $ins = $conn->prepare("INSERT INTO tbl_pos_terminal (terminal_name, shift_id) VALUES (:name, 1)");
-                    $ins->execute([ ':name' => $terminalName ]);
-                    $terminalId = (int)$conn->lastInsertId();
-                }
-
-                // Determine employee: prefer explicit payload, then session
-                $empId = isset($data['emp_id']) ? (int)$data['emp_id'] : 0;
-                if ($empId <= 0) {
-                    if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
-                    if (!empty($_SESSION['user_id'])) { $empId = (int)$_SESSION['user_id']; }
-                }
-                if ($empId <= 0) { $empId = 1; }
-
-                // Normalize payment method to enum values ('cash','card','Gcash')
-                $pt = strtolower(trim($paymentMethodRaw));
-                if ($pt === 'gcash' || $pt === 'g-cash' || $pt === 'g cash') { $paymentEnum = 'Gcash'; }
-                elseif ($pt === 'card') { $paymentEnum = 'card'; }
-                else { $paymentEnum = 'cash'; }
-
-                // Create transaction row using AUTO_INCREMENT id
-                $txnStmt = $conn->prepare("INSERT INTO tbl_pos_transaction (date, time, emp_id, payment_type) VALUES (CURDATE(), CURTIME(), :emp, :ptype)");
-                $txnStmt->execute([
-                    ':emp' => $empId,
-                    ':ptype' => $paymentEnum
-                ]);
-                $transactionId = (int)$conn->lastInsertId();
-
-                // Ensure reference number is never NULL (use client txn id as fallback for cash)
-                $headerRef = ($referenceNumber !== null && $referenceNumber !== '') ? $referenceNumber : (string)$clientTxnId;
-
-                // Insert sales header
-                $hdr = $conn->prepare("INSERT INTO tbl_pos_sales_header (transaction_id, total_amount, reference_number, terminal_id) VALUES (:txn, :total, :ref, :terminal)");
-                $hdr->execute([
-                    ':txn' => $transactionId,
-                    ':total' => $totalAmount,
-                    ':ref' => $headerRef,
-                    ':terminal' => $terminalId,
-                ]);
-                $salesHeaderId = (int)$conn->lastInsertId();
-
-                // Insert details
-                $dtl = $conn->prepare("INSERT INTO tbl_pos_sales_details (sales_header_id, product_id, quantity, price) VALUES (:hdr, :pid, :qty, :price)");
-                foreach ($items as $it) {
-                    $pid = isset($it['product_id']) ? (int)$it['product_id'] : (isset($it['id']) ? (int)$it['id'] : 0);
-                    $qty = (int)($it['quantity'] ?? 0);
-                    $price = (float)($it['price'] ?? 0);
-                    if ($pid > 0 && $qty > 0) {
-                        $dtl->execute([
-                            ':hdr' => $salesHeaderId,
-                            ':pid' => $pid,
-                            ':qty' => $qty,
-                            ':price' => $price,
-                        ]);
-                    }
-                }
-
-                // Log activity to system activity logs
-                try {
-                    // Get employee details for logging
-                    $empStmt = $conn->prepare("SELECT username, full_name, role FROM tbl_employee WHERE emp_id = ?");
-                    $empStmt->execute([$empId]);
-                    $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    // Insert activity log
-                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
-                    $logStmt->execute([
-                        ':user_id' => $empId,
-                        ':username' => $empData['username'] ?? 'Unknown',
-                        ':role' => $empData['role'] ?? 'Cashier',
-                        ':activity_type' => 'POS_SALE_SAVED',
-                        ':activity_description' => "POS Sale completed: ₱{$totalAmount} ({$paymentEnum}, " . count($items) . " items) - Terminal: {$terminalName}",
-                        ':table_name' => 'tbl_pos_transaction',
-                        ':record_id' => $transactionId
-                    ]);
-                    
-                } catch (Exception $logError) {
-                    error_log("Activity logging error: " . $logError->getMessage());
-                }
-
-                // Log
-                error_log("POS Sale saved: TXN {$transactionId} (client={$clientTxnId}), Amount: {$totalAmount}, Location: {$locationName}, Payment: {$paymentEnum}, Items: " . count($items));
-
-                $conn->commit();
-                echo json_encode([
-                    'success' => true,
-                    'message' => 'Sale saved successfully',
-                    'data' => [
-                        'sales_header_id' => $salesHeaderId,
-                        'terminal_id' => $terminalId,
-                        'transaction_id' => $transactionId,
-                        'client_transaction_id' => $clientTxnId,
-                        'location' => $locationName,
-                        'payment_method' => $paymentEnum,
-                        'total_amount' => $totalAmount,
-                        'items_count' => count($items)
-                    ]
-                ]);
-            } catch (Exception $e) {
-                if ($conn->inTransaction()) { $conn->rollBack(); }
-                error_log("POS Sale save error: " . $e->getMessage());
-                echo json_encode([ 'success' => false, 'message' => 'Database error: ' . $e->getMessage() ]);
-            }
-            break;
-
-    case 'save_pos_transaction':
-        try {
-            $transactionId = $data['transactionId'] ?? null;
-            $paymentTypeRaw = trim((string)($data['paymentType'] ?? ''));
-            $paymentType = '';
-            $pt = strtolower($paymentTypeRaw);
-            if ($pt === 'cash') $paymentType = 'Cash';
-            elseif ($pt === 'gcash' || $pt === 'g-cash' || $pt === 'g cash') $paymentType = 'GCash';
-            else $paymentType = $paymentTypeRaw;
-
-            // Prefer session user_id; fall back to provided empId
-            if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
-            $empId = $_SESSION['user_id'] ?? ($data['empId'] ?? null);
-            $customerId = $data['customerId'] ?? null;
-
-            if (!$transactionId || !$paymentType) {
-                echo json_encode([ 'success' => false, 'message' => 'Invalid transaction payload' ]);
-                break;
-            }
-
-            $stmt = $conn->prepare("INSERT INTO tbl_pos_transaction (transaction_id, date, time, emp_id, customer_id, payment_type) VALUES (:txn, CURDATE(), CURTIME(), :emp, :cust, :ptype)");
-            $stmt->execute([
-                ':txn' => $transactionId,
-                ':emp' => $empId,
-                ':cust' => $customerId,
-                ':ptype' => $paymentType,
-            ]);
-
-            echo json_encode([ 'success' => true ]);
-        } catch (Exception $e) {
-            echo json_encode([ 'success' => false, 'message' => 'Database error: ' . $e->getMessage() ]);
-        }
-        break;
-
-    case 'get_pos_sales':
-        try {
-            $limit = isset($data['limit']) ? (int)$data['limit'] : 50;
-            $location = $data['location'] ?? null;
-            $date = $data['date'] ?? null;
-            
-            $whereClause = "WHERE 1=1";
-            $params = [];
-            
-            if ($location) {
-                $whereClause .= " AND th.transaction_id IN (SELECT transaction_id FROM tbl_pos_transaction WHERE payment_type LIKE :location)";
-                $params[':location'] = "%{$location}%";
-            }
-            
-            if ($date) {
-                $whereClause .= " AND DATE(t.date) = :date";
-                $params[':date'] = $date;
-            }
-            
-            $sql = "
-                SELECT 
-                    t.transaction_id,
-                    t.date,
-                    t.time,
-                    t.payment_type,
-                    t.emp_id,
-                    e.username AS cashier,
-                    e.shift_id,
-                    s.shifts AS shift_name,
-                    th.total_amount,
-                    th.reference_number,
-                    term.terminal_name,
-                    COUNT(td.product_id) as items_count,
-                    GROUP_CONCAT(CONCAT(p.product_name, ' x', td.quantity, ' @₱', td.price) SEPARATOR ', ') as items_summary
-                FROM tbl_pos_transaction t
-                JOIN tbl_pos_sales_header th ON t.transaction_id = th.transaction_id
-                JOIN tbl_pos_terminal term ON th.terminal_id = term.terminal_id
-                LEFT JOIN tbl_employee e ON t.emp_id = e.emp_id
-                LEFT JOIN tbl_shift s ON e.shift_id = s.shift_id
-                LEFT JOIN tbl_pos_sales_details td ON th.sales_header_id = td.sales_header_id
-                LEFT JOIN tbl_product p ON td.product_id = p.product_id
-                {$whereClause}
-                GROUP BY t.transaction_id, t.date, t.time, t.payment_type, t.emp_id, e.username, e.shift_id, s.shifts, th.total_amount, th.reference_number, term.terminal_name
-                ORDER BY t.date DESC, t.time DESC
-                LIMIT :limit
-            ";
-            
-            $stmt = $conn->prepare($sql);
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-            foreach ($params as $key => $value) {
-                $stmt->bindValue($key, $value);
-            }
-            $stmt->execute();
-            
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            echo json_encode([ 'success' => true, 'data' => $rows ]);
-            
-        } catch (Exception $e) {
-            echo json_encode([ 'success' => false, 'message' => 'Database error: ' . $e->getMessage() ]);
-        }
-        break;
+    // POS functions moved to sales_api.php
     
     case 'restoreSupplier':
             $data = json_decode(file_get_contents('php://input'), true);
@@ -7297,16 +7110,35 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
                 
-                // Get total count
+                // Get total count (using same logic as main query to prevent inconsistencies)
                 $countStmt = $conn->prepare("
-                    SELECT COUNT(*) as total
+                    SELECT COUNT(DISTINCT sm.movement_id) as total
                     FROM tbl_stock_movements sm
                     LEFT JOIN tbl_product p ON sm.product_id = p.product_id
                     LEFT JOIN tbl_employee e ON sm.created_by = e.emp_id
-                    LEFT JOIN tbl_login login_info ON (
+                    LEFT JOIN (
+                        SELECT DISTINCT
+                            l1.emp_id,
+                            l1.login_date,
+                            l1.login_time,
+                            l1.logout_time,
+                            l1.location,
+                            l1.shift_id,
+                            l1.terminal_id,
+                            l1.location_id,
+                            -- Prioritize POS terminal users for stock movements
+                            ROW_NUMBER() OVER (
+                                PARTITION BY DATE(l1.login_date), TIME(l1.login_time)
+                                ORDER BY 
+                                    CASE WHEN l1.location LIKE '%POS%' OR l1.location LIKE '%Cashier%' THEN 1 ELSE 2 END,
+                                    l1.login_time DESC
+                            ) as rn
+                        FROM tbl_login l1
+                    ) login_info ON (
                         DATE(login_info.login_date) = DATE(sm.movement_date)
                         AND login_info.login_time <= TIME(sm.movement_date)
                         AND (login_info.logout_time IS NULL OR login_info.logout_time >= TIME(sm.movement_date))
+                        AND login_info.rn = 1
                     )
                     LEFT JOIN tbl_employee login_emp ON login_info.emp_id = login_emp.emp_id
                     LEFT JOIN tbl_shift s ON login_info.shift_id = s.shift_id
@@ -7320,13 +7152,25 @@ case 'get_products_oldest_batch_for_transfer':
                         AND inv_mgr.status = 'Active'
                     )
                     $whereClause
+                    -- CRITICAL: Filter out admin/inventory entries for POS sales (same as main query)
+                    AND NOT (
+                        (sm.notes LIKE '%POS Sale%' OR sm.notes LIKE '%sold%') 
+                        AND (
+                            sm.created_by = 'admin' 
+                            OR sm.created_by = 'inventory' 
+                            OR LOWER(COALESCE(login_role.role, r.role)) LIKE '%admin%'
+                            OR LOWER(COALESCE(login_role.role, r.role)) LIKE '%inventory%'
+                            OR LOWER(COALESCE(login_role.role, r.role)) LIKE '%manager%'
+                        )
+                    )
                 ");
                 $countStmt->execute($params);
                 $totalCount = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
                 
                 // Get adjustments with pagination and login information
+                // Fixed query to prevent duplicates by filtering out admin/inventory entries for POS sales
                 $stmt = $conn->prepare("
-                    SELECT 
+                    SELECT DISTINCT
                         sm.movement_id as id,
                         p.product_name,
                         p.barcode as product_id,
@@ -7337,7 +7181,17 @@ case 'get_products_oldest_batch_for_transfer':
                         END as adjustment_type,
                         sm.quantity,
                         sm.notes as reason,
-                        CONCAT(e.fname, ' ', e.lname) as adjusted_by,
+                        -- For return approvals, use the employee who created the movement
+                        -- For other movements, use login information
+                        CASE 
+                            WHEN sm.notes LIKE '%Return approved%' OR sm.notes LIKE '%stock restored%' THEN
+                                CONCAT(e.fname, ' ', e.lname, ' (', r.role, ' @ ', loc.location_name, ')')
+                            ELSE
+                                COALESCE(
+                                    CONCAT(login_emp.Fname, ' ', login_emp.Lname, ' - ', s.shifts, ' (', COALESCE(pt.terminal_name, login_info.location), ' @ ', COALESCE(login_loc.location_name, loc.location_name), ')'),
+                                    CONCAT(e.fname, ' ', e.lname, ' (', r.role, ' @ ', loc.location_name, ')')
+                                )
+                        END as adjusted_by,
                         e.emp_id as employee_id,
                         e.username as employee_username,
                         DATE(sm.movement_date) as date,
@@ -7347,7 +7201,7 @@ case 'get_products_oldest_batch_for_transfer':
                         sm.expiration_date,
                         sm.reference_no,
                         sm.created_by,
-                        -- Get login information for the time of adjustment
+                        -- Get login information for the time of adjustment (prioritize POS terminal users)
                         login_emp.Fname as login_fname,
                         login_emp.Lname as login_lname,
                         login_emp.username as login_username,
@@ -7374,21 +7228,42 @@ case 'get_products_oldest_batch_for_transfer':
                     FROM tbl_stock_movements sm
                     LEFT JOIN tbl_product p ON sm.product_id = p.product_id
                     LEFT JOIN tbl_employee e ON sm.created_by = e.emp_id
-                    -- Join with login table to get who was logged in at the time
-                    LEFT JOIN tbl_login login_info ON (
-                        DATE(login_info.login_date) = DATE(sm.movement_date)
+                    LEFT JOIN tbl_role r ON e.role_id = r.role_id
+                    LEFT JOIN tbl_location loc ON e.location_id = loc.location_id
+                    -- Only join with login table for non-return movements to prevent duplicates
+                    LEFT JOIN (
+                        SELECT DISTINCT
+                            l1.emp_id,
+                            l1.login_date,
+                            l1.login_time,
+                            l1.logout_time,
+                            l1.location,
+                            l1.shift_id,
+                            l1.terminal_id,
+                            l1.location_id,
+                            -- Prioritize POS terminal users for stock movements
+                            ROW_NUMBER() OVER (
+                                PARTITION BY DATE(l1.login_date), TIME(l1.login_time)
+                                ORDER BY 
+                                    CASE WHEN l1.location LIKE '%POS%' OR l1.location LIKE '%Cashier%' THEN 1 ELSE 2 END,
+                                    l1.login_time DESC
+                            ) as rn
+                        FROM tbl_login l1
+                    ) login_info ON (
+                        -- Only join for non-return movements to prevent duplicates
+                        NOT (sm.notes LIKE '%Return approved%' OR sm.notes LIKE '%stock restored%')
+                        AND DATE(login_info.login_date) = DATE(sm.movement_date)
                         AND login_info.login_time <= TIME(sm.movement_date)
                         AND (login_info.logout_time IS NULL OR login_info.logout_time >= TIME(sm.movement_date))
+                        AND login_info.rn = 1
                     )
                     LEFT JOIN tbl_employee login_emp ON login_info.emp_id = login_emp.emp_id
                     -- Join with shift and terminal tables
                     LEFT JOIN tbl_shift s ON login_info.shift_id = s.shift_id
                     LEFT JOIN tbl_pos_terminal pt ON login_info.terminal_id = pt.terminal_id
                     -- Join with location table
-                    LEFT JOIN tbl_location loc ON login_emp.location_id = loc.location_id
                     LEFT JOIN tbl_location login_loc ON login_info.location_id = login_loc.location_id
                     -- Join with role tables to get role information
-                    LEFT JOIN tbl_role r ON e.role_id = r.role_id
                     LEFT JOIN tbl_role login_role ON login_emp.role_id = login_role.role_id
                     -- Join with inventory manager role
                     LEFT JOIN tbl_employee inv_mgr ON (
@@ -7396,6 +7271,17 @@ case 'get_products_oldest_batch_for_transfer':
                         AND inv_mgr.status = 'Active'
                     )
                     $whereClause
+                    -- CRITICAL: Filter out admin/inventory entries for POS sales
+                    AND NOT (
+                        (sm.notes LIKE '%POS Sale%' OR sm.notes LIKE '%sold%') 
+                        AND (
+                            sm.created_by = 'admin' 
+                            OR sm.created_by = 'inventory' 
+                            OR LOWER(COALESCE(login_role.role, r.role)) LIKE '%admin%'
+                            OR LOWER(COALESCE(login_role.role, r.role)) LIKE '%inventory%'
+                            OR LOWER(COALESCE(login_role.role, r.role)) LIKE '%manager%'
+                        )
+                    )
                     ORDER BY sm.movement_date DESC
                     LIMIT " . (int)$limit . " OFFSET " . (int)$offset
                 );
@@ -7428,7 +7314,7 @@ case 'get_products_oldest_batch_for_transfer':
             $quantity = $data['quantity'] ?? 0;
             $reason = $data['reason'] ?? '';
             $notes = $data['notes'] ?? '';
-            $unit_cost = $data['unit_cost'] ?? 0;
+            $srp = $data['srp'] ?? 0;
             $expiration_date = $data['expiration_date'] ?? null;
             $created_by = $data['created_by'] ?? 'admin';
                 
@@ -7442,6 +7328,9 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 // Start transaction
                 $conn->beginTransaction();
+                
+                // Get employee details for proper logging
+                $empDetails = getEmployeeDetails($conn, $created_by);
                 
                 // Get product details
                 $productStmt = $conn->prepare("
@@ -7498,7 +7387,7 @@ case 'get_products_oldest_batch_for_transfer':
                 ");
                 $movementStmt->execute([
                     $product_id, $batch_id, $movement_type, $quantity, $new_quantity,
-                    $expiration_date, $batch_reference, $notes, $created_by
+                    $expiration_date, $batch_reference, $notes, $empDetails['formatted_name']
                 ]);
                 
                 // Create stock summary record
@@ -7802,135 +7691,7 @@ case 'get_products_oldest_batch_for_transfer':
         }
         break;
 
-    // POS: save sale header + details and create transaction record
-    case 'save_pos_sale':
-            try {
-                $client_txn_id = $data['transactionId'] ?? '';
-                $total_amount = (float)($data['totalAmount'] ?? 0);
-                $reference_number = $data['referenceNumber'] ?? '';
-                $terminal_name = trim($data['terminalName'] ?? 'POS Terminal');
-                $items = $data['items'] ?? [];
-                $payment_method = strtolower(trim($data['paymentMethod'] ?? ($reference_number ? 'gcash' : 'cash')));
-
-                if (!is_array($items) || count($items) === 0) {
-                    echo json_encode(["success" => false, "message" => "No items to save."]); break;
-                }
-
-                // Start transaction
-                $conn->beginTransaction();
-
-                // Ensure terminal exists or create one
-                $termStmt = $conn->prepare("SELECT terminal_id FROM tbl_pos_terminal WHERE terminal_name = ? LIMIT 1");
-                $termStmt->execute([$terminal_name]);
-                $terminal = $termStmt->fetch(PDO::FETCH_ASSOC);
-                if ($terminal && isset($terminal['terminal_id'])) {
-                    $terminal_id = (int)$terminal['terminal_id'];
-                } else {
-                    // shift_id is required; default to 1
-                    $insTerm = $conn->prepare("INSERT INTO tbl_pos_terminal (terminal_name, shift_id) VALUES (?, 1)");
-                    $insTerm->execute([$terminal_name]);
-                    $terminal_id = (int)$conn->lastInsertId();
-                }
-
-                // Map to enum in schema: ('cash','card','Gcash')
-                $payment_enum = ($payment_method === 'gcash') ? 'Gcash' : (($payment_method === 'card') ? 'card' : 'cash');
-
-                // Create transaction row (schema: transaction_id, date, time, emp_id, payment_type)
-                $txnStmt = $conn->prepare("INSERT INTO tbl_pos_transaction (date, time, emp_id, payment_type) VALUES (CURDATE(), CURTIME(), 1, ?)");
-                $txnStmt->execute([$payment_enum]);
-                $transaction_id = (int)$conn->lastInsertId();
-
-                // If no reference number was provided (cash), store the client txn id so we can locate it later if needed
-                $header_reference = $reference_number !== null && $reference_number !== '' ? $reference_number : ($client_txn_id ?: '');
-
-                // Create sales header
-                $hdrStmt = $conn->prepare("INSERT INTO tbl_pos_sales_header (transaction_id, total_amount, reference_number, terminal_id) VALUES (?, ?, ?, ?)");
-                $hdrStmt->execute([$transaction_id, $total_amount, $header_reference, $terminal_id]);
-                $sales_header_id = (int)$conn->lastInsertId();
-
-                // Insert each item into details and decrement product stock
-                $dtlStmt = $conn->prepare("INSERT INTO tbl_pos_sales_details (sales_header_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
-                $updQtyStmt = $conn->prepare("UPDATE tbl_product SET quantity = GREATEST(0, quantity - ?) WHERE product_id = ?");
-
-                foreach ($items as $it) {
-                    $pid = (int)($it['product_id'] ?? $it['id'] ?? 0);
-                    $qty = (int)($it['quantity'] ?? 0);
-                    $price = (float)($it['price'] ?? 0);
-                    if ($pid <= 0 || $qty <= 0) { continue; }
-                    $dtlStmt->execute([$sales_header_id, $pid, $qty, $price]);
-                    $updQtyStmt->execute([$qty, $pid]);
-                }
-
-                // Log activity to system activity logs
-                try {
-                    // Get employee details for logging (using emp_id = 1 as default)
-                    $empStmt = $conn->prepare("SELECT username, full_name, role FROM tbl_employee WHERE emp_id = 1");
-                    $empStmt->execute();
-                    $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    // Insert activity log
-                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
-                    $logStmt->execute([
-                        ':user_id' => 1,
-                        ':username' => $empData['username'] ?? 'Unknown',
-                        ':employee_name' => $empData['full_name'] ?? $empData['username'] ?? 'Unknown Employee',
-                        ':role' => $empData['role'] ?? 'Cashier',
-                        ':activity_type' => 'POS_SALE_SAVED',
-                        ':activity_description' => "POS Sale completed: ₱{$total_amount} ({$payment_enum}, " . count($items) . " items) - Terminal: {$terminal_name}",
-                        ':module' => 'POS',
-                        ':action' => 'POS_SALE_SAVED',
-                        ':table_name' => 'tbl_pos_transaction',
-                        ':record_id' => $transaction_id,
-                        ':location' => $terminal_name,
-                        ':terminal_id' => $terminal_id
-                    ]);
-                    
-                } catch (Exception $logError) {
-                    error_log("Activity logging error: " . $logError->getMessage());
-                }
-
-                $conn->commit();
-                echo json_encode([
-                    "success" => true,
-                    "message" => "POS sale saved",
-                    "data" => [
-                        "transaction_id" => $transaction_id,
-                        "sales_header_id" => $sales_header_id,
-                        "terminal_id" => $terminal_id
-                    ]
-                ]);
-            } catch (Exception $e) {
-                if (isset($conn)) { $conn->rollback(); }
-                echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
-            }
-            break;
-
-    // POS: update transaction payment type (best-effort for existing header created above)
-    case 'save_pos_transaction':
-        try {
-            $client_txn_id = $data['transactionId'] ?? '';
-            $payment_type = strtolower(trim($data['paymentType'] ?? 'cash'));
-            $payment_enum = ($payment_type === 'gcash') ? 'Gcash' : (($payment_type === 'card') ? 'card' : 'cash');
-
-            // Try to locate the sales header by using the client transaction id stored in reference_number (for cash)
-            $findStmt = $conn->prepare("SELECT transaction_id FROM tbl_pos_sales_header WHERE reference_number = ? ORDER BY sales_header_id DESC LIMIT 1");
-            $findStmt->execute([$client_txn_id]);
-            $row = $findStmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($row && isset($row['transaction_id'])) {
-                $upd = $conn->prepare("UPDATE tbl_pos_transaction SET payment_type = ? WHERE transaction_id = ?");
-                $upd->execute([$payment_enum, (int)$row['transaction_id']]);
-                echo json_encode(["success" => true, "message" => "Payment type updated."]);
-            } else {
-                // Fallback: update the latest transaction today
-                $upd = $conn->prepare("UPDATE tbl_pos_transaction SET payment_type = ? WHERE date = CURDATE() ORDER BY transaction_id DESC LIMIT 1");
-                $upd->execute([$payment_enum]);
-                echo json_encode(["success" => true, "message" => "Payment type updated (latest transaction)." ]);
-            }
-        } catch (Exception $e) {
-            echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
-        }
-        break;
+    // POS functions moved to sales_api.php
 
     // Additional functions from mysqli backend files
     case 'test_action':
@@ -7956,6 +7717,7 @@ case 'get_products_oldest_batch_for_transfer':
             ]);
         }
         break;
+
 
     case 'check_fifo_stock':
             try {
@@ -8962,6 +8724,128 @@ case 'get_products_oldest_batch_for_transfer':
             echo json_encode([
                 'success' => false,
                 'message' => 'Error logging activity: ' . $e->getMessage()
+            ]);
+        }
+        break;
+
+    // Store Settings Management
+    case 'get_store_settings':
+        try {
+            // Check if store_settings table exists, if not create it
+            $checkTable = $conn->prepare("SHOW TABLES LIKE 'store_settings'");
+            $checkTable->execute();
+            
+            if ($checkTable->rowCount() == 0) {
+                // Create store_settings table
+                $createTable = $conn->prepare("
+                    CREATE TABLE store_settings (
+                        id INT PRIMARY KEY AUTO_INCREMENT,
+                        setting_key VARCHAR(100) UNIQUE NOT NULL,
+                        setting_value TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    )
+                ");
+                $createTable->execute();
+                
+                // Insert default settings
+                $defaultSettings = [
+                    'store_name' => 'Enguio Pharmacy',
+                    'store_address' => '',
+                    'store_phone' => '',
+                    'store_email' => '',
+                    'tax_rate' => '12',
+                    'currency' => 'PHP',
+                    'timezone' => 'Asia/Manila',
+                    'notifications' => json_encode([
+                        'low_stock' => true,
+                        'expiry_alerts' => true,
+                        'sales_reports' => true,
+                        'system_updates' => true
+                    ])
+                ];
+                
+                foreach ($defaultSettings as $key => $value) {
+                    $insertStmt = $conn->prepare("INSERT INTO store_settings (setting_key, setting_value) VALUES (?, ?)");
+                    $insertStmt->execute([$key, $value]);
+                }
+            }
+            
+            // Get all settings
+            $stmt = $conn->prepare("SELECT setting_key, setting_value FROM store_settings");
+            $stmt->execute();
+            $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+            
+            // Parse JSON settings
+            $parsedSettings = [];
+            foreach ($settings as $key => $value) {
+                if (in_array($key, ['notifications'])) {
+                    $parsedSettings[$key] = json_decode($value, true);
+                } else {
+                    $parsedSettings[$key] = $value;
+                }
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'settings' => $parsedSettings
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error fetching store settings: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'update_store_settings':
+        try {
+            // Check if store_settings table exists
+            $checkTable = $conn->prepare("SHOW TABLES LIKE 'store_settings'");
+            $checkTable->execute();
+            
+            if ($checkTable->rowCount() == 0) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Store settings table does not exist'
+                ]);
+                break;
+            }
+            
+            // Update settings
+            $settingsToUpdate = [
+                'store_name', 'store_address', 'store_phone', 'store_email', 
+                'tax_rate', 'currency', 'timezone', 'notifications'
+            ];
+            
+            foreach ($settingsToUpdate as $setting) {
+                if (isset($data[$setting])) {
+                    $value = $data[$setting];
+                    
+                    // Convert arrays to JSON
+                    if (is_array($value)) {
+                        $value = json_encode($value);
+                    }
+                    
+                    $stmt = $conn->prepare("
+                        INSERT INTO store_settings (setting_key, setting_value) 
+                        VALUES (?, ?) 
+                        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+                    ");
+                    $stmt->execute([$setting, $value]);
+                }
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Store settings updated successfully'
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error updating store settings: ' . $e->getMessage()
             ]);
         }
         break;

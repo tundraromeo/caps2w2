@@ -123,13 +123,22 @@ try {
                     MAX(p.status) as status,
                     s.supplier_name,
                     MAX(p.expiration) as expiration,
-                    l.location_name
+                    l.location_name,
+                    COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), AVG(p.srp)) as first_batch_srp
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN (
+                    SELECT 
+                        tbd.product_id,
+                        tbd.srp as first_batch_srp,
+                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.created_at ASC, tbd.id ASC) as rn
+                    FROM tbl_transfer_batch_details tbd
+                    WHERE tbd.srp > 0
+                ) first_transfer_batch ON p.product_id = first_transfer_batch.product_id AND first_transfer_batch.rn = 1
                 WHERE $where
-                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name
+                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name, first_transfer_batch.first_batch_srp
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -179,13 +188,22 @@ try {
                     MAX(p.status) as status,
                     s.supplier_name,
                     MAX(p.expiration) as expiration,
-                    l.location_name
+                    l.location_name,
+                    COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), AVG(p.srp)) as first_batch_srp
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN (
+                    SELECT 
+                        tbd.product_id,
+                        tbd.srp as first_batch_srp,
+                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.created_at ASC, tbd.id ASC) as rn
+                    FROM tbl_transfer_batch_details tbd
+                    WHERE tbd.srp > 0
+                ) first_transfer_batch ON p.product_id = first_transfer_batch.product_id AND first_transfer_batch.rn = 1
                 WHERE $where
-                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name
+                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name, first_transfer_batch.first_batch_srp
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -244,7 +262,7 @@ try {
                     btd.batch_id,
                     btd.batch_reference,
                     btd.quantity_used as batch_quantity,
-                    btd.unit_cost,
+                    btd.srp,
                     btd.srp as batch_srp,
                     btd.expiration_date,
                     btd.status,
@@ -273,7 +291,7 @@ try {
                         fs.batch_id,
                         fs.batch_reference,
                         fs.available_quantity as batch_quantity,
-                        fs.unit_cost,
+                        fs.srp,
                         fs.srp as batch_srp,
                         fs.expiration_date,
                         'Available' as status,
@@ -302,7 +320,7 @@ try {
                         fs.batch_id,
                         CONCAT('BR-', fs.batch_id) as batch_reference,
                         td.qty as batch_quantity,
-                        fs.unit_cost,
+                        fs.srp,
                         p.unit_price as batch_srp,
                         fs.expiration_date,
                         'Available' as status,
@@ -333,7 +351,7 @@ try {
                 'total_transfers' => count($batchDetails),
                 'total_quantity' => array_sum(array_column($batchDetails, 'batch_quantity')),
                 'total_value' => array_sum(array_map(function($batch) {
-                    return $batch['batch_quantity'] * ($batch['unit_cost'] ?? 0);
+                    return $batch['batch_quantity'] * ($batch['srp'] ?? 0);
                 }, $batchDetails))
             ];
             
@@ -363,7 +381,7 @@ try {
                         tbd.quantity as batch_quantity,
                         tbd.srp as batch_srp,
                         tbd.expiration_date,
-                        fs.unit_cost,
+                        fs.srp,
                         fs.available_quantity
                     FROM tbl_transfer_batch_details tbd
                     LEFT JOIN tbl_fifo_stock fs ON tbd.batch_id = fs.batch_id

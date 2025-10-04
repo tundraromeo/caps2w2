@@ -131,7 +131,7 @@ function reduce_product_stock($conn, $data) {
         // Log stock movement
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
-            (product_id, batch_id, movement_type, quantity, remaining_quantity, unit_cost, 
+            (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
              expiration_date, reference_no, notes, created_by)
             VALUES (?, 0, 'OUT', ?, ?, 0.00, NULL, ?, ?, ?)
         ");
@@ -206,7 +206,7 @@ function update_product_stock($conn, $data) {
         $movement_type = $quantity_change > 0 ? 'IN' : 'OUT';
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
-            (product_id, batch_id, movement_type, quantity, remaining_quantity, unit_cost, 
+            (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
              expiration_date, reference_no, notes, created_by)
             VALUES (?, 0, ?, ?, ?, 0.00, ?, ?, ?, ?)
         ");
@@ -425,7 +425,7 @@ function get_quantity_history($conn, $data) {
                 sm.movement_type,
                 sm.quantity,
                 sm.remaining_quantity,
-                sm.unit_cost,
+                sm.srp,
                 sm.expiration_date,
                 sm.reference_no,
                 sm.notes,
@@ -506,7 +506,7 @@ function add_quantity_to_product($conn, $data) {
         // Log stock movement
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
-            (product_id, batch_id, movement_type, quantity, remaining_quantity, unit_cost, 
+            (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
              expiration_date, reference_no, notes, created_by)
             VALUES (?, 0, 'IN', ?, ?, ?, ?, ?, ?, ?)
         ");
@@ -514,7 +514,7 @@ function add_quantity_to_product($conn, $data) {
             $product_id,
             $quantity,
             $new_quantity,
-            $unit_cost,
+            $srp,
             $expiration,
             $batch_reference,
             "Quantity added: $old_quantity -> $new_quantity",
