@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "jest"
   },
   "dependencies": {
     "@heroui/aria-utils": "^2.2.23",
@@ -21,6 +22,7 @@
     "body-parser": "^2.2.0",
     "chart.js": "^4.5.0",
     "clsx": "^2.1.1",
+    "critters": "^0.0.25",
     "escpos": "^3.0.0-alpha.6",
     "escpos-network": "^3.0.0-alpha.5",
     "escpos-serialport": "^3.0.0-alpha.4",

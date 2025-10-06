@@ -47,8 +47,8 @@ const logoutUser = async () => {
     const userData = sessionStorage.getItem('user_data');
     const empId = userData ? JSON.parse(userData).user_id : null;
     
-    console.log('Logout attempt - User data:', userData);
-    console.log('Logout attempt - Emp ID:', empId);
+    
+    
     
     // Call logout API
     const response = await fetch(LOGIN_API_URL, {
@@ -61,7 +61,7 @@ const logoutUser = async () => {
     });
     
     const result = await response.json();
-    console.log('Logout API response:', result);
+    
     
     if (result.success) {
       // Clear all stored data
@@ -74,7 +74,7 @@ const logoutUser = async () => {
       window.location.href = '/';
       return true;
     } else {
-      console.error('Logout failed:', result.message);
+      
       // Still clear local data and redirect even if API fails
       sessionStorage.clear();
       localStorage.removeItem('pos-terminal');
@@ -84,7 +84,7 @@ const logoutUser = async () => {
       return false;
     }
   } catch (error) {
-    console.error('Logout error:', error);
+    
     // Clear local data and redirect even if there's an error
     sessionStorage.clear();
     localStorage.removeItem('pos-terminal');
@@ -106,7 +106,7 @@ async function getCurrentUser() {
     const result = await response.json();
     return result.success ? result.user : null;
   } catch (error) {
-    console.warn('Could not get current user:', error);
+    
     return null;
   }
 }
@@ -137,14 +137,14 @@ async function recordActivity({ activityType, description, tableName = null, rec
       try {
         const result = JSON.parse(responseText);
         if (!result.success) {
-          console.warn('Activity logging failed:', result.message);
+          
         }
       } catch (parseError) {
-        console.warn('Activity logging JSON parse error:', parseError);
+        
       }
     }
   } catch (error) {
-    console.warn('Activity logging error:', error);
+    
   }
 }
 
@@ -221,8 +221,8 @@ function AdminContent() {
   };
 
   // Debug: Log current active component
-  console.log('Current active component:', activeComponent);
-  console.log('Available components:', Object.keys(componentMap));
+  
+  
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -233,7 +233,7 @@ function AdminContent() {
       setShowLogoutConfirm(false);
       await logoutUser();
     } catch (error) {
-      console.error('Logout error:', error);
+
       setShowLogoutConfirm(false);
     }
   };

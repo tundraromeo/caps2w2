@@ -715,6 +715,7 @@ function Warehouse() {
 
   // Calculate notifications for expiring and low stock products
   async function calculateNotifications(productList) {
+  try {
     const today = new Date();
     console.log("🔔 Calculating notifications for", productList.length, "products");
     console.log("🔔 Expiry alerts enabled:", settings.expiryAlerts);
@@ -802,148 +803,144 @@ function Warehouse() {
         lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
         outOfStock
       });
-    }
+  } catch (error) {
+    safeToast("error", "Failed to calculate notifications");
+    console.error("Error in calculateNotifications:", error);
+    setNotifications({
+      expiring: [],
+      expired: [],
+      lowStock: [],
+      outOfStock: []
+    });
+  }
+}
   
     // FIXED Data Loading Functions
     function loadData(dataType) {
       switch (dataType) {
         case "suppliers":
-          handleApiCall("get_suppliers")
-            .then((response) => {
-              console.log("Suppliers response:", response.data)
-              let suppliersArray = []
-  
-              if (response.success && Array.isArray(response.data)) {
-                suppliersArray = response.data
-              } else if (Array.isArray(response.data)) {
-                suppliersArray = response.data
-              }
-  
-              setSuppliersData(suppliersArray)
-              updateStats("totalSuppliers", suppliersArray.length)
-              console.log("Suppliers loaded:", suppliersArray.length)
-            })
-            .catch((error) => {
-              console.error("Error loading suppliers:", error)
-              safeToast("error", "Failed to load suppliers")
-              setSuppliersData([])
-            })
-          break
+handleApiCall("get_suppliers")
+    .then((response) => {
+      let suppliersArray = [];
+      if (response.success && Array.isArray(response.data)) {
+        suppliersArray = response.data;
+      } else if (!response.success) {
+        safeToast("error", response.message || "Failed to load suppliers");
+        console.error("Error loading suppliers:", response.message || response.error);
+      }
+      setSuppliersData(suppliersArray);
+      updateStats("totalSuppliers", suppliersArray.length);
+      console.log("Suppliers loaded:", suppliersArray.length);
+    })
+    .catch((error) => {
+      console.error("Error loading suppliers:", error);
+      safeToast("error", "Failed to load suppliers");
+      setSuppliersData([]);
+    });
+  break
             case "products":
                 console.log("🔄 Loading warehouse products with oldest batch info and expiration data...");
                 loadProductsWithOldestBatch()
                   .then(async (productsWithBatchInfo) => {
-                    console.log("📦 Products with batch info loaded:", productsWithBatchInfo.length);
-                    
-                    // Filter out archived products
-                    const activeProducts = productsWithBatchInfo.filter(
-                      (product) => (product.status || "").toLowerCase() !== "archived"
-                    );
-
-                    console.log("🔍 Active products after filtering:", activeProducts.length);
-                    console.log("🔍 Products with batch info and expiration data loaded");
-                    console.log("📅 Sample product expiration data:", activeProducts[0]?.expiration || "No expiration data");
-
-                    setInventoryData(activeProducts);
-                    await calculateNotifications(activeProducts);
-                    updateStats("totalProducts", activeProducts.length);
-                    calculateWarehouseValue(activeProducts);
-                    calculateLowStockAndExpiring(activeProducts);
-                    console.log("✅ Products with batch info loaded successfully:", activeProducts.length, "products");
+                    try {
+                      if (!Array.isArray(productsWithBatchInfo)) {
+                        safeToast("error", "Failed to load products with batch and expiration information");
+                        console.error("Error loading products with batch info:", productsWithBatchInfo);
+                        setInventoryData([]);
+                        return;
+                      }
+                      const activeProducts = productsWithBatchInfo.filter(
+                        (product) => (product.status || "").toLowerCase() !== "archived"
+                      );
+                      setInventoryData(activeProducts);
+                      await calculateNotifications(activeProducts);
+                      updateStats("totalProducts", activeProducts.length);
+                      calculateWarehouseValue(activeProducts);
+                      calculateLowStockAndExpiring(activeProducts);
+                      console.log("✅ Products with batch info loaded successfully:", activeProducts.length, "products");
+                    } catch (err) {
+                      safeToast("error", "An error occurred while processing product data");
+                      console.error("Error in products data processing:", err);
+                      setInventoryData([]);
+                    }
                   })
-                  .catch((error) => {
-                    console.error("❌ Error loading products with batch info:", error);
-                    safeToast("error", "Failed to load products with batch and expiration information");
-                    setInventoryData([]);
-                  });
+.catch((error) => {
+  console.error("Error loading products with batch info:", error);
+  safeToast("error", "Failed to load products with batch and expiration information");
+  setInventoryData([]);
+});
               break;
   
   
   
         case "batches":
-          handleApiCall("get_batches")
-            .then((response) => {
-              console.log("Batches response:", response.data)
-              let batchesArray = []
-  
-              if (Array.isArray(response.data)) {
-                batchesArray = response.data
-              } else if (response.data && Array.isArray(response.data.data)) {
-                batchesArray = response.data.data
-              }
-  
-              setBatchData(batchesArray)
-              console.log("Batches loaded:", batchesArray.length)
-            })
-            .catch((error) => {
-              console.error("Error loading batches:", error)
-              safeToast("error", "Failed to load batches")
-              setBatchData([])
-            })
-          break
+handleApiCall("get_batches")
+    .then((response) => {
+      let batchesArray = [];
+      if (response.success && Array.isArray(response.data)) {
+        batchesArray = response.data;
+      } else if (!response.success) {
+        safeToast("error", response.message || "Failed to load batches");
+        console.error("Error loading batches:", response.message || response.error);
+      }
+      setBatchData(batchesArray);
+      console.log("Batches loaded:", batchesArray.length);
+    })
+    .catch((error) => {
+      console.error("Error loading batches:", error);
+      safeToast("error", "Failed to load batches");
+      setBatchData([]);
+    });
+  break
   
         case "brands":
           // Load brands from your database
-          handleApiCall("get_brands")
-            .then((response) => {
-              console.log("Brands response:", response.data)
-              let brandsArray = []
-  
-              if (Array.isArray(response.data)) {
-                brandsArray = response.data
-              } else if (response.data && Array.isArray(response.data.data)) {
-                brandsArray = response.data.data
-              }
-  
-              setBrandsData(brandsArray)
-              console.log("Brands loaded:", brandsArray.length)
-            })
-            .catch((error) => {
-              console.error("Error loading brands:", error)
-              // Set default brands if API fails
-              setBrandsData([
-                { brand_id: 23, brand: "dawdawdaw" },
-                { brand_id: 24, brand: "trust" },
-                { brand_id: 25, brand: "rightmid" },
-                { brand_id: 26, brand: "daw" },
-                { brand_id: 27, brand: "dwa" },
-                { brand_id: 28, brand: "dawd" },
-              ])
-            })
-          break
+handleApiCall("get_brands")
+    .then((response) => {
+      let brandsArray = [];
+      if (response.success && Array.isArray(response.data)) {
+        brandsArray = response.data;
+      } else if (!response.success) {
+        safeToast("error", response.message || "Failed to load brands");
+        console.error("Error loading brands:", response.message || response.error);
+      }
+      setBrandsData(brandsArray);
+      console.log("Brands loaded:", brandsArray.length);
+    })
+    .catch((error) => {
+      console.error("Error loading brands:", error);
+      // Set default brands if API fails
+      setBrandsData([
+        { brand_id: 23, brand: "dawdawdaw" },
+        { brand_id: 24, brand: "trust" },
+        { brand_id: 25, brand: "rightmid" },
+        { brand_id: 26, brand: "daw" },
+        { brand_id: 27, brand: "dwa" },
+        { brand_id: 28, brand: "dawd" },
+      ]);
+    });
+  break
 
         case "categories":
           // Load categories from your database
           console.log("🔄 Loading categories...");
-          handleApiCall("get_categories")
-            .then((response) => {
-              console.log("📦 Categories API response:", response);
-              console.log("📦 Categories response.data:", response.data);
-              let categoriesArray = []
-  
-              if (Array.isArray(response.data)) {
-                categoriesArray = response.data
-                console.log("✅ Categories loaded from response.data array:", categoriesArray);
-              } else if (response.data && Array.isArray(response.data.data)) {
-                categoriesArray = response.data.data
-                console.log("✅ Categories loaded from response.data.data array:", categoriesArray);
-              } else {
-                console.warn("⚠️ Unexpected categories response format:", response);
-              }
-  
-              console.log("🔍 Final categoriesArray before setting:", categoriesArray);
-              console.log("🔍 categoriesArray.length:", categoriesArray.length);
-              console.log("🔍 categoriesArray content:", JSON.stringify(categoriesArray, null, 2));
-              
-              setCategoriesData(categoriesArray)
-              console.log("✅ Categories loaded successfully:", categoriesArray.length, "categories");
-              console.log("📋 Categories data:", categoriesArray);
-            })
-            .catch((error) => {
-              console.error("❌ Error loading categories:", error)
-              safeToast("error", "Failed to load categories from database")
-            })
-          break
+handleApiCall("get_categories")
+    .then((response) => {
+      let categoriesArray = [];
+      if (response.success && Array.isArray(response.data)) {
+        categoriesArray = response.data;
+      } else if (!response.success) {
+        safeToast("error", response.message || "Failed to load categories");
+        console.error("Error loading categories:", response.message || response.error);
+      }
+      setCategoriesData(categoriesArray);
+      console.log("Categories loaded:", categoriesArray.length);
+    })
+    .catch((error) => {
+      console.error("Error loading categories:", error);
+      safeToast("error", "Failed to load categories from database");
+    });
+  break
   
         case "all":
           loadData("suppliers")

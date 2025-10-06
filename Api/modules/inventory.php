@@ -579,7 +579,17 @@ function add_supplier($conn, $data) {
             ]);
             return;
         }
-        
+        // Check for duplicate supplier name
+        $checkStmt = $conn->prepare("SELECT supplier_id FROM tbl_supplier WHERE supplier_name = ? AND status = 'active' LIMIT 1");
+        $checkStmt->execute([$supplier_name]);
+        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        if ($existing) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Supplier name already exists."
+            ]);
+            return;
+        }
         $stmt = $conn->prepare("
             INSERT INTO tbl_supplier (supplier_name, contact_person, phone, email, address, status) 
             VALUES (?, ?, ?, ?, ?, 'active')
@@ -952,4 +962,58 @@ function log_activity($conn, $data) {
         ]);
     }
 }
+// Inventory KPIs handler
+function handle_get_inventory_kpis($conn, $data) {
+    try {
+        // Optionally filter by location
+        $location_id = $data['location_id'] ?? null;
+        $where = "WHERE status = 'active'";
+        $params = [];
+        if ($location_id) {
+            $where .= " AND location_id = ?";
+            $params[] = $location_id;
+        }
+
+        // Total products
+        $stmtTotal = $conn->prepare("SELECT COUNT(*) as total_products FROM tbl_product $where");
+        $stmtTotal->execute($params);
+        $total_products = $stmtTotal->fetchColumn();
+
+        // Out-of-stock products
+        $stmtOut = $conn->prepare("SELECT COUNT(*) as out_of_stock FROM tbl_product $where AND quantity <= 0");
+        $stmtOut->execute($params);
+        $out_of_stock = $stmtOut->fetchColumn();
+
+        // Low-stock products
+        $stmtLow = $conn->prepare("SELECT COUNT(*) as low_stock FROM tbl_product $where AND quantity > 0 AND quantity <= 10");
+        $stmtLow->execute($params);
+        $low_stock = $stmtLow->fetchColumn();
+
+        // Total quantity
+        $stmtQty = $conn->prepare("SELECT SUM(quantity) as total_quantity FROM tbl_product $where");
+        $stmtQty->execute($params);
+        $total_quantity = $stmtQty->fetchColumn();
+
+        echo json_encode([
+            "success" => true,
+            "kpis" => [
+                "total_products" => (int)$total_products,
+                "out_of_stock" => (int)$out_of_stock,
+                "low_stock" => (int)$low_stock,
+                "total_quantity" => (int)$total_quantity
+            ]
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            "success" => false,
+            "message" => "Error fetching inventory KPIs: " . $e->getMessage()
+        ]);
+    }
+}
+
+// Wrapper for backend_new.php compatibility
+function handle_add_product($conn, $data) {
+    add_product($conn, $data);
+}
+
 ?>

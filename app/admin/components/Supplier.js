@@ -1,10 +1,9 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import axios from "axios";
 import { toast } from "react-toastify";
 import { useTheme } from './ThemeContext';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+import { getApiEndpointForAction, handleApiCall } from '../../lib/apiHandler';
 
 function Supplier() {
   const { theme } = useTheme();
@@ -28,11 +27,9 @@ function Supplier() {
   const fetchSuppliers = async () => {
     try {
       setLoading(true);
-      const response = await axios.post(API_BASE_URL, {
-        action: "get_suppliers"
-      });
-      if (response.data.success) {
-        setSuppliers(response.data.data || []);
+      const response = await handleApiCall("get_suppliers");
+      if (response.success) {
+        setSuppliers(response.data || []);
       } else {
         setSuppliers([]);
       }
@@ -48,12 +45,9 @@ function Supplier() {
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await axios.post(API_BASE_URL, {
-        action: 'add_supplier',
-        ...newSupplier
-      });
+      const response = await handleApiCall('add_supplier', newSupplier);
       
-      if (response.data.success) {
+      if (response.success) {
         toast.success('Supplier added successfully!');
         setShowAddModal(false);
         setNewSupplier({
@@ -66,7 +60,7 @@ function Supplier() {
         });
         fetchSuppliers();
       } else {
-        toast.error(response.data.message || 'Failed to add supplier');
+        toast.error(response.message || 'Failed to add supplier');
       }
     } catch (error) {
       console.error('Error adding supplier:', error);

@@ -139,22 +139,32 @@ try {
             require_once 'modules/inventory.php';
             get_products($conn, $data);
             break;
-            
+        
+        case 'get_products_by_location_name':
+            require_once 'modules/products.php';
+            handle_get_products_by_location_name($conn, $data);
+            break;
+        
+        case 'get_location_products':
+            require_once 'modules/products.php';
+            handle_get_location_products($conn, $data);
+            break;
+        
         case 'get_product_batches':
             require_once 'modules/batch_functions.php';
             get_product_batches($conn, $data);
             break;
-            
+        
         case 'get_fifo_stock':
             require_once 'modules/batch_functions.php';
             get_fifo_stock($conn, $data);
             break;
-            
+        
         case 'get_products_oldest_batch':
             require_once 'modules/batch_functions.php';
             get_products_oldest_batch($conn, $data);
             break;
-            
+        
         case 'get_product_quantities':
             require_once 'modules/inventory.php';
             get_product_quantities($conn, $data);
@@ -276,13 +286,27 @@ try {
             require_once 'modules/reports.php';
             get_warehouse_kpis($conn, $data);
             break;
-            
+        
+        // Employee Management
+        case 'add_employee':
+            require_once 'modules/employees.php';
+            handle_add_employee($conn, $data);
+            break;
+        case 'display_employee':
+            require_once 'modules/employees.php';
+            handle_display_employee($conn, $data);
+            break;
+        case 'update_employee_status':
+            require_once 'modules/employees.php';
+            handle_update_employee_status($conn, $data);
+            break;
+        
         // Activity Logging
         case 'log_activity':
             require_once 'modules/inventory.php';
             log_activity($conn, $data);
             break;
-            
+        
         // Default case for unknown actions
         default:
             echo json_encode([

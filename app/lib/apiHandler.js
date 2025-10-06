@@ -45,7 +45,7 @@ class APIHandler {
     const url = `${this.baseUrl}/${endpoint}`;
     
     try {
-      console.log(`🚀 API Call: ${endpoint} - ${action}`, data);
+      
 
       const config = {
         method: method,
@@ -63,7 +63,7 @@ class APIHandler {
 
       return this.makeRequest(url, config);
     } catch (error) {
-      console.error(`❌ API Error (${endpoint} - ${action}):`, error);
+      
       throw error;
     }
   }
@@ -82,10 +82,10 @@ class APIHandler {
     
     try {
       const result = JSON.parse(text);
-      console.log(`✅ API Response:`, result);
+      
       return result;
     } catch (jsonError) {
-      console.error('Invalid JSON response:', text);
+      
       throw new Error('Server returned invalid JSON');
     }
   }
@@ -303,9 +303,31 @@ const apiHandler = new APIHandler();
 // Export both the class and instance
 export { APIHandler, apiHandler as default };
 
+// Action-to-endpoint mapping for modular API
+export const getApiEndpointForAction = (action) => {
+  // Map action names to their respective modular API endpoints
+  // Expand this mapping as needed for all supported actions
+  const actionMap = {
+    // Products
+    get_products: 'products_api.php',
+    update_product_stock: 'products_api.php',
+    duplicate_product_batches: 'products_api.php',
+    // Inventory
+    get_inventory: 'inventory_api.php',
+    update_inventory: 'inventory_api.php',
+    // Batch Functions
+    get_batches: 'batch_functions_api.php',
+    update_batch: 'batch_functions_api.php',
+    // Barcode
+    check_barcode: 'barcode_api.php',
+    // Add more mappings as needed
+  };
+  return actionMap[action] || 'backend.php'; // fallback to legacy if not mapped
+};
+
 // Additional utility functions for common patterns
 export const handleApiError = (error, defaultMessage = 'An error occurred') => {
-  console.error('API Error:', error);
+  
   return {
     success: false,
     message: error.message || defaultMessage,

@@ -2,6 +2,21 @@
 // Start output buffering to prevent unwanted output
 ob_start();
 
+// Register shutdown handler to catch fatal errors and always return JSON
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        if (ob_get_length()) ob_end_clean();
+        header('Content-Type: application/json');
+        echo json_encode([
+            "success" => false,
+            "message" => "Fatal error: " . $error['message'],
+            "error" => $error
+        ]);
+        exit;
+    }
+});
+
 session_start();
 
 // CORS and content-type headers
@@ -58,7 +73,7 @@ try {
 }
 
 // Clear any output that might have been generated
-ob_clean();
+if (ob_get_length()) ob_end_clean();
 
 // Helper function to get employee details for stock movement logging
 function getEmployeeDetails($conn, $employee_id_or_username) {
@@ -96,7 +111,7 @@ function getEmployeeDetails($conn, $employee_id_or_username) {
 
 // Read and decode incoming JSON request
 $rawData = file_get_contents("php://input");
-error_log("Raw input: " . $rawData);
+// error_log("Raw input: " . $rawData);
 
 $data = json_decode($rawData, true);
 
@@ -122,7 +137,7 @@ if (!isset($data['action'])) {
 
 // Action handler
 $action = $data['action'];
-error_log("Processing action: " . $action);
+// error_log("Processing action: " . $action);
 
 try {
     switch ($action) {
@@ -1401,537 +1416,40 @@ try {
         break;
         //convenience
     case 'add_convenience_product':
-        try{
-             $product_name = isset($data['product_name'])&& !empty($data['product_name']) ? trim($data['product_name']) : '';
-            $category = isset($data['category']) && !empty($data['category'])? trim($data['category']) : '';
-            $barcode = isset($data['barcode']) && !empty($data['barcode'])? trim($data['barcode']) : '';
-            $description = isset($data['description']) && !empty($data['description']) ? trim($data['description']) : '';
-            $expiration = isset($data['expiration']) && !empty($data['expiration']) ? trim($data['expiration']) : '';
-
-            $quantity = isset($data['quantity']) && !empty($data['quantity']) ? trim($data['quantity']) : '';
-            $unit_price = isset($data['unit_price']) && !empty($data['unit_price']) ? trim($data['unit_price']) : '';
-            $brand = isset($data['brand_id']) && !empty($data['brand_id']) ? trim($data['brand_id']) : '';
-           
-           
-
-            // Prepare the SQL statement
-            $stmt = $conn->prepare("
-                INSERT INTO tbl_product (
-                    product_name, category, barcode, description, expiration, quantity, unit_price,
-                    brand_id
-                ) VALUES (
-                    :product_name, :category, :barcode, :description, :expiration, :quantity, :unit_price,
-                    :brand_id
-                )
-            ");
-
-            // Bind parameters
-            $stmt->bindParam(":product_name", $product_name, PDO::PARAM_STR);
-            $stmt->bindParam(":category", $category, PDO::PARAM_STR);
-            $stmt->bindParam(":barcode", $barcode, PDO::PARAM_STR);
-            $stmt->bindParam(":description", $description, PDO::PARAM_STR);
-            $stmt->bindParam(":expiration", $expiration, PDO::PARAM_STR);
-            $stmt->bindParam(":quantity", $quantity, PDO::PARAM_INT);
-            $stmt->bindParam(":unit_price", $unit_price, PDO::PARAM_INT);
-            $stmt->bindParam(":brand_id", $brand, PDO::PARAM_STR);
-           
-            // Execute the statement
-            if ($stmt->execute()) {
-                echo json_encode(["success" => true, "message" => "Product added successfully"]);
-            } else {
-                echo json_encode(["success" => false, "message" => "Failed to add product"]);
-            }
-
-        } catch (Exception $e) {
-            echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_add_convenience_product($conn, $data);
         break;
     //pharmacy
     case 'add_pharmacy_product':
-        try{
-            $product_name = isset($data['product_name'])&& !empty($data['product_name']) ? trim($data['product_name']) : '';
-            $category = isset($data['category']) && !empty($data['category'])? trim($data['category']) : '';
-            $barcode = isset($data['barcode']) && !empty($data['barcode'])? trim($data['barcode']) : '';
-            $description = isset($data['description']) && !empty($data['description']) ? trim($data['description']) : '';
-            $prescription = isset($data['prescription']) && !empty($data['prescription']) ? trim($data['prescription']) : '';
-            $expiration = isset($data['expiration']) && !empty($data['expiration']) ? trim($data['expiration']) : '';
-            $quantity = isset($data['quantity']) && !empty($data['quantity']) ? trim($data['quantity']) : '';
-            $unit_price = isset($data['unit_price']) && !empty($data['unit_price']) ? trim($data['unit_price']) : '';
-            $brand = isset($data['brand_id']) && !empty($data['brand_id']) ? trim($data['brand_id']) : '';
-           
-           
-
-            // Prepare the SQL statement
-            $stmt = $conn->prepare("
-                INSERT INTO tbl_product (
-                    product_name, category, barcode, description, prescription, expiration, quantity, unit_price,
-                    brand_id
-                ) VALUES (
-                    :product_name, :category, :barcode, :description, :prescription, :expiration, :quantity, :unit_price,
-                    :brand_id
-                )
-            ");
-
-            // Bind parameters
-            $stmt->bindParam(":product_name", $product_name, PDO::PARAM_STR);
-            $stmt->bindParam(":category", $category, PDO::PARAM_STR);
-            $stmt->bindParam(":barcode", $barcode, PDO::PARAM_STR);
-            $stmt->bindParam(":description", $description, PDO::PARAM_STR);
-            $stmt->bindParam(":prescription", $prescription, PDO::PARAM_STR);
-            $stmt->bindParam(":expiration", $expiration, PDO::PARAM_STR);
-            $stmt->bindParam(":quantity", $quantity, PDO::PARAM_INT);
-            $stmt->bindParam(":unit_price", $unit_price, PDO::PARAM_INT);
-            $stmt->bindParam(":brand_id", $brand, PDO::PARAM_STR);
-           
-            // Execute the statement
-            if ($stmt->execute()) {
-                echo json_encode(["success" => true, "message" => "Product added successfully"]);
-            } else {
-                echo json_encode(["success" => false, "message" => "Failed to add product"]);
-            }
-
-        } catch (Exception $e) {
-            echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_add_pharmacy_product($conn, $data);
         break;
     //brand section
     case 'addBrand':
-    try {
-        $brand_name = isset($data['brand']) && !empty($data['brand']) ? trim($data['brand']) : '';
-
-        // Validate input
-        if (!$brand_name) {
-            echo json_encode(["success" => false, "message" => "Brand name is required"]);
-            exit;
-        }
-
-        // Check for duplicates
-        $checkStmt = $conn->prepare("SELECT * FROM tbl_brand WHERE brand = :brand");
-        $checkStmt->bindParam(":brand", $brand_name, PDO::PARAM_STR);
-        $checkStmt->execute();
-        if ($checkStmt->rowCount() > 0) {
-            echo json_encode(["success" => false, "message" => "Brand already exists"]);
-            exit;
-        }
-
-        // Insert new brand
-        $stmt = $conn->prepare("INSERT INTO tbl_brand (brand) VALUES (:brand)");
-        $stmt->bindParam(":brand", $brand_name, PDO::PARAM_STR);
-
-        if ($stmt->execute()) {
-            echo json_encode(["success" => true, "message" => "Brand added successfully"]);
-        } else {
-            // Return specific database error
-            echo json_encode([
-                "success" => false,
-                "message" => "Database error: " . implode(", ", $stmt->errorInfo())
-            ]);
-        }
-    } catch (Exception $e) {
-        echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
-    }
-    break;
+        require_once __DIR__ . '/modules/products.php';
+        handle_addBrand($conn, $data);
+        break;
     case 'displayBrand':
-        try {
-            // Get all brands with their product count (without is_archived)
-            $stmt = $conn->prepare("
-                SELECT 
-                    b.brand_id, 
-                    b.brand, 
-                    COUNT(p.product_id) AS product_count
-                FROM tbl_brand b
-                LEFT JOIN tbl_product p ON b.brand_id = p.brand_id
-                GROUP BY b.brand_id, b.brand
-                ORDER BY b.brand_id
-            ");
-            $stmt->execute();
-            $brand = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-            if ($brand) {
-                echo json_encode([
-                    "success" => true,
-                    "brand" => $brand
-                ]);
-            } else {
-                echo json_encode([
-                    "success" => true,
-                    "brand" => [],
-                    "message" => "No brands found"
-                ]);
-            }
-        } catch (Exception $e) {
-            echo json_encode([
-                "success" => false,
-                "message" => "Database error: " . $e->getMessage(),
-                "brand" => []
-            ]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_displayBrand($conn, $data);
         break;
         
-    case 'deleteBrand':  
-        try {
-            $brand_id = isset($data['brand_id']) ? intval($data['brand_id']) : 0;
-            
-            // Validate input
-            if ($brand_id <= 0) {
-                echo json_encode(["success" => false, "message" => "Invalid brand ID"]);
-                break;
-            }
-
-            // Use prepared statement with proper DELETE syntax
-            $stmt = $conn->prepare("DELETE FROM tbl_brand WHERE brand_id = :brand_id");
-            $stmt->bindParam(":brand_id", $brand_id, PDO::PARAM_INT);
-            
-            if ($stmt->execute()) {
-                echo json_encode([
-                    "success" => true, 
-                    "message" => "Brand deleted successfully"
-                ]);
-            } else {
-                echo json_encode([
-                    "success" => false, 
-                    "message" => "Failed to delete brand"
-                ]);
-            }
-        } catch (Exception $e) {
-            echo json_encode([
-                "success" => false, 
-                "message" => "Database error: " . $e->getMessage()
-            ]);
-        }
+    case 'deleteBrand':
+        require_once __DIR__ . '/modules/products.php';
+        handle_deleteBrand($conn, $data);
         break;
     case 'add_brand':
-        try {
-            $brand_name = isset($data['brand_name']) ? trim($data['brand_name']) : '';
-            
-            if (empty($brand_name)) {
-                echo json_encode(["success" => false, "message" => "Brand name is required"]);
-                break;
-            }
-            
-            // Check if brand already exists
-            $checkStmt = $conn->prepare("SELECT brand_id FROM tbl_brand WHERE brand = ?");
-            $checkStmt->execute([$brand_name]);
-            $existingBrand = $checkStmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($existingBrand) {
-                echo json_encode([
-                    "success" => true, 
-                    "brand_id" => $existingBrand['brand_id'],
-                    "message" => "Brand already exists"
-                ]);
-                break;
-            }
-            
-            // Insert new brand
-            $stmt = $conn->prepare("INSERT INTO tbl_brand (brand) VALUES (?)");
-            $stmt->execute([$brand_name]);
-            $brand_id = $conn->lastInsertId();
-            
-            echo json_encode([
-                "success" => true, 
-                "brand_id" => $brand_id,
-                "message" => "Brand added successfully"
-            ]);
-            
-        } catch (Exception $e) {
-            echo json_encode([
-                "success" => false, 
-                "message" => "Database error: " . $e->getMessage()
-            ]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_add_brand($conn, $data);
         break;
 
     case 'add_product':
-        try {
-            // Extract and sanitize data
-            $product_name = isset($data['product_name']) ? trim($data['product_name']) : '';
-            $category = isset($data['category']) ? trim($data['category']) : '';
-            $barcode = isset($data['barcode']) ? trim($data['barcode']) : '';
-            $description = isset($data['description']) ? trim($data['description']) : '';
-            $prescription = isset($data['prescription']) ? intval($data['prescription']) : 0;
-            $bulk = isset($data['bulk']) ? intval($data['bulk']) : 0;
-            $quantity = isset($data['quantity']) ? intval($data['quantity']) : 0;
-            $unit_price = isset($data['unit_price']) ? floatval($data['unit_price']) : 0;
-            $srp = isset($data['srp']) && $data['srp'] > 0 ? floatval($data['srp']) : 0; // SRP should be separate from unit_price
-            $supplier_id = isset($data['supplier_id']) ? intval($data['supplier_id']) : 0;
-            // Handle brand_id - allow NULL if not provided or empty
-            $brand_id = null;
-            error_log("DEBUG: Received brand_id: " . (isset($data['brand_id']) ? $data['brand_id'] : 'NOT_SET'));
-            if (isset($data['brand_id']) && !empty($data['brand_id'])) {
-                $brand_id = intval($data['brand_id']);
-                error_log("DEBUG: Parsed brand_id: " . $brand_id);
-                // Validate brand_id exists if provided
-                $brandCheckStmt = $conn->prepare("SELECT brand_id FROM tbl_brand WHERE brand_id = ?");
-                $brandCheckStmt->execute([$brand_id]);
-                if (!$brandCheckStmt->fetch()) {
-                    // If brand_id doesn't exist, set to NULL
-                    error_log("DEBUG: Brand ID " . $brand_id . " not found in database, setting to NULL");
-                    $brand_id = null;
-                } else {
-                    error_log("DEBUG: Brand ID " . $brand_id . " validated successfully");
-                }
-            } else {
-                error_log("DEBUG: No brand_id provided or empty, setting to NULL");
-            }
-            
-            $expiration = isset($data['expiration']) ? trim($data['expiration']) : null;
-            $date_added = isset($data['date_added']) ? trim($data['date_added']) : date('Y-m-d');
-            $status = isset($data['status']) ? trim($data['status']) : 'active';
-            $stock_status = isset($data['stock_status']) ? trim($data['stock_status']) : 'in stock';
-            $reference = isset($data['reference']) ? trim($data['reference']) : '';
-            $entry_by = isset($data['entry_by']) ? trim($data['entry_by']) : 'admin';
-            $order_no = isset($data['order_no']) ? trim($data['order_no']) : '';
-            
-            // Handle location_id - convert location name to ID if needed
-            $location_id = null;
-            if (isset($data['location_id'])) {
-                $location_id = intval($data['location_id']);
-            } elseif (isset($data['location'])) {
-                // If location name is provided, find the location_id
-                $locStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name = ?");
-                $locStmt->execute([trim($data['location'])]);
-                $location = $locStmt->fetch(PDO::FETCH_ASSOC);
-                $location_id = $location ? $location['location_id'] : 2; // Default to warehouse (ID 2)
-            } else {
-                $location_id = 2; // Default to warehouse
-            }
-            
-            // Start transaction
-            $conn->beginTransaction();
-            
-            // Create batch record first
-            $batch_id = null;
-            if ($reference) {
-                $batchStmt = $conn->prepare("
-                    INSERT INTO tbl_batch (
-                        batch, supplier_id, location_id, entry_date, entry_time, 
-                        entry_by, order_no
-                    ) VALUES (?, ?, ?, CURDATE(), CURTIME(), ?, ?)
-                ");
-                $batchStmt->execute([$reference, $supplier_id, $location_id, $entry_by, $order_no]);
-                $batch_id = $conn->lastInsertId();
-            }
-            
-            // Prepare insert statement for product
-            $stmt = $conn->prepare("
-                INSERT INTO tbl_product (
-                    product_name, category, barcode, description, prescription, bulk,
-                    expiration, date_added, quantity, unit_price, srp, brand_id, supplier_id,
-                    location_id, batch_id, status, stock_status
-                ) VALUES (
-                    :product_name, :category, :barcode, :description, :prescription, :bulk,
-                    :expiration, :date_added, :quantity, :unit_price, :srp, :brand_id, :supplier_id,
-                    :location_id, :batch_id, :status,  :stock_status
-                )
-            ");
-    
-            // Log the values being inserted
-            error_log("DEBUG: Inserting product with brand_id: " . ($brand_id ?? 'NULL'));
-            error_log("DEBUG: Product data: " . json_encode([
-                'product_name' => $product_name,
-                'category' => $category,
-                'brand_id' => $brand_id,
-                'supplier_id' => $supplier_id,
-                'quantity' => $quantity,
-                'unit_price' => $unit_price,
-                'srp' => $srp
-            ]));
-            
-            // Bind parameters
-            $stmt->bindParam(':product_name', $product_name);
-            $stmt->bindParam(':category', $category);
-            $stmt->bindParam(':barcode', $barcode);
-            $stmt->bindParam(':description', $description);
-            $stmt->bindParam(':prescription', $prescription);
-            $stmt->bindParam(':bulk', $bulk);
-            $stmt->bindParam(':expiration', $expiration);
-            $stmt->bindParam(':date_added', $date_added);
-            $stmt->bindParam(':quantity', $quantity);
-            $stmt->bindParam(':unit_price', $unit_price);
-            $stmt->bindParam(':srp', $srp);
-            $stmt->bindParam(':brand_id', $brand_id);
-            $stmt->bindParam(':supplier_id', $supplier_id);
-            $stmt->bindParam(':location_id', $location_id);
-            $stmt->bindParam(':batch_id', $batch_id);
-            $stmt->bindParam(':status', $status);
-            $stmt->bindParam(':stock_status', $stock_status);
-    
-            if ($stmt->execute()) {
-                $product_id = $conn->lastInsertId();
-                
-                // FIFO: Create stock movement record for new stock
-                if ($batch_id && $quantity > 0) {
-                    $movementStmt = $conn->prepare("
-                        INSERT INTO tbl_stock_movements (
-                            product_id, batch_id, movement_type, quantity, remaining_quantity,
-                            srp, expiration_date, reference_no, created_by
-                        ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?)
-                    ");
-                    $movementStmt->execute([
-                        $product_id, $batch_id, $quantity, $quantity, 
-                        $unit_price, $expiration, $reference, $entry_by
-                    ]);
-                    
-                    // Create stock summary record with the new srp
-                    $summaryStmt = $conn->prepare("
-                        INSERT INTO tbl_stock_summary (
-                            product_id, batch_id, available_quantity, srp,
-                            expiration_date, batch_reference, total_quantity
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON DUPLICATE KEY UPDATE
-                            available_quantity = available_quantity + VALUES(available_quantity),
-                            total_quantity = total_quantity + VALUES(total_quantity),
-                            srp = VALUES(srp),
-                            last_updated = CURRENT_TIMESTAMP
-                    ");
-                    $summaryStmt->execute([
-                        $product_id, $batch_id, $quantity, $srp,
-                        $expiration, $reference, $quantity
-                    ]);
-                    
-                    // Create FIFO stock entry if table exists
-                    try {
-                        $fifoStmt = $conn->prepare("
-                            INSERT INTO tbl_fifo_stock (
-                                product_id, batch_id, available_quantity, srp, expiration_date, batch_reference, entry_date, entry_by
-                            ) VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?)
-                        ");
-                        
-                        $fifoStmt->execute([
-                            $product_id, $batch_id, $quantity, $srp, $expiration, $reference, $entry_by
-                        ]);
-                        
-                        $fifo_created = true;
-                    } catch (Exception $e) {
-                        // FIFO table might not exist, continue without it
-                        $fifo_created = false;
-                    }
-                }
-                
-                $conn->commit();
-                echo json_encode([
-                    "success" => true, 
-                    "message" => "Product added successfully with FIFO tracking",
-                    "fifo_stock_created" => $fifo_created ?? false
-                ]);
-            } else {
-                $conn->rollback();
-                echo json_encode(["success" => false, "message" => "Failed to add product"]);
-            }
-    
-        } catch (Exception $e) {
-            if (isset($conn)) {
-                $conn->rollback();
-            }
-            echo json_encode([
-                "success" => false,
-                "message" => "Database error: " . $e->getMessage()
-            ]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_add_product($conn, $data);
         break;
     case 'update_product':
-        try {
-            // Extract and sanitize data
-            $product_id = isset($data['product_id']) ? intval($data['product_id']) : 0;
-            $product_name = isset($data['product_name']) ? trim($data['product_name']) : '';
-            $category = isset($data['category']) ? trim($data['category']) : '';
-            $barcode = isset($data['barcode']) ? trim($data['barcode']) : '';
-            $description = isset($data['description']) ? trim($data['description']) : '';
-            $prescription = isset($data['prescription']) ? intval($data['prescription']) : 0;
-            $bulk = isset($data['bulk']) ? intval($data['bulk']) : 0;
-            $quantity = isset($data['quantity']) ? intval($data['quantity']) : 0;
-            $unit_price = isset($data['unit_price']) ? floatval($data['unit_price']) : 0;
-            $srp = isset($data['srp']) && $data['srp'] > 0 ? floatval($data['srp']) : 0; // SRP should be separate from unit_price
-            $supplier_id = isset($data['supplier_id']) ? intval($data['supplier_id']) : 0;
-            // Handle brand_id - allow NULL if not provided or empty
-            $brand_id = null;
-            error_log("DEBUG: Received brand_id: " . (isset($data['brand_id']) ? $data['brand_id'] : 'NOT_SET'));
-            if (isset($data['brand_id']) && !empty($data['brand_id'])) {
-                $brand_id = intval($data['brand_id']);
-                error_log("DEBUG: Parsed brand_id: " . $brand_id);
-                // Validate brand_id exists if provided
-                $brandCheckStmt = $conn->prepare("SELECT brand_id FROM tbl_brand WHERE brand_id = ?");
-                $brandCheckStmt->execute([$brand_id]);
-                if (!$brandCheckStmt->fetch()) {
-                    // If brand_id doesn't exist, set to NULL
-                    error_log("DEBUG: Brand ID " . $brand_id . " not found in database, setting to NULL");
-                    $brand_id = null;
-                } else {
-                    error_log("DEBUG: Brand ID " . $brand_id . " validated successfully");
-                }
-            } else {
-                error_log("DEBUG: No brand_id provided or empty, setting to NULL");
-            }
-            $expiration = isset($data['expiration']) ? trim($data['expiration']) : null;
-            
-            if ($product_id <= 0) {
-                echo json_encode([
-                    "success" => false,
-                    "message" => "Invalid product ID"
-                ]);
-                break;
-            }
-            
-            // Start transaction
-            $conn->beginTransaction();
-            
-            // Update product
-            $stmt = $conn->prepare("
-                UPDATE tbl_product SET 
-                    product_name = ?,
-                    category = ?,
-                    barcode = ?,
-                    description = ?,
-                    prescription = ?,
-                    bulk = ?,
-                    quantity = ?,
-                    unit_price = ?,
-                    srp = ?,
-                    supplier_id = ?,
-                    brand_id = ?,
-                    expiration = ?,
-                    stock_status = CASE 
-                        WHEN ? <= 0 THEN 'out of stock'
-                        WHEN ? <= 10 THEN 'low stock'
-                        ELSE 'in stock'
-                    END
-                WHERE product_id = ?
-            ");
-            
-            $stmt->execute([
-                $product_name,
-                $category,
-                $barcode,
-                $description,
-                $prescription,
-                $bulk,
-                $quantity,
-                $unit_price,
-                $srp,
-                $supplier_id,
-                $brand_id,
-                $expiration,
-                $quantity,
-                $quantity,
-                $product_id
-            ]);
-            
-            $conn->commit();
-            echo json_encode([
-                "success" => true,
-                "message" => "Product updated successfully"
-            ]);
-            
-        } catch (Exception $e) {
-            if (isset($conn)) {
-                $conn->rollback();
-            }
-            echo json_encode([
-                "success" => false,
-                "message" => "Database error: " . $e->getMessage()
-            ]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_update_product($conn, $data);
         break;
 
 
@@ -1953,328 +1471,22 @@ try {
         break;
 
 case 'get_fifo_stock_status':
-    try {
-        $product_id = $data['product_id'] ?? 0;
-        $location_id = $data['location_id'] ?? null;
-        
-        // Get FIFO stock data from tbl_fifo_stock
-        $sql = "
-            SELECT 
-                fs.product_id,
-                fs.batch_id,
-                fs.batch_reference,
-                fs.quantity,
-                fs.available_quantity,
-                fs.srp,
-                fs.expiration_date,
-                fs.entry_date,
-                p.product_name,
-                p.location_id
-            FROM tbl_fifo_stock fs
-            JOIN tbl_product p ON fs.product_id = p.product_id
-            WHERE fs.product_id = ? 
-            AND fs.available_quantity > 0
-        ";
-        
-        $params = [$product_id];
-        
-        if ($location_id) {
-            $sql .= " AND p.location_id = ?";
-            $params[] = $location_id;
-        }
-        
-        $sql .= " ORDER BY fs.entry_date ASC, fs.fifo_id ASC"; // FIFO order
-        
-        $stmt = $conn->prepare($sql);
-        $stmt->execute($params);
-        $fifo_entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        if (empty($fifo_entries)) {
-            echo json_encode([
-                'success' => true,
-                'total_available' => 0,
-                'batches_count' => 0,
-                'fifo_batches' => [],
-                'message' => 'Product not found or no FIFO stock available'
-            ]);
-            break;
-        }
-        
-        // Calculate total available from FIFO entries
-        $total_available = 0;
-        $fifo_batches = [];
-        $fifo_rank = 1;
-        
-        foreach ($fifo_entries as $entry) {
-            $total_available += $entry['available_quantity'];
-            
-            $fifo_batches[] = [
-                'available_quantity' => $entry['available_quantity'],
-                'batch_reference' => $entry['batch_reference'],
-                'entry_date' => $entry['entry_date'],
-                'fifo_rank' => $fifo_rank,
-                'batch_id' => $entry['batch_id'],
-                'srp' => $entry['srp'],
-                'expiration_date' => $entry['expiration_date']
-            ];
-            
-            $fifo_rank++;
-        }
-        
-        echo json_encode([
-            'success' => true,
-            'total_available' => $total_available,
-            'batches_count' => count($fifo_batches),
-            'fifo_batches' => $fifo_batches,
-            'product_name' => $fifo_entries[0]['product_name']
-        ]);
-        
-    } catch (Exception $e) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'Error getting FIFO stock status: ' . $e->getMessage()
-        ]);
-    }
+    require_once __DIR__ . '/modules/products.php';
+    handle_get_fifo_stock_status($conn, $data);
     break;
 
 case 'check_fifo_availability':
-    try {
-        $product_id = $data['product_id'] ?? 0;
-        $location_id = $data['location_id'] ?? 0;
-        $requested_quantity = $data['requested_quantity'] ?? 0;
-        
-        // Get FIFO stock data from tbl_fifo_stock
-        $stmt = $conn->prepare("
-            SELECT 
-                fs.product_id,
-                fs.batch_id,
-                fs.batch_reference,
-                fs.quantity,
-                fs.available_quantity,
-                fs.srp,
-                fs.expiration_date,
-                fs.entry_date,
-                p.product_name,
-                p.location_id
-            FROM tbl_fifo_stock fs
-            JOIN tbl_product p ON fs.product_id = p.product_id
-            WHERE fs.product_id = ? 
-            AND p.location_id = ?
-            AND fs.available_quantity > 0
-            ORDER BY fs.entry_date ASC, fs.fifo_id ASC
-        ");
-        
-        $stmt->execute([$product_id, $location_id]);
-        $fifo_entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        if (empty($fifo_entries)) {
-            echo json_encode([
-                "success" => true,
-                "is_available" => false,
-                "total_available" => 0,
-                "requested_quantity" => $requested_quantity,
-                "batches_count" => 0,
-                "next_batches" => [],
-                "message" => "Product not found or no FIFO stock available"
-            ]);
-            break;
-        }
-        
-        // Calculate total available from FIFO entries
-        $total_available = 0;
-        $next_batches = [];
-        $fifo_rank = 1;
-        
-        foreach ($fifo_entries as $entry) {
-            $total_available += $entry['available_quantity'];
-            
-            $next_batches[] = [
-                'available_quantity' => $entry['available_quantity'],
-                'batch_reference' => $entry['batch_reference'],
-                'entry_date' => $entry['entry_date'],
-                'fifo_rank' => $fifo_rank,
-                'batch_id' => $entry['batch_id'],
-                'srp' => $entry['srp'],
-                'expiration_date' => $entry['expiration_date']
-            ];
-            
-            $fifo_rank++;
-        }
-        
-        $is_available = $total_available >= $requested_quantity;
-        
-        echo json_encode([
-            "success" => true,
-            "is_available" => $is_available,
-            "total_available" => $total_available,
-            "requested_quantity" => $requested_quantity,
-            "batches_count" => count($next_batches),
-            "next_batches" => $next_batches,
-            "product_name" => $fifo_entries[0]['product_name']
-        ]);
-        
-    } catch (Exception $e) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Error checking FIFO availability: " . $e->getMessage()
-        ]);
-    }
+    require_once __DIR__ . '/modules/products.php';
+    handle_check_fifo_availability($conn, $data);
     break;
 case 'get_products_oldest_batch_for_transfer':
-    try {
-        $location_id = $data['location_id'] ?? null;
-        
-        $whereClause = "WHERE (p.status IS NULL OR p.status <> 'archived')";
-        $params = [];
-        
-        if ($location_id) {
-            $whereClause .= " AND p.location_id = ?";
-            $params[] = $location_id;
-        }
-        
-        // Simple query to get products directly from tbl_product
-        $stmt = $conn->prepare("
-            SELECT 
-                p.product_id,
-                p.product_name,
-                p.category,
-                p.barcode,
-                p.description,
-                COALESCE(b.brand, '') as brand,
-                COALESCE(s.supplier_name, '') as supplier_name,
-                COALESCE(p.srp, p.unit_price) as srp,
-                p.location_id,
-                l.location_name,
-                p.quantity as total_quantity,
-                p.quantity as oldest_batch_quantity,
-                p.srp as srp,
-                'N/A' as batch_reference,
-                'N/A' as entry_date,
-                'N/A' as expiration_date,
-                1 as total_batches
-            FROM tbl_product p
-            LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
-            LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
-            $whereClause
-            AND p.quantity > 0
-            ORDER BY p.product_name ASC
-        ");
-        
-        $stmt->execute($params);
-        $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            "success" => true,
-            "data" => $products
-        ]);
-        
-    } catch (Exception $e) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Database error: " . $e->getMessage(),
-            "data" => []
-        ]);
-    }
+    require_once __DIR__ . '/modules/products.php';
+    handle_get_products_oldest_batch_for_transfer($conn, $data);
     break;
 
     case 'get_products_oldest_batch':
-        try {
-            $location_id = $data['location_id'] ?? null;
-            
-            $whereClause = "WHERE (p.status IS NULL OR p.status <> 'archived')";
-            $params = [];
-            
-            if ($location_id) {
-                $whereClause .= " AND p.location_id = ?";
-                $params[] = $location_id;
-            }
-            
-            // Query to get products with oldest batch information for warehouse display
-            $stmt = $conn->prepare("
-                SELECT 
-                    p.product_id,
-                    p.product_name,
-                    p.category,
-                    p.barcode,
-                    p.description,
-                    COALESCE(b.brand, '') as brand,
-                    COALESCE(s.supplier_name, '') as supplier_name,
-                    COALESCE(oldest_available_batch.srp, p.srp) as unit_price,
-                    COALESCE(oldest_available_batch.srp, p.srp) as srp,
-                    COALESCE(oldest_available_batch.srp, p.srp) as first_batch_srp,
-                    p.location_id,
-                    l.location_name,
-                    p.stock_status,
-                    p.date_added,
-                    p.status,
-                    -- Oldest available batch information
-                    oldest_available_batch.batch_id as oldest_batch_id,
-                    oldest_available_batch.batch_reference as oldest_batch_reference,
-                    oldest_available_batch.entry_date as oldest_batch_entry_date,
-                    oldest_available_batch.expiration_date as oldest_batch_expiration,
-                    oldest_available_batch.quantity as oldest_batch_quantity,
-                    oldest_available_batch.srp as oldest_batch_srp,
-                    oldest_available_batch.entry_time,
-                    oldest_available_batch.entry_by,
-                    -- Total quantity across all batches
-                    total_qty.total_quantity,
-                    -- Count of total batches
-                    total_qty.total_batches,
-                    -- Fallback to product quantity if no stock summary
-                    COALESCE(total_qty.total_quantity, p.quantity) as quantity
-                FROM tbl_product p
-                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
-                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
-                -- Get oldest AVAILABLE batch for each product (from tbl_fifo_stock)
-                LEFT JOIN (
-                    SELECT 
-                        fs.product_id,
-                        fs.batch_id,
-                        fs.batch_reference,
-                        fs.entry_date,
-                        fs.entry_date as entry_time,
-                        fs.entry_by,
-                        fs.expiration_date,
-                        fs.available_quantity as quantity,
-                        fs.srp,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY fs.product_id 
-                            ORDER BY fs.entry_date ASC, fs.batch_id ASC
-                        ) as batch_rank
-                    FROM tbl_fifo_stock fs
-                    WHERE fs.available_quantity > 0  -- Only get batches with available stock
-                ) oldest_available_batch ON p.product_id = oldest_available_batch.product_id AND oldest_available_batch.batch_rank = 1
-                -- Get total quantities
-                LEFT JOIN (
-                    SELECT 
-                        product_id,
-                        SUM(available_quantity) as total_quantity,
-                        COUNT(*) as total_batches
-                    FROM tbl_stock_summary
-                    WHERE available_quantity > 0
-                    GROUP BY product_id
-                ) total_qty ON p.product_id = total_qty.product_id
-                $whereClause
-                ORDER BY p.product_name ASC
-            ");
-            
-            $stmt->execute($params);
-            $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            echo json_encode([
-                "success" => true,
-                "data" => $products
-            ]);
-            
-        } catch (Exception $e) {
-            echo json_encode([
-                "success" => false,
-                "message" => "Database error: " . $e->getMessage(),
-                "data" => []
-            ]);
-        }
+        require_once __DIR__ . '/modules/products.php';
+        handle_get_products_oldest_batch($conn, $data);
         break;
 
     case 'get_inventory_kpis':

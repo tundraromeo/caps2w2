@@ -34,31 +34,42 @@ import {
 // API Configuratio
 
 // Safe toast wrapper function
+let errorToastShown = false;
 function safeToast(type, message) {
   try {
     if (type === 'success') {
       toast.success(message);
     } else if (type === 'error') {
-      toast.error(message);
+      if (!errorToastShown) {
+        toast.warning(message); // Use warning for non-critical errors
+        errorToastShown = true;
+      }
     } else if (type === 'warning') {
       toast.warning(message);
     } else if (type === 'info') {
       toast.info(message);
     }
   } catch (error) {
-    console.log(`${type.toUpperCase()} notification: ${message}`);
+    // `${type.toUpperCase()} notification: ${message}`);
   }
 }
 
+function resetErrorToast() {
+  errorToastShown = false;
+}
+
+
+import { getApiEndpointForAction } from '../lib/apiHandler';
 // API function
 async function handleApiCall(action, data = {}) {
-  const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+  const endpoint = getApiEndpointForAction(action);
+  const url = `http://localhost/Enguio_Project/Api/${endpoint}`;
   const payload = { action, ...data };
-  console.log("🚀 API Call Payload:", payload);
+  // "🚀 API Call Payload:", payload);
 
   try {
-    console.log("📡 Making API request to:", API_BASE_URL);
-    const response = await fetch(API_BASE_URL, {
+    // "📡 Making API request to:", url);
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -66,8 +77,8 @@ async function handleApiCall(action, data = {}) {
       body: JSON.stringify(payload),
     });
 
-    console.log("📡 HTTP Response Status:", response.status);
-    console.log("📡 HTTP Response Headers:", response.headers);
+    // "📡 HTTP Response Status:", response.status);
+    // "📡 HTTP Response Headers:", response.headers);
 
     // Check if response is ok
     if (!response.ok) {
@@ -76,12 +87,12 @@ async function handleApiCall(action, data = {}) {
 
     // Get response text first to check if it's valid JSON
     const responseText = await response.text();
-    console.log("📡 Raw Response Text:", responseText);
+    // "📡 Raw Response Text:", responseText);
 
     // Check if response starts with HTML tags (indicating PHP error)
     if (responseText.trim().startsWith('<') || responseText.includes('<br />') || responseText.includes('<b>')) {
-      console.error("❌ API returned HTML instead of JSON. This usually indicates a PHP error:");
-      console.error("❌ Response:", responseText);
+      safeToast("error", "❌ API returned HTML instead of JSON. This usually indicates a PHP error:");
+      safeToast("error", "❌ Response: " + responseText.substring(0, 200));
       
       // Try to extract error message from HTML
       const errorMatch = responseText.match(/<b>.*?<\/b>/g);
@@ -100,8 +111,8 @@ async function handleApiCall(action, data = {}) {
     try {
       resData = JSON.parse(responseText);
     } catch (jsonError) {
-      console.error("❌ Failed to parse JSON response:", jsonError);
-      console.error("❌ Response text:", responseText);
+      safeToast("error", "❌ Failed to parse JSON response:", jsonError);
+      safeToast("error", "❌ Response text:", responseText);
       
       return {
         success: false,
@@ -111,13 +122,13 @@ async function handleApiCall(action, data = {}) {
       };
     }
 
-    console.log("✅ API Response Data:", resData);
+    // "✅ API Response Data:", resData);
 
     if (resData && typeof resData === "object") {
       if (!resData.success) {
-        console.warn("⚠️ API responded with failure:", resData.message || resData);
+        safeToast("error", resData.message || "API responded with failure");
       } else {
-        console.log("✅ API call successful for action:", action);
+        // "✅ API call successful for action:", action);
       }
       return resData;
     } else {
@@ -129,8 +140,8 @@ async function handleApiCall(action, data = {}) {
       };
     }
   } catch (error) {
-    console.error("❌ API Call Error:", error);
-    console.error("❌ Error details:", {
+    safeToast("error", "❌ API Call Error:", error);
+    safeToast("error", "❌ Error details:", {
       name: error.name,
       message: error.message,
       stack: error.stack
@@ -149,7 +160,7 @@ async function checkBarcodeExists(barcode) {
     const response = await handleApiCall("check_barcode", { barcode });
     return response;
   } catch (error) {
-    console.error("Error checking barcode:", error);
+    safeToast("error", "Error checking barcode:", error);
     return { success: false, error: error.message };
   }
 }
@@ -186,7 +197,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
           }),
         });
       } catch (error) {
-        console.error("Error in session storage:", error);
+        safeToast("error", "Error in session storage:", error);
       }
     }
     
@@ -206,10 +217,10 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
         }),
       });
     } catch (sessionError) {
-      console.error("Error in session storage:", sessionError);
+      safeToast("error", "Error in session storage:", sessionError);
     }
     
-    console.error("Error updating product stock:", error);
+    safeToast("error", "Error updating product stock:", error);
     return { success: false, error: error.message };
   }
 }
@@ -223,7 +234,7 @@ async function duplicateProductBatches(productId, batchIds = [22, 23]) {
     });
     return response;
   } catch (error) {
-    console.error("Error duplicating product batches:", error);
+    safeToast("error", "Error duplicating product batches:", error);
     return { success: false, error: error.message };
   }
 }
@@ -380,7 +391,7 @@ function Warehouse() {
             setCurrentUser(userData.employee_name || userData.username);
           }
         } catch (error) {
-          console.log("Could not parse user session, using default");
+          // "Could not parse user session, using default");
         }
       } else {
         // Fallback to localStorage
@@ -392,7 +403,7 @@ function Warehouse() {
               setCurrentUser(userData.employee_name || userData.username);
             }
           } catch (error) {
-            console.log("Could not parse user session, using default");
+            // "Could not parse user session, using default");
           }
         }
       }
@@ -409,9 +420,9 @@ function Warehouse() {
       const initializeTransferBatchTable = async () => {
         try {
           await handleApiCall("create_transfer_batch_details_table");
-          console.log("✅ Transfer batch details table initialized");
+          
         } catch (error) {
-          console.error("❌ Error initializing transfer batch details table:", error);
+          safeToast("error", "❌ Error initializing transfer batch details table:", error);
         }
       };
       
@@ -439,23 +450,23 @@ function Warehouse() {
     const handleKeyDown = (e) => {
       if (!scannerActive) return;
   
-      console.log("Key pressed:", e.key, "KeyCode:", e.keyCode, "Scanner active:", scannerActive);
+      // "Key pressed:", e.key, "KeyCode:", e.keyCode, "Scanner active:", scannerActive);
   
       if (timeout) clearTimeout(timeout);
   
       // Accept Enter key to complete scan
       if (e.key === "Enter") {
         if (buffer.length > 0) {
-          console.log("Barcode scanned:", buffer);
+          // "Barcode scanned:", buffer);
           handleScannerOperation("SCAN_COMPLETE", { barcode: buffer });
           buffer = "";
         }
       } else {
         // Accept all characters (not just numbers) for barcode scanning
         buffer += e.key;
-        console.log("Buffer updated:", buffer);
+        // "Buffer updated:", buffer);
         timeout = setTimeout(() => {
-          console.log("Buffer cleared due to timeout");
+          // "Buffer cleared due to timeout");
           buffer = ""; // Clear buffer after inactivity
         }, 1000); // Increased timeout to 1 second
       }
@@ -569,7 +580,7 @@ function Warehouse() {
               safeToast("error", response.message || "Failed to delete product");
             }
           } catch (error) {
-            console.error("Error deleting product:", error);
+            safeToast("error", "Error deleting product:", error);
             safeToast("error", "Failed to delete product");
           } finally {
             setLoading(false);
@@ -587,7 +598,13 @@ function Warehouse() {
             setLoading(false);
             return;
           }
-    
+          // Fix lead_time_days: send as integer or omit
+          if (data.lead_time_days === "" || data.lead_time_days === undefined || data.lead_time_days === null) {
+            delete data.lead_time_days;
+          } else {
+            data.lead_time_days = parseInt(data.lead_time_days, 10);
+            if (isNaN(data.lead_time_days)) delete data.lead_time_days;
+          }
           try {
             const response = await handleApiCall("add_supplier", data);
             if (response.success) {
@@ -603,7 +620,7 @@ function Warehouse() {
               "Failed to add supplier: " +
                 (error?.response?.data?.message || error.message)
             );
-            console.error("Error adding supplier:", error);
+            safeToast("error", "Error adding supplier:", error);
           } finally {
             setLoading(false);
           }
@@ -627,7 +644,7 @@ function Warehouse() {
               safeToast("error", response.message || "Failed to update supplier");
             }
           } catch (error) {
-            console.error("Error updating supplier:", error);
+            safeToast("error", "Error updating supplier:", error);
             safeToast("error", "Failed to update supplier");
           } finally {
             setLoading(false);
@@ -652,7 +669,7 @@ function Warehouse() {
               safeToast("error", response.message || "Failed to update product");
             }
           } catch (error) {
-            console.error("Error updating product:", error);
+            safeToast("error", "Error updating product:", error);
             safeToast("error", "Failed to update product");
           } finally {
             setLoading(false);
@@ -676,7 +693,7 @@ function Warehouse() {
               safeToast("error", response.message || "Failed to delete supplier");
             }
           } catch (error) {
-            console.error("Error deleting supplier:", error);
+            safeToast("error", "Error deleting supplier:", error);
             safeToast("error", "Failed to delete supplier");
           } finally {
             setLoading(false);
@@ -685,11 +702,11 @@ function Warehouse() {
     
         case "CREATE_PRODUCT":
           // This case is now handled in the modal handlers
-          console.log("CREATE_PRODUCT case is deprecated - use modal handlers instead");
+          // "CREATE_PRODUCT case is deprecated - use modal handlers instead");
           break;
     
         default:
-          console.error("Unknown CRUD operation:", operation);
+          safeToast("error", "Unknown CRUD operation:", operation);
           safeToast("error", "Unknown operation: " + operation);
       }
     }
@@ -708,7 +725,7 @@ function Warehouse() {
         return earliestBatch.expiration_date;
       }
     } catch (error) {
-      console.error("Error getting earliest expiring batch:", error);
+      safeToast("error", "Error getting earliest expiring batch:", error);
     }
     return null;
   }
@@ -716,92 +733,68 @@ function Warehouse() {
   // Calculate notifications for expiring and low stock products
   async function calculateNotifications(productList) {
     const today = new Date();
-    console.log("🔔 Calculating notifications for", productList.length, "products");
-    console.log("🔔 Expiry alerts enabled:", settings.expiryAlerts);
-    console.log("🔔 Expiry warning days:", settings.expiryWarningDays);
+    // "🔔 Calculating notifications for", productList.length, "products");
+    // "🔔 Expiry alerts enabled:", settings.expiryAlerts);
+    // "🔔 Expiry warning days:", settings.expiryWarningDays);
 
     // Get earliest expiring dates for all products
     const productsWithEarliestExpiry = await Promise.all(
       productList.map(async (product) => {
         const earliestExpiry = await getEarliestExpiringBatch(product.product_id);
-        return {
+        const productWithExpiry = {
           ...product,
           earliest_expiration: earliestExpiry || product.expiration
         };
+        // Fetch batch info for expiring product
+        try {
+          const fifoResponse = await getFifoStock(product.product_id);
+          if (fifoResponse.success && fifoResponse.data && fifoResponse.data.length > 0) {
+            // Find the batch that matches the earliest expiration
+            const expiringBatch = fifoResponse.data.find(batch => 
+              batch.expiration_date === productWithExpiry.earliest_expiration
+            );
+            return {
+              ...productWithExpiry,
+              expiring_batch: expiringBatch ? {
+                batch_number: expiringBatch.batch_number,
+                batch_reference: expiringBatch.batch_reference,
+                quantity: expiringBatch.available_quantity,
+                days_until_expiry: Math.ceil((new Date(productWithExpiry.earliest_expiration) - new Date()) / (1000 * 60 * 60 * 24))
+              } : null
+            };
+          }
+        } catch (error) {
+          safeToast("error", "Error getting batch info for expiring product:", error);
+        }
+        return productWithExpiry;
       })
     );
 
-    // Debug: Check products with expiration dates
-    const productsWithExpiration = productsWithEarliestExpiry.filter(product => product.earliest_expiration);
-    console.log("🔔 Products with expiration dates:", productsWithExpiration.length);
-    if (productsWithExpiration.length > 0) {
-      console.log("🔔 Sample product with earliest expiration:", {
-        name: productsWithExpiration[0].product_name,
-        expiration: productsWithExpiration[0].earliest_expiration,
-        isExpiringSoon: isProductExpiringSoon(productsWithExpiration[0].earliest_expiration),
-        isExpired: isProductExpired(productsWithExpiration[0].earliest_expiration)
-      });
-    }
-
-    const expiring = productsWithEarliestExpiry.filter(product => {
-      if (!product.earliest_expiration || !settings.expiryAlerts) return false;
-      return isProductExpiringSoon(product.earliest_expiration) || isProductExpired(product.earliest_expiration);
+    // Build notification arrays robustly
+    const expiringWithBatchInfo = productsWithEarliestExpiry.filter(p => {
+      if (!p.earliest_expiration) return false;
+      const days = Math.ceil((new Date(p.earliest_expiration) - new Date()) / (1000 * 60 * 60 * 24));
+      return days > 0 && days <= (settings.expiryWarningDays || 30);
     });
-      
-      // Separate expired products for better visibility
-      const expired = productsWithEarliestExpiry.filter(product => {
-        if (!product.earliest_expiration || !settings.expiryAlerts) return false;
-        return isProductExpired(product.earliest_expiration);
-      });
-      
-      const lowStock = productList.filter(product => {
-        return getStockStatus(product.quantity) === 'low stock' && settings.lowStockAlerts;
-      });
-      
-      const outOfStock = productList.filter(product => {
-        return getStockStatus(product.quantity) === 'out of stock';
-      });
-      
-      console.log("🔔 Notification counts:", {
-        expiring: expiring.length,
-        expired: expired.length,
-        lowStock: lowStock.length,
-        outOfStock: outOfStock.length
-      });
+    const expired = productsWithEarliestExpiry.filter(p => {
+      if (!p.earliest_expiration) return false;
+      return new Date(p.earliest_expiration) < new Date();
+    });
+    const lowStock = productsWithEarliestExpiry.filter(p => {
+      const qty = parseInt(p.quantity || p.product_quantity || 0);
+      return qty > 0 && qty <= (settings.lowStockThreshold || 10);
+    });
+    const outOfStock = productsWithEarliestExpiry.filter(p => {
+      const qty = parseInt(p.quantity || p.product_quantity || 0);
+      return qty <= 0;
+    });
 
-      // Add batch information to expiring products
-      const expiringWithBatchInfo = await Promise.all(
-        expiring.map(async (product) => {
-          try {
-            const fifoResponse = await getFifoStock(product.product_id);
-            if (fifoResponse.success && fifoResponse.data && fifoResponse.data.length > 0) {
-              // Find the batch that matches the earliest expiration
-              const expiringBatch = fifoResponse.data.find(batch => 
-                batch.expiration_date === product.earliest_expiration
-              );
-              return {
-                ...product,
-                expiring_batch: expiringBatch ? {
-                  batch_number: expiringBatch.batch_number,
-                  batch_reference: expiringBatch.batch_reference,
-                  quantity: expiringBatch.available_quantity,
-                  days_until_expiry: Math.ceil((new Date(product.earliest_expiration) - new Date()) / (1000 * 60 * 60 * 24))
-                } : null
-              };
-            }
-          } catch (error) {
-            console.error("Error getting batch info for expiring product:", error);
-          }
-          return product;
-        })
-      );
-
-      setNotifications({
-        expiring: expiringWithBatchInfo.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
-        expired: expired.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
-        lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
-        outOfStock
-      });
+    setNotifications({
+      expiring: expiringWithBatchInfo.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
+      expired: expired.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
+      lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
+      outOfStock: outOfStock
+    });
     }
   
     // FIXED Data Loading Functions
@@ -810,7 +803,7 @@ function Warehouse() {
         case "suppliers":
           handleApiCall("get_suppliers")
             .then((response) => {
-              console.log("Suppliers response:", response.data)
+              
               let suppliersArray = []
   
               if (response.success && Array.isArray(response.data)) {
@@ -821,40 +814,40 @@ function Warehouse() {
   
               setSuppliersData(suppliersArray)
               updateStats("totalSuppliers", suppliersArray.length)
-              console.log("Suppliers loaded:", suppliersArray.length)
+              // "Suppliers loaded:", suppliersArray.length)
             })
             .catch((error) => {
-              console.error("Error loading suppliers:", error)
+              safeToast("error", "Error loading suppliers:", error)
               safeToast("error", "Failed to load suppliers")
               setSuppliersData([])
             })
           break
             case "products":
-                console.log("🔄 Loading warehouse products with oldest batch info and expiration data...");
+                // "🔄 Loading warehouse products with oldest batch info and expiration data...");
                 loadProductsWithOldestBatch()
                   .then(async (productsWithBatchInfo) => {
-                    console.log("📦 Products with batch info loaded:", productsWithBatchInfo.length);
+                    // "📦 Products with batch info loaded:", productsWithBatchInfo.length);
                     
                     // Filter out archived products
-                    const activeProducts = productsWithBatchInfo.filter(
-                      (product) => (product.status || "").toLowerCase() !== "archived"
-                    );
+const activeProducts = productsWithBatchInfo.filter(
+  (product) => (product.status || "").toLowerCase() !== "archived"
+);
+// "🔍 Active products after filtering:", activeProducts.length);
+// "🔍 Products with batch info and expiration data loaded");
+// "📅 Sample product expiration data:", activeProducts[0]?.expiration || "No expiration data");
 
-                    console.log("🔍 Active products after filtering:", activeProducts.length);
-                    console.log("🔍 Products with batch info and expiration data loaded");
-                    console.log("📅 Sample product expiration data:", activeProducts[0]?.expiration || "No expiration data");
-
-                    setInventoryData(activeProducts);
-                    await calculateNotifications(activeProducts);
-                    updateStats("totalProducts", activeProducts.length);
-                    calculateWarehouseValue(activeProducts);
-                    calculateLowStockAndExpiring(activeProducts);
-                    console.log("✅ Products with batch info loaded successfully:", activeProducts.length, "products");
+console.log("Active products after filtering:", activeProducts);
+setInventoryData(activeProducts);
+await calculateNotifications(activeProducts);
+updateStats("totalProducts", activeProducts.length);
+calculateWarehouseValue(activeProducts);
+calculateLowStockAndExpiring(activeProducts);
+                    // "✅ Products with batch info loaded successfully:", activeProducts.length, "products");
                   })
                   .catch((error) => {
-                    console.error("❌ Error loading products with batch info:", error);
+                    safeToast("error", "❌ Error loading products with batch info:", error);
                     safeToast("error", "Failed to load products with batch and expiration information");
-                    setInventoryData([]);
+                    safeToast("error", "Failed to load products, keeping previous data."); // Do not clear inventoryData; keep previous products visible
                   });
               break;
   
@@ -863,7 +856,7 @@ function Warehouse() {
         case "batches":
           handleApiCall("get_batches")
             .then((response) => {
-              console.log("Batches response:", response.data)
+              // "Batches response:", response.data)
               let batchesArray = []
   
               if (Array.isArray(response.data)) {
@@ -873,10 +866,10 @@ function Warehouse() {
               }
   
               setBatchData(batchesArray)
-              console.log("Batches loaded:", batchesArray.length)
+              // "Batches loaded:", batchesArray.length)
             })
             .catch((error) => {
-              console.error("Error loading batches:", error)
+              safeToast("error", "Failed to load batches: " + error.message)
               safeToast("error", "Failed to load batches")
               setBatchData([])
             })
@@ -886,7 +879,7 @@ function Warehouse() {
           // Load brands from your database
           handleApiCall("get_brands")
             .then((response) => {
-              console.log("Brands response:", response.data)
+              // "Brands response:", response.data)
               let brandsArray = []
   
               if (Array.isArray(response.data)) {
@@ -896,10 +889,10 @@ function Warehouse() {
               }
   
               setBrandsData(brandsArray)
-              console.log("Brands loaded:", brandsArray.length)
+              // "Brands loaded:", brandsArray.length)
             })
             .catch((error) => {
-              console.error("Error loading brands:", error)
+              safeToast("error", "Error loading brands:", error)
               // Set default brands if API fails
               setBrandsData([
                 { brand_id: 23, brand: "dawdawdaw" },
@@ -914,33 +907,33 @@ function Warehouse() {
 
         case "categories":
           // Load categories from your database
-          console.log("🔄 Loading categories...");
+          // "🔄 Loading categories...");
           handleApiCall("get_categories")
             .then((response) => {
-              console.log("📦 Categories API response:", response);
-              console.log("📦 Categories response.data:", response.data);
+              // "📦 Categories API response:", response);
+              // "📦 Categories response.data:", response.data);
               let categoriesArray = []
   
               if (Array.isArray(response.data)) {
                 categoriesArray = response.data
-                console.log("✅ Categories loaded from response.data array:", categoriesArray);
+                // "✅ Categories loaded from response.data array:", categoriesArray);
               } else if (response.data && Array.isArray(response.data.data)) {
                 categoriesArray = response.data.data
-                console.log("✅ Categories loaded from response.data.data array:", categoriesArray);
+                // "✅ Categories loaded from response.data.data array:", categoriesArray);
               } else {
                 console.warn("⚠️ Unexpected categories response format:", response);
               }
   
-              console.log("🔍 Final categoriesArray before setting:", categoriesArray);
-              console.log("🔍 categoriesArray.length:", categoriesArray.length);
-              console.log("🔍 categoriesArray content:", JSON.stringify(categoriesArray, null, 2));
+              // "🔍 Final categoriesArray before setting:", categoriesArray);
+              // "🔍 categoriesArray.length:", categoriesArray.length);
+              // "🔍 categoriesArray content:", JSON.stringify(categoriesArray, null, 2));
               
               setCategoriesData(categoriesArray)
-              console.log("✅ Categories loaded successfully:", categoriesArray.length, "categories");
-              console.log("📋 Categories data:", categoriesArray);
+              // "✅ Categories loaded successfully:", categoriesArray.length, "categories");
+              // "📋 Categories data:", categoriesArray);
             })
             .catch((error) => {
-              console.error("❌ Error loading categories:", error)
+              safeToast("error", "❌ Error loading categories:", error)
               safeToast("error", "Failed to load categories from database")
             })
           break
@@ -954,7 +947,7 @@ function Warehouse() {
           break
   
         default:
-          console.error("Unknown data type:", dataType)
+          safeToast("error", "Unknown data type:", dataType)
       }
     }
   
@@ -1030,11 +1023,11 @@ function Warehouse() {
   
     // Enhanced Scanner Functions with Barcode Checking
   async function handleScannerOperation(operation, data) {
-    console.log("Scanner operation:", operation, "Data:", data);
+    // "Scanner operation:", operation, "Data:", data);
     
     switch (operation) {
       case "SCAN_COMPLETE":
-        console.log("Scan complete with barcode:", data.barcode);
+        // "Scan complete with barcode:", data.barcode);
         // Keep scanner active after scan
         if (scanTimeout) clearTimeout(scanTimeout);
   
@@ -1043,13 +1036,13 @@ function Warehouse() {
         setScannerStatusMessage("✅ Barcode received! Checking if product exists...");
   
         try {
-          console.log("Checking barcode in database:", scanned);
+          // "Checking barcode in database:", scanned);
           
           // First, try to find the product in existing inventory data
           const existingProductInInventory = inventoryData.find(product => product.barcode === scanned);
           
           if (existingProductInInventory) {
-            console.log("Product found in inventory data:", existingProductInInventory);
+            // "Product found in inventory data:", existingProductInInventory);
             // Product exists - show update stock modal
             setExistingProduct(existingProductInInventory);
             setNewStockQuantity("");
@@ -1065,10 +1058,10 @@ function Warehouse() {
           } else {
             // If not in inventory, check API
             const barcodeCheck = await checkBarcodeExists(scanned);
-            console.log("Barcode check result:", barcodeCheck);
+            // "Barcode check result:", barcodeCheck);
             
             if (barcodeCheck.success && barcodeCheck.product) {
-              console.log("Product found via API, opening update stock modal");
+              // "Product found via API, opening update stock modal");
               setExistingProduct(barcodeCheck.product);
               setNewStockQuantity("");
               
@@ -1081,7 +1074,7 @@ function Warehouse() {
               setShowUpdateStockModal(true);
               setScannerStatusMessage("✅ Product found! Opening update stock modal.");
             } else {
-              console.log("Product not found, opening new product modal");
+              // "Product not found, opening new product modal");
               // Product doesn't exist - show new product modal
               setNewProductForm({
                 product_name: "",
@@ -1114,7 +1107,7 @@ function Warehouse() {
             }
           }
         } catch (error) {
-          console.error("Error checking barcode:", error);
+          safeToast("error", "Error checking barcode:", error);
           setScannerStatusMessage("❌ Error checking barcode. Please try again.");
           safeToast("error", "Failed to check barcode");
         }
@@ -1126,7 +1119,7 @@ function Warehouse() {
         break;
   
       default:
-        console.error("Unknown scanner operation:", operation);
+        safeToast("error", "Unknown scanner operation:", operation);
     }
   }
   
@@ -1135,7 +1128,7 @@ function Warehouse() {
     // Event Handlers
     function handleAddSupplier(e) {
       e.preventDefault()
-      console.log("Form submitted with data:", supplierFormData)
+      // "Form submitted with data:", supplierFormData)
       handleCrudOperation("CREATE_SUPPLIER", supplierFormData)
     }
   
@@ -1398,12 +1391,12 @@ function Warehouse() {
     // FIFO Functions
     async function getFifoStock(productId) {
       try {
-        console.log("Calling get_fifo_stock API with product_id:", productId);
+        // "Calling get_fifo_stock API with product_id:", productId);
         const response = await handleApiCall("get_fifo_stock", { product_id: productId });
-        console.log("get_fifo_stock API response:", response);
+        // "get_fifo_stock API response:", response);
         return response;
       } catch (error) {
-        console.error("Error getting FIFO stock:", error);
+        safeToast("error", "Error getting FIFO stock:", error);
         return { success: false, error: error.message };
       }
     }
@@ -1411,20 +1404,16 @@ function Warehouse() {
     // New function to load products with their oldest batch information
     async function loadProductsWithOldestBatch() {
       try {
-        console.log("🔄 Loading warehouse products with oldest batch info...");
-        const response = await handleApiCall("get_products_oldest_batch", { location_id: 2 }); // Warehouse location
+        // "🔄 Loading warehouse products with oldest batch info...");
+        const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
+const response = await handleApiCall("get_products_oldest_batch", { location_id: locationId, role: userRole, user_id: currentUser });
+console.log("API response for products:", response);
         
         if (response.success && Array.isArray(response.data)) {
-          console.log("✅ Products with oldest batch loaded:", response.data.length, "products");
+          // "✅ Products with oldest batch loaded:", response.data.length, "products");
           
           // Debug: Log first few products to check SRP and expiry data
-          console.log("🔍 First 3 warehouse products with SRP data:", response.data.slice(0, 3).map(p => ({
-            name: p.product_name,
-            srp: p.srp,
-            first_batch_srp: p.first_batch_srp,
-            days_until_expiry: p.days_until_expiry,
-            earliest_expiry: p.earliest_expiry
-          })));
+
           
           // Process the data to ensure proper field mapping for expiration
           const processedProducts = response.data.map(product => {
@@ -1459,21 +1448,16 @@ function Warehouse() {
             };
           });
           
-          console.log("📦 Processed", processedProducts.length, "products with batch info");
+          // "📦 Processed", processedProducts.length, "products with batch info");
           
           // Debug: Log processed products to check SRP data
-          console.log("🔍 First 3 processed products with SRP data:", processedProducts.slice(0, 3).map(p => ({
-            name: p.product_name,
-            srp: p.srp,
-            first_batch_srp: p.first_batch_srp,
-            days_until_expiry: p.days_until_expiry
-          })));
+
           
           return processedProducts;
         } else {
           console.warn("⚠️ Failed to load products with oldest batch, falling back to regular products");
           // Fallback to regular product loading
-          const fallbackResponse = await handleApiCall("get_products");
+          const fallbackResponse = await handleApiCall("get_products", { location_id: locationId, role: userRole, user_id: currentUser });
           let productsArray = [];
           
           if (Array.isArray(fallbackResponse.data)) {
@@ -1483,9 +1467,9 @@ function Warehouse() {
           }
           
           // Filter for warehouse products and enrich with oldest batch info
-          const warehouseProducts = productsArray.filter(
-            (product) => product.location_id === 2 || product.location_id === 1
-          );
+const warehouseProducts = productsArray.filter(
+  (product) => product.location_id === locationId
+);
           
           // Enrich each product with oldest batch info
           const enrichedProducts = await Promise.all(
@@ -1539,7 +1523,7 @@ function Warehouse() {
                   };
                 }
               } catch (error) {
-                console.error("Error enriching product", product.product_id, "with FIFO data:", error);
+                safeToast("error", "Error enriching product", product.product_id, "with FIFO data:", error);
                 
                 // Handle expiration from product data on error
                 let errorExpiration = null;
@@ -1563,14 +1547,14 @@ function Warehouse() {
           return enrichedProducts;
         }
       } catch (error) {
-        console.error("❌ Error loading products with oldest batch:", error);
+        safeToast("error", "❌ Error loading products with oldest batch:", error);
         return [];
       }
     }
 
     // Function to refresh oldest batch data after stock changes
     async function refreshOldestBatchData() {
-      console.log("🔄 Refreshing oldest batch data after stock changes...");
+      // "🔄 Refreshing oldest batch data after stock changes...");
       try {
         const refreshedProducts = await loadProductsWithOldestBatch();
         const activeProducts = refreshedProducts.filter(
@@ -1581,18 +1565,18 @@ function Warehouse() {
         updateStats("totalProducts", activeProducts.length);
         calculateWarehouseValue(activeProducts);
         calculateLowStockAndExpiring(activeProducts);
-        console.log("✅ Oldest batch data refreshed successfully");
+        // "✅ Oldest batch data refreshed successfully");
         
         return activeProducts;
       } catch (error) {
-        console.error("❌ Error refreshing oldest batch data:", error);
+        safeToast("error", "❌ Error refreshing oldest batch data:", error);
         return [];
       }
     }
 
     // Function to refresh product quantities
     async function refreshProductQuantities() {
-      console.log("🔄 Refreshing product quantities and expiration data...");
+      // "🔄 Refreshing product quantities and expiration data...");
       try {
         const refreshedProducts = await loadProductsWithOldestBatch();
         const activeProducts = refreshedProducts.filter(
@@ -1604,11 +1588,11 @@ function Warehouse() {
         updateStats("totalProducts", activeProducts.length);
         calculateWarehouseValue(activeProducts);
         calculateLowStockAndExpiring(activeProducts);
-        console.log("✅ Product quantities and expiration data refreshed successfully");
+        // "✅ Product quantities and expiration data refreshed successfully");
         
         return activeProducts;
       } catch (error) {
-        console.error("❌ Error refreshing product quantities:", error);
+        safeToast("error", "❌ Error refreshing product quantities:", error);
         return [];
       }
     }
@@ -1616,18 +1600,20 @@ function Warehouse() {
     // Function to load product quantities from tbl_product
     async function loadProductQuantities() {
       try {
-        console.log("🔄 Loading product quantities from tbl_product...");
-        const response = await handleApiCall("get_product_quantities", { location_id: 2 }); // Warehouse location
+        // "🔄 Loading product quantities from tbl_product...");
+        const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
+const response = await handleApiCall("get_product_quantities", { location_id: locationId, role: userRole, user_id: currentUser });
+console.log("API response for product quantities:", response);
         
         if (response.success && Array.isArray(response.data)) {
-          console.log("✅ Product quantities loaded:", response.data.length, "products");
-          console.log("🔍 Sample product data:", response.data.slice(0, 3));
+          // "✅ Product quantities loaded:", response.data.length, "products");
+          // "🔍 Sample product data:", response.data.slice(0, 3));
           return response.data;
         } else {
           console.warn("⚠️ Failed to load product quantities, falling back to regular products");
-          console.log("⚠️ Response:", response);
+          // "⚠️ Response:", response);
           // Fallback to regular product loading
-          const fallbackResponse = await handleApiCall("get_products");
+          const fallbackResponse = await handleApiCall("get_products", { location_id: locationId, role: userRole, user_id: currentUser });
           let productsArray = [];
           
           if (Array.isArray(fallbackResponse.data)) {
@@ -1636,11 +1622,11 @@ function Warehouse() {
             productsArray = fallbackResponse.data.data;
           }
           
-          console.log("🔄 Fallback products loaded:", productsArray.length, "products");
+          // "🔄 Fallback products loaded:", productsArray.length, "products");
           return productsArray;
         }
       } catch (error) {
-        console.error("❌ Error loading product quantities:", error);
+        safeToast("error", "❌ Error loading product quantities:", error);
         return [];
       }
     }
@@ -1650,7 +1636,7 @@ function Warehouse() {
         const response = await handleApiCall("get_expiring_products", { days_threshold: daysThreshold });
         return response;
       } catch (error) {
-        console.error("Error getting expiring products:", error);
+        safeToast("error", "Error getting expiring products:", error);
         return { success: false, error: error.message };
       }
     }
@@ -1666,7 +1652,7 @@ function Warehouse() {
         });
         return response;
       } catch (error) {
-        console.error("Error consuming stock:", error);
+        safeToast("error", "Error consuming stock:", error);
         return { success: false, error: error.message };
       }
     }
@@ -1711,20 +1697,20 @@ function Warehouse() {
     }
 
     async function loadQuantityHistory(productId) {
-      console.log("Loading quantity history for product ID:", productId);
+      // "Loading quantity history for product ID:", productId);
       const response = await handleApiCall("get_quantity_history", { product_id: productId });
-      console.log("Quantity history response:", response);
+      // "Quantity history response:", response);
       if (response.success) {
         setQuantityHistoryData(response.data);
       } else {
-        console.error("Quantity history error:", response.message);
+        safeToast("error", "Quantity history error:", response.message);
         safeToast("error", "Failed to load quantity history: " + (response.message || "Unknown error"));
       }
     }
 
     // Function to refresh quantity history and FIFO stock data
     async function refreshProductData(productId) {
-      console.log("🔄 Refreshing product data for ID:", productId);
+      // "🔄 Refreshing product data for ID:", productId);
       try {
         // Refresh quantity history
         await loadQuantityHistory(productId);
@@ -1738,9 +1724,9 @@ function Warehouse() {
         // Toggle to show current FIFO data instead of history
         setShowCurrentFifoData(true);
         
-        console.log("✅ Product data refreshed successfully - Now showing current FIFO batches");
+        // "✅ Product data refreshed successfully - Now showing current FIFO batches");
       } catch (error) {
-        console.error("❌ Error refreshing product data:", error);
+        safeToast("error", "❌ Error refreshing product data:", error);
       }
     }
 
@@ -1749,13 +1735,13 @@ function Warehouse() {
 
 
     async function loadFifoStock(productId) {
-      console.log("Loading FIFO stock for product ID:", productId);
+      // "Loading FIFO stock for product ID:", productId);
       const response = await getFifoStock(productId);
-      console.log("FIFO stock response:", response);
+      // "FIFO stock response:", response);
       if (response.success) {
         setFifoStockData(response.data);
       } else {
-        console.error("FIFO stock error:", response.message);
+        safeToast("error", "FIFO stock error:", response.message);
         safeToast("error", "Failed to load FIFO stock data: " + (response.message || "Unknown error"));
       }
     }
@@ -1888,58 +1874,48 @@ function Warehouse() {
           safeToast("success", `Stock updated successfully with FIFO tracking${quantityMsg}${expirationMsg}${srpMsg}`);
           closeUpdateStockModal();
           
-          console.log("🔄 Stock updated successfully, refreshing data...");
+          // "🔄 Stock updated successfully, refreshing data...");
           
           // Add a delay to ensure database transaction is complete
-          console.log("⏳ Waiting for database transaction to complete...");
+          // "⏳ Waiting for database transaction to complete...");
           await new Promise(resolve => setTimeout(resolve, 1000));
           
           // Refresh product data to show updated quantities immediately
-          console.log("🔄 Loading updated product quantities...");
+          // "🔄 Loading updated product quantities...");
           await loadData("products");
           
           // Also refresh oldest batch data to show updated batch information
-          console.log("🔄 Refreshing oldest batch data...");
+          // "🔄 Refreshing oldest batch data...");
           await refreshOldestBatchData();
           
           // Force a complete data reload to ensure all data is fresh
-          console.log("🔄 Force reloading all data...");
+          // "🔄 Force reloading all data...");
           await loadData("all");
           
           // Additional refresh to ensure UI is updated
-          console.log("🔄 Final refresh to ensure UI update...");
+          // "🔄 Final refresh to ensure UI update...");
           await refreshProductQuantities();
           
           // Get fresh data directly to verify the update
-          console.log("🔍 Verifying updated product data...");
+          // "🔍 Verifying updated product data...");
           const freshProducts = await loadProductsWithOldestBatch();
           const updatedProduct = freshProducts.find(p => p.product_id === existingProduct.product_id);
           if (updatedProduct) {
-            console.log("🔍 Updated product found in fresh data:", {
-              product_id: updatedProduct.product_id,
-              product_name: updatedProduct.product_name,
-              quantity: updatedProduct.quantity,
-              product_quantity: updatedProduct.product_quantity
-            });
+
           } else {
-            console.log("⚠️ Updated product not found in fresh data, trying fallback...");
+            // "⚠️ Updated product not found in fresh data, trying fallback...");
             // Try fallback to regular products endpoint
-            const fallbackResponse = await handleApiCall("get_products");
+const fallbackResponse = await handleApiCall("get_products", { location_id: locationId, role: userRole, user_id: currentUser });
             if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
               const fallbackProduct = fallbackResponse.data.find(p => p.product_id === existingProduct.product_id);
               if (fallbackProduct) {
-                console.log("🔍 Updated product found in fallback data:", {
-                  product_id: fallbackProduct.product_id,
-                  product_name: fallbackProduct.product_name,
-                  quantity: fallbackProduct.quantity,
-                  product_quantity: fallbackProduct.product_quantity
-                });
+
               }
             }
           }
           
           // Force a final UI update by setting the state directly
-          console.log("🔄 Force updating UI state...");
+          // "🔄 Force updating UI state...");
           if (updatedProduct) {
             setInventoryData(prevData => {
               const updatedData = prevData.map(product => 
@@ -1947,23 +1923,18 @@ function Warehouse() {
                   ? { ...product, ...updatedProduct }
                   : product
               );
-              console.log("🔍 Updated inventory data:", updatedData.length, "products");
+              // "🔍 Updated inventory data:", updatedData.length, "products");
               return updatedData;
             });
           } else {
             // If still no updated product found, wait a bit more and try again
-            console.log("⚠️ Still no updated product found, waiting and retrying...");
+            // "⚠️ Still no updated product found, waiting and retrying...");
             await new Promise(resolve => setTimeout(resolve, 2000));
             
             const retryProducts = await loadProductsWithOldestBatch();
             const retryProduct = retryProducts.find(p => p.product_id === existingProduct.product_id);
             if (retryProduct) {
-              console.log("🔍 Updated product found on retry:", {
-                product_id: retryProduct.product_id,
-                product_name: retryProduct.product_name,
-                quantity: retryProduct.quantity,
-                product_quantity: retryProduct.product_quantity
-              });
+
               
               // Update the state with retry data
               setInventoryData(prevData => {
@@ -1977,16 +1948,16 @@ function Warehouse() {
             }
           }
           
-          console.log("✅ Data refresh completed");
+          // "✅ Data refresh completed");
           
           // Force a final re-render to ensure UI is updated
-          console.log("🔄 Force triggering re-render...");
+          // "🔄 Force triggering re-render...");
           setInventoryData(prevData => [...prevData]);
         } else {
           safeToast("error", response.message || "Failed to update stock");
         }
       } catch (error) {
-        console.error("Error updating stock:", error);
+        safeToast("error", "Error updating stock:", error);
         safeToast("error", "Failed to update stock");
       } finally {
         setLoading(false);
@@ -1997,15 +1968,15 @@ function Warehouse() {
     async function handleAddNewProduct(e) {
       e.preventDefault();
       
-      console.log("🔄 Starting add product process...");
-      console.log("📝 Form data:", newProductForm);
-      console.log("🔍 Brand ID from form:", newProductForm.brand_id);
-      console.log("🔍 Brand search from form:", newProductForm.brand_search);
+      // "🔄 Starting add product process...");
+      // "📝 Form data:", newProductForm);
+      // "🔍 Brand ID from form:", newProductForm.brand_id);
+      // "🔍 Brand search from form:", newProductForm.brand_search);
       
       // Basic required fields validation
       if (!newProductForm.product_name || !newProductForm.category || !newProductForm.product_type || !newProductForm.srp) {
         safeToast("error", "Please fill in all required fields (Product Name, Category, Product Type, SRP)");
-        console.log("❌ Basic validation failed - missing required fields");
+        // "❌ Basic validation failed - missing required fields");
         return;
       }
 
@@ -2014,13 +1985,13 @@ function Warehouse() {
         if (newProductForm.configMode === "bulk") {
           if (!newProductForm.boxes || !newProductForm.strips_per_box || !newProductForm.tablets_per_strip) {
             safeToast("error", "Please fill in all medicine-specific fields (Boxes, Strips per Box, Tablets per Strip)");
-            console.log("❌ Medicine bulk mode validation failed - missing required fields");
+            // "❌ Medicine bulk mode validation failed - missing required fields");
             return;
           }
         } else if (newProductForm.configMode === "pieces") {
           if (!newProductForm.total_tablets) {
             safeToast("error", "Please enter the total number of tablets");
-            console.log("❌ Medicine pieces mode validation failed - missing total tablets");
+            // "❌ Medicine pieces mode validation failed - missing total tablets");
             return;
           }
         }
@@ -2031,13 +2002,13 @@ function Warehouse() {
         if (newProductForm.configMode === "bulk") {
           if (!newProductForm.boxes || !newProductForm.pieces_per_pack) {
             safeToast("error", "Please fill in all non-medicine-specific fields (Boxes, Pieces per Box)");
-            console.log("❌ Non-medicine bulk mode validation failed - missing required fields");
+            // "❌ Non-medicine bulk mode validation failed - missing required fields");
             return;
           }
         } else if (newProductForm.configMode === "pieces") {
           if (!newProductForm.total_pieces) {
             safeToast("error", "Please enter the total number of pieces");
-            console.log("❌ Non-medicine pieces mode validation failed - missing total pieces");
+            // "❌ Non-medicine pieces mode validation failed - missing total pieces");
             return;
           }
         }
@@ -2083,7 +2054,7 @@ function Warehouse() {
       });
 
       safeToast("success", "Product added to batch! Add more products or save batch when ready.");
-      console.log("✅ Product added to temporary storage:", tempProduct);
+      // "✅ Product added to temporary storage:", tempProduct);
     }
 
 
@@ -2149,7 +2120,7 @@ function Warehouse() {
           }))
         };
 
-        console.log("🚀 Saving batch as single entry:", batchData);
+        // "🚀 Saving batch as single entry:", batchData);
 
         // Call API to save batch
         const response = await handleApiCall("add_batch_entry", batchData);
@@ -2175,12 +2146,12 @@ function Warehouse() {
           await loadData("products");
           await loadData("all");
           
-          console.log("✅ Batch saved successfully, new batch number generated:", newBatchNumber);
+          // "✅ Batch saved successfully, new batch number generated:", newBatchNumber);
         } else {
           safeToast("error", response.message || "Failed to save batch");
         }
       } catch (error) {
-        console.error("❌ Error saving batch:", error);
+        safeToast("error", "Failed to save batch: " + error.message);
         safeToast("error", "Failed to save batch: " + error.message);
       } finally {
         setLoading(false);
@@ -2207,7 +2178,7 @@ function Warehouse() {
     async function syncFifoStock() {
       setLoading(true);
       try {
-        console.log("🔄 Syncing FIFO stock with product quantities...");
+        // "🔄 Syncing FIFO stock with product quantities...");
         
         const response = await handleApiCall("sync_fifo_stock", {});
         
@@ -2218,12 +2189,12 @@ function Warehouse() {
           await loadData("products");
           await loadData("all");
           
-          console.log("✅ FIFO stock sync completed");
+          // "✅ FIFO stock sync completed");
         } else {
           safeToast("error", response.message || "Failed to sync FIFO stock");
         }
       } catch (error) {
-        console.error("❌ Error syncing FIFO stock:", error);
+        safeToast("error", "❌ Error syncing FIFO stock:", error);
         safeToast("error", "Failed to sync FIFO stock: " + error.message);
       } finally {
         setLoading(false);
@@ -2234,7 +2205,7 @@ function Warehouse() {
     async function forceSyncAllProducts() {
       setLoading(true);
       try {
-        console.log("🔄 Force syncing all products with FIFO stock...");
+        // "🔄 Force syncing all products with FIFO stock...");
         
         const response = await handleApiCall("force_sync_all_products", {});
         
@@ -2245,12 +2216,12 @@ function Warehouse() {
           await loadData("products");
           await loadData("all");
           
-          console.log("✅ Force sync completed");
+          // "✅ Force sync completed");
         } else {
           safeToast("error", response.message || "Failed to force sync all products");
         }
       } catch (error) {
-        console.error("❌ Error force syncing all products:", error);
+        safeToast("error", "Failed to force sync all products: " + error.message);
         safeToast("error", "Failed to force sync all products: " + error.message);
       } finally {
         setLoading(false);
@@ -2261,7 +2232,7 @@ function Warehouse() {
     async function cleanupDuplicateTransferProducts() {
       setLoading(true);
       try {
-        console.log("🧹 Cleaning up duplicate transfer products...");
+        // "🧹 Cleaning up duplicate transfer products...");
         
         const response = await handleApiCall("cleanup_duplicate_transfer_products", {});
         
@@ -2272,12 +2243,12 @@ function Warehouse() {
           await loadData("products");
           await loadData("all");
           
-          console.log("✅ Cleanup completed");
+          // "✅ Cleanup completed");
         } else {
           safeToast("error", response.message || "Failed to cleanup duplicate transfer products");
         }
       } catch (error) {
-        console.error("❌ Error cleaning up duplicate transfer products:", error);
+        safeToast("error", "Failed to cleanup duplicate transfer products: " + error.message);
         safeToast("error", "Failed to cleanup duplicate transfer products: " + error.message);
       } finally {
         setLoading(false);
@@ -2314,7 +2285,7 @@ function Warehouse() {
         }
         
       } catch (error) {
-        console.error("Error duplicating batches:", error);
+        safeToast("error", "Error duplicating batches:", error);
         safeToast("error", "An error occurred while duplicating product batches");
       } finally {
         setLoading(false);
@@ -2338,10 +2309,10 @@ function Warehouse() {
           location_id: 2  // Warehouse location
         };
 
-        console.log("🔄 Adding quantity to existing product:", productData);
+        // "🔄 Adding quantity to existing product:", productData);
 
         const response = await handleApiCall("add_quantity_to_product", productData);
-        console.log("📡 API Response:", response);
+        // "📡 API Response:", response);
         
         if (response.success) {
           safeToast("success", "Quantity added successfully to existing product!");
@@ -2354,7 +2325,7 @@ function Warehouse() {
           safeToast("error", response.message || "Failed to add quantity to product");
         }
       } catch (error) {
-        console.error("❌ Error adding quantity:", error);
+        safeToast("error", "Failed to add quantity: " + error.message);
         safeToast("error", "Failed to add quantity: " + error.message);
       } finally {
         setLoading(false);
@@ -2381,14 +2352,14 @@ function Warehouse() {
             }));
           }
         } catch (error) {
-          console.error("Failed to fetch warehouse KPIs", error);
+          safeToast("error", "Failed to fetch warehouse KPIs", error);
         }
       }
       fetchWarehouseKPIs();
       loadData("all");
       
       // Auto-start scanner when component mounts (if enabled in settings)
-      console.log("🚀 Auto-starting scanner...");
+      // "🚀 Auto-starting scanner...");
       setScannerActive(settings.barcodeScanning);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
     }, [])
@@ -2397,7 +2368,7 @@ function Warehouse() {
     useEffect(() => {
       const interval = setInterval(async () => {
         if (!loading && inventoryData.length > 0 && notifications) {
-          console.log("🔄 Auto-refreshing warehouse notifications...");
+          // "🔄 Auto-refreshing warehouse notifications...");
           const previousExpiringCount = notifications.expiring?.length || 0;
           const previousExpiredCount = notifications.expired?.length || 0;
           const previousLowStockCount = notifications.lowStock?.length || 0;
@@ -2444,11 +2415,11 @@ function Warehouse() {
   
     // Debug useEffect to track categoriesData changes
     useEffect(() => {
-      console.log("🔄 categoriesData changed:", categoriesData);
-      console.log("🔄 categoriesData length:", categoriesData.length);
+      // "🔄 categoriesData changed:", categoriesData);
+      // "🔄 categoriesData length:", categoriesData.length);
       if (categoriesData.length > 0) {
-        console.log("🔄 First category:", categoriesData[0]);
-        console.log("🔄 All categories:", categoriesData.map(cat => cat.category_name));
+        // "🔄 First category:", categoriesData[0]);
+        // "🔄 All categories:", categoriesData.map(cat => cat.category_name));
       }
     }, [categoriesData])
 
@@ -2494,7 +2465,7 @@ function Warehouse() {
         
         // Here you could trigger an API call to create purchase orders
         // or send notifications to suppliers
-        console.log("Auto-reorder triggered for products:", lowStockProducts);
+        // "Auto-reorder triggered for products:", lowStockProducts);
       }
     }
 
@@ -5158,7 +5129,7 @@ function Warehouse() {
                   value={newProductForm.brand_search || ""}
                   onChange={(e) => {
                     const searchTerm = e.target.value;
-                    console.log("🔍 Brand input:", searchTerm);
+                    // "🔍 Brand input:", searchTerm);
                     handleNewProductInputChange("brand_search", searchTerm);
                     
                     // Clear brand_id to indicate this will be a new brand
@@ -5191,7 +5162,7 @@ function Warehouse() {
                           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bg.hover}
                           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           onClick={() => {
-                            console.log("🖱️ Brand suggestion clicked:", brand);
+                            // "🖱️ Brand suggestion clicked:", brand);
                             handleNewProductInputChange("brand_search", brand.brand);
                             handleNewProductInputChange("brand_id", brand.brand_id);
                           }}
@@ -5213,7 +5184,7 @@ function Warehouse() {
                         onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.success + '30'}
                         onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.success + '20'}
                         onClick={() => {
-                          console.log("🆕 Creating new brand:", newProductForm.brand_search);
+                          // "🆕 Creating new brand:", newProductForm.brand_search);
                           handleNewProductInputChange("brand_id", ""); // Clear brand_id to indicate new brand
                         }}
                       >

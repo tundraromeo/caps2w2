@@ -28,9 +28,9 @@ export default function LoginForm() {
 
   // Auto-show captcha once both username and password are filled
   useEffect(() => {
-    console.log('Username:', username, 'Password:', password, 'ShowCaptcha:', showCaptcha);
+    
     if (username.trim() && password.trim() && !showCaptcha) {
-      console.log('Showing captcha...');
+      
       setShowCaptcha(true);
       generateCaptcha();
     }
@@ -38,29 +38,29 @@ export default function LoginForm() {
 
   const generateCaptcha = async () => {
     try {
-      console.log("Generating captcha...");
+      
       const response = await axios.post(API_BASE_URL, {
         action: "generate_captcha"
       });
       
-      console.log("Captcha API response:", response.data);
+      
       
       if (response.data.success) {
         setCaptchaQuestion(response.data.question);
         setCaptchaAnswer(response.data.answer.toString());
-        console.log("Captcha generated:", response.data.question, "Answer:", response.data.answer);
+        
         if (debugMode) {
           setDebugInfo(`Generated: ${response.data.question} | Answer: ${response.data.answer} | Type: ${typeof response.data.answer}`);
         }
       }
     } catch (err) {
-      console.error("Error generating captcha:", err);
+      
       // Fallback captcha if API fails
       const num1 = Math.floor(Math.random() * 10) + 1;
       const num2 = Math.floor(Math.random() * 10) + 1;
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);
       setCaptchaAnswer((num1 + num2).toString());
-      console.log("Fallback captcha generated:", num1, "+", num2, "=", num1 + num2);
+      
       if (debugMode) {
         setDebugInfo(`Fallback: ${num1} + ${num2} = ${num1 + num2}`);
       }
@@ -125,9 +125,9 @@ export default function LoginForm() {
     }
 
     // Debug: Log captcha values
-    console.log("Captcha Input:", captchaInput, "Type:", typeof captchaInput);
-    console.log("Captcha Answer:", captchaAnswer, "Type:", typeof captchaAnswer);
-    console.log("String comparison:", captchaInput.toString(), "===", captchaAnswer.toString(), "=", captchaInput.toString() === captchaAnswer.toString());
+    
+    
+    
     
     if (captchaInput.toString() !== captchaAnswer.toString()) {
       const msg = "Incorrect captcha answer. Please try again.";
@@ -141,14 +141,7 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      console.log("Sending login request with:", {
-        action: "login",
-        username: username,
-        password: password,
-        captcha: captchaInput,
-        captchaAnswer: captchaAnswer,
-        route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
-      });
+
       
       const res = await axios.post(API_BASE_URL, {
         action: "login",
@@ -160,7 +153,7 @@ export default function LoginForm() {
         route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
       });
 
-      console.log("Login response:", res.data);
+      
 
       if (res.data.success) {
         const role = res.data.role;
@@ -233,7 +226,7 @@ export default function LoginForm() {
         generateCaptcha(); // Generate new captcha
       }
     } catch (err) {
-      console.error("Login error:", err);
+      
       const msg = "An unexpected error occurred. Please check your connection.";
       setError(msg);
       toast.error(msg);
