@@ -246,6 +246,11 @@ export const useAPI = () => {
     updateBatchTransfer: useCallback((transferId, updateData) => 
       callAPI(apiHandler.updateBatchTransfer.bind(apiHandler), [transferId, updateData]), [callAPI]
     ),
+
+    // ============= GENERIC API CALL =============
+    callGenericAPI: useCallback((endpoint, action, data, method) => 
+      callAPI(apiHandler.callGenericAPI.bind(apiHandler), [endpoint, action, data, method]), [callAPI]
+    ),
   };
 
   // Utility methods

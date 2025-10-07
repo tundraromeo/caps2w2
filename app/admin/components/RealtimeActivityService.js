@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useNotification } from './NotificationContext';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+const API_BASE_URL = "/api/proxy";
 
 const RealtimeActivityService = () => {
   const notificationContext = useNotification();
@@ -27,6 +27,7 @@ const RealtimeActivityService = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          endpoint: 'backend.php',
           action: 'get_activity_summary',
           hours: 1 // Check last hour for real-time updates
         }),

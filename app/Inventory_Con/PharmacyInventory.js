@@ -55,7 +55,7 @@ const PharmacyInventory = () => {
   // Use the centralized API hook
   const { api, loading: apiLoading, error: apiError } = useAPI();
 
-  // API function - using direct API calls for pharmacy operations
+  // API function - using centralized API system to avoid CORS issues
   async function handleApiCall(action, data = {}) {
     console.log("🚀 API Call Payload:", { action, ...data });
 
@@ -65,53 +65,28 @@ const PharmacyInventory = () => {
       // Route to appropriate API method based on action
       switch (action) {
         case 'get_locations':
-          // Try centralized API first, fallback to batch tracking
-          try {
-            response = await api.getLocations();
-          } catch (err) {
-            console.warn("Centralized API failed, using batch tracking API:", err);
-            response = await fetchBatchTrackingAPI(action, data);
-          }
+          response = await api.getLocations();
           break;
           
         case 'get_pharmacy_products':
-          // Use pharmacy API directly for better SRP value calculation
-          response = await fetchPharmacyAPI(action, data);
+          response = await api.getPharmacyProducts(data);
           break;
           
         case 'get_location_products':
-          // Try centralized API first, fallback to batch tracking
-          try {
-            response = await api.getProducts(data);
-          } catch (err) {
-            console.warn("Centralized API failed, using batch tracking API:", err);
-            response = await fetchBatchTrackingAPI(action, data);
-          }
+          response = await api.getProducts(data);
           break;
           
         case 'delete_product':
-          // Try centralized API first, fallback to batch tracking
-          try {
-            response = await api.archivePharmacyProduct(data.product_id);
-          } catch (err) {
-            console.warn("Centralized API failed, using batch tracking API:", err);
-            response = await fetchBatchTrackingAPI(action, data);
-          }
+          response = await api.archivePharmacyProduct(data.product_id);
           break;
           
         case 'get_fifo_stock':
-          // Try centralized API first, fallback to batch tracking
-          try {
-            response = await api.getFIFOStock(data.product_id, data.location_id);
-          } catch (err) {
-            console.warn("Centralized API failed, using batch tracking API:", err);
-            response = await fetchBatchTrackingAPI(action, data);
-          }
+          response = await api.getFIFOStock(data.product_id, data.location_id);
           break;
           
         default:
-          // Use direct API call for batch tracking specific actions
-          response = await fetchBatchTrackingAPI(action, data);
+          // For batch tracking specific actions, use the centralized API with batch_tracking.php endpoint
+          response = await api.callGenericAPI('batch_tracking.php', action, data);
       }
 
       console.log("✅ API Success Response:", response);
@@ -127,186 +102,27 @@ const PharmacyInventory = () => {
     }
   }
 
-  // Function for pharmacy API calls (for SRP value calculation)
-  async function fetchPharmacyAPI(action, data = {}) {
-    const API_BASE_URL = "http://localhost/Enguio_Project/Api/pharmacy_api.php";
-    
-    try {
-      // Add cache-busting parameter
-      const timestamp = new Date().getTime();
-      const url = `${API_BASE_URL}?t=${timestamp}`;
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-        body: JSON.stringify({ action, ...data }),
-        credentials: 'omit'
-      });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
-      }
-
-      const resData = await response.json();
-      console.log("✅ Pharmacy API Success Response:", resData);
-
-      if (resData && typeof resData === "object") {
-        if (!resData.success) {
-          console.warn("⚠️ Pharmacy API responded with failure:", resData.message || resData);
-        }
-        return resData;
-      } else {
-        console.warn("⚠️ Unexpected pharmacy API response format:", resData);
-        return {
-          success: false,
-          message: "Unexpected response format",
-          data: resData,
-        };
-      }
-    } catch (error) {
-      console.error("❌ Pharmacy API Call Error:", error);
-      
-      // Provide more specific error information
-      if (error.message.includes('Failed to fetch')) {
-        throw new Error("Cannot connect to Pharmacy API server. Please check if XAMPP is running and accessible.");
-      }
-      
-      throw error;
-    }
-  }
-
-  // Fallback function for direct API calls
-  async function fetchBatchTrackingAPI(action, data = {}) {
-    const API_BASE_URL = "http://localhost/Enguio_Project/Api/batch_tracking.php";
-    
-    try {
-      // Add cache-busting parameter
-      const timestamp = new Date().getTime();
-      const url = `${API_BASE_URL}?t=${timestamp}`;
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-        body: JSON.stringify({ action, ...data }),
-        credentials: 'omit'
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
-      }
-
-      const resData = await response.json();
-      console.log("✅ Fallback API Success Response:", resData);
-
-      if (resData && typeof resData === "object") {
-        if (!resData.success) {
-          console.warn("⚠️ API responded with failure:", resData.message || resData);
-        }
-        return resData;
-      } else {
-        console.warn("⚠️ Unexpected API response format:", resData);
-        return {
-          success: false,
-          message: "Unexpected response format",
-          data: resData,
-        };
-      }
-    } catch (error) {
-      console.error("❌ Fallback API Call Error:", error);
-      
-      // Provide more specific error information
-      if (error.message.includes('Failed to fetch')) {
-        throw new Error("Cannot connect to API server. Please check if XAMPP is running and accessible.");
-      }
-      
-      throw error;
-    }
-  }
-
-  // Function to fetch transferred batches using the new API
+  // Function to fetch transferred batches using the centralized API system
   async function fetchTransferredBatches(data = {}) {
-    const API_BASE_URL = "http://localhost/Enguio_Project/Api/get_transferred_batches_api.php";
-    
     try {
-      const timestamp = new Date().getTime();
-      const url = `${API_BASE_URL}?t=${timestamp}`;
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-        body: JSON.stringify({ action: 'get_transferred_batches', ...data }),
-        credentials: 'omit'
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
-      }
-
-      const resData = await response.json();
-      console.log("✅ Transferred Batches API Success Response:", resData);
-
-      if (resData && typeof resData === "object") {
-        if (!resData.success) {
-          console.warn("⚠️ API responded with failure:", resData.message || resData);
-        }
-        return resData;
-      } else {
-        console.warn("⚠️ Unexpected API response format:", resData);
-        return {
-          success: false,
-          message: "Unexpected response format",
-          data: resData,
-        };
-      }
+      const response = await api.callGenericAPI('get_transferred_batches_api.php', 'get_transferred_batches', data);
+      console.log("✅ Transferred Batches API Success Response:", response);
+      return response;
     } catch (error) {
       console.error("❌ Transferred Batches API Call Error:", error);
-      
-      if (error.message.includes('Failed to fetch')) {
-        throw new Error("Cannot connect to Transferred Batches API server. Please check if XAMPP is running and accessible.");
-      }
-      
       throw error;
     }
   }
 
-  // Function to populate missing batch details
+  // Function to populate missing batch details using centralized API
   async function populateMissingBatchDetails() {
-    const API_BASE_URL = "http://localhost/Enguio_Project/Api/get_transferred_batches_api.php";
-    
     try {
-      const timestamp = new Date().getTime();
-      const url = `${API_BASE_URL}?t=${timestamp}`;
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache"
-        },
-        body: JSON.stringify({ 
-          action: 'populate_missing_batch_details',
-          location_name: 'pharmacy'
-        }),
-        credentials: 'omit'
+      const response = await api.callGenericAPI('get_transferred_batches_api.php', 'populate_missing_batch_details', {
+        location_name: 'pharmacy'
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
-      }
-
-      const resData = await response.json();
-      console.log("✅ Populate Missing Batch Details API Response:", resData);
-
-      return resData;
+      console.log("✅ Populate Missing Batch Details API Response:", response);
+      return response;
     } catch (error) {
       console.error("❌ Populate Missing Batch Details API Call Error:", error);
       throw error;
@@ -361,21 +177,15 @@ const PharmacyInventory = () => {
     }
   }
 
-  // Test API connection
-  // Simple API connection test
+  // Test API connection using centralized API
   const testAPIConnection = async () => {
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/batch_tracking.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'test' })
-      });
-      
-      if (response.ok) {
+      const response = await api.testConnection();
+      if (response.success) {
         console.log("✅ API connected successfully");
         return true;
       } else {
-        throw new Error(`Server error: ${response.status}`);
+        throw new Error(`Server error: ${response.message}`);
       }
     } catch (error) {
       console.error("❌ API connection failed:", error);
@@ -384,18 +194,12 @@ const PharmacyInventory = () => {
     }
   };
 
-  // Simple function to get pharmacy location
+  // Function to get pharmacy location using centralized API
   const loadPharmacyLocation = async () => {
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/batch_tracking.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_locations' })
-      });
-      
-      const data = await response.json();
-      if (data.success) {
-        const pharmacy = data.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
+      const response = await api.getLocations();
+      if (response.success && response.data) {
+        const pharmacy = response.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
         if (pharmacy) {
           setPharmacyLocationId(pharmacy.location_id);
         }
@@ -409,25 +213,19 @@ const PharmacyInventory = () => {
     return null;
   };
 
-  // Simple function to load products
+  // Function to load products using centralized API
   const loadProducts = async () => {
     if (!pharmacyLocationId) return;
     
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/batch_tracking.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'get_pharmacy_products',
-          location_name: 'pharmacy'
-        })
+      const response = await api.getPharmacyProducts({
+        location_name: 'pharmacy'
       });
       
-      const data = await response.json();
-      if (data.success && data.data) {
+      if (response.success && response.data) {
         // Filter out archived products
-        const activeProducts = data.data.filter(product => 
+        const activeProducts = response.data.filter(product => 
           product.status !== 'archived'
         );
         

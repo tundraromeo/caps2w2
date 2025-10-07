@@ -72,7 +72,7 @@ export default function InventoryPage() {
       console.log('Inventory Logout attempt - Emp ID:', empId);
       
       // Call logout API
-      const response = await fetch('http://localhost/Enguio_Project/Api/login.php', {
+      const response = await fetch('http://localhost/caps2e2/Api/login.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

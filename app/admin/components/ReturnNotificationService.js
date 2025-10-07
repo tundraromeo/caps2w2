@@ -10,10 +10,11 @@ const ReturnNotificationService = () => {
   // Function to check for new returns
   const checkForNewReturns = async () => {
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/pos_return_api.php', {
+      const response = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          endpoint: 'pos_return_api.php',
           action: 'get_pending_returns',
           limit: 100
         })

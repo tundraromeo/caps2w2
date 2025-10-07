@@ -60,88 +60,33 @@ function resetErrorToast() {
 
 
 import { getApiEndpointForAction } from '../lib/apiHandler';
-// API function
+import apiHandler from '../lib/apiHandler';
+
+// API function - Updated to use centralized API handler
 async function handleApiCall(action, data = {}) {
-  const endpoint = getApiEndpointForAction(action);
-  const url = `http://localhost/Enguio_Project/Api/${endpoint}`;
-  const payload = { action, ...data };
-  // "🚀 API Call Payload:", payload);
-
   try {
-    // "📡 Making API request to:", url);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    // "📡 HTTP Response Status:", response.status);
-    // "📡 HTTP Response Headers:", response.headers);
-
-    // Check if response is ok
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // Get response text first to check if it's valid JSON
-    const responseText = await response.text();
-    // "📡 Raw Response Text:", responseText);
-
-    // Check if response starts with HTML tags (indicating PHP error)
-    if (responseText.trim().startsWith('<') || responseText.includes('<br />') || responseText.includes('<b>')) {
-      safeToast("error", "❌ API returned HTML instead of JSON. This usually indicates a PHP error:");
-      safeToast("error", "❌ Response: " + responseText.substring(0, 200));
-      
-      // Try to extract error message from HTML
-      const errorMatch = responseText.match(/<b>.*?<\/b>/g);
-      const errorMessage = errorMatch ? errorMatch.join(', ') : 'Unknown PHP error';
-      
-      return {
-        success: false,
-        message: `PHP Error: ${errorMessage}`,
-        error: "PHP_ERROR",
-        rawResponse: responseText.substring(0, 500) // Include first 500 chars for debugging
-      };
-    }
-
-    // Try to parse as JSON
-    let resData;
-    try {
-      resData = JSON.parse(responseText);
-    } catch (jsonError) {
-      safeToast("error", "❌ Failed to parse JSON response:", jsonError);
-      safeToast("error", "❌ Response text:", responseText);
-      
-      return {
-        success: false,
-        message: "Invalid JSON response from server",
-        error: "JSON_PARSE_ERROR",
-        rawResponse: responseText.substring(0, 500)
-      };
-    }
-
-    // "✅ API Response Data:", resData);
-
-    if (resData && typeof resData === "object") {
-      if (!resData.success) {
-        safeToast("error", resData.message || "API responded with failure");
-      } else {
-        // "✅ API call successful for action:", action);
-      }
-      return resData;
+    const endpoint = getApiEndpointForAction(action);
+    console.log(`🔗 Making API call: ${action} -> ${endpoint}`, data);
+    
+    const response = await apiHandler.callAPI(endpoint, action, data);
+    
+    console.log(`📥 API response for ${action}:`, response);
+    
+    if (response && typeof response === "object") {
+      // Don't show error toast here - let the calling function handle it
+      // This prevents false error messages for informational responses
+      return response;
     } else {
-      console.warn("⚠️ Unexpected API response format:", resData);
+      console.warn("⚠️ Unexpected API response format:", response);
       return {
         success: false,
         message: "Unexpected response format",
-        data: resData,
+        data: response,
       };
     }
   } catch (error) {
-    safeToast("error", "❌ API Call Error:", error);
-    safeToast("error", "❌ Error details:", {
+    console.error("❌ API Call Error:", error);
+    console.error("❌ Error details:", {
       name: error.name,
       message: error.message,
       stack: error.stack
@@ -157,9 +102,12 @@ async function handleApiCall(action, data = {}) {
 // New function to check if barcode exists
 async function checkBarcodeExists(barcode) {
   try {
+    console.log("🔍 Calling checkBarcodeExists with barcode:", barcode);
     const response = await handleApiCall("check_barcode", { barcode });
+    console.log("🔍 checkBarcodeExists response:", response);
     return response;
   } catch (error) {
+    console.error("❌ Error in checkBarcodeExists:", error);
     safeToast("error", "Error checking barcode:", error);
     return { success: false, error: error.message };
   }
@@ -168,7 +116,28 @@ async function checkBarcodeExists(barcode) {
 // New function to update product stock with FIFO tracking
 async function updateProductStock(productId, newQuantity, batchReference = "", expirationDate = null, unitCost = 0, newSrp = null, entryBy = "admin") {
   try {
-    const response = await handleApiCall("update_product_stock", { 
+    console.log("🔄 Updating product stock:", {
+      productId,
+      newQuantity,
+      batchReference,
+      expirationDate,
+      unitCost,
+      newSrp,
+      entryBy
+    });
+    
+    // Validate input data
+    if (!productId || productId <= 0) {
+      console.error("❌ Invalid product ID:", productId);
+      return { success: false, message: "Invalid product ID" };
+    }
+    
+    if (!newQuantity || newQuantity <= 0) {
+      console.error("❌ Invalid quantity:", newQuantity);
+      return { success: false, message: "Invalid quantity" };
+    }
+    
+    const apiData = { 
       product_id: productId, 
       new_quantity: newQuantity,
       batch_reference: batchReference,
@@ -176,13 +145,19 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
       unit_cost: unitCost,
       new_srp: newSrp,
       entry_by: entryBy
-    });
+    };
+    
+    console.log("📤 Sending API data:", apiData);
+    
+    const response = await handleApiCall("update_product_stock", apiData);
+    
+    console.log("📊 Update product stock response:", response);
     
     // Log the stock update activity with user context
     if (response.success) {
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+        await fetch('http://localhost/caps2e2/Api/backend.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -196,16 +171,21 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
             role: userData.role,
           }),
         });
+        console.log("✅ Activity logged successfully");
       } catch (error) {
-        safeToast("error", "Error in session storage:", error);
+        console.warn("⚠️ Failed to log activity:", error);
       }
+    } else {
+      console.error("❌ Stock update failed:", response.message);
     }
     
     return response;
   } catch (error) {
+    console.error("❌ Error updating product stock:", error);
+    
     // Log the error
     try {
-      await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+      await fetch('http://localhost/caps2e2/Api/backend.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,7 +197,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
         }),
       });
     } catch (sessionError) {
-      safeToast("error", "Error in session storage:", sessionError);
+      console.warn("⚠️ Failed to log error:", sessionError);
     }
     
     safeToast("error", "Error updating product stock:", error);
@@ -1036,13 +1016,13 @@ calculateLowStockAndExpiring(activeProducts);
         setScannerStatusMessage("✅ Barcode received! Checking if product exists...");
   
         try {
-          // "Checking barcode in database:", scanned);
+          console.log("🔍 Checking barcode in database:", scanned);
           
           // First, try to find the product in existing inventory data
           const existingProductInInventory = inventoryData.find(product => product.barcode === scanned);
           
           if (existingProductInInventory) {
-            // "Product found in inventory data:", existingProductInInventory);
+            console.log("✅ Product found in inventory data:", existingProductInInventory);
             // Product exists - show update stock modal
             setExistingProduct(existingProductInInventory);
             setNewStockQuantity("");
@@ -1056,12 +1036,13 @@ calculateLowStockAndExpiring(activeProducts);
             setShowUpdateStockModal(true);
             setScannerStatusMessage("✅ Product found! Opening update stock modal.");
           } else {
+            console.log("🔍 Product not in inventory data, checking API...");
             // If not in inventory, check API
             const barcodeCheck = await checkBarcodeExists(scanned);
-            // "Barcode check result:", barcodeCheck);
+            console.log("🔍 Barcode check result:", barcodeCheck);
             
             if (barcodeCheck.success && barcodeCheck.product) {
-              // "Product found via API, opening update stock modal");
+              console.log("✅ Product found via API, opening update stock modal:", barcodeCheck.product);
               setExistingProduct(barcodeCheck.product);
               setNewStockQuantity("");
               
@@ -1074,7 +1055,7 @@ calculateLowStockAndExpiring(activeProducts);
               setShowUpdateStockModal(true);
               setScannerStatusMessage("✅ Product found! Opening update stock modal.");
             } else {
-              // "Product not found, opening new product modal");
+              console.log("❌ Product not found, opening new product modal");
               // Product doesn't exist - show new product modal
               setNewProductForm({
                 product_name: "",
@@ -1391,11 +1372,12 @@ calculateLowStockAndExpiring(activeProducts);
     // FIFO Functions
     async function getFifoStock(productId) {
       try {
-        // "Calling get_fifo_stock API with product_id:", productId);
+        console.log("🔍 Calling get_fifo_stock API with product_id:", productId);
         const response = await handleApiCall("get_fifo_stock", { product_id: productId });
-        // "get_fifo_stock API response:", response);
+        console.log("📊 get_fifo_stock API response:", response);
         return response;
       } catch (error) {
+        console.error("❌ Error getting FIFO stock:", error);
         safeToast("error", "Error getting FIFO stock:", error);
         return { success: false, error: error.message };
       }
@@ -1433,6 +1415,15 @@ console.log("API response for products:", response);
               expiration = product.expiration;
             }
             
+            // Calculate days until expiry
+            let daysUntilExpiry = null;
+            if (expiration && expiration !== '0000-00-00' && expiration !== '' && expiration !== null) {
+              const today = new Date();
+              const expiryDate = new Date(expiration);
+              const diffTime = expiryDate - today;
+              daysUntilExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            }
+            
             return {
               ...product,
               // Map expiration_date from database to expiration field expected by frontend
@@ -1445,13 +1436,21 @@ console.log("API response for products:", response);
               oldest_batch_unit_cost: product.unit_cost || product.oldest_batch_unit_cost || product.srp || 0,
               // Ensure first_batch_srp is preserved
               first_batch_srp: product.first_batch_srp || product.srp || 0,
+              // Map entry_by from database to batch_entry_by field expected by frontend
+              batch_entry_by: product.entry_by || product.batch_entry_by || "System",
+              // Calculate days until expiry for display
+              days_until_expiry: daysUntilExpiry,
             };
           });
           
           // "📦 Processed", processedProducts.length, "products with batch info");
           
           // Debug: Log processed products to check SRP data
-
+          console.log("🔍 First product with batch data:", processedProducts[0]);
+          console.log("🔍 Oldest batch quantity:", processedProducts[0]?.oldest_batch_quantity);
+          console.log("🔍 Oldest batch SRP:", processedProducts[0]?.oldest_batch_srp);
+          console.log("🔍 Product quantity:", processedProducts[0]?.quantity);
+          console.log("🔍 Product SRP:", processedProducts[0]?.srp);
           
           return processedProducts;
         } else {
@@ -1486,6 +1485,15 @@ const warehouseProducts = productsArray.filter(
                     batchExpiration = oldestBatch.expiration;
                   }
                   
+                  // Calculate days until expiry
+                  let daysUntilExpiry = null;
+                  if (batchExpiration && batchExpiration !== '0000-00-00' && batchExpiration !== '' && batchExpiration !== null) {
+                    const today = new Date();
+                    const expiryDate = new Date(batchExpiration);
+                    const diffTime = expiryDate - today;
+                    daysUntilExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                  }
+                  
                   return {
                     ...product,
                     // Map expiration data properly for frontend use
@@ -1497,7 +1505,9 @@ const warehouseProducts = productsArray.filter(
                     oldest_batch_unit_cost: oldestBatch.unit_cost,
                     total_fifo_batches: fifoResponse.data.length,
                     // Use first_batch_srp from main API (original first batch by entry date)
-                    first_batch_srp: product.first_batch_srp || oldestBatch.srp || product.srp || 0
+                    first_batch_srp: product.first_batch_srp || oldestBatch.srp || product.srp || 0,
+                    // Calculate days until expiry for display
+                    days_until_expiry: daysUntilExpiry,
                   };
                 } else {
                   // Handle expiration from product data
@@ -1506,6 +1516,15 @@ const warehouseProducts = productsArray.filter(
                     productExpiration = product.expiration_date;
                   } else if (product.expiration && product.expiration !== '0000-00-00' && product.expiration !== '' && product.expiration !== null) {
                     productExpiration = product.expiration;
+                  }
+                  
+                  // Calculate days until expiry
+                  let daysUntilExpiry = null;
+                  if (productExpiration && productExpiration !== '0000-00-00' && productExpiration !== '' && productExpiration !== null) {
+                    const today = new Date();
+                    const expiryDate = new Date(productExpiration);
+                    const diffTime = expiryDate - today;
+                    daysUntilExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                   }
                   
                   return {
@@ -1519,7 +1538,9 @@ const warehouseProducts = productsArray.filter(
                     oldest_batch_unit_cost: product.srp || product.unit_price,
                     total_fifo_batches: 0,
                     // Add first batch SRP from product data
-                    first_batch_srp: product.srp || product.unit_price || 0
+                    first_batch_srp: product.srp || product.unit_price || 0,
+                    // Calculate days until expiry for display
+                    days_until_expiry: daysUntilExpiry,
                   };
                 }
               } catch (error) {
@@ -1533,12 +1554,23 @@ const warehouseProducts = productsArray.filter(
                   errorExpiration = product.expiration;
                 }
                 
+                // Calculate days until expiry for error case
+                let daysUntilExpiry = null;
+                if (errorExpiration && errorExpiration !== '0000-00-00' && errorExpiration !== '' && errorExpiration !== null) {
+                  const today = new Date();
+                  const expiryDate = new Date(errorExpiration);
+                  const diffTime = expiryDate - today;
+                  daysUntilExpiry = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                }
+                
                 return {
                   ...product,
                   // Ensure expiration field is available even on error
                   expiration: errorExpiration,
                   // Add first batch SRP from product data on error
-                  first_batch_srp: product.srp || product.unit_price || 0
+                  first_batch_srp: product.srp || product.unit_price || 0,
+                  // Calculate days until expiry for display
+                  days_until_expiry: daysUntilExpiry,
                 };
               }
             })
@@ -1684,6 +1716,7 @@ console.log("API response for product quantities:", response);
   }
 
     function openQuantityHistoryModal(product) {
+      console.log("🔄 Opening quantity history modal for product:", product.product_name, "ID:", product.product_id);
       setSelectedProductForHistory(product);
       setShowQuantityHistoryModal(true);
       setShowCurrentFifoData(true); // Always start with FIFO view
@@ -1697,25 +1730,34 @@ console.log("API response for product quantities:", response);
     }
 
     async function loadQuantityHistory(productId) {
-      // "Loading quantity history for product ID:", productId);
-      const response = await handleApiCall("get_quantity_history", { product_id: productId });
-      // "Quantity history response:", response);
-      if (response.success) {
-        setQuantityHistoryData(response.data);
-      } else {
-        safeToast("error", "Quantity history error:", response.message);
-        safeToast("error", "Failed to load quantity history: " + (response.message || "Unknown error"));
+      console.log("🔄 Loading quantity history for product ID:", productId);
+      try {
+        const response = await handleApiCall("get_quantity_history", { product_id: productId });
+        console.log("📊 Quantity history response:", response);
+        
+        if (response && response.success) {
+          console.log("✅ Quantity history loaded successfully:", response.data?.length || 0, "entries");
+          setQuantityHistoryData(response.data || []);
+        } else {
+          console.warn("⚠️ Quantity history failed:", response?.message);
+          // Don't show error toast - quantity history is not critical
+          setQuantityHistoryData([]);
+        }
+      } catch (error) {
+        console.error("❌ Error loading quantity history:", error);
+        // Don't show error toast - quantity history is not critical
+        setQuantityHistoryData([]);
       }
     }
 
     // Function to refresh quantity history and FIFO stock data
     async function refreshProductData(productId) {
-      // "🔄 Refreshing product data for ID:", productId);
+      console.log("🔄 Refreshing product data for ID:", productId);
       try {
-        // Refresh quantity history
+        // Refresh quantity history (non-critical)
         await loadQuantityHistory(productId);
         
-        // Refresh FIFO stock data
+        // Refresh FIFO stock data (critical)
         await loadFifoStock(productId);
         
         // Also refresh the main product list to update quantities
@@ -1724,9 +1766,10 @@ console.log("API response for product quantities:", response);
         // Toggle to show current FIFO data instead of history
         setShowCurrentFifoData(true);
         
-        // "✅ Product data refreshed successfully - Now showing current FIFO batches");
+        console.log("✅ Product data refreshed successfully - Now showing current FIFO batches");
       } catch (error) {
-        safeToast("error", "❌ Error refreshing product data:", error);
+        console.error("❌ Error refreshing product data:", error);
+        // Don't show error toast - let individual functions handle their own errors
       }
     }
 
@@ -1735,19 +1778,24 @@ console.log("API response for product quantities:", response);
 
 
     async function loadFifoStock(productId) {
-      // "Loading FIFO stock for product ID:", productId);
+      console.log("🔄 Loading FIFO stock for product ID:", productId);
       const response = await getFifoStock(productId);
-      // "FIFO stock response:", response);
-      if (response.success) {
+      console.log("📊 FIFO stock response:", response);
+      if (response.success && Array.isArray(response.data)) {
+        console.log("✅ FIFO data loaded successfully:", response.data.length, "batches");
+        console.log("🔍 FIFO batches:", response.data);
         setFifoStockData(response.data);
       } else {
+        console.warn("⚠️ FIFO stock error:", response.message);
+        console.warn("⚠️ Response data:", response.data);
         safeToast("error", "FIFO stock error:", response.message);
         safeToast("error", "Failed to load FIFO stock data: " + (response.message || "Unknown error"));
+        setFifoStockData([]);
       }
     }
 
-    // Handle update stock submission
-    async function handleUpdateStock() {
+    // Handle update stock submission - CHANGED: Now adds to batch instead of immediate save
+    async function handleAddStockToBatch() {
       // Calculate quantity based on configuration mode
       let quantityToAdd = 0;
       
@@ -1843,125 +1891,32 @@ console.log("API response for product quantities:", response);
         return;
       }
 
-      setLoading(true);
-      try {
-        // Generate batch reference for new stock
-        const batchRef = generateBatchRef();
-        
-        // Use SRP as unit cost for new stock
-        const unitCost = existingProduct.srp || existingProduct.unit_price || 0;
-        
-        // Use new SRP if edit SRP is enabled, otherwise use null
-        const srpValue = editSrpEnabled && newSrp ? parseFloat(newSrp) : null;
-        
-        // Ensure we use the most accurate expiration date from database
-        const expirationDate = newStockExpiration || existingProduct.expiration || existingProduct.oldest_batch_expiration;
-        
-        const response = await updateProductStock(
-          existingProduct.product_id, 
-          quantityToAdd, // Use calculated quantity
-          batchRef,
-          expirationDate,
-          unitCost,
-          srpValue,
-          currentUser // Pass current user for tracking
-        );
-        
-        if (response.success) {
-          const expirationMsg = newStockExpiration ? ` with expiration date ${new Date(newStockExpiration).toLocaleDateString()}` : "";
-          const srpMsg = editSrpEnabled && newSrp ? ` and updated SRP to ₱${parseFloat(newSrp).toFixed(2)}` : "";
-          const quantityMsg = ` (${quantityToAdd} ${existingProduct.product_type === "Medicine" ? "tablets" : "pieces"} added)`;
-          safeToast("success", `Stock updated successfully with FIFO tracking${quantityMsg}${expirationMsg}${srpMsg}`);
-          closeUpdateStockModal();
-          
-          // "🔄 Stock updated successfully, refreshing data...");
-          
-          // Add a delay to ensure database transaction is complete
-          // "⏳ Waiting for database transaction to complete...");
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Refresh product data to show updated quantities immediately
-          // "🔄 Loading updated product quantities...");
-          await loadData("products");
-          
-          // Also refresh oldest batch data to show updated batch information
-          // "🔄 Refreshing oldest batch data...");
-          await refreshOldestBatchData();
-          
-          // Force a complete data reload to ensure all data is fresh
-          // "🔄 Force reloading all data...");
-          await loadData("all");
-          
-          // Additional refresh to ensure UI is updated
-          // "🔄 Final refresh to ensure UI update...");
-          await refreshProductQuantities();
-          
-          // Get fresh data directly to verify the update
-          // "🔍 Verifying updated product data...");
-          const freshProducts = await loadProductsWithOldestBatch();
-          const updatedProduct = freshProducts.find(p => p.product_id === existingProduct.product_id);
-          if (updatedProduct) {
+      // Add to temporary batch instead of saving to database
+      const tempStockUpdate = {
+        ...existingProduct,
+        temp_id: Date.now(), // Unique temporary ID
+        is_stock_update: true, // Flag to indicate this is a stock update, not a new product
+        quantity_to_add: quantityToAdd,
+        new_stock_boxes: newStockBoxes || null,
+        new_stock_strips_per_box: newStockStripsPerBox || null,
+        new_stock_tablets_per_strip: newStockTabletsPerStrip || null,
+        new_stock_pieces_per_pack: newStockPiecesPerPack || null,
+        stock_update_config_mode: stockUpdateConfigMode,
+        expiration: newStockExpiration || existingProduct.expiration,
+        new_srp: editSrpEnabled && newSrp ? parseFloat(newSrp) : null,
+        batch: currentBatchNumber, // Use the same batch number
+        status: "pending_stock_update",
+        created_at: new Date().toISOString(),
+        entry_by: currentUser
+      };
 
-          } else {
-            // "⚠️ Updated product not found in fresh data, trying fallback...");
-            // Try fallback to regular products endpoint
-const fallbackResponse = await handleApiCall("get_products", { location_id: locationId, role: userRole, user_id: currentUser });
-            if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
-              const fallbackProduct = fallbackResponse.data.find(p => p.product_id === existingProduct.product_id);
-              if (fallbackProduct) {
-
-              }
-            }
-          }
-          
-          // Force a final UI update by setting the state directly
-          // "🔄 Force updating UI state...");
-          if (updatedProduct) {
-            setInventoryData(prevData => {
-              const updatedData = prevData.map(product => 
-                product.product_id === existingProduct.product_id 
-                  ? { ...product, ...updatedProduct }
-                  : product
-              );
-              // "🔍 Updated inventory data:", updatedData.length, "products");
-              return updatedData;
-            });
-          } else {
-            // If still no updated product found, wait a bit more and try again
-            // "⚠️ Still no updated product found, waiting and retrying...");
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const retryProducts = await loadProductsWithOldestBatch();
-            const retryProduct = retryProducts.find(p => p.product_id === existingProduct.product_id);
-            if (retryProduct) {
-
-              
-              // Update the state with retry data
-              setInventoryData(prevData => {
-                const updatedData = prevData.map(product => 
-                  product.product_id === existingProduct.product_id 
-                    ? { ...product, ...retryProduct }
-                    : product
-                );
-                return updatedData;
-              });
-            }
-          }
-          
-          // "✅ Data refresh completed");
-          
-          // Force a final re-render to ensure UI is updated
-          // "🔄 Force triggering re-render...");
-          setInventoryData(prevData => [...prevData]);
-        } else {
-          safeToast("error", response.message || "Failed to update stock");
-        }
-      } catch (error) {
-        safeToast("error", "Error updating stock:", error);
-        safeToast("error", "Failed to update stock");
-      } finally {
-        setLoading(false);
-      }
+      setTemporaryProducts(prev => [...prev, tempStockUpdate]);
+      
+      // Close the modal and show success message
+      closeUpdateStockModal();
+      safeToast("success", `Stock update added to batch! (${quantityToAdd} ${existingProduct.product_type === "Medicine" ? "tablets" : "pieces"})`);
+      
+      console.log("✅ Stock update added to batch:", tempStockUpdate);
     }
 
     // Handle new product submission - Now adds to temporary storage
@@ -2059,7 +2014,7 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
 
 
 
-    // New function to save batch as single entry
+    // New function to save batch as single entry - UPDATED to handle stock updates
     async function handleSaveBatch() {
       if (temporaryProducts.length === 0) {
         safeToast("error", "No products to save");
@@ -2069,89 +2024,190 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
       setLoading(true);
 
       try {
-        // Create batch summary data
-        const batchData = {
-          batch_reference: currentBatchNumber,
-          batch_date: new Date().toISOString().split('T')[0],
-          batch_time: new Date().toLocaleTimeString(),
-          total_products: temporaryProducts.length,
-          total_quantity: temporaryProducts.reduce((sum, p) => {
-            const totalPieces = p.product_type === "Medicine" 
-              ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
-              : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
-            return sum + totalPieces;
-          }, 0),
-          total_value: temporaryProducts.reduce((sum, p) => {
-            const totalPieces = p.product_type === "Medicine" 
-              ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
-              : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
-            return sum + ((parseFloat(p.srp || 0) * totalPieces));
-          }, 0),
-          location: "Warehouse",
-          entry_by: currentUser,
-          status: "active",
-          products: temporaryProducts.map(product => ({
-            product_name: product.product_name,
-            category: product.category,
-            product_type: product.product_type,
-            configMode: product.configMode || "bulk", // Store configuration mode
-            barcode: product.barcode,
-            description: product.description,
-            unit_price: parseFloat(product.srp), // Using SRP as unit_price for backend compatibility
-            srp: parseFloat(product.srp || 0),
-            brand_id: product.brand_id || 1,
-            // Store total pieces instead of bulk units
-            quantity: product.product_type === "Medicine" 
-              ? parseInt(product.total_tablets || 0)  // Total tablets for medicine
-              : parseInt(product.total_pieces || 0),  // Total pieces for non-medicine
-            supplier_id: product.supplier_id || 1,
-            expiration: product.expiration || null,
-            prescription: product.prescription,
-            bulk: product.bulk,
-            // Medicine fields
-            boxes: product.boxes || null,
-            strips_per_box: product.strips_per_box || null,
-            tablets_per_strip: product.tablets_per_strip || null,
-            total_tablets: product.total_tablets || null,
-            // Non-Medicine fields
-            boxes: product.boxes || null,
-            pieces_per_pack: product.pieces_per_pack || null,
-            total_pieces: product.total_pieces || null
-          }))
-        };
-
-        // "🚀 Saving batch as single entry:", batchData);
-
-        // Call API to save batch
-        const response = await handleApiCall("add_batch_entry", batchData);
+        console.log("🚀 Saving batch with", temporaryProducts.length, "items");
+        console.log("🔍 Current user:", currentUser);
+        console.log("🔍 Current batch number:", currentBatchNumber);
         
-        if (response.success) {
-          safeToast("success", `Batch saved successfully! ${temporaryProducts.length} products in single batch entry`);
+        // Separate new products and stock updates
+        const newProducts = temporaryProducts.filter(p => !p.is_stock_update);
+        const stockUpdates = temporaryProducts.filter(p => p.is_stock_update);
+        
+        console.log("📦 New products:", newProducts.length);
+        console.log("📊 Stock updates:", stockUpdates.length);
+        console.log("📋 All temporary products:", temporaryProducts);
+        
+        // Process stock updates first
+        let stockUpdateSuccess = true;
+        let failedUpdates = [];
+        
+        for (const stockUpdate of stockUpdates) {
+          console.log("🔄 Processing stock update for:", stockUpdate.product_name);
+          console.log("📋 Stock update data:", {
+            product_id: stockUpdate.product_id,
+            quantity_to_add: stockUpdate.quantity_to_add,
+            batch_reference: currentBatchNumber,
+            expiration: stockUpdate.expiration,
+            unit_cost: stockUpdate.srp || stockUpdate.unit_price || 0,
+            new_srp: stockUpdate.new_srp,
+            entry_by: currentUser
+          });
           
-          // Clear temporary products and close modal
-          setTemporaryProducts([]);
-          setShowBatchEntryModal(false);
+          // Validate data before making API call
+          if (!stockUpdate.product_id || stockUpdate.product_id <= 0) {
+            console.error("❌ Invalid product ID in stock update:", stockUpdate.product_id);
+            safeToast("error", `Invalid product ID for ${stockUpdate.product_name}`);
+            failedUpdates.push(stockUpdate.product_name);
+            stockUpdateSuccess = false;
+            continue;
+          }
           
-          // Generate new batch number for next batch
-          const newBatchNumber = generateBatchRef();
-          setCurrentBatchNumber(newBatchNumber);
+          if (!stockUpdate.quantity_to_add || stockUpdate.quantity_to_add <= 0) {
+            console.error("❌ Invalid quantity in stock update:", stockUpdate.quantity_to_add);
+            safeToast("error", `Invalid quantity for ${stockUpdate.product_name}`);
+            failedUpdates.push(stockUpdate.product_name);
+            stockUpdateSuccess = false;
+            continue;
+          }
           
-          // Reset new product form with new batch number
-          setNewProductForm(prev => ({
-            ...prev,
-            batch: newBatchNumber
-          }));
+          const response = await updateProductStock(
+            stockUpdate.product_id,
+            stockUpdate.quantity_to_add,
+            currentBatchNumber,
+            stockUpdate.expiration,
+            stockUpdate.srp || stockUpdate.unit_price || 0,
+            stockUpdate.new_srp,
+            currentUser
+          );
           
-          // Reload data to show new batch
-          await loadData("products");
-          await loadData("all");
+          console.log("📊 Stock update response for", stockUpdate.product_name, ":", response);
           
-          // "✅ Batch saved successfully, new batch number generated:", newBatchNumber);
+          if (!response.success) {
+            console.error("❌ Failed to update stock for:", stockUpdate.product_name);
+            console.error("❌ Error details:", response.message);
+            safeToast("error", `Failed to update stock for ${stockUpdate.product_name}: ${response.message}`);
+            failedUpdates.push(stockUpdate.product_name);
+            stockUpdateSuccess = false;
+          } else {
+            console.log("✅ Stock updated successfully for:", stockUpdate.product_name);
+          }
+        }
+        
+        // Process new products if any
+        if (newProducts.length > 0) {
+          const batchData = {
+            batch_reference: currentBatchNumber,
+            batch_date: new Date().toISOString().split('T')[0],
+            batch_time: new Date().toLocaleTimeString(),
+            total_products: newProducts.length,
+            total_quantity: newProducts.reduce((sum, p) => {
+              const totalPieces = p.product_type === "Medicine" 
+                ? parseInt(p.total_tablets || 0)
+                : parseInt(p.total_pieces || 0);
+              // Ensure we don't add NaN or invalid values
+              return sum + (isNaN(totalPieces) || totalPieces <= 0 ? 1 : totalPieces);
+            }, 0),
+            total_value: newProducts.reduce((sum, p) => {
+              const totalPieces = p.product_type === "Medicine" 
+                ? parseInt(p.total_tablets || 0)
+                : parseInt(p.total_pieces || 0);
+              const validPieces = isNaN(totalPieces) || totalPieces <= 0 ? 1 : totalPieces;
+              return sum + ((parseFloat(p.srp || 0) * validPieces));
+            }, 0),
+            location: "Warehouse",
+            entry_by: currentUser,
+            status: "active",
+            products: newProducts.map(product => ({
+              product_name: product.product_name,
+              category: product.category,
+              product_type: product.product_type,
+              configMode: product.configMode || "bulk",
+              barcode: product.barcode,
+              description: product.description,
+              unit_price: parseFloat(product.srp),
+              srp: parseFloat(product.srp || 0),
+              brand_id: product.brand_id || null, // Don't default to 1, let backend handle it
+              brand_name: product.brand_search || null, // Pass brand name for new brand creation
+              quantity: (() => {
+                const qty = product.product_type === "Medicine" 
+                  ? parseInt(product.total_tablets || 0)
+                  : parseInt(product.total_pieces || 0);
+                // Ensure quantity is a valid positive number
+                return isNaN(qty) || qty <= 0 ? 1 : qty;
+              })(),
+              supplier_id: product.supplier_id || 1,
+              expiration: product.expiration || null,
+              prescription: product.prescription,
+              bulk: product.bulk,
+              boxes: product.boxes || null,
+              strips_per_box: product.strips_per_box || null,
+              tablets_per_strip: product.tablets_per_strip || null,
+              total_tablets: product.total_tablets || null,
+              pieces_per_pack: product.pieces_per_pack || null,
+              total_pieces: product.total_pieces || null
+            }))
+          };
+
+          console.log("🚀 Saving new products batch:", batchData);
+          console.log("🔍 Product quantities:", newProducts.map(p => ({
+            name: p.product_name,
+            total_pieces: p.total_pieces,
+            total_tablets: p.total_tablets,
+            product_type: p.product_type,
+            calculated_quantity: p.product_type === "Medicine" 
+              ? parseInt(p.total_tablets || 0)
+              : parseInt(p.total_pieces || 0)
+          })));
+          
+          const response = await handleApiCall("add_batch_entry", batchData);
+          
+          if (!response.success) {
+            safeToast("error", response.message || "Failed to save new products");
+            setLoading(false);
+            return;
+          }
+        }
+        
+        safeToast("success", `Batch saved successfully! ${stockUpdates.length} stock update(s) and ${newProducts.length} new product(s)`);
+        
+        // Clear temporary products and close modal
+        setTemporaryProducts([]);
+        setShowBatchEntryModal(false);
+        
+        // Generate new batch number for next batch
+        const newBatchNumber = generateBatchRef();
+        setCurrentBatchNumber(newBatchNumber);
+        
+        // Reset new product form with new batch number
+        setNewProductForm(prev => ({
+          ...prev,
+          batch: newBatchNumber
+        }));
+        
+        // Reload data to show new batch
+        await loadData("products");
+        await loadData("all");
+        
+        // Force refresh FIFO data for all products that had stock updates
+        for (const stockUpdate of stockUpdates) {
+          console.log("🔄 Refreshing FIFO data for updated product:", stockUpdate.product_name);
+          await loadFifoStock(stockUpdate.product_id);
+        }
+        
+        // Show appropriate success/error message
+        if (stockUpdates.length > 0) {
+          if (stockUpdateSuccess) {
+            safeToast("success", `All stock updates completed successfully! New batch: ${newBatchNumber}`);
+            console.log("✅ All stock updates completed successfully, new batch number generated:", newBatchNumber);
+          } else {
+            safeToast("error", `Some stock updates failed: ${failedUpdates.join(', ')}`);
+            console.log("❌ Some stock updates failed:", failedUpdates);
+          }
         } else {
-          safeToast("error", response.message || "Failed to save batch");
+          safeToast("success", `Batch saved successfully! New batch: ${newBatchNumber}`);
+          console.log("✅ Batch saved successfully, new batch number generated:", newBatchNumber);
         }
       } catch (error) {
-        safeToast("error", "Failed to save batch: " + error.message);
+        console.error("❌ Error saving batch:", error);
         safeToast("error", "Failed to save batch: " + error.message);
       } finally {
         setLoading(false);
@@ -2329,6 +2385,8 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
       async function fetchWarehouseKPIs() {
         try {
           const response = await handleApiCall("get_warehouse_kpis", { location: "warehouse" });
+          console.log("📊 Warehouse KPIs response:", response);
+          
           if (response && response.success !== false && response !== null) {
             setStats((prev) => ({
               ...prev,
@@ -2339,16 +2397,20 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
               lowStockItems: response.lowStockItems ?? prev.lowStockItems,
               expiringSoon: response.expiringSoon ?? prev.expiringSoon,
             }));
+          } else {
+            console.warn("⚠️ Warehouse KPIs failed:", response?.message);
+            // Don't show error toast - KPIs are not critical, products will still load
           }
         } catch (error) {
-          safeToast("error", "Failed to fetch warehouse KPIs", error);
+          console.error("❌ Error fetching warehouse KPIs:", error);
+          // Don't show error toast - KPIs are not critical, products will still load
         }
       }
       fetchWarehouseKPIs();
       loadData("all");
       
       // Auto-start scanner when component mounts (if enabled in settings)
-      // "🚀 Auto-starting scanner...");
+      console.log("🚀 Auto-starting scanner...");
       setScannerActive(settings.barcodeScanning);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
     }, [])
@@ -2990,18 +3052,18 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                   .filter(product => {
                     if (filterOptions.stockStatus === 'all') return true;
                     if (filterOptions.stockStatus === 'low') {
-                      const qty = product.product_quantity || product.quantity || 0;
+                      const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
                       return qty > 0 && qty <= 10;
                     }
                     if (filterOptions.stockStatus === 'out') {
-                      const qty = product.product_quantity || product.quantity || 0;
+                      const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
                       return qty <= 0;
                     }
                     return true;
                   })
                   .map((product) => {
                     // Check for alert conditions
-                    const quantity = product.product_quantity || product.quantity || 0;
+                    const quantity = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
                     const isLowStock = settings.lowStockAlerts && isStockLow(quantity);
                     const isOutOfStock = quantity <= 0;
                     const isExpiringSoon = product.earliest_expiration && settings.expiryAlerts && isProductExpiringSoon(product.earliest_expiration);
@@ -3054,17 +3116,17 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                     </td>
                     <td className="px-3 py-2 text-center">
                       <div className="font-semibold" style={{ 
-                        color: (product.product_quantity || product.quantity || 0) <= 0 
+                        color: (product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 0 
                           ? theme.colors.danger 
-                          : (product.product_quantity || product.quantity || 0) <= 10 
+                          : (product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 10 
                             ? theme.colors.warning 
                             : theme.text.primary
                       }}>
-                        {product.product_quantity || product.quantity || 0}
+                        {product.oldest_batch_quantity || product.product_quantity || product.quantity || 0}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || 0).toFixed(2)}
+                      ₱{Number.parseFloat(product.oldest_batch_srp || product.first_batch_srp || product.srp || 0).toFixed(2)}
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || "N/A"}
@@ -4587,35 +4649,49 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
             </div>
 
             {/* Action Buttons */}
-            <div className="flex justify-end space-x-4 mt-6">
-              <button
-                type="button"
-                onClick={closeUpdateStockModal}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleUpdateStock}
-                disabled={loading || (() => {
-                  if (stockUpdateConfigMode === "bulk") {
-                    if (existingProduct.product_type === "Medicine") {
-                      // Medicine bulk mode: validate boxes, strips per box, tablets per strip
-                      return (!newStockBoxes || newStockBoxes <= 0 || !newStockStripsPerBox || newStockStripsPerBox <= 0 || !newStockTabletsPerStrip || newStockTabletsPerStrip <= 0);
+            <div className="flex justify-between items-center mt-6">
+              <div>
+                {temporaryProducts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={openBatchEntryModal}
+                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md flex items-center"
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    View Batch ({temporaryProducts.length})
+                  </button>
+                )}
+              </div>
+              <div className="flex space-x-4">
+                <button
+                  type="button"
+                  onClick={closeUpdateStockModal}
+                  className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddStockToBatch}
+                  disabled={loading || (() => {
+                    if (stockUpdateConfigMode === "bulk") {
+                      if (existingProduct.product_type === "Medicine") {
+                        // Medicine bulk mode: validate boxes, strips per box, tablets per strip
+                        return (!newStockBoxes || newStockBoxes <= 0 || !newStockStripsPerBox || newStockStripsPerBox <= 0 || !newStockTabletsPerStrip || newStockTabletsPerStrip <= 0);
+                      } else {
+                        // Non-Medicine bulk mode: validate boxes, pieces per box
+                        return (!newStockBoxes || newStockBoxes <= 0 || !newStockPiecesPerPack || newStockPiecesPerPack <= 0);
+                      }
                     } else {
-                      // Non-Medicine bulk mode: validate boxes, pieces per box
-                      return (!newStockBoxes || newStockBoxes <= 0 || !newStockPiecesPerPack || newStockPiecesPerPack <= 0);
+                      // Pieces mode: validate direct input
+                      return (!newStockQuantity || newStockQuantity <= 0);
                     }
-                  } else {
-                    // Pieces mode: validate direct input
-                    return (!newStockQuantity || newStockQuantity <= 0);
-                  }
-                })()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50"
-              >
-                {loading ? "Updating..." : "Update Stock"}
-              </button>
+                  })()}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50"
+                >
+                  {loading ? "Adding..." : "Add to Batch"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -6036,17 +6112,32 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                 ) : (
                   <>
                     <div className="mb-6">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-blue-50 rounded-lg">
+                      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-blue-50 rounded-lg">
                         <div className="text-center">
                           <div className="text-2xl font-bold text-blue-600">{temporaryProducts.length}</div>
-                          <div className="text-sm text-blue-700">Total Products</div>
+                          <div className="text-sm text-blue-700">Total Items</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-indigo-600">
+                            {temporaryProducts.filter(p => !p.is_stock_update).length}
+                          </div>
+                          <div className="text-sm text-indigo-700">New Products</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-cyan-600">
+                            {temporaryProducts.filter(p => p.is_stock_update).length}
+                          </div>
+                          <div className="text-sm text-cyan-700">Stock Updates</div>
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-green-600">
                             {temporaryProducts.reduce((sum, p) => {
+                              if (p.is_stock_update) {
+                                return sum + parseInt(p.quantity_to_add || 0);
+                              }
                               const totalPieces = p.product_type === "Medicine" 
-                                ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
-                                : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
+                                ? parseInt(p.total_tablets || 0)
+                                : parseInt(p.total_pieces || 0);
                               return sum + totalPieces;
                             }, 0)}
                           </div>
@@ -6055,19 +6146,16 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                         <div className="text-center">
                           <div className="text-2xl font-bold text-purple-600">
                             ₱{temporaryProducts.reduce((sum, p) => {
+                              if (p.is_stock_update) {
+                                return sum + ((parseFloat(p.new_srp || p.srp || 0)) * parseInt(p.quantity_to_add || 0));
+                              }
                               const totalPieces = p.product_type === "Medicine" 
-                                ? parseInt(p.total_tablets || 0)  // Total tablets for medicine
-                                : parseInt(p.total_pieces || 0);  // Total pieces for non-medicine
-                              return sum + ((parseFloat(p.srp) || 0) * totalPieces);
+                                ? parseInt(p.total_tablets || 0)
+                                : parseInt(p.total_pieces || 0);
+                              return sum + ((parseFloat(p.srp || 0) * totalPieces));
                             }, 0).toFixed(2)}
                           </div>
                           <div className="text-sm text-purple-700">Total Value</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">
-                            {new Set(temporaryProducts.map(p => p.category)).size}
-                          </div>
-                          <div className="text-sm text-orange-700">Categories</div>
                         </div>
                       </div>
                     </div>
@@ -6090,12 +6178,17 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                         </thead>
                         <tbody>
                           {temporaryProducts.map((product, index) => (
-                            <tr key={product.temp_id} className="hover:bg-gray-50">
+                            <tr key={product.temp_id} className={`hover:bg-gray-50 ${product.is_stock_update ? 'bg-blue-50' : ''}`}>
                               <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
                                 {index + 1}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 font-medium text-gray-900">
                                 {product.product_name}
+                                {product.is_stock_update && (
+                                  <span className="ml-2 inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                                    Stock Update
+                                  </span>
+                                )}
                               </td>
                               <td className="border border-gray-300 px-3 py-2">
                                 <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
@@ -6103,16 +6196,23 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                                 </span>
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-gray-900">
-                                {product.brand_search || product.brand_id || "N/A"}
+                                {product.brand_search || product.brand_id || product.brand || "N/A"}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
-                                {product.quantity}
+                                {product.is_stock_update ? (
+                                  <div>
+                                    <div className="text-blue-600 font-semibold">+{product.quantity_to_add}</div>
+                                    <div className="text-xs text-gray-500">(Adding to existing stock)</div>
+                                  </div>
+                                ) : (
+                                  product.quantity
+                                )}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
-                                ₱{parseFloat(product.srp || 0).toFixed(2)}
+                                ₱{parseFloat(product.new_srp || product.srp || 0).toFixed(2)}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
-                                ₱{((parseFloat(product.srp || 0)) * (parseInt(product.quantity || 0))).toFixed(2)}
+                                ₱{((parseFloat(product.new_srp || product.srp || 0)) * (parseInt(product.is_stock_update ? product.quantity_to_add : product.quantity || 0))).toFixed(2)}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center" 
                                   style={{ 

@@ -540,7 +540,7 @@ function handle_get_products($conn, $data) {
                     p.brand_id,
                     p.supplier_id,
                     p.location_id,
-                    p.unit_price,
+                    p.srp,
                     p.stock_status,
                     s.supplier_name,
                     b.brand,
@@ -587,7 +587,7 @@ function handle_get_products($conn, $data) {
                 WHERE ss.available_quantity > 0
                 $whereClause
                 GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.,
-                         p.brand_id, p.supplier_id, p.location_id, p.unit_price, p.stock_status,
+                         p.brand_id, p.supplier_id, p.location_id, p.srp, p.stock_status,
                          s.supplier_name, b.brand, l.location_name, ss.batch_id, ss.batch_reference,
                          b.entry_date, b.entry_by, ss.available_quantity
                 ORDER BY p.product_name ASC
@@ -605,7 +605,7 @@ function handle_get_products($conn, $data) {
                     p.bulk,
                     p.expiration,
                     p.quantity,
-                    p.unit_price,
+                    p.srp,
                     p.srp,
                     p.brand_id,
                     p.supplier_id,
@@ -776,7 +776,7 @@ function handle_get_products_oldest_batch_for_transfer($conn, $data) {
 
                 COALESCE(b.brand, '') as brand,
                 COALESCE(s.supplier_name, '') as supplier_name,
-                COALESCE(p.srp, p.unit_price) as srp,
+                p.srp as srp,
                 p.location_id,
                 l.location_name,
                 p.quantity as total_quantity,
@@ -824,7 +824,7 @@ function handle_get_products_oldest_batch($conn, $data) {
             $params[] = $location_id;
         }
 
-        // Query to get products with oldest batch information for warehouse display
+        // Use complex query with FIFO data to ensure correct oldest batch values
         $stmt = $conn->prepare("
             SELECT
                 p.product_id,
@@ -875,7 +875,14 @@ function handle_get_products_oldest_batch($conn, $data) {
                     fs.srp,
                     ROW_NUMBER() OVER (
                         PARTITION BY fs.product_id
-                        ORDER BY fs.entry_date ASC, fs.batch_id ASC
+                        ORDER BY 
+                            CASE 
+                                WHEN fs.expiration_date IS NULL THEN 1 
+                                ELSE 0 
+                            END,
+                            fs.expiration_date ASC, 
+                            fs.entry_date ASC, 
+                            fs.batch_id ASC
                     ) as batch_rank
                 FROM tbl_fifo_stock fs
                 WHERE fs.available_quantity > 0  -- Only get batches with available stock
@@ -893,9 +900,22 @@ function handle_get_products_oldest_batch($conn, $data) {
             $whereClause
             ORDER BY p.product_name ASC
         ");
-
+        
         $stmt->execute($params);
         $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Debug: Log first product to check FIFO values
+        if (!empty($products)) {
+            error_log("🔍 First product FIFO data: " . json_encode([
+                'product_name' => $products[0]['product_name'],
+                'oldest_batch_quantity' => $products[0]['oldest_batch_quantity'],
+                'oldest_batch_srp' => $products[0]['oldest_batch_srp'],
+                'quantity' => $products[0]['quantity'],
+                'srp' => $products[0]['srp']
+            ]));
+        }
+        
+        error_log("Warehouse query returned " . count($products) . " products");
 
         echo json_encode([
             "success" => true,

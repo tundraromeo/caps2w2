@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useTheme } from './ThemeContext';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
 
 function Logs() {
   const { theme } = useTheme();

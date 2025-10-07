@@ -37,8 +37,8 @@ import LoginLogsReport from './components/LoginLogsReport';
 import ActivityLogsReport from './components/ActivityLogsReport';
 import ReturnManagement from './components/ReturnManagement';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
-const LOGIN_API_URL = "http://localhost/Enguio_Project/Api/login.php";
+const API_BASE_URL = "/api/proxy";
+const LOGIN_API_URL = "/api/proxy";
 
 // Logout function
 const logoutUser = async () => {
@@ -55,6 +55,7 @@ const logoutUser = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
+        endpoint: 'login.php',
         action: 'logout',
         emp_id: empId 
       })
@@ -101,7 +102,10 @@ async function getCurrentUser() {
     const response = await fetch(API_BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'get_current_user' })
+      body: JSON.stringify({ 
+        endpoint: 'backend.php',
+        action: 'get_current_user' 
+      })
     });
     const result = await response.json();
     return result.success ? result.user : null;
@@ -121,6 +125,7 @@ async function recordActivity({ activityType, description, tableName = null, rec
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        endpoint: 'backend.php',
         action: 'record_activity',
         activity_type: activityType,
         description: description,

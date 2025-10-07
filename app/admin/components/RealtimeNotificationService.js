@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useNotification } from './NotificationContext';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+const API_BASE_URL = "/api/proxy";
 
 const RealtimeNotificationService = () => {
   const { 
@@ -20,6 +20,7 @@ const RealtimeNotificationService = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          endpoint: 'backend.php',
           action: 'check_new_sales',
           since: lastCheckRef.current.toISOString()
         })

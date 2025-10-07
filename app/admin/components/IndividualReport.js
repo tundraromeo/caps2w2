@@ -4,7 +4,7 @@ import axios from "axios";
 import { useTheme } from './ThemeContext';
 
 // Use direct API URL for better reliability
-const API_BASE_URL = 'http://localhost/Enguio_Project/Api/backend.php';
+const API_BASE_URL = 'http://localhost/caps2e2/Api/backend.php';
 
 function IndividualReport({ reportType, reportName, reportIcon }) {
   const { theme } = useTheme();

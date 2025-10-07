@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
+import { useAPI } from "../hooks/useAPI";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { 
@@ -29,6 +30,7 @@ const Reports = () => {
   const { isDarkMode, theme } = useTheme();
   const { settings } = useSettings();
   const { updateReportsNotifications, updateSystemUpdates, systemUpdates, hasReportsUpdates, clearNotifications, clearSystemUpdates } = useNotification();
+  const { api, loading: apiLoading, error: apiError } = useAPI();
   const [reports, setReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -50,6 +52,10 @@ const Reports = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [showCombineModal, setShowCombineModal] = useState(false);
+  const [combineStartDate, setCombineStartDate] = useState('');
+  const [combineEndDate, setCombineEndDate] = useState('');
+  const [selectedReportTypes, setSelectedReportTypes] = useState(['all']);
 
   // Fetch data from database
   useEffect(() => {
@@ -101,37 +107,28 @@ const Reports = () => {
   const fetchReportsData = async (showToast = false) => {
     setIsLoading(true);
     try {
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/sales_api.php";
-      
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'get_report_data',
-          report_type: 'all',
-          start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          end_date: new Date().toISOString().split('T')[0]
-        })
+      const response = await api.callGenericAPI('sales_api.php', 'get_report_data', {
+        report_type: 'all',
+        start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        end_date: new Date().toISOString().split('T')[0]
       });
       
-      const data = await response.json();
-      
-      if (data.success) {
-        setReports(data.reports || []);
-        setFilteredReports(data.reports || []);
-        setAnalyticsData(data.analytics || {
+      if (response.success) {
+        setReports(response.reports || []);
+        setFilteredReports(response.reports || []);
+        setAnalyticsData(response.analytics || {
           totalProducts: 0,
           lowStockItems: 0,
           outOfStockItems: 0,
           totalValue: 0
         });
-        setTopCategories(data.topCategories || []);
+        setTopCategories(response.topCategories || []);
         
         if (showToast) {
           toast.success('Reports data refreshed successfully');
         }
       } else {
-        toast.error('Failed to fetch reports data: ' + data.message);
+        toast.error('Failed to fetch reports data: ' + response.message);
       }
     } catch (error) {
       console.error('Error fetching reports data:', error);
@@ -245,24 +242,15 @@ const Reports = () => {
     setIsLoading(true);
     
     try {
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/sales_api.php";
-      
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'get_report_details',
-          report_id: report.movement_id 
-        })
+      const response = await api.callGenericAPI('sales_api.php', 'get_report_details', {
+        report_id: report.movement_id 
       });
       
-      const data = await response.json();
-      
-      if (data.success) {
-        setReportDetails(data.details || []);
+      if (response.success) {
+        setReportDetails(response.details || []);
       } else {
         setReportDetails([]);
-        toast.error('Failed to load report details: ' + data.message);
+        toast.error('Failed to load report details: ' + response.message);
       }
     } catch (error) {
       console.error('Error fetching report details:', error);
@@ -277,7 +265,6 @@ const Reports = () => {
   const handleGenerateReport = async (reportType) => {
     setIsLoading(true);
     try {
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/sales_api.php";
       let parameters = {};
       
       switch (reportType) {
@@ -302,26 +289,19 @@ const Reports = () => {
           return;
       }
 
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'generate_report',
-          report_type: reportType,
-          generated_by: 'Inventory Manager',
-          parameters: parameters
-        })
+      const response = await api.callGenericAPI('sales_api.php', 'generate_report', {
+        report_type: reportType,
+        generated_by: 'Inventory Manager',
+        parameters: parameters
       });
       
-      const data = await response.json();
-      
-      if (data.success) {
+      if (response.success) {
         toast.success(`${reportType.replace('_', ' ')} report generated successfully`);
         // Refresh the reports list
         fetchReportsData();
-        console.log('Report generated with ID:', data.report_id);
+        console.log('Report generated with ID:', response.report_id);
       } else {
-        toast.error('Failed to generate report: ' + data.message);
+        toast.error('Failed to generate report: ' + response.message);
       }
     } catch (error) {
       console.error('Error generating report:', error);
@@ -329,6 +309,226 @@ const Reports = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCombineReports = async (dateRange, reportTypes = ['all']) => {
+    setIsLoading(true);
+    try {
+      toast.info('Generating PDF... Please wait.');
+      
+      // Fetch reports data
+      const response = await fetch('http://localhost/caps2e2/Api/combined_reports_api.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'get_reports_data',
+          start_date: dateRange.start,
+          end_date: dateRange.end,
+          report_types: reportTypes
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch reports data');
+      }
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        toast.error(data.message || 'No reports found for the selected date range');
+        return;
+      }
+      
+      const reports = data.reports || [];
+      
+      // Create a temporary div for PDF generation
+      const tempDiv = document.createElement('div');
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.style.top = '-9999px';
+      tempDiv.style.width = '210mm'; // A4 width
+      tempDiv.style.backgroundColor = 'white';
+      tempDiv.style.padding = '20px';
+      tempDiv.style.fontFamily = 'Arial, sans-serif';
+      tempDiv.style.fontSize = '12px';
+      tempDiv.style.lineHeight = '1.4';
+      
+      // Create PDF content
+      tempDiv.innerHTML = `
+        <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: #f8fafc; border: 2px solid #000000;">
+          <div style="font-size: 24px; font-weight: bold; color: #000000; margin-bottom: 5px;">ENGUIO PHARMACY SYSTEM</div>
+          <div style="font-size: 14px; color: #000000;">Combined Reports</div>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #000000;">
+          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Combined Reports</div>
+          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Date Range: ${dateRange.start} to ${dateRange.end}</div>
+          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated on: ${new Date().toLocaleString()}</div>
+        </div>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-left: 4px solid #000000;">
+          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
+          <div style="display: table; width: 100%;">
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Total Reports:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reports.length}</div>
+            </div>
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${dateRange.start} to ${dateRange.end}</div>
+            </div>
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Generated By:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">System</div>
+            </div>
+          </div>
+        </div>
+        
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px;">
+          <thead>
+            <tr style="background: #e0e0e0; color: #000000;">
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Product Name</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Barcode</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Category</th>
+              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">Quantity</th>
+              <th style="padding: 8px 4px; text-align: right; font-weight: bold; border: 1px solid #000000; color: #000000;">SRP</th>
+              <th style="padding: 8px 4px; text-align: center; font-weight: bold; border: 1px solid #000000; color: #000000;">Movement Type</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Reference No</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Date</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Location</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Supplier</th>
+              <th style="padding: 8px 4px; text-align: left; font-weight: bold; border: 1px solid #000000; color: #000000;">Brand</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${reports.map((item, index) => `
+              <tr style="${index % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;"><strong>${item.product_name || ''}</strong></td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.barcode || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.category || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">${item.quantity?.toLocaleString() || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: right; color: #000000;">₱${parseFloat(item.srp || 0).toFixed(2)}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; text-align: center; color: #000000;">${item.movement_type || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.reference_no || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.movement_date || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.location_name || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.supplier_name || ''}</td>
+                <td style="padding: 6px 4px; border: 1px solid #000000; vertical-align: top; color: #000000;">${item.brand || ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #e0e0e0; color: #000000; font-weight: bold;">
+              <td colspan="11" style="padding: 6px 4px; border: 1px solid #000000; text-align: center; color: #000000;"><strong>End of Report</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+        
+        <div style="margin-top: 30px; text-align: center; color: #000000; font-size: 9px; border-top: 1px solid #000000; padding-top: 10px;">
+          <p style="color: #000000;">This report was generated by Enguio Pharmacy System on ${new Date().toLocaleString()}</p>
+          <p style="color: #000000;">For questions or support, please contact your system administrator.</p>
+        </div>
+      `;
+      
+      // Add to DOM temporarily
+      document.body.appendChild(tempDiv);
+      
+      // Generate canvas from HTML
+      const canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff'
+      });
+      
+      // Remove temporary div
+      document.body.removeChild(tempDiv);
+      
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // Calculate dimensions
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 295; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      
+      let position = 0;
+      
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      // Add additional pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      // Save PDF
+      const fileName = `Combined_Reports_${dateRange.start}_to_${dateRange.end}.pdf`;
+      pdf.save(fileName);
+      
+      toast.success(`PDF downloaded successfully: ${fileName}`);
+      
+    } catch (error) {
+      console.error('Error combining reports:', error);
+      toast.error('Error generating PDF: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQuickCombine = async (quickSelect) => {
+    const today = new Date();
+    let startDate, endDate;
+    
+    switch (quickSelect) {
+      case 'today':
+        startDate = endDate = today.toISOString().split('T')[0];
+        break;
+      case 'yesterday':
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        startDate = endDate = yesterday.toISOString().split('T')[0];
+        break;
+      case 'this_week':
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        startDate = startOfWeek.toISOString().split('T')[0];
+        endDate = endOfWeek.toISOString().split('T')[0];
+        break;
+      case 'last_week':
+        const lastWeekStart = new Date(today);
+        lastWeekStart.setDate(today.getDate() - today.getDay() - 7);
+        const lastWeekEnd = new Date(lastWeekStart);
+        lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+        startDate = lastWeekStart.toISOString().split('T')[0];
+        endDate = lastWeekEnd.toISOString().split('T')[0];
+        break;
+      case 'this_month':
+        startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+        break;
+      case 'last_month':
+        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        startDate = lastMonth.toISOString().split('T')[0];
+        endDate = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().split('T')[0];
+        break;
+      default:
+        toast.error('Invalid quick select option');
+        return;
+    }
+    
+    // Call the real combine reports function
+    await handleCombineReports({ start: startDate, end: endDate });
   };
 
   const handleDownload = async (report) => {
@@ -775,6 +975,14 @@ const Reports = () => {
           >
             <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-400' : 'bg-gray-400'}`}></div>
             {autoRefresh ? 'Auto Refresh ON' : 'Auto Refresh OFF'}
+          </button>
+          <button 
+            onClick={() => setShowCombineModal(true)}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors"
+          >
+            <FaFileAlt className="h-4 w-4" />
+            Combine Reports
           </button>
           <button 
             onClick={() => handleGenerateReport('inventory_summary')}
@@ -1365,6 +1573,157 @@ const Reports = () => {
                   <FaTimes className="h-4 w-4" />
                 Close
               </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Combined Reports Modal */}
+      {showCombineModal && (
+        <div className="fixed inset-0 bg-gray-200 bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                    Combine Reports
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Select date range and report types to combine into a single PDF
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowCombineModal(false)}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                >
+                  <FaTimes className="h-5 w-5 text-slate-500" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div className="space-y-6">
+                {/* Quick Select Options */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Select</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {[
+                      { key: 'today', label: 'Today' },
+                      { key: 'yesterday', label: 'Yesterday' },
+                      { key: 'this_week', label: 'This Week' },
+                      { key: 'last_week', label: 'Last Week' },
+                      { key: 'this_month', label: 'This Month' },
+                      { key: 'last_month', label: 'Last Month' }
+                    ].map((option) => (
+                      <button
+                        key={option.key}
+                        onClick={() => handleQuickCombine(option.key)}
+                        disabled={isLoading}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Date Range */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Custom Date Range</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={combineStartDate}
+                        onChange={(e) => setCombineStartDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={combineEndDate}
+                        onChange={(e) => setCombineEndDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Report Types Selection */}
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Report Types</h3>
+                  <div className="space-y-2">
+                    {[
+                      { key: 'all', label: 'All Reports' },
+                      { key: 'stock_in', label: 'Stock In Reports' },
+                      { key: 'stock_out', label: 'Stock Out Reports' },
+                      { key: 'stock_adjustment', label: 'Stock Adjustment Reports' },
+                      { key: 'transfer', label: 'Transfer Reports' }
+                    ].map((type) => (
+                      <label key={type.key} className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedReportTypes.includes(type.key)}
+                          onChange={(e) => {
+                            if (type.key === 'all') {
+                              setSelectedReportTypes(['all']);
+                            } else {
+                              const newTypes = selectedReportTypes.filter(t => t !== 'all');
+                              if (e.target.checked) {
+                                setSelectedReportTypes([...newTypes, type.key]);
+                              } else {
+                                setSelectedReportTypes(newTypes.length > 0 ? newTypes : ['all']);
+                              }
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{type.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+              <div className="flex justify-end gap-3">
+                <button 
+                  onClick={() => {
+                    if (combineStartDate && combineEndDate) {
+                      handleCombineReports(
+                        { start: combineStartDate, end: combineEndDate },
+                        selectedReportTypes
+                      );
+                      setShowCombineModal(false);
+                    } else {
+                      toast.error('Please select both start and end dates');
+                    }
+                  }}
+                  disabled={isLoading || !combineStartDate || !combineEndDate}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors duration-200"
+                >
+                  <FaFileAlt className="h-4 w-4" />
+                  Combine Reports
+                </button>
+                <button 
+                  onClick={() => setShowCombineModal(false)}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors duration-200"
+                >
+                  <FaTimes className="h-4 w-4" />
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

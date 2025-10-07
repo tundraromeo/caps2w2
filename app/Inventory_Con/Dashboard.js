@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useTheme } from "./ThemeContext";
+import apiHandler from '../lib/apiHandler';
 
 function Dashboard() {
   const { theme } = useTheme();
@@ -84,48 +85,31 @@ function Dashboard() {
 
   const fetchCategoriesAndLocations = async () => {
     try {
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+      // Use centralized API handler instead of direct fetch
+      const [categoriesResponse, locationsResponse] = await Promise.all([
+        apiHandler.callAPI('backend.php', 'get_categories'),
+        apiHandler.callAPI('backend.php', 'get_locations')
+      ]);
       
-      // Fetch categories
-      const categoriesResponse = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_categories' })
-      });
-      
-      if (!categoriesResponse.ok) {
-        throw new Error(`HTTP error! status: ${categoriesResponse.status}`);
-      }
-      
-      const categoriesData = await categoriesResponse.json();
-      if (categoriesData.success) {
-        setCategories(categoriesData.data || []);
+      if (categoriesResponse) {
+        // Handle both direct response format and wrapped response format
+        const data = categoriesResponse.success ? categoriesResponse.data : categoriesResponse;
+        setCategories(Array.isArray(data) ? data : []);
       } else {
-        console.warn('Categories API returned success: false');
+        console.warn("⚠️ Unexpected categories response format:", categoriesResponse);
         setCategories([]);
       }
-
-      // Fetch locations
-      const locationsResponse = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get_locations' })
-      });
       
-      if (!locationsResponse.ok) {
-        throw new Error(`HTTP error! status: ${locationsResponse.status}`);
-      }
-      
-      const locationsData = await locationsResponse.json();
-      if (locationsData.success) {
-        setLocations(locationsData.data || []);
+      if (locationsResponse) {
+        // Handle both direct response format and wrapped response format
+        const data = locationsResponse.success ? locationsResponse.data : locationsResponse;
+        setLocations(Array.isArray(data) ? data : []);
       } else {
-        console.warn('Locations API returned success: false');
+        console.warn("⚠️ Unexpected locations response format:", locationsResponse);
         setLocations([]);
       }
     } catch (error) {
       console.error('Error fetching categories and locations:', error);
-      // Set empty arrays as fallback
       setCategories([]);
       setLocations([]);
     }
@@ -135,51 +119,44 @@ function Dashboard() {
     try {
       setLoading(true);
       
-      // API base URL
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
-      
-      // Fetch warehouse-specific KPIs
-      const warehouseResponse = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get_warehouse_kpis',
-          product: selectedProduct,
-          location: selectedLocation
-        })
+      // Use centralized API handler instead of direct fetch
+      const warehouseResponse = await apiHandler.getWarehouseKPIs({
+        product: selectedProduct,
+        location: selectedLocation
       });
       
-      if (!warehouseResponse.ok) {
-        throw new Error(`HTTP error! status: ${warehouseResponse.status}`);
+      if (warehouseResponse) {
+        // Handle both direct response format and wrapped response format
+        const data = warehouseResponse.success ? warehouseResponse : warehouseResponse;
+        
+        // Set warehouse data with fallback values
+        setWarehouseData({
+          totalProducts: data.totalProducts || 0,
+          totalSuppliers: data.totalSuppliers || 0,
+          storageCapacity: data.storageCapacity || 75,
+          warehouseValue: data.warehouseValue || 0,
+          lowStockItems: data.lowStockItems || 0,
+          expiringSoon: data.expiringSoon || 0,
+          totalBatches: data.totalBatches || 0,
+          activeTransfers: data.activeTransfers || 0
+        });
+      } else {
+        console.warn("⚠️ No warehouse response received");
       }
-      
-      const warehouseData = await warehouseResponse.json();
-      
-      // Set warehouse data with fallback values
-      setWarehouseData({
-        totalProducts: warehouseData.totalProducts || 0,
-        totalSuppliers: warehouseData.totalSuppliers || 0,
-        storageCapacity: warehouseData.storageCapacity || 75,
-        warehouseValue: warehouseData.warehouseValue || 0,
-        lowStockItems: warehouseData.lowStockItems || 0,
-        expiringSoon: warehouseData.expiringSoon || 0,
-        totalBatches: warehouseData.totalBatches || 0,
-        activeTransfers: warehouseData.activeTransfers || 0
-      });
 
       // Fetch supply by product for warehouse
       try {
-        const supplyProductResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_warehouse_supply_by_product',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const supplyProductResponse = await apiHandler.getWarehouseSupplyByProduct({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const supplyProductData = await supplyProductResponse.json();
-        setSupplyByProduct(Array.isArray(supplyProductData) ? supplyProductData : []);
+        if (supplyProductResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = supplyProductResponse.success ? supplyProductResponse.data : supplyProductResponse;
+          setSupplyByProduct(Array.isArray(data) ? data : []);
+        } else {
+          setSupplyByProduct([]);
+        }
       } catch (error) {
         console.error('Error fetching supply by product:', error);
         setSupplyByProduct([]);
@@ -187,17 +164,17 @@ function Dashboard() {
 
       // Fetch supply by location for warehouse
       try {
-        const supplyLocationResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_warehouse_supply_by_location',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const supplyLocationResponse = await apiHandler.getWarehouseSupplyByLocation({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const supplyLocationData = await supplyLocationResponse.json();
-        setSupplyByLocation(Array.isArray(supplyLocationData) ? supplyLocationData : []);
+        if (supplyLocationResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = supplyLocationResponse.success ? supplyLocationResponse.data : supplyLocationResponse;
+          setSupplyByLocation(Array.isArray(data) ? data : []);
+        } else {
+          setSupplyByLocation([]);
+        }
       } catch (error) {
         console.error('Error fetching supply by location:', error);
         setSupplyByLocation([]);
@@ -205,17 +182,17 @@ function Dashboard() {
 
       // Fetch warehouse stockout items
       try {
-        const stockoutResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_warehouse_stockout_items',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const stockoutResponse = await apiHandler.getWarehouseStockoutItems({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const stockoutData = await stockoutResponse.json();
-        setStockoutItems(Array.isArray(stockoutData) ? stockoutData : []);
+        if (stockoutResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = stockoutResponse.success ? stockoutResponse.data : stockoutResponse;
+          setStockoutItems(Array.isArray(data) ? data : []);
+        } else {
+          setStockoutItems([]);
+        }
       } catch (error) {
         console.error('Error fetching stockout items:', error);
         setStockoutItems([]);
@@ -223,17 +200,17 @@ function Dashboard() {
 
       // Fetch warehouse product KPIs
       try {
-        const productKPIsResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_warehouse_product_kpis',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const productKPIsResponse = await apiHandler.getWarehouseProductKPIs({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const productKPIsData = await productKPIsResponse.json();
-        setProductKPIs(Array.isArray(productKPIsData) ? productKPIsData : []);
+        if (productKPIsResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = productKPIsResponse.success ? productKPIsResponse.data : productKPIsResponse;
+          setProductKPIs(Array.isArray(data) ? data : []);
+        } else {
+          setProductKPIs([]);
+        }
       } catch (error) {
         console.error('Error fetching product KPIs:', error);
         setProductKPIs([]);
@@ -250,26 +227,21 @@ function Dashboard() {
 
   const fetchChartData = async () => {
     try {
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+      // Use centralized API handler instead of direct fetch
       
       // Fetch top 10 products by quantity
       try {
-        const topProductsResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_top_products_by_quantity',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const topProductsResponse = await apiHandler.getTopProductsByQuantity({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        
-        if (!topProductsResponse.ok) {
-          throw new Error(`HTTP error! status: ${topProductsResponse.status}`);
+        if (topProductsResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = topProductsResponse.success ? topProductsResponse.data : topProductsResponse;
+          setTopProductsByQuantity(Array.isArray(data) ? data : []);
+        } else {
+          setTopProductsByQuantity([]);
         }
-        
-        const topProductsData = await topProductsResponse.json();
-        setTopProductsByQuantity(Array.isArray(topProductsData) ? topProductsData : []);
       } catch (error) {
         console.error('Error fetching top products:', error);
         setTopProductsByQuantity([]);
@@ -277,17 +249,17 @@ function Dashboard() {
 
       // Fetch stock distribution by category
       try {
-        const categoryDistributionResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_stock_distribution_by_category',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const categoryDistributionResponse = await apiHandler.getStockDistributionByCategory({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const categoryDistributionData = await categoryDistributionResponse.json();
-        setStockDistributionByCategory(Array.isArray(categoryDistributionData) ? categoryDistributionData : []);
+        if (categoryDistributionResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = categoryDistributionResponse.success ? categoryDistributionResponse.data : categoryDistributionResponse;
+          setStockDistributionByCategory(Array.isArray(data) ? data : []);
+        } else {
+          setStockDistributionByCategory([]);
+        }
       } catch (error) {
         console.error('Error fetching category distribution:', error);
         setStockDistributionByCategory([]);
@@ -295,17 +267,17 @@ function Dashboard() {
 
       // Fetch fast-moving items trend
       try {
-        const fastMovingResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_fast_moving_items_trend',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const fastMovingResponse = await apiHandler.getFastMovingItemsTrend({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const fastMovingData = await fastMovingResponse.json();
-        setFastMovingItemsTrend(Array.isArray(fastMovingData) ? fastMovingData : []);
+        if (fastMovingResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = fastMovingResponse.success ? fastMovingResponse.data : fastMovingResponse;
+          setFastMovingItemsTrend(Array.isArray(data) ? data : []);
+        } else {
+          setFastMovingItemsTrend([]);
+        }
       } catch (error) {
         console.error('Error fetching fast moving items:', error);
         setFastMovingItemsTrend([]);
@@ -313,17 +285,17 @@ function Dashboard() {
 
       // Fetch critical stock alerts
       try {
-        const criticalStockResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_critical_stock_alerts',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const criticalStockResponse = await apiHandler.getCriticalStockAlerts({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const criticalStockData = await criticalStockResponse.json();
-        setCriticalStockAlerts(Array.isArray(criticalStockData) ? criticalStockData : []);
+        if (criticalStockResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = criticalStockResponse.success ? criticalStockResponse.data : criticalStockResponse;
+          setCriticalStockAlerts(Array.isArray(data) ? data : []);
+        } else {
+          setCriticalStockAlerts([]);
+        }
       } catch (error) {
         console.error('Error fetching critical stock alerts:', error);
         setCriticalStockAlerts([]);
@@ -331,17 +303,17 @@ function Dashboard() {
 
       // Fetch inventory by branch and category
       try {
-        const branchCategoryResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'get_inventory_by_branch_category',
-            product: selectedProduct,
-            location: selectedLocation
-          })
+        const branchCategoryResponse = await apiHandler.getInventoryByBranchCategory({
+          product: selectedProduct,
+          location: selectedLocation
         });
-        const branchCategoryData = await branchCategoryResponse.json();
-        setInventoryByBranchCategory(Array.isArray(branchCategoryData) ? branchCategoryData : []);
+        if (branchCategoryResponse) {
+          // Handle both direct response format and wrapped response format
+          const data = branchCategoryResponse.success ? branchCategoryResponse.data : branchCategoryResponse;
+          setInventoryByBranchCategory(Array.isArray(data) ? data : []);
+        } else {
+          setInventoryByBranchCategory([]);
+        }
       } catch (error) {
         console.error('Error fetching branch category data:', error);
         setInventoryByBranchCategory([]);
@@ -355,23 +327,19 @@ function Dashboard() {
   // Fetch Convenience Store KPIs
   const fetchConvenienceKPIs = async () => {
     try {
-      const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
-      
       // Get location ID for convenience store
-      const locRes = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "get_locations" })
-      });
+      const locRes = await apiHandler.callAPI('backend.php', 'get_locations');
       
-      if (!locRes.ok) {
-        throw new Error(`HTTP error! status: ${locRes.status}`);
+      if (!locRes) {
+        setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
+        return;
       }
       
-      const locData = await locRes.json();
+      // Handle both direct response format and wrapped response format
+      const locData = locRes.success ? locRes.data : locRes;
       let locationId = null;
-      if (locData.success && Array.isArray(locData.data)) {
-        const loc = locData.data.find(l => l.location_name.toLowerCase().includes("convenience"));
+      if (locData && Array.isArray(locData)) {
+        const loc = locData.find(l => l.location_name.toLowerCase().includes("convenience"));
         if (loc) locationId = loc.location_id;
       }
       if (!locationId) {
@@ -380,24 +348,21 @@ function Dashboard() {
       }
       
       // Fetch products for convenience store
-      const prodRes = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "get_products_by_location_name", location_name: "convenience" })
-      });
+      const prodRes = await apiHandler.getProductsByLocationName({ location_name: "convenience" });
       
-      if (!prodRes.ok) {
-        throw new Error(`HTTP error! status: ${prodRes.status}`);
-      }
-      
-      const prodData = await prodRes.json();
-      if (prodData.success && Array.isArray(prodData.data)) {
-        const products = prodData.data;
-        setConvenienceKPIs({
-          totalProducts: products.length,
-          lowStock: products.filter(p => p.stock_status === 'low stock').length,
-          expiringSoon: products.filter(p => p.expiry_status === 'expiring soon').length
-        });
+      if (prodRes) {
+        // Handle both direct response format and wrapped response format
+        const prodData = prodRes.success ? prodRes.data : prodRes;
+        if (Array.isArray(prodData)) {
+          const products = prodData;
+          setConvenienceKPIs({
+            totalProducts: products.length,
+            lowStock: products.filter(p => p.stock_status === 'low stock').length,
+            expiringSoon: products.filter(p => p.expiry_status === 'expiring soon').length
+          });
+        } else {
+          setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
+        }
       } else {
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
       }
@@ -411,52 +376,73 @@ function Dashboard() {
   const fetchPharmacyKPIs = async () => {
     try {
       // Get location ID for pharmacy
-      const locRes = await fetch("http://localhost/Enguio_Project/Api/backend.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "get_locations" })
-      });
-      const locData = await locRes.json();
+      const locRes = await apiHandler.callAPI('backend.php', 'get_locations');
+      
+      if (!locRes) {
+        setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
+        return;
+      }
+      
+      // Handle both direct response format and wrapped response format
+      const locData = locRes.success ? locRes.data : locRes;
       let locationId = null;
-      if (locData.success && Array.isArray(locData.data)) {
-        const loc = locData.data.find(l => l.location_name.toLowerCase().includes("pharmacy"));
+      if (locData && Array.isArray(locData)) {
+        const loc = locData.find(l => l.location_name.toLowerCase().includes("pharmacy"));
         if (loc) locationId = loc.location_id;
       }
-      if (!locationId) return;
-      // Fetch products for pharmacy
-      const prodRes = await fetch("http://localhost/Enguio_Project/Api/backend.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "get_products_by_location_name", location_name: "pharmacy" })
-      });
-      const prodData = await prodRes.json();
-      if (prodData.success && Array.isArray(prodData.data)) {
-        const products = prodData.data;
-        setPharmacyKPIs({
-          totalProducts: products.length,
-          lowStock: products.filter(p => p.stock_status === 'low stock').length,
-          expiringSoon: products.filter(p => p.expiry_status === 'expiring soon').length
-        });
+      if (!locationId) {
+        setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
+        return;
       }
-    } catch (e) { setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 }); }
+      
+      // Fetch products for pharmacy
+      const prodRes = await apiHandler.getProductsByLocationName({ location_name: "pharmacy" });
+      
+      if (prodRes) {
+        // Handle both direct response format and wrapped response format
+        const prodData = prodRes.success ? prodRes.data : prodRes;
+        if (Array.isArray(prodData)) {
+          const products = prodData;
+          setPharmacyKPIs({
+            totalProducts: products.length,
+            lowStock: products.filter(p => p.stock_status === 'low stock').length,
+            expiringSoon: products.filter(p => p.expiry_status === 'expiring soon').length
+          });
+        } else {
+          setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
+        }
+      } else {
+        setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
+      }
+    } catch (e) { 
+      console.error('Error fetching pharmacy KPIs:', e);
+      setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 }); 
+    }
   };
 
   // Fetch Transfer KPIs
   const fetchTransferKPIs = async () => {
     try {
-      const res = await fetch("http://localhost/Enguio_Project/Api/transfer_api.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "get_transfers_with_details" })
-      });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setTransferKPIs({
-          totalTransfers: data.data.length,
-          activeTransfers: data.data.filter(t => t.status === 'pending').length
-        });
+      const res = await apiHandler.getTransfers();
+      
+      if (res) {
+        // Handle both direct response format and wrapped response format
+        const data = res.success ? res.data : res;
+        if (Array.isArray(data)) {
+          setTransferKPIs({
+            totalTransfers: data.length,
+            activeTransfers: data.filter(t => t.status === 'pending').length
+          });
+        } else {
+          setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 });
+        }
+      } else {
+        setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 });
       }
-    } catch (e) { setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 }); }
+    } catch (e) { 
+      console.error('Error fetching transfer KPIs:', e);
+      setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 }); 
+    }
   };
 
   const setEmptyData = () => {

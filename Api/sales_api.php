@@ -4,16 +4,22 @@
  * Direct implementation instead of proxy to backend.php
  */
 
+// CORS headers must be set first, before any output
+header("Access-Control-Allow-Origin: http://localhost:3000");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
+header("Content-Type: application/json; charset=utf-8");
+
+// Handle preflight OPTIONS requests immediately
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 // Start output buffering to prevent unwanted output
 ob_start();
-
-// Set content type to JSON
-header('Content-Type: application/json');
-
-// Enable CORS
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);
@@ -373,7 +379,7 @@ try {
                         p.product_name,
                         p.barcode,
                         p.quantity,
-                        p.unit_price,
+                        p.srp as unit_price,
                         p.srp,
                         l.location_name,
                         b.brand,
@@ -561,7 +567,7 @@ try {
                 $outOfStockItems = $stmt->fetch()['total'];
                 
                 // Total inventory value
-                $stmt = $conn->prepare("SELECT COALESCE(SUM(quantity * unit_price), 0) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
+                $stmt = $conn->prepare("SELECT COALESCE(SUM(quantity * srp), 0) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
                 $stmt->execute();
                 $totalValue = $stmt->fetch()['total'];
                 
@@ -628,7 +634,7 @@ try {
                         p.barcode,
                         p.category,
                         sm.quantity,
-                        p.unit_price,
+                        p.srp as unit_price,
                         sm.movement_type,
                         sm.reference_no,
                         DATE(sm.movement_date) as date,
@@ -657,7 +663,7 @@ try {
                             p.barcode,
                             p.category,
                             td.qty as quantity,
-                            p.unit_price,
+                            p.srp as unit_price,
                             'TRANSFER' as movement_type,
                             th.reference_number as reference_no,
                             DATE(th.date) as date,

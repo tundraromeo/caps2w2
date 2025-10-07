@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
+import { useAPI } from "../hooks/useAPI";
 import { 
   FaSearch, 
   FaEye, 
@@ -17,6 +18,7 @@ import { useTheme } from './ThemeContext';
 
 const Archive = () => {
   const { isDarkMode } = useTheme();
+  const { api, loading: apiLoading, error: apiError } = useAPI();
   const [archivedItems, setArchivedItems] = useState([]);
   const [filteredItems, setFilteredItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -28,18 +30,11 @@ const Archive = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
-  // API call function (copied from Warehouse.js for consistency)
+  // API call function (using centralized API)
   async function handleApiCall(action, data = {}) {
-    const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
-    const payload = { action, ...data };
     try {
-      const response = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const resData = await response.json();
-      return resData;
+      const response = await api.callGenericAPI('backend.php', action, data);
+      return response;
     } catch (error) {
       console.error("❌ API Call Error:", error);
       return { success: false, message: error.message, error: "REQUEST_ERROR" };

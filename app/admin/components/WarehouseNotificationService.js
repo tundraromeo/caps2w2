@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useNotification } from './NotificationContext';
 import { useSettings } from './SettingsContext';
 
-const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
+const API_BASE_URL = "/api/proxy";
 
 const WarehouseNotificationService = () => {
   const { updateWarehouseNotifications, updateWarehouseSpecificNotifications } = useNotification();
@@ -19,6 +19,7 @@ const WarehouseNotificationService = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          endpoint: 'backend.php',
           action: 'get_warehouse_notifications',
           low_stock_threshold: settings.lowStockThreshold || 10,
           expiry_warning_days: settings.expiryWarningDays || 30

@@ -1,8 +1,24 @@
-import { useState, useEffect } from "react";
-import { FaArchive } from "react-icons/fa";
-import { Package, Clock, Bell, BellRing, AlertCircle, Search, CheckCircle, History, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { getApiEndpointForAction } from '../../lib/apiHandler';
+import apiHandler from '../../lib/apiHandler';
+import {
+  ChevronUp,
+  ChevronDown,
+  Plus,
+  X,
+  Search,
+  Package,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Bell,
+  BellRing,
+  History,
+} from "lucide-react";
+import { FaArchive } from "react-icons/fa";
 import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
 import NotificationSystem from "./NotificationSystem";
@@ -37,6 +53,7 @@ function ConvenienceStore() {
   const [batchTransferSummary, setBatchTransferSummary] = useState({});
   const [loadingBatchTransfers, setLoadingBatchTransfers] = useState(false);
   
+  
   // Notification states
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState({
@@ -46,36 +63,25 @@ function ConvenienceStore() {
   });
   const [alertCount, setAlertCount] = useState(0);
 
-  const API_BASE_URL = "http://localhost/Enguio_Project/Api/convenience_store_api.php";
+  const API_BASE_URL = "http://localhost/caps2e2/Api/convenience_store_api.php";
 
-  // API function
+  // API function - Updated to use centralized API handler
   async function handleApiCall(action, data = {}) {
-    const payload = { action, ...data };
-    console.log("🚀 API Call Payload:", payload);
-
     try {
-      const response = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const resData = await response.json();
-      console.log("✅ API Success Response:", resData);
-
-      if (resData && typeof resData === "object") {
-        if (!resData.success) {
-          console.warn("⚠️ API responded with failure:", resData.message || resData);
+      const endpoint = getApiEndpointForAction(action);
+      const response = await apiHandler.callAPI(endpoint, action, data);
+      
+      if (response && typeof response === "object") {
+        if (!response.success) {
+          console.warn("⚠️ API responded with failure:", response.message || response);
         }
-        return resData;
+        return response;
       } else {
-        console.warn("⚠️ Unexpected API response format:", resData);
+        console.warn("⚠️ Unexpected API response format:", response);
         return {
           success: false,
           message: "Unexpected response format",
-          data: resData,
+          data: response,
         };
       }
     } catch (error) {
@@ -155,11 +161,12 @@ function ConvenienceStore() {
         if (convenienceLocation) {
           console.log("📍 Found convenience location:", convenienceLocation);
           setConvenienceLocationId(convenienceLocation.location_id);
-          return convenienceLocation.location_id;
         } else {
           console.warn("⚠️ No convenience store location found");
           console.warn("⚠️ Available locations:", response.data.map(loc => loc.location_name));
         }
+        
+        return convenienceLocation?.location_id || null;
       } else {
         console.warn("⚠️ Failed to load locations:", response.message);
       }
@@ -499,7 +506,7 @@ function ConvenienceStore() {
     setLoadingBatch(true);
     try {
       console.log("Loading transfer history for product ID:", productId);
-      const response = await handleApiCall("get_transfer_batch_details", {
+      const response = await handleApiCall("get_convenience_batch_details", {
         location_id: convenienceLocationId,
         product_id: productId
       });
@@ -598,6 +605,7 @@ function ConvenienceStore() {
     setBatchTransferSummary({});
   };
 
+
   const categories = [...new Set(products.filter(p => p && p.category).map(p => {
     // Handle both string and object category formats
     if (typeof p.category === 'string') {
@@ -611,7 +619,7 @@ function ConvenienceStore() {
   // --- Dashboard Statistics Calculation ---
   // Calculate total store value
   const totalStoreValue = products.reduce(
-    (sum, p) => sum + (Number(p.unit_price || 0) * Number(p.quantity || 0)),
+    (sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.quantity || 0)),
     0
   );
   // For demo, use static percentage changes
@@ -669,6 +677,7 @@ function ConvenienceStore() {
               <Package className="h-4 w-4" />
               <span className="text-sm font-medium">Batch Transfers</span>
             </button>
+
 
             {/* Notification Bell */}
             <div className="relative notification-dropdown">
@@ -1015,7 +1024,7 @@ function ConvenienceStore() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || product.unit_price || 0).toFixed(2)}
+                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || 0).toFixed(2)}
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || product.brand || "Unknown"}
@@ -1218,7 +1227,7 @@ function ConvenienceStore() {
                       <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Available QTY</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
@@ -1415,7 +1424,7 @@ function ConvenienceStore() {
                       <tr>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Available QTY</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
@@ -1696,9 +1705,11 @@ function ConvenienceStore() {
           </div>
         </div>
       )}
+
     </div>
     </div>
   );
 }
+
 
 export default ConvenienceStore;

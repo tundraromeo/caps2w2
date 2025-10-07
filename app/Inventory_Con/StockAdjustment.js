@@ -18,6 +18,7 @@ import {
 } from "react-icons/fa";
 import { Package, TrendingUp, TrendingDown, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { useTheme } from "./ThemeContext";
+import apiHandler from "../lib/apiHandler";
 
 const StockAdjustment = () => {
   const { isDarkMode } = useTheme();
@@ -29,6 +30,11 @@ const StockAdjustment = () => {
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [rowsPerPage] = useState(10);
+  
+  // Location and user state
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   
   // Ensure page is always a positive integer
   const setPageSafe = (newPage) => {
@@ -58,9 +64,29 @@ const StockAdjustment = () => {
     quantity: 0,
     reason: "",
     notes: "",
-    unit_cost: 0,
+    srp: 0,
     expiration_date: ""
   });
+
+  // Batch adjustment states
+  const [showBatchAdjustmentModal, setShowBatchAdjustmentModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [productBatches, setProductBatches] = useState([]);
+  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [batchAdjustment, setBatchAdjustment] = useState({
+    batch_id: "",
+    batch_reference: "",
+    old_qty: 0,
+    new_qty: 0,
+    adjustment_qty: 0,
+    reason: "",
+    notes: ""
+  });
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [showAdjustmentHistory, setShowAdjustmentHistory] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Helper function to safely parse numbers
   const safeParseFloat = (value, defaultValue = 0) => {
@@ -72,31 +98,24 @@ const StockAdjustment = () => {
   const handleApiCall = async (action, data = {}) => {
     try {
       console.log(`🔄 API Call: ${action}`, data);
-      // Use the main backend API
-      const response = await fetch('/Api/backend.php', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action,
-          ...data
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.message || 'API call failed');
-      }
-      
+      // Use the centralized API handler
+      const result = await apiHandler.callGenericAPI('inventory_transfer_api.php', action, data);
       return result;
     } catch (error) {
       console.error(`API Error (${action}):`, error);
+      throw error;
+    }
+  };
+
+  // Batch Adjustment API Functions
+  const handleBatchApiCall = async (action, data = {}) => {
+    try {
+      console.log(`🔄 Batch API Call: ${action}`, data);
+      // Use the centralized API handler
+      const result = await apiHandler.callGenericAPI('batch_stock_adjustment_api.php', action, data);
+      return result;
+    } catch (error) {
+      console.error(`Batch API Error (${action}):`, error);
       throw error;
     }
   };
@@ -105,13 +124,10 @@ const StockAdjustment = () => {
   const fetchAdjustments = async () => {
     setIsLoading(true);
     try {
-      console.log('🔄 Fetching stock adjustment data...');
+      console.log('🔄 Fetching batch adjustment data...');
       
-      // Use the correct API endpoint from backend.php
-      const result = await handleApiCall('get_stock_adjustments', {
-        search: searchTerm,
-        type: selectedType === 'all' ? 'all' : selectedType === 'Stock In' ? 'IN' : 'OUT',
-        status: selectedStatus,
+      // Use the batch adjustment API to get adjustment history
+      const result = await handleBatchApiCall('get_batch_adjustment_history', {
         page: page,
         limit: rowsPerPage
       });
@@ -124,21 +140,30 @@ const StockAdjustment = () => {
         // Process the data to match expected format
         const processedData = allData.map(item => ({
           ...item,
-          source: 'stock_adjustment',
-          full_date: item.movement_date,
-          date: item.movement_date ? new Date(item.movement_date).toLocaleDateString() : '',
-          time: item.movement_date ? new Date(item.movement_date).toLocaleTimeString() : '',
-          adjustment_type: item.adjustment_type === 'Addition' ? 'Stock In' : 
-                          item.adjustment_type === 'Subtraction' ? 'Stock Out' : item.adjustment_type
+          id: item.log_id,
+          source: 'batch_adjustment',
+          full_date: item.created_at,
+          date: item.created_at ? new Date(item.created_at).toLocaleDateString() : '',
+          time: item.created_at ? new Date(item.created_at).toLocaleTimeString() : '',
+          adjustment_type: item.movement_type === 'IN' ? 'Stock In' : 'Stock Out',
+          quantity: Math.abs(item.adjustment_qty),
+          reason: item.reason,
+          notes: item.notes,
+          adjusted_by: item.adjusted_by,
+          status: 'Approved', // Batch adjustments are automatically approved
+          product_name: item.product_name,
+          product_id: item.product_id,
+          batch_reference: item.batch_reference,
+          expiration_date: item.expiration_date
         }));
         
         setAdjustments(processedData);
         setFilteredAdjustments(processedData);
         setTotalRecords(result.total || processedData.length);
         
-        console.log('✅ Stock adjustments fetched successfully:', processedData.length, 'records');
+        console.log('✅ Batch adjustments fetched successfully:', processedData.length, 'records');
       } else {
-        throw new Error(result.message || 'Failed to fetch stock adjustments');
+        throw new Error(result.message || 'Failed to fetch batch adjustments');
       }
     } catch (error) {
       console.error('❌ Error fetching adjustments:', error);
@@ -154,7 +179,7 @@ const StockAdjustment = () => {
   // Fetch statistics
   const fetchStats = async () => {
     try {
-      const result = await handleApiCall('get_stock_adjustment_stats');
+      const result = await handleBatchApiCall('get_batch_adjustment_stats');
       if (result.success && result.data) {
         setStats({
           total_adjustments: result.data.total_adjustments || 0,
@@ -181,166 +206,257 @@ const StockAdjustment = () => {
     }
   };
 
-  // Create new adjustment
+  // Create new adjustment (legacy function - now redirects to batch adjustment)
   const createAdjustment = async (adjustmentData) => {
-    try {
-      const result = await handleApiCall('create_stock_adjustment', {
-        product_id: adjustmentData.product_id,
-        adjustment_type: adjustmentData.adjustment_type,
-        quantity: adjustmentData.quantity,
-        reason: adjustmentData.reason,
-        notes: adjustmentData.notes,
-        unit_cost: adjustmentData.unit_cost,
-        expiration_date: adjustmentData.expiration_date,
-        created_by: 'inventory_manager' // This should come from user session
-      });
-      
-      // Log the activity with user context
-      try {
-        const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'log_activity',
-            activity_type: 'STOCK_ADJUSTMENT_CREATED',
-            description: `Stock ${adjustmentData.adjustment_type}: ${adjustmentData.quantity} units of ${adjustmentData.product_name || 'Product'} (Reason: ${adjustmentData.reason})`,
-            table_name: 'tbl_stock_movements',
-            record_id: result.data?.adjustment_id || null,
-            user_id: userData.user_id || userData.emp_id,
-            username: userData.username,
-            role: userData.role,
-          }),
-        });
-      } catch (_) {}
-      
-      toast.success('Stock adjustment created successfully');
-      setShowCreateModal(false);
-      setNewAdjustment({
-        product_id: "",
-        product_name: "",
-        adjustment_type: "Stock In",
-        quantity: 0,
-        reason: "",
-        notes: "",
-        unit_cost: 0,
-        expiration_date: ""
-      });
-      
-      // Refresh data with a small delay to ensure database transaction is complete
-      setTimeout(async () => {
-        await fetchAdjustments();
-        await fetchStats();
-      }, 500);
-      
-      return result;
-    } catch (error) {
-      // Log the error
-      try {
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'log_activity',
-            activity_type: 'STOCK_ADJUSTMENT_ERROR',
-            description: `Failed to create stock adjustment: ${error.message}`,
-            table_name: 'tbl_stock_movements',
-            record_id: null,
-          }),
-        });
-      } catch (_) {}
-      
-      toast.error('Failed to create adjustment: ' + error.message);
-      throw error;
-    }
+    toast.info('Please use the Batch Adjustment feature for better tracking');
+    setShowCreateModal(false);
+    setShowBatchAdjustmentModal(true);
   };
 
-  // Update adjustment
+  // Update adjustment (disabled for batch adjustments - they are immutable)
   const updateAdjustment = async (adjustmentData) => {
+    toast.warning('Batch adjustments cannot be modified. Please create a new adjustment to correct any errors.');
+    setShowModal(false);
+    setEditingAdjustment(null);
+  };
+
+  // Delete adjustment (disabled for batch adjustments - they are immutable)
+  const deleteAdjustment = async (id) => {
+    toast.warning('Batch adjustments cannot be deleted. They are permanent records for audit purposes.');
+  };
+
+  // Load products for batch adjustment
+  const fetchProducts = async () => {
+    setLoadingProducts(true);
     try {
-      const result = await handleApiCall('update_stock_adjustment', {
-        movement_id: adjustmentData.id,
-        quantity: adjustmentData.quantity,
-        reason: adjustmentData.reason,
-        notes: adjustmentData.notes,
-        unit_cost: adjustmentData.unit_cost,
-        expiration_date: adjustmentData.expiration_date
+      const result = await handleApiCall('get_products_oldest_batch', {
+        status: 'active',
+        limit: 1000,
+        location_id: currentLocation
       });
       
-      // Log the activity
-      try {
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'log_activity',
-            activity_type: 'STOCK_ADJUSTMENT_UPDATED',
-            description: `Updated stock adjustment: ${adjustmentData.quantity} units (Reason: ${adjustmentData.reason})`,
-            table_name: 'tbl_stock_movements',
-            record_id: adjustmentData.id,
-          }),
-        });
-      } catch (_) {}
-      
-      toast.success('Adjustment updated successfully');
-      setShowModal(false);
-      setEditingAdjustment(null);
-      
-      // Refresh data
-      await fetchAdjustments();
-      await fetchStats();
-      
-      return result;
+      if (result.success) {
+        setProducts(result.data || []);
+      }
     } catch (error) {
-      // Log the error
-      try {
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'log_activity',
-            activity_type: 'STOCK_ADJUSTMENT_UPDATE_ERROR',
-            description: `Failed to update stock adjustment ID ${adjustmentData.id}: ${error.message}`,
-            table_name: 'tbl_stock_movements',
-            record_id: adjustmentData.id,
-          }),
-        });
-      } catch (_) {}
-      
-      toast.error('Failed to update adjustment: ' + error.message);
-      throw error;
+      console.error('Error fetching products:', error);
+      toast.error('Failed to fetch products');
+    } finally {
+      setLoadingProducts(false);
     }
   };
 
-  // Delete adjustment
-  const deleteAdjustment = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this adjustment?')) {
+  // Load batches for selected product
+  const fetchProductBatches = async (productId) => {
+    setLoadingBatches(true);
+    try {
+      const result = await handleBatchApiCall('get_product_batches_for_adjustment', {
+        product_id: productId,
+        location_id: currentLocation
+      });
+      
+      if (result.success) {
+        setProductBatches(result.data.batches || []);
+        setSelectedProduct(result.data.product);
+      }
+    } catch (error) {
+      console.error('Error fetching product batches:', error);
+      toast.error('Failed to fetch product batches');
+      setProductBatches([]);
+    } finally {
+      setLoadingBatches(false);
+    }
+  };
+
+  // Handle product selection for batch adjustment
+  const handleProductSelect = (productId) => {
+    const product = products.find(p => p.product_id == productId);
+    if (product) {
+      setSelectedProduct(product);
+      fetchProductBatches(productId);
+    }
+  };
+
+  // Handle batch adjust button click
+  const handleBatchAdjust = (batch) => {
+    console.log('🔘 Batch adjust button clicked for batch:', batch);
+    setSelectedBatch(batch);
+    setBatchAdjustment({
+      batch_id: batch.batch_id,
+      batch_reference: batch.batch_reference,
+      old_qty: batch.current_qty,
+      new_qty: batch.current_qty,
+      adjustment_qty: 0,
+      reason: "",
+      notes: ""
+    });
+    console.log('✅ Batch adjustment state set:', {
+      batch_id: batch.batch_id,
+      batch_reference: batch.batch_reference,
+      old_qty: batch.current_qty,
+      new_qty: batch.current_qty,
+      adjustment_qty: 0,
+      reason: "",
+      notes: ""
+    });
+    setShowBatchAdjustmentModal(true);
+  };
+
+  // Handle batch selection
+  const handleBatchSelect = (batch) => {
+    setSelectedBatch(batch);
+    setBatchAdjustment({
+      batch_id: batch.batch_id,
+      batch_reference: batch.batch_reference,
+      old_qty: batch.current_qty,
+      new_qty: batch.current_qty,
+      adjustment_qty: 0,
+      reason: "",
+      notes: ""
+    });
+  };
+
+  // Handle batch adjustment quantity change
+  const handleBatchQuantityChange = (newQty) => {
+    const oldQty = batchAdjustment.old_qty;
+    const adjustmentQty = newQty - oldQty;
+    
+    console.log('🔢 Quantity change:', {
+      oldQty: oldQty,
+      newQty: newQty,
+      adjustmentQty: adjustmentQty
+    });
+    
+    setBatchAdjustment(prev => ({
+      ...prev,
+      new_qty: newQty,
+      adjustment_qty: adjustmentQty
+    }));
+  };
+
+  // Create batch adjustment
+  const createBatchAdjustment = async () => {
+    if (isSubmitting) {
+      console.log('🚫 Already submitting, preventing duplicate submission');
+      return; // Prevent multiple submissions
+    }
+    
+    console.log('🔄 Starting batch adjustment creation...');
+    console.log('📊 Form data:', {
+      selectedProduct: selectedProduct,
+      selectedBatch: selectedBatch,
+      batchAdjustment: batchAdjustment,
+      isSubmitting: isSubmitting
+    });
+    
+    // Enhanced validation with detailed error messages
+    if (!selectedProduct) {
+      toast.error('Please select a product first');
+      console.error('❌ No product selected');
       return;
     }
     
+    if (!selectedBatch) {
+      toast.error('Please select a batch to adjust');
+      console.error('❌ No batch selected');
+      return;
+    }
+    
+    if (!batchAdjustment.reason) {
+      toast.error('Please provide a reason for the adjustment');
+      console.error('❌ No reason provided');
+      return;
+    }
+    
+    if (batchAdjustment.adjustment_qty === 0) {
+      toast.error('Adjustment quantity cannot be zero');
+      console.error('❌ Adjustment quantity is zero');
+      return;
+    }
+
+    setIsSubmitting(true);
+    console.log('✅ Validation passed, submitting...');
+
     try {
-      const result = await handleApiCall('delete_stock_adjustment', {
-        movement_id: id
-      });
+      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      toast.success('Adjustment deleted successfully');
+      const requestData = {
+        product_id: selectedProduct.product_id,
+        batch_id: batchAdjustment.batch_id,
+        old_qty: batchAdjustment.old_qty,
+        new_qty: batchAdjustment.new_qty,
+        adjustment_qty: batchAdjustment.adjustment_qty,
+        reason: batchAdjustment.reason,
+        notes: batchAdjustment.notes,
+        adjusted_by: userData.username || userData.emp_id || 'inventory_manager'
+      };
       
-      // Refresh data
-      await fetchAdjustments();
-      await fetchStats();
+      console.log('📤 Sending request data:', requestData);
       
-      return result;
+      const result = await handleBatchApiCall('create_batch_stock_adjustment', requestData);
+      
+      console.log('📥 Received response:', result);
+
+      if (result.success) {
+        toast.success('Batch adjustment created successfully');
+        setShowBatchAdjustmentModal(false);
+        resetBatchAdjustment();
+        
+        // Refresh data
+        await fetchAdjustments();
+        await fetchStats();
+      } else {
+        toast.error(result.message || 'Failed to create batch adjustment');
+        console.error('❌ API returned error:', result);
+      }
     } catch (error) {
-      toast.error('Failed to delete adjustment: ' + error.message);
-      throw error;
+      console.error('❌ Error creating batch adjustment:', error);
+      toast.error('Failed to create batch adjustment: ' + error.message);
+    } finally {
+      setIsSubmitting(false);
+      console.log('🏁 Submission completed');
     }
   };
 
+  // Reset batch adjustment form
+  const resetBatchAdjustment = () => {
+    setSelectedProduct(null);
+    setProductBatches([]);
+    setSelectedBatch(null);
+    setBatchAdjustment({
+      batch_id: "",
+      batch_reference: "",
+      old_qty: 0,
+      new_qty: 0,
+      adjustment_qty: 0,
+      reason: "",
+      notes: ""
+    });
+  };
+
+  // Initialize user and location data
+  useEffect(() => {
+    const userData = sessionStorage.getItem('user_data');
+    if (userData) {
+      const user = JSON.parse(userData);
+      setCurrentUser(user.user_id);
+      setUserRole(user.role);
+      
+      // Determine location based on user role (same logic as Warehouse component)
+      const locationId = user.role?.toLowerCase() === "admin" ? 2 : 
+                        (user.role?.toLowerCase() === "inventory manager" ? 1 : 2);
+      setCurrentLocation(locationId);
+    }
+  }, []);
+
   // Load data on component mount
   useEffect(() => {
-    fetchAdjustments();
-    fetchStats();
-  }, []);
+    if (currentLocation !== null) {
+      fetchAdjustments();
+      fetchStats();
+      fetchProducts();
+    }
+  }, [currentLocation]);
 
   // Auto-refresh functionality
   useEffect(() => {
@@ -482,27 +598,18 @@ const StockAdjustment = () => {
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={() => {
-              fetchAdjustments();
-              fetchStats();
-              setLastRefresh(new Date());
-              toast.success('Data refreshed successfully');
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            onClick={() => setShowBatchAdjustmentModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
           >
-            <FaSearch className="h-4 w-4" />
-            {isLoading ? 'Refreshing...' : 'Refresh'}
+            <FaBoxOpen className="h-4 w-4" />
+            Batch Adjustment
           </button>
           <button 
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            onClick={() => setShowAdjustmentHistory(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
           >
-            <FaPlus className="h-4 w-4" />
-            Create Adjustment
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:text-blue-900">
-            <FaUpload className="h-4 w-4" />
-            Import
+            <FaEye className="h-4 w-4" />
+            View Adjustment History
           </button>
         </div>
       </div>
@@ -888,8 +995,8 @@ const StockAdjustment = () => {
                     <input
                       type="number"
                       step="0.01"
-                      value={newAdjustment.unit_cost}
-                      onChange={(e) => setNewAdjustment({...newAdjustment, unit_cost: safeParseFloat(e.target.value)})}
+                      value={newAdjustment.srp}
+                      onChange={(e) => setNewAdjustment({...newAdjustment, srp: safeParseFloat(e.target.value)})}
                       placeholder="Enter SRP (Suggested Retail Price)"
                       className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'}`}
                     />
@@ -1016,8 +1123,8 @@ const StockAdjustment = () => {
                       <input
                         type="number"
                         step="0.01"
-                        value={editingAdjustment.unit_cost || 0}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, unit_cost: safeParseFloat(e.target.value)})}
+                        value={editingAdjustment.srp || 0}
+                        onChange={(e) => setEditingAdjustment({...editingAdjustment, srp: safeParseFloat(e.target.value)})}
                         className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
                       />
                     </div>
@@ -1146,11 +1253,11 @@ const StockAdjustment = () => {
                       </div>
                       <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>SRP</label>
-                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>₱{safeParseFloat(viewingAdjustment.unit_cost).toFixed(2)}</p>
+                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>₱{safeParseFloat(viewingAdjustment.srp).toFixed(2)}</p>
                       </div>
                       <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Total Value</label>
-                        <p className={`text-lg font-bold text-green-600`}>₱{(safeParseFloat(viewingAdjustment.quantity) * safeParseFloat(viewingAdjustment.unit_cost)).toFixed(2)}</p>
+                        <p className={`text-lg font-bold text-green-600`}>₱{(safeParseFloat(viewingAdjustment.quantity) * safeParseFloat(viewingAdjustment.srp)).toFixed(2)}</p>
                       </div>
                       <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Expiration Date</label>
@@ -1192,6 +1299,407 @@ const StockAdjustment = () => {
               <button 
                 onClick={() => setShowViewModal(false)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Adjustment Modal */}
+      {showBatchAdjustmentModal && (
+        <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
+          <div className={`${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto`}>
+            <div className={`px-6 py-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Batch Stock Adjustment</h3>
+                  {currentLocation && (
+                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
+                      Location: {currentLocation === 2 ? 'Warehouse' : currentLocation === 3 ? 'Pharmacy Store' : currentLocation === 4 ? 'Convenience Store' : `Location ${currentLocation}`}
+                    </p>
+                  )}
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowBatchAdjustmentModal(false);
+                    resetBatchAdjustment();
+                  }}
+                  className={`${isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Column - Product Selection */}
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      🔍 Search Product Name / SKU / Barcode
+                    </label>
+                    <div className="relative">
+                      <FaSearch className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
+                      <input
+                        type="text"
+                        placeholder="Type product name, SKU, or barcode..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className={`pl-10 pr-4 py-2 w-full border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'}`}
+                      />
+                    </div>
+                    <select
+                      value={selectedProduct?.product_id || ''}
+                      onChange={(e) => handleProductSelect(e.target.value)}
+                      className={`w-full mt-2 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                      disabled={loadingProducts}
+                    >
+                      <option value="">Choose a product...</option>
+                      {products
+                        .filter(product => 
+                          !searchTerm || 
+                          product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          product.barcode?.toString().includes(searchTerm) ||
+                          product.product_id.toString().includes(searchTerm)
+                        )
+                        .map((product, index) => (
+                        <option key={`${product.product_id}-${index}`} value={product.product_id}>
+                          {product.product_name} (ID: {product.product_id}) - {product.barcode}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingProducts && (
+                      <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Loading products...</p>
+                    )}
+                  </div>
+
+                  {/* Product Info */}
+                  {selectedProduct && (
+                    <div className={`${isDark ? 'bg-gray-700' : 'bg-gray-50'} rounded-lg p-4`}>
+                      <h4 className={`text-lg font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>Product Information</h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Name:</span>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.product_name}</p>
+                        </div>
+                        <div>
+                          <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Barcode:</span>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.barcode || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Category:</span>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.category_name || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Total Stock:</span>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.quantity || 0} units</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Batch List */}
+                  {selectedProduct && (
+                    <div>
+                      <h4 className={`text-lg font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>📦 Available Batches</h4>
+                      {loadingBatches ? (
+                        <div className={`text-center py-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Loading batches...
+                        </div>
+                      ) : productBatches.length === 0 ? (
+                        <div className={`text-center py-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          No batches available for this product
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className={`${isDark ? 'bg-gray-700' : 'bg-gray-100'} border-b`}>
+                              <tr>
+                                <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Reference</th>
+                                <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Expiry</th>
+                                <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Current Qty</th>
+                                <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Location</th>
+                                <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Date Added</th>
+                                <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {productBatches.map((batch) => (
+                                <tr key={batch.batch_id} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                                  <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                    {batch.batch_reference}
+                                  </td>
+                                  <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                    {batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className={`px-3 py-2 text-center font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                    {batch.current_qty} pcs
+                                  </td>
+                                  <td className={`px-3 py-2 text-center ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                    {batch.location_name || 'Unknown'}
+                                  </td>
+                                  <td className={`px-3 py-2 text-center text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    {batch.batch_created_at ? new Date(batch.batch_created_at).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <button
+                                      onClick={() => handleBatchAdjust(batch)}
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+                                    >
+                                      <FaEdit className="h-3 w-3" />
+                                      Adjust
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column - Adjustment Form */}
+                <div className="space-y-4">
+                  {selectedBatch ? (
+                    <>
+                      <div className={`${isDark ? 'bg-gray-700' : 'bg-gray-50'} rounded-lg p-4`}>
+                        <h4 className={`text-lg font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>✏️ Adjustment Form</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>📦 Product Name:</span>
+                            <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct?.product_name}</p>
+                          </div>
+                          <div>
+                            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>🆔 Batch Reference:</span>
+                            <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedBatch.batch_reference}</p>
+                          </div>
+                          <div>
+                            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>📅 Expiry Date:</span>
+                            <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {selectedBatch.expiration_date ? new Date(selectedBatch.expiration_date).toLocaleDateString() : 'N/A'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>🔢 Current Quantity:</span>
+                            <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedBatch.current_qty} pcs</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                          ✏️ New Quantity OR Adjustment Qty *
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className={`block text-xs mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>New Quantity (Final Count)</label>
+                            <input
+                              type="number"
+                              value={batchAdjustment.new_qty}
+                              onChange={(e) => handleBatchQuantityChange(parseInt(e.target.value) || 0)}
+                              min="0"
+                              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                            />
+                          </div>
+                          <div>
+                            <label className={`block text-xs mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Adjustment Qty (Difference)</label>
+                            <input
+                              type="number"
+                              value={batchAdjustment.adjustment_qty}
+                              onChange={(e) => {
+                                const adjQty = parseFloat(e.target.value) || 0;
+                                const newQty = selectedBatch.current_qty + adjQty;
+                                setBatchAdjustment(prev => ({
+                                  ...prev,
+                                  adjustment_qty: adjQty,
+                                  new_qty: Math.max(0, newQty)
+                                }));
+                              }}
+                              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                              step="0.01"
+                            />
+                          </div>
+                        </div>
+                        <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Current: {selectedBatch.current_qty} → New: {batchAdjustment.new_qty} 
+                          {batchAdjustment.adjustment_qty !== 0 && (
+                            <span className={`ml-2 ${batchAdjustment.adjustment_qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              ({batchAdjustment.adjustment_qty > 0 ? '+' : ''}{batchAdjustment.adjustment_qty})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                          📝 Reason (Dropdown/Text) *
+                        </label>
+                        <select
+                          value={batchAdjustment.reason}
+                          onChange={(e) => setBatchAdjustment(prev => ({...prev, reason: e.target.value}))}
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                          required
+                        >
+                          <option value="">Select a reason...</option>
+                          <option value="Physical Count Discrepancy">📉 Physical Count Discrepancy</option>
+                          <option value="Expired / Damaged">🗑️ Expired / Damaged</option>
+                          <option value="Wrong Entry / Encoding Error">✍️ Wrong Entry / Encoding Error</option>
+                          <option value="Return to Supplier">🔁 Return to Supplier</option>
+                          <option value="Shrinkage / Theft">📦 Shrinkage / Theft</option>
+                          <option value="Other">Other</option>
+                        </select>
+                        <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          📌 Important: Required field para ma-trace kung bakit may galaw
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                          👤 Adjusted by
+                        </label>
+                        <div className={`px-3 py-2 border rounded-md ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-300 bg-gray-50'}`}>
+                          <span className={`${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            {(() => {
+                              try {
+                                const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+                                return userData?.username || userData?.emp_id || 'Current User';
+                              } catch (e) {
+                                return 'Current User';
+                              }
+                            })()} (Auto-filled)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                          Additional Notes
+                        </label>
+                        <textarea
+                          value={batchAdjustment.notes}
+                          onChange={(e) => setBatchAdjustment(prev => ({...prev, notes: e.target.value}))}
+                          rows={3}
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'}`}
+                          placeholder="Additional details about this adjustment..."
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      <FaBoxOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Select a product and batch to make an adjustment</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <button 
+                onClick={() => {
+                  setShowBatchAdjustmentModal(false);
+                  resetBatchAdjustment();
+                }}
+                className={`px-4 py-2 ${isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  console.log('🔘 Save button clicked');
+                  console.log('🔍 Button state check:', {
+                    selectedBatch: !!selectedBatch,
+                    hasReason: !!batchAdjustment.reason,
+                    adjustmentQty: batchAdjustment.adjustment_qty,
+                    isSubmitting: isSubmitting,
+                    buttonDisabled: !selectedBatch || !batchAdjustment.reason || batchAdjustment.adjustment_qty === 0 || isSubmitting
+                  });
+                  createBatchAdjustment();
+                }}
+                disabled={!selectedBatch || !batchAdjustment.reason || batchAdjustment.adjustment_qty === 0 || isSubmitting}
+                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? '⏳ Processing...' : '✅ Save Adjustment / Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Adjustment History Modal */}
+      {showAdjustmentHistory && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className={`${isDark ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden`}>
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                📜 View Adjustment History
+              </h3>
+              <button
+                onClick={() => setShowAdjustmentHistory(false)}
+                className={`p-2 rounded-md ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className={`${isDark ? 'bg-gray-700' : 'bg-gray-100'} border-b`}>
+                    <tr>
+                      <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Date</th>
+                      <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Product</th>
+                      <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Reference</th>
+                      <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Old Qty</th>
+                      <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>New Qty</th>
+                      <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Reason</th>
+                      <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>User</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adjustments.slice(0, 20).map((adjustment) => (
+                      <tr key={adjustment.id} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.date} {adjustment.time}
+                        </td>
+                        <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.product_name}
+                        </td>
+                        <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.batch_reference}
+                        </td>
+                        <td className={`px-3 py-2 text-center ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.old_qty || 0}
+                        </td>
+                        <td className={`px-3 py-2 text-center ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.new_qty || 0}
+                        </td>
+                        <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.reason}
+                        </td>
+                        <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.adjusted_by}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <div className={`px-6 py-4 border-t flex justify-end ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <button 
+                onClick={() => setShowAdjustmentHistory(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
               >
                 Close
               </button>

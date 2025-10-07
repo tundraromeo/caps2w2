@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { getApiEndpointForAction } from '../lib/apiHandler';
+import apiHandler from '../lib/apiHandler';
 import {
   ChevronUp,
   ChevronDown,
@@ -63,36 +65,25 @@ function ConvenienceInventory() {
   });
   const [alertCount, setAlertCount] = useState(0);
 
-  const API_BASE_URL = "http://localhost/Enguio_Project/Api/convenience_store_api.php";
+  const API_BASE_URL = "http://localhost/caps2e2/Api/convenience_store_api.php";
 
-  // API function
+  // API function - Updated to use centralized API handler
   async function handleApiCall(action, data = {}) {
-    const payload = { action, ...data };
-    console.log("🚀 API Call Payload:", payload);
-
     try {
-      const response = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const resData = await response.json();
-      console.log("✅ API Success Response:", resData);
-
-      if (resData && typeof resData === "object") {
-        if (!resData.success) {
-          console.warn("⚠️ API responded with failure:", resData.message || resData);
+      const endpoint = getApiEndpointForAction(action);
+      const response = await apiHandler.callAPI(endpoint, action, data);
+      
+      if (response && typeof response === "object") {
+        if (!response.success) {
+          console.warn("⚠️ API responded with failure:", response.message || response);
         }
-        return resData;
+        return response;
       } else {
-        console.warn("⚠️ Unexpected API response format:", resData);
+        console.warn("⚠️ Unexpected API response format:", response);
         return {
           success: false,
           message: "Unexpected response format",
-          data: resData,
+          data: response,
         };
       }
     } catch (error) {
@@ -517,7 +508,7 @@ function ConvenienceInventory() {
     setLoadingBatch(true);
     try {
       console.log("Loading transfer history for product ID:", productId);
-      const response = await handleApiCall("get_transfer_batch_details", {
+      const response = await handleApiCall("get_convenience_batch_details", {
         location_id: convenienceLocationId,
         product_id: productId
       });

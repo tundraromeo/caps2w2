@@ -9,7 +9,7 @@ const SystemUpdateService = () => {
   const checkForRealSystemUpdates = async () => {
     try {
       // Check for actual system updates from the database
-      const response = await fetch('http://localhost/Enguio_Project/Api/backend.php', {
+      const response = await fetch('http://localhost/caps2e2/Api/backend.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

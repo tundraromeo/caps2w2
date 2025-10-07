@@ -5,7 +5,8 @@
 
 // API Configuration
 const API_CONFIG = {
-  BASE_URL: 'http://localhost/Enguio_Project/Api',
+  BASE_URL: 'http://localhost/caps2e2/Api',
+  USE_PROXY: false, // Set to false to use direct calls
   ENDPOINTS: {
     // Main backend API
     BACKEND: 'backend.php',
@@ -45,8 +46,6 @@ class APIHandler {
     const url = `${this.baseUrl}/${endpoint}`;
     
     try {
-      
-
       const config = {
         method: method,
         headers: {
@@ -63,7 +62,6 @@ class APIHandler {
 
       return this.makeRequest(url, config);
     } catch (error) {
-      
       throw error;
     }
   }
@@ -118,6 +116,50 @@ class APIHandler {
 
   async getWarehouseData(filters = {}) {
     return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_data', filters);
+  }
+
+  async getWarehouseKPIs(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_kpis', filters);
+  }
+
+  async getWarehouseSupplyByProduct(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_supply_by_product', filters);
+  }
+
+  async getWarehouseSupplyByLocation(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_supply_by_location', filters);
+  }
+
+  async getWarehouseStockoutItems(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_stockout_items', filters);
+  }
+
+  async getWarehouseProductKPIs(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_warehouse_product_kpis', filters);
+  }
+
+  async getTopProductsByQuantity(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_top_products_by_quantity', filters);
+  }
+
+  async getStockDistributionByCategory(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_stock_distribution_by_category', filters);
+  }
+
+  async getFastMovingItemsTrend(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_fast_moving_items_trend', filters);
+  }
+
+  async getCriticalStockAlerts(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_critical_stock_alerts', filters);
+  }
+
+  async getInventoryByBranchCategory(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_inventory_by_branch_category', filters);
+  }
+
+  async getProductsByLocationName(filters = {}) {
+    return this.callAPI(this.endpoints.BACKEND, 'get_products_by_location_name', filters);
   }
 
   // ============= SALES API METHODS =============
@@ -295,6 +337,20 @@ class APIHandler {
   async updateBatchTransfer(transferId, updateData) {
     return this.callAPI(this.endpoints.BATCH_TRANSFER, 'update_batch_transfer', { transfer_id: transferId, ...updateData });
   }
+
+  // ============= GENERIC API CALL METHOD =============
+  
+  /**
+   * Generic method to call any API endpoint with any action
+   * @param {string} endpoint - API endpoint file name
+   * @param {string} action - Action to perform
+   * @param {object} data - Data to send
+   * @param {string} method - HTTP method (POST/GET)
+   * @returns {Promise<object>} API response
+   */
+  async callGenericAPI(endpoint, action, data = {}, method = 'POST') {
+    return this.callAPI(endpoint, action, data, method);
+  }
 }
 
 // Create singleton instance
@@ -323,7 +379,7 @@ export const getApiEndpointForAction = (action) => {
     update_batch: 'backend.php',
     add_batch_entry: 'backend.php',
     // Barcode
-    check_barcode: 'barcode_api.php',
+    check_barcode: 'backend.php',
     // Suppliers
     get_suppliers: 'backend.php',
     add_supplier: 'backend.php',
@@ -349,6 +405,15 @@ export const getApiEndpointForAction = (action) => {
     create_transfer_batch_details_table: 'backend.php',
     // Warehouse KPIs
     get_warehouse_kpis: 'backend.php',
+    // Convenience Store Actions
+    get_locations: 'backend.php',
+    get_convenience_products: 'convenience_store_api.php',
+    get_products_by_location_name: 'backend.php',
+    delete_product: 'backend.php',
+    get_convenience_batch_details: 'convenience_store_api.php',
+    get_fifo_stock: 'backend.php',
+    get_transfer_batch_details: 'backend.php',
+    get_batch_transfers_by_location: 'convenience_store_api.php',
     // Add more mappings as needed
   };
   return actionMap[action] || 'backend.php'; // fallback to backend.php for all unmapped actions

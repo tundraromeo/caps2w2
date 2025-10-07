@@ -4,16 +4,22 @@
  * Handles all convenience store specific operations
  */
 
+// CORS headers must be set first, before any output
+header("Access-Control-Allow-Origin: http://localhost:3000");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
+header("Content-Type: application/json; charset=utf-8");
+
+// Handle preflight OPTIONS requests immediately
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 // Start output buffering to prevent unwanted output
 ob_start();
-
-// Set content type to JSON
-header('Content-Type: application/json');
-
-// Enable CORS
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);
@@ -117,7 +123,7 @@ try {
                     p.barcode,
                     p.category,
                     b.brand,
-                    AVG(p.unit_price) as unit_price,
+                    AVG(p.srp) as unit_price,
                     AVG(p.srp) as srp,
                     SUM(p.quantity) as total_quantity,
                     MAX(p.status) as status,
@@ -133,7 +139,7 @@ try {
                     SELECT 
                         tbd.product_id,
                         tbd.srp as first_batch_srp,
-                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.created_at ASC, tbd.id ASC) as rn
+                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.id ASC) as rn
                     FROM tbl_transfer_batch_details tbd
                     WHERE tbd.srp > 0
                 ) first_transfer_batch ON p.product_id = first_transfer_batch.product_id AND first_transfer_batch.rn = 1
@@ -182,7 +188,7 @@ try {
                     p.barcode,
                     p.category,
                     b.brand,
-                    AVG(p.unit_price) as unit_price,
+                    AVG(p.srp) as unit_price,
                     AVG(p.srp) as srp,
                     SUM(p.quantity) as total_quantity,
                     MAX(p.status) as status,
@@ -198,7 +204,7 @@ try {
                     SELECT 
                         tbd.product_id,
                         tbd.srp as first_batch_srp,
-                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.created_at ASC, tbd.id ASC) as rn
+                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.id ASC) as rn
                     FROM tbl_transfer_batch_details tbd
                     WHERE tbd.srp > 0
                 ) first_transfer_batch ON p.product_id = first_transfer_batch.product_id AND first_transfer_batch.rn = 1
@@ -230,12 +236,17 @@ try {
                 break;
             }
             
+            try {
+            
             // Get convenience store location ID if not provided
             if (!$location_id) {
                 $locStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name LIKE '%convenience%' LIMIT 1");
                 $locStmt->execute();
                 $location_id = $locStmt->fetchColumn();
             }
+            
+            // Debug: Log the location ID
+            error_log("DEBUG get_convenience_batch_details: convenience store location_id=$location_id");
             
             // Get the product details to find related products with same name/barcode
             $productStmt = $conn->prepare("SELECT product_name, barcode FROM tbl_product WHERE product_id = ?");
@@ -252,36 +263,77 @@ try {
             $relatedStmt->execute([$productInfo['product_name'], $productInfo['barcode']]);
             $relatedProductIds = $relatedStmt->fetchAll(PDO::FETCH_COLUMN);
             
+            // If no related products found, use the original product_id
+            if (empty($relatedProductIds)) {
+                $relatedProductIds = [$product_id];
+            }
+            
             // Create placeholders for IN clause
             $placeholders = str_repeat('?,', count($relatedProductIds) - 1) . '?';
             
-            // Get batch transfer details from tbl_batch_transfer_details for all related products
+            // Debug: Log the parameters
+            error_log("DEBUG get_convenience_batch_details: product_id=$product_id, location_id=$location_id");
+            error_log("DEBUG get_convenience_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
+            
+            // Get batch transfer details from tbl_transfer_batch_details for all related products
+            // First try to get transfers TO the convenience store (location_id = destination)
             $batchStmt = $conn->prepare("
                 SELECT 
-                    btd.batch_transfer_id,
+                    btd.id,
                     btd.batch_id,
                     btd.batch_reference,
-                    btd.quantity_used as batch_quantity,
+                    btd.quantity as batch_quantity,
                     btd.srp,
                     btd.srp as batch_srp,
                     btd.expiration_date,
-                    btd.status,
-                    btd.transfer_date,
                     p.product_name,
                     p.barcode,
-                    b.brand,
+                    br.brand,
                     p.category,
-                    l.location_name as source_location_name,
+                    COALESCE(l.location_name, 'Warehouse') as source_location_name,
                     'System' as employee_name
-                FROM tbl_batch_transfer_details btd
+                FROM tbl_transfer_batch_details btd
                 LEFT JOIN tbl_product p ON btd.product_id = p.product_id
-                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
                 LEFT JOIN tbl_location l ON btd.location_id = l.location_id
-                WHERE btd.product_id IN ($placeholders)
-                ORDER BY btd.transfer_date ASC, btd.batch_transfer_id ASC
+                WHERE btd.product_id IN ($placeholders) AND btd.location_id = ?
+                ORDER BY btd.expiration_date ASC, btd.id ASC
             ");
-            $batchStmt->execute($relatedProductIds);
+            $batchStmt->execute(array_merge($relatedProductIds, [$location_id]));
             $batchDetails = $batchStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // If no data found with location filter, try without location filter to see all transfers
+            if (empty($batchDetails)) {
+                error_log("DEBUG get_convenience_batch_details: No data with location filter, trying without location filter");
+                $batchStmt2 = $conn->prepare("
+                    SELECT 
+                        btd.id,
+                        btd.batch_id,
+                        btd.batch_reference,
+                        btd.quantity as batch_quantity,
+                        btd.srp,
+                        btd.srp as batch_srp,
+                        btd.expiration_date,
+                        p.product_name,
+                        p.barcode,
+                        br.brand,
+                        p.category,
+                        COALESCE(l.location_name, 'Warehouse') as source_location_name,
+                        'System' as employee_name
+                    FROM tbl_transfer_batch_details btd
+                    LEFT JOIN tbl_product p ON btd.product_id = p.product_id
+                    LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
+                    LEFT JOIN tbl_location l ON btd.location_id = l.location_id
+                    WHERE btd.product_id IN ($placeholders)
+                    ORDER BY btd.expiration_date ASC, btd.id ASC
+                ");
+                $batchStmt2->execute($relatedProductIds);
+                $batchDetails = $batchStmt2->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            // Debug: Log the results
+            error_log("DEBUG get_convenience_batch_details: batchDetails count=" . count($batchDetails));
+            error_log("DEBUG get_convenience_batch_details: batchDetails=" . json_encode($batchDetails));
             
             // If still no data, try to get FIFO stock data directly for all related products
             if (empty($batchDetails)) {
@@ -321,7 +373,7 @@ try {
                         CONCAT('BR-', fs.batch_id) as batch_reference,
                         td.qty as batch_quantity,
                         fs.srp,
-                        p.unit_price as batch_srp,
+                        p.srp as batch_srp,
                         fs.expiration_date,
                         'Available' as status,
                         th.date as transfer_date,
@@ -362,6 +414,14 @@ try {
                     "summary" => $summary
                 ]
             ]);
+            
+            } catch (Exception $e) {
+                echo json_encode([
+                    'success' => false, 
+                    'message' => 'Database error: ' . $e->getMessage(),
+                    'data' => []
+                ]);
+            }
             break;
             
         case 'get_transfer_batch_details':
@@ -408,7 +468,7 @@ try {
                         th.transfer_header_id,
                         p.product_name,
                         p.barcode,
-                        p.unit_price,
+                        p.srp as unit_price,
                         p.srp,
                         b.brand,
                         s.supplier_name,
@@ -459,6 +519,64 @@ try {
             } else {
                 echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
             }
+            break;
+            
+        case 'get_batch_transfers_by_location':
+            // Get all batch transfers for a specific location (convenience store)
+            $location_id = $data['location_id'] ?? 0;
+            
+            if (!$location_id) {
+                echo json_encode(['success' => false, 'message' => 'Location ID is required']);
+                break;
+            }
+            
+            // Get batch transfer details for the location
+            $stmt = $conn->prepare("
+                SELECT 
+                    btd.id,
+                    btd.batch_id,
+                    btd.batch_reference,
+                    btd.quantity as batch_quantity,
+                    btd.srp as batch_srp,
+                    btd.expiration_date,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    b.brand,
+                    s.supplier_name,
+                    l.location_name as source_location_name,
+                    e.Fname,
+                    e.Lname,
+                    CONCAT(e.Fname, ' ', e.Lname) as employee_name
+                FROM tbl_transfer_batch_details btd
+                LEFT JOIN tbl_product p ON btd.product_id = p.product_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_employee e ON btd.transferred_by = e.emp_id
+                WHERE p.location_id = ?
+                ORDER BY btd.id DESC
+            ");
+            $stmt->execute([$location_id]);
+            $batchTransfers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Calculate summary
+            $summary = [
+                'total_transfers' => count($batchTransfers),
+                'total_products' => count(array_unique(array_column($batchTransfers, 'product_id'))),
+                'total_quantity' => array_sum(array_column($batchTransfers, 'batch_quantity')),
+                'total_value' => array_sum(array_map(function($transfer) {
+                    return $transfer['batch_quantity'] * ($transfer['batch_srp'] ?? 0);
+                }, $batchTransfers))
+            ];
+            
+            echo json_encode([
+                "success" => true,
+                "data" => [
+                    "batch_transfers" => $batchTransfers,
+                    "summary" => $summary
+                ]
+            ]);
             break;
             
         case 'process_convenience_sale':
@@ -524,7 +642,7 @@ try {
                             
                             // Update batch transfer details status
                             $updateBatchStmt = $conn->prepare("
-                                UPDATE tbl_batch_transfer_details 
+                                UPDATE tbl_transfer_batch_details 
                                 SET status = CASE 
                                     WHEN batch_quantity <= ? THEN 'Consumed'
                                     ELSE 'Partially Consumed'

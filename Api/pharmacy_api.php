@@ -4,16 +4,22 @@
  * Handles all pharmacy specific operations
  */
 
+// CORS headers must be set first, before any output
+header("Access-Control-Allow-Origin: http://localhost:3000");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
+header("Content-Type: application/json; charset=utf-8");
+
+// Handle preflight OPTIONS requests immediately
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
 // Start output buffering to prevent unwanted output
 ob_start();
-
-// Set content type to JSON
-header('Content-Type: application/json');
-
-// Enable CORS
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Cache-Control');
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);
@@ -108,7 +114,7 @@ try {
                     p.barcode,
                     p.category,
                     b.brand,
-                    p.unit_price,
+                    p.srp as unit_price,
                     p.srp,
                     p.quantity,
                     p.status,
@@ -122,7 +128,7 @@ try {
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp as unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -161,7 +167,7 @@ try {
                     p.barcode,
                     p.category,
                     b.brand,
-                    p.unit_price,
+                    p.srp as unit_price,
                     p.srp,
                     p.quantity,
                     p.status,
@@ -238,7 +244,7 @@ try {
                         CONCAT('BR-', fs.batch_id) as batch_reference,
                         td.qty as batch_quantity,
                         fs.srp,
-                        p.unit_price as batch_srp,
+                        p.srp as unit_price as batch_srp,
                         fs.expiration_date,
                         'Available' as status,
                         th.date as transfer_date,
@@ -325,7 +331,7 @@ try {
                         th.transfer_header_id,
                         p.product_name,
                         p.barcode,
-                        p.unit_price,
+                        p.srp as unit_price,
                         p.srp,
                         b.brand,
                         s.supplier_name,

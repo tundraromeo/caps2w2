@@ -170,7 +170,7 @@ class ReportsModule {
             $outOfStockItems = $stmt->fetch()['total'];
             
             // Total inventory value
-            $stmt = $this->conn->prepare("SELECT COALESCE(SUM(quantity * unit_price), 0) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
+            $stmt = $this->conn->prepare("SELECT COALESCE(SUM(quantity * srp), 0) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
             $stmt->execute();
             $totalValue = $stmt->fetch()['total'];
             
@@ -454,8 +454,8 @@ class ReportsModule {
                 p.barcode,
                 p.category,
                 p.quantity as current_stock,
-                p.unit_price,
-                (p.quantity * p.unit_price) as total_value,
+                p.srp as unit_price,
+                (p.quantity * p.srp) as total_value,
                 COALESCE(l.location_name, 'Warehouse') as location,
                 COALESCE(s.supplier_name, 'Unknown Supplier') as supplier,
                 COALESCE(b.brand, 'Generic') as brand,
@@ -512,7 +512,7 @@ class ReportsModule {
                 COALESCE(s.supplier_email, s.primary_email) as email,
                 COUNT(p.product_id) as products_supplied,
                 COALESCE(SUM(p.quantity), 0) as total_stock,
-                COALESCE(SUM(p.quantity * p.unit_price), 0) as total_value,
+                COALESCE(SUM(p.quantity * p.srp), 0) as total_value,
                 COUNT(DISTINCT sm.movement_id) as deliveries_count
             FROM tbl_supplier s
             LEFT JOIN tbl_product p ON s.supplier_id = p.supplier_id
@@ -947,8 +947,8 @@ class ReportsModule {
                         p.barcode,
                         p.category,
                         td.qty as quantity,
-                        p.unit_price,
-                        (td.qty * p.unit_price) as total_value,
+                        p.srp as unit_price,
+                        (td.qty * p.srp) as total_value,
                         'TRANSFER' as movement_type,
                         th.reference_number as reference_no,
                         DATE(th.date) as date,
@@ -1086,7 +1086,7 @@ function get_warehouse_kpis($conn, $data) {
         
         // Get total stock value
         $stockValueStmt = $conn->prepare("
-            SELECT COALESCE(SUM(quantity * unit_price), 0) as total_value 
+            SELECT COALESCE(SUM(quantity * srp), 0) as total_value 
             FROM tbl_product 
             WHERE status = 'active' AND location_id = ?
         ");

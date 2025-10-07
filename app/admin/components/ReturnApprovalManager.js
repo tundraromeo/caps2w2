@@ -19,7 +19,7 @@ export default function ReturnApprovalManager() {
   const loadPendingReturns = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+      const response = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -43,7 +43,7 @@ export default function ReturnApprovalManager() {
 
   const getReturnDetails = async (returnId) => {
     try {
-      const response = await fetch('http://localhost/Enguio_Project/Api/pos_return_api.php', {
+      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -75,7 +75,7 @@ export default function ReturnApprovalManager() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+      const response = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -109,7 +109,7 @@ export default function ReturnApprovalManager() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch('http://localhost/Enguio_Project/Api/sales_api.php', {
+      const response = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

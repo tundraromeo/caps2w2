@@ -16,11 +16,11 @@ const getAPIBaseURL = () => {
     
     // If running on localhost without port (Apache), use direct PHP
     if (currentHost === 'localhost' && !currentPort) {
-      return 'http://localhost/Enguio_Project/Api/backend.php';
+      return 'http://localhost/caps2e2/Api/backend.php';
     }
     
     // Otherwise use the same host/port
-    return `${window.location.protocol}//${currentHost}${currentPort ? ':' + currentPort : ''}/Enguio_Project/Api/backend.php`;
+    return `${window.location.protocol}//${currentHost}${currentPort ? ':' + currentPort : ''}/caps2e2/Api/backend.php`;
   }
   
   // Fallback for server-side rendering

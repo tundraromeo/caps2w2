@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useAPI } from "../hooks/useAPI";
 import { 
   FaPlus, 
   FaTrash, 
@@ -29,12 +30,9 @@ import {
   Building,
 } from "lucide-react";
 
-// Define API base URLs at the top of the file
-const API_BASE_SIMPLE = "http://localhost/Enguio_Project/Api/purchase_order_api_simple.php";
-const API_BASE = "http://localhost/Enguio_Project/Api/purchase_order_api.php";
-const CREATE_PO_API = "http://localhost/Enguio_Project/Api/create_purchase_order_api.php";
-
 function CreatePurchaseOrder() {
+  const { api, loading: apiLoading, error: apiError } = useAPI();
+  
   // Tab stateasy
   const [activeTab, setActiveTab] = useState('create');
   
@@ -156,13 +154,9 @@ function CreatePurchaseOrder() {
   // Create Purchase Order functions
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch(`${CREATE_PO_API}?action=suppliers`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      if (data.success) {
-        setSuppliers(data.data || []);
+      const response = await api.callGenericAPI('create_purchase_order_api.php', 'suppliers', {}, 'GET');
+      if (response.success) {
+        setSuppliers(response.data || []);
       } else {
         console.warn('No suppliers found or error loading suppliers');
         setSuppliers([]);
@@ -324,16 +318,14 @@ function CreatePurchaseOrder() {
   const fetchPurchaseOrders = async (status = null) => {
     try {
       // Always fetch all purchase orders, then filter by actual status on frontend
-      let url = `${API_BASE_SIMPLE}?action=purchase_orders`;
+      const response = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_orders', {}, 'GET');
       
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.success) {
+      if (response.success) {
         console.log('=== fetchPurchaseOrders DEBUG ===');
-        console.log('API Response:', data);
+        console.log('API Response:', response);
         console.log('Requested filter status:', status);
-        console.log('Data count:', data.data.length);
-        console.log('Sample POs:', data.data.slice(0, 3).map(po => ({ 
+        console.log('Data count:', response.data.length);
+        console.log('Sample POs:', response.data.slice(0, 3).map(po => ({ 
           id: po.purchase_header_id, 
           status: po.status, 
           po_number: po.po_number,
@@ -341,10 +333,10 @@ function CreatePurchaseOrder() {
         })));
         
         // Store all purchase orders first
-        setPurchaseOrders(data.data);
+        setPurchaseOrders(response.data);
         
         // Calculate actual statuses for each PO
-        const statusPromises = data.data.map(async (po) => {
+        const statusPromises = response.data.map(async (po) => {
           const actualStatus = await getActualStatus(po);
           return { poId: po.purchase_header_id, status: actualStatus };
         });
@@ -358,12 +350,12 @@ function CreatePurchaseOrder() {
         console.log('=== Status Calculation Results ===');
         console.log('Status results:', statusResults);
         console.log('Status map:', statusMap);
-        console.log('Original PO statuses:', data.data.map(po => ({ id: po.purchase_header_id, status: po.status })));
+        console.log('Original PO statuses:', response.data.map(po => ({ id: po.purchase_header_id, status: po.status })));
         setActualStatuses(statusMap);
         
         // Filter purchase orders by actual status if a filter is specified
         if (status) {
-          const filteredOrders = data.data.filter(po => {
+          const filteredOrders = response.data.filter(po => {
             let actualStatus = statusMap[po.purchase_header_id] || po.status || 'pending';
             // Handle 'new' status as 'pending' for filtering
             if (actualStatus === 'new') {
@@ -404,13 +396,12 @@ function CreatePurchaseOrder() {
       }
       
       // Get PO details to check received quantities
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${po.purchase_header_id}`);
-      const data = await response.json();
+      const response = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: po.purchase_header_id }, 'GET');
       
-      console.log('PO details response:', data);
+      console.log('PO details response:', response);
       
-      if (data.success && data.data && data.data.length > 0) {
-        const details = data.data;
+      if (response.success && response.data && response.data.length > 0) {
+        const details = response.data;
         let totalOrdered = 0;
         let totalReceived = 0;
         let hasReceivedItems = false;
@@ -519,15 +510,14 @@ function CreatePurchaseOrder() {
   // Fetch all purchase orders for counting (without status filter)
   const fetchAllPurchaseOrders = async () => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_orders`);
-      const data = await response.json();
-      if (data.success) {
+      const response = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_orders', {}, 'GET');
+      if (response.success) {
         console.log('Fetched All Purchase Orders:', {
-          count: data.data.length,
-          statuses: data.data.map(po => po.status),
-          uniqueStatuses: [...new Set(data.data.map(po => po.status))]
+          count: response.data.length,
+          statuses: response.data.map(po => po.status),
+          uniqueStatuses: [...new Set(response.data.map(po => po.status))]
         });
-        setAllPurchaseOrders(data.data);
+        setAllPurchaseOrders(response.data);
       }
     } catch (error) {
       console.error('Error fetching all purchase orders:', error);

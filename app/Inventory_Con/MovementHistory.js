@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
+import { useAPI } from "../hooks/useAPI";
 import { 
   FaSearch, 
   FaEye, 
@@ -18,6 +19,7 @@ import { useTheme } from './ThemeContext';
 
 const MovementHistory = () => {
   const { isDarkMode } = useTheme();
+  const { api, loading: apiLoading, error: apiError } = useAPI();
   const [allTransactions, setAllTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -33,37 +35,8 @@ const MovementHistory = () => {
   // API call function
   const handleApiCall = async (action, data = {}, apiEndpoint = 'backend.php') => {
     try {
-      const response = await fetch(`http://localhost/Enguio_Project/Api/${apiEndpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: action,
-          ...data
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const responseText = await response.text();
-      
-      // Check if response is valid JSON
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (jsonError) {
-        console.error('Invalid JSON response:', responseText);
-        throw new Error('Server returned invalid JSON. Please check the server logs.');
-      }
-      
-      if (!result.success) {
-        throw new Error(result.message || 'API call failed');
-      }
-      
-      return result;
+      const response = await api.callGenericAPI(apiEndpoint, action, data);
+      return response;
     } catch (error) {
       console.error('API Error:', error);
       toast.error(error.message || 'Failed to fetch data');

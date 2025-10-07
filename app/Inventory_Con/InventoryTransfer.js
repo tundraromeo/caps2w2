@@ -6,6 +6,7 @@ import { logActivity } from "../../lib/utils";
 import axios from "axios";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useAPI } from "../hooks/useAPI";
 import {
   ChevronUp,
   ChevronDown,
@@ -27,6 +28,7 @@ import { useTheme } from './ThemeContext';
 
 function InventoryTransfer() {
   const { isDarkMode, theme } = useTheme();
+  const { api, loading: apiLoading, error: apiError } = useAPI();
   
   const [transfers, setTransfers] = useState([])
   const [transferLogs, setTransferLogs] = useState([])
@@ -98,38 +100,14 @@ function InventoryTransfer() {
   const [editSrpEnabled, setEditSrpEnabled] = useState(false);
   const [newSrp, setNewSrp] = useState("");
 
-  const API_BASE_URL = "http://localhost/Enguio_Project/Api/transfer_api.php"
-
   // API function
   async function handleApiCall(action, data = {}) {
-    const payload = { action, ...data }
-    console.log("🚀 API Call Payload:", payload)
+    console.log("🚀 API Call Payload:", { action, ...data })
 
     try {
-      const response = await fetch(API_BASE_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-
-      const resData = await response.json()
-      console.log("✅ API Success Response:", resData)
-
-      if (resData && typeof resData === "object") {
-        if (!resData.success) {
-          console.warn("⚠️ API responded with failure:", resData.message || resData)
-        }
-        return resData
-      } else {
-        console.warn("⚠️ Unexpected API response format:", resData)
-        return {
-          success: false,
-          message: "Unexpected response format",
-          data: resData,
-        }
-      }
+      const response = await api.callGenericAPI('transfer_api.php', action, data);
+      console.log("✅ API Success Response:", response)
+      return response;
     } catch (error) {
       console.error("❌ API Call Error:", error)
       return {
@@ -1277,19 +1255,14 @@ function InventoryTransfer() {
         // Log the transfer activity with user context
         try {
           const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-          await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'log_activity',
-              activity_type: 'INVENTORY_TRANSFER_CREATED',
-              description: `Transfer created from ${transferInfo.sourceLocation} to ${transferInfo.destinationLocation}: ${selectedProducts.length} products`,
-              table_name: 'tbl_transfer_header',
-              record_id: response.transfer_header_id,
-              user_id: userData.user_id || userData.emp_id,
-              username: userData.username,
-              role: userData.role,
-            }),
+          await api.callGenericAPI('backend.php', 'log_activity', {
+            activity_type: 'INVENTORY_TRANSFER_CREATED',
+            description: `Transfer created from ${transferInfo.sourceLocation} to ${transferInfo.destinationLocation}: ${selectedProducts.length} products`,
+            table_name: 'tbl_transfer_header',
+            record_id: response.transfer_header_id,
+            user_id: userData.user_id || userData.emp_id,
+            username: userData.username,
+            role: userData.role,
           });
         } catch (_) {}
         
@@ -1494,16 +1467,11 @@ function InventoryTransfer() {
       if (response.success) {
         // Log the transfer deletion
         try {
-          await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'log_activity',
-              activity_type: 'INVENTORY_TRANSFER_DELETED',
-              description: `Transfer deleted (ID: ${transferId})`,
-              table_name: 'tbl_transfer_header',
-              record_id: transferId,
-            }),
+          await api.callGenericAPI('backend.php', 'log_activity', {
+            activity_type: 'INVENTORY_TRANSFER_DELETED',
+            description: `Transfer deleted (ID: ${transferId})`,
+            table_name: 'tbl_transfer_header',
+            record_id: transferId,
           });
         } catch (_) {}
         
@@ -1517,16 +1485,11 @@ function InventoryTransfer() {
     } catch (error) {
       // Log the error
       try {
-        await fetch('http://localhost/Enguio_Project/Api/backend.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'log_activity',
-            activity_type: 'INVENTORY_TRANSFER_DELETE_ERROR',
-            description: `Failed to delete transfer ID ${transferId}: ${error.message}`,
-            table_name: 'tbl_transfer_header',
-            record_id: transferId,
-          }),
+        await api.callGenericAPI('backend.php', 'log_activity', {
+          activity_type: 'INVENTORY_TRANSFER_DELETE_ERROR',
+          description: `Failed to delete transfer ID ${transferId}: ${error.message}`,
+          table_name: 'tbl_transfer_header',
+          record_id: transferId,
         });
       } catch (_) {}
       

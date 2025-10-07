@@ -218,7 +218,7 @@ switch ($action) {
                     p.description,
                     p.quantity as current_stock,
                     p.stock_status,
-                    p.unit_price,
+                    p.srp as unit_price,
                     p.srp,
                     p.expiration as product_expiration,
                     p.date_added,
@@ -431,7 +431,7 @@ switch ($action) {
             
             // Get products without stock movements
             $productsStmt = $conn->prepare("
-                SELECT p.product_id, p.product_name, p.quantity, p.unit_price, p.srp, 
+                SELECT p.product_id, p.product_name, p.quantity, p.srp as unit_price, p.srp, 
                        p.location_id, p.batch_id, p.expiration, p.date_added
                 FROM tbl_product p
                 LEFT JOIN tbl_stock_movements sm ON p.product_id = sm.product_id
@@ -470,7 +470,7 @@ switch ($action) {
                 ");
                 $movementStmt->execute([
                     $product['product_id'], $batch_id, $product['quantity'], $product['quantity'],
-                    $product['unit_price'], $product['expiration'], 'SYNC-' . $product['product_id'],
+                    $product['srp'], $product['expiration'], 'SYNC-' . $product['product_id'],
                     'Synced existing product', 'System Sync'
                 ]);
                 
@@ -488,7 +488,7 @@ switch ($action) {
                 
                 $summaryStmt->execute([
                     $product['product_id'], $batch_id, $product['quantity'], 
-                    $product['unit_price'], $product['srp'], $product['expiration'], 
+                    $product['srp'], $product['srp'], $product['expiration'], 
                     $batch_ref, $product['quantity']
                 ]);
                 
