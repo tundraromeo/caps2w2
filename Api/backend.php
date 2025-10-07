@@ -301,25 +301,24 @@ try {
         }
         break;
 
-        case 'login':
-            try {
-                $username = isset($data['username']) ? trim($data['username']) : '';
-                $password = isset($data['password']) ? trim($data['password']) : '';
-                $captcha = isset($data['captcha']) ? trim($data['captcha']) : '';
-                $captchaAnswer = isset($data['captchaAnswer']) ? trim($data['captchaAnswer']) : '';
-    
-                // Validate inputs
-                if (empty($username) || empty($password)) {
-                    echo json_encode(["success" => false, "message" => "Username and password are required"]);
-                    exit;
-                }
-    
-                // Verify captcha
-                if (empty($captcha) || empty($captchaAnswer) || $captcha !== $captchaAnswer) {
-                    echo json_encode(["success" => false, "message" => "Invalid captcha"]);
-                    exit;
-                }
-    
+            case 'login':
+                try {
+                    $username = isset($data['username']) ? trim($data['username']) : '';
+                    $password = isset($data['password']) ? trim($data['password']) : '';
+                    $captcha = isset($data['captcha']) ? trim($data['captcha']) : '';
+                    $captchaAnswer = isset($data['captchaAnswer']) ? trim($data['captchaAnswer']) : '';
+        
+                    // Validate inputs
+                    if (empty($username) || empty($password)) {
+                        echo json_encode(["success" => false, "message" => "Username and password are required"]);
+                        exit;
+                    }
+        
+                    // Verify captcha
+                    // if (empty($captcha) || empty($captchaAnswer) || $captcha !== $captchaAnswer) {
+                    //     echo json_encode(["success" => false, "message" => "Invalid captcha"]);
+                    //     exit;
+                    // }    
                 // Check if user exists (regardless of status)
                 $stmt = $conn->prepare("
                     SELECT e.emp_id, e.username, e.password, e.status, e.Fname, e.Lname, e.role_id, e.shift_id, r.role 

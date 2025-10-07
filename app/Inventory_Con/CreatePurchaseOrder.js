@@ -68,12 +68,15 @@ function CreatePurchaseOrder() {
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState({ emp_id: 21 }); // Mock user ID
 
+  // State to track actual status for each PO
+  const [actualStatuses, setActualStatuses] = useState({});
+  const [poFilter, setPoFilter] = useState('pending');
+  
   // Purchase Order List states
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [poLoading, setPoLoading] = useState(true);
   const [selectedPO, setSelectedPO] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [poFilter, setPoFilter] = useState('delivered');
   // Removed 3-dots status menu; using inline dynamic action instead
 
   // Compute the next actionable step for a PO based on its current status
@@ -88,8 +91,8 @@ function CreatePurchaseOrder() {
         onClick: () => updatePOStatus(poId, 'approved')
       };
     }
-    // partial_delivery -> update delivery when missing items arrive
-    if (po.status === 'partial_delivery') {
+    // partial -> update delivery when missing items arrive
+    if (po.status === 'partial') {
       return {
         label: 'Update Delivery',
         onClick: () => handleUpdatePartialDelivery(poId)
@@ -262,6 +265,7 @@ function CreatePurchaseOrder() {
          supplier_id: parseInt(formData.supplier),
          expected_delivery_date: formData.expectedDelivery,
          created_by: currentUser.emp_id,
+         status: 'pending', // Explicitly set status to pending
          products: selectedProducts.map(product => ({
            searchTerm: product.searchTerm,
            quantity: parseInt(product.quantity),
@@ -290,6 +294,20 @@ function CreatePurchaseOrder() {
           notes: ""
         });
         setSelectedProducts([]);
+        
+        // Refresh purchase orders list to show the new PO with correct status
+        if (activeTab === 'list') {
+          await fetchPurchaseOrders(poFilter);
+          await fetchAllPurchaseOrders();
+        }
+        
+        // Immediately mark the new PO as pending in the UI
+        if (result.po_id) {
+          setActualStatuses(prev => ({
+            ...prev,
+            [result.po_id]: 'pending'
+          }));
+        }
       } else {
         toast.error(result.error || "Error creating purchase order");
       }
@@ -305,24 +323,57 @@ function CreatePurchaseOrder() {
   // Purchase Order List functions
   const fetchPurchaseOrders = async (status = null) => {
     try {
+      // Always fetch all purchase orders, then filter by actual status on frontend
       let url = `${API_BASE_SIMPLE}?action=purchase_orders`;
-      if (status) {
-        url += `&status=${status}`;
-      }
       
       const response = await fetch(url);
       const data = await response.json();
       if (data.success) {
-        console.log('Fetched Purchase Orders:', {
-          status: status,
-          count: data.data.length,
-          sampleData: data.data.slice(0, 3).map(po => ({ 
-            id: po.purchase_header_id, 
-            status: po.status, 
-            po_number: po.po_number 
-          }))
-        });
+        console.log('=== fetchPurchaseOrders DEBUG ===');
+        console.log('API Response:', data);
+        console.log('Requested filter status:', status);
+        console.log('Data count:', data.data.length);
+        console.log('Sample POs:', data.data.slice(0, 3).map(po => ({ 
+          id: po.purchase_header_id, 
+          status: po.status, 
+          po_number: po.po_number,
+          fullObject: po
+        })));
+        
+        // Store all purchase orders first
         setPurchaseOrders(data.data);
+        
+        // Calculate actual statuses for each PO
+        const statusPromises = data.data.map(async (po) => {
+          const actualStatus = await getActualStatus(po);
+          return { poId: po.purchase_header_id, status: actualStatus };
+        });
+        
+        const statusResults = await Promise.all(statusPromises);
+        const statusMap = {};
+        statusResults.forEach(({ poId, status }) => {
+          statusMap[poId] = status;
+        });
+        
+        console.log('=== Status Calculation Results ===');
+        console.log('Status results:', statusResults);
+        console.log('Status map:', statusMap);
+        console.log('Original PO statuses:', data.data.map(po => ({ id: po.purchase_header_id, status: po.status })));
+        setActualStatuses(statusMap);
+        
+        // Filter purchase orders by actual status if a filter is specified
+        if (status) {
+          const filteredOrders = data.data.filter(po => {
+            let actualStatus = statusMap[po.purchase_header_id] || po.status || 'pending';
+            // Handle 'new' status as 'pending' for filtering
+            if (actualStatus === 'new') {
+              actualStatus = 'pending';
+            }
+            return actualStatus === status;
+          });
+          console.log(`Filtered orders for status '${status}':`, filteredOrders.length);
+          setPurchaseOrders(filteredOrders);
+        }
       } else {
         toast.error('Failed to load purchase orders');
       }
@@ -334,16 +385,104 @@ function CreatePurchaseOrder() {
     }
   };
 
+  // Function to determine the actual status based on received quantities
+  const getActualStatus = async (po) => {
+    try {
+      console.log('=== getActualStatus DEBUG ===');
+      console.log('PO Object:', po);
+      console.log('PO ID:', po.purchase_header_id);
+      console.log('Database status:', po.status);
+      console.log('Status type:', typeof po.status);
+      console.log('Status === "pending":', po.status === 'pending');
+      console.log('!po.status:', !po.status);
+      
+      // For new purchase orders, if database status is 'new' or 'pending', return 'pending' immediately
+      // This prevents unnecessary API calls for clearly new orders
+      if (po.status === 'new' || po.status === 'pending' || !po.status || po.status === null || po.status === undefined) {
+        console.log('New PO detected, returning pending status immediately');
+        return 'pending';
+      }
+      
+      // Get PO details to check received quantities
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${po.purchase_header_id}`);
+      const data = await response.json();
+      
+      console.log('PO details response:', data);
+      
+      if (data.success && data.data && data.data.length > 0) {
+        const details = data.data;
+        let totalOrdered = 0;
+        let totalReceived = 0;
+        let hasReceivedItems = false;
+        
+        details.forEach(item => {
+          const ordered = parseInt(item.quantity) || 0;
+          // Handle different possible field names for received quantity
+          const received = parseInt(item.received_qty || item.received_quantity || item.qty_received || 0) || 0;
+          totalOrdered += ordered;
+          totalReceived += received;
+          if (received > 0) hasReceivedItems = true;
+        });
+        
+        console.log('Status calculation:', { totalOrdered, totalReceived, hasReceivedItems });
+        
+        // Determine status based on quantities
+        if (totalReceived === 0) {
+          console.log('Status determined as: pending');
+          return 'pending';
+        } else if (totalReceived < totalOrdered) {
+          console.log('Status determined as: partial');
+          return 'partial';
+        } else if (totalReceived === totalOrdered) {
+          console.log('Status determined as: complete');
+          return 'complete';
+        }
+      } else {
+        // If API call fails or returns no data, check if this is a new PO
+        console.log('API call failed or no data returned, checking database status');
+        if (po.status === 'new' || po.status === 'pending' || !po.status || po.status === null || po.status === undefined) {
+          console.log('Database status is new/pending, returning pending');
+          return 'pending';
+        }
+        
+        // If API failed but database shows 'delivered', check if this might be a new PO
+        // by looking at creation date or other indicators
+        if (po.status === 'delivered') {
+          console.log('Database shows delivered but API failed - checking if this is a new PO');
+          // If the PO was created recently (within last hour), treat as pending
+          const createdAt = new Date(po.created_at || po.date);
+          const now = new Date();
+          const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+          
+          if (hoursDiff < 1) {
+            console.log('PO created within last hour, treating as pending');
+            return 'pending';
+          }
+        }
+      }
+      
+      // Fallback to database status if we can't determine from quantities
+      console.log('Using fallback status:', po.status || 'pending');
+      return po.status || 'pending';
+    } catch (error) {
+      console.error('Error determining actual status:', error);
+      // For new POs, default to pending instead of database status
+      return po.status === 'new' || po.status === 'pending' || !po.status ? 'pending' : (po.status || 'pending');
+    }
+  };
+
   const getStatusBadge = (status) => {
     const statusConfig = {
       // New partial delivery status system
+      pending: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Pending' },
       delivered: { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Delivered' },
-      partial_delivery: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' },
+      partial: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' },
+      partial_delivery: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' }, // Keep for backward compatibility
       complete: { bgColor: 'var(--inventory-accent)', textColor: 'white', text: 'Complete' },
       return: { bgColor: 'var(--inventory-danger)', textColor: 'white', text: 'Return' },
     };
     
-    const config = statusConfig[status] || { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Delivered' };
+    const config = statusConfig[status] || { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Pending' };
     return (
       <span 
         className="px-2 py-1 rounded-full text-xs font-medium"
@@ -414,7 +553,7 @@ function CreatePurchaseOrder() {
       rows.push({
         ...po,
         delivery_status: po.delivery_status || 'pending',
-        status: po.status || 'delivered',
+        status: po.status || 'pending',
       });
     }
     return rows;
@@ -430,7 +569,7 @@ function CreatePurchaseOrder() {
       rows.push({
         ...po,
         delivery_status: po.delivery_status || 'pending',
-        status: po.status || 'delivered',
+        status: po.status || 'pending',
       });
     }
     return rows;
@@ -438,21 +577,42 @@ function CreatePurchaseOrder() {
 
   const poCounts = useMemo(() => {
     const counts = {
-      delivered: normalizedOrders.filter((po) => po.status === 'delivered').length,
-      partial_delivery: normalizedOrders.filter((po) => po.status === 'partial_delivery').length,
-      complete: normalizedOrders.filter((po) => po.status === 'complete').length,
-      return: normalizedOrders.filter((po) => po.status === 'return').length,
+      pending: normalizedOrders.filter((po) => {
+        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'pending';
+        return actualStatus === 'pending' || actualStatus === 'new';
+      }).length,
+      delivered: normalizedOrders.filter((po) => {
+        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'pending';
+        return actualStatus === 'delivered';
+      }).length,
+      partial: normalizedOrders.filter((po) => {
+        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'pending';
+        return actualStatus === 'partial';
+      }).length,
+      complete: normalizedOrders.filter((po) => {
+        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'pending';
+        return actualStatus === 'complete';
+      }).length,
+      return: normalizedOrders.filter((po) => {
+        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'pending';
+        return actualStatus === 'return';
+      }).length,
     };
     
     // Debug logging
     console.log('PO Counts Debug:', {
       totalOrders: normalizedOrders.length,
       counts,
-      sampleStatuses: normalizedOrders.slice(0, 5).map(po => ({ id: po.purchase_header_id, status: po.status }))
+      actualStatuses,
+      sampleStatuses: normalizedOrders.slice(0, 5).map(po => ({ 
+        id: po.purchase_header_id, 
+        databaseStatus: po.status,
+        actualStatus: actualStatuses[po.purchase_header_id] || po.status || 'pending'
+      }))
     });
     
     return counts;
-  }, [normalizedOrders]);
+  }, [normalizedOrders, actualStatuses]);
 
   // Removed activeMenuPO memo (no 3-dots menu)
 
@@ -590,9 +750,16 @@ function CreatePurchaseOrder() {
 
   const updatePOStatus = async (poId, nextStatus) => {
     try {
+      console.log('=== updatePOStatus DEBUG ===');
+      console.log('PO ID:', poId);
+      console.log('Next Status:', nextStatus);
+      
       // Get current PO details to check the current status
       const currentPO = purchaseOrders.find(po => po.purchase_header_id === poId);
       const currentStatus = currentPO ? currentPO.status : null;
+      
+      console.log('Current PO:', currentPO);
+      console.log('Current Status:', currentStatus);
       
       const requestBody = { 
         purchase_header_id: poId, 
@@ -605,14 +772,23 @@ function CreatePurchaseOrder() {
         requestBody.approval_notes = 'Purchase order approved via frontend';
       }
       
+      console.log('Request Body:', requestBody);
+      
       const response = await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
       const data = await response.json();
+      
+      console.log('API Response:', data);
+      
       if (data.success) {
         toast.success('Status updated successfully');
+        
+        // Refresh the purchase orders list
+        await fetchPurchaseOrders(poFilter);
+        await fetchAllPurchaseOrders();
         
         // If approved, automatically receive all items
         if (nextStatus === 'approved') {
@@ -713,10 +889,15 @@ function CreatePurchaseOrder() {
     try {
       const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
+      console.log('PO Details API Response:', data);
+      console.log('PO Details Count:', data.details?.length || 0);
+      console.log('PO Details Data:', data.details);
+      
       if (data.success) {
         setSelectedPO(data);
         setShowDetails(true);
       } else {
+        console.error('API Error:', data.error);
         toast.error('Failed to load purchase order details');
       }
     } catch (error) {
@@ -1000,7 +1181,7 @@ function CreatePurchaseOrder() {
         newStatus = 'complete';
         toast.success('✅ Items marked as complete! Ready for final receiving.');
       } else if (hasPartial) {
-        newStatus = 'partial_delivery';
+        newStatus = 'partial';
         toast.warning('⚠️ Partial delivery! Some items received, some missing.');
       } else {
         toast.info('📦 No items received yet.');
@@ -1090,7 +1271,7 @@ function CreatePurchaseOrder() {
           newStatus = 'complete';
           toast.success('✅ Items marked as complete! Ready for final receiving.');
         } else if (hasPartial) {
-          newStatus = 'partial_delivery';
+          newStatus = 'partial';
           toast.warning('⚠️ Partial delivery! Some items received, some missing.');
         } else {
           toast.info('📦 No items received yet.');
@@ -1548,8 +1729,9 @@ function CreatePurchaseOrder() {
           <div className="bg-white rounded-3xl shadow p-3">
             <div className="flex overflow-x-auto no-scrollbar gap-6 px-2">
               {[
+                { key: 'pending', label: 'Pending' },
                 { key: 'delivered', label: 'Delivered' },
-                { key: 'partial_delivery', label: 'Partial Delivery' },
+                { key: 'partial', label: 'Partial Delivery' },
                 { key: 'complete', label: 'Complete' },
                 { key: 'return', label: 'Returns' },
               ].map((f) => (
@@ -1625,7 +1807,39 @@ function CreatePurchaseOrder() {
                       </td>
                                              {/* Total Amount display removed as requested */}
                                              <td className="px-6 py-4 whitespace-nowrap">
-                         {getStatusBadge(po.status)}
+                         {(() => {
+                           // Priority: actualStatuses > database status > 'pending'
+                           let actualStatus = actualStatuses[po.purchase_header_id];
+                           
+                           // If no calculated status, use database status
+                           if (!actualStatus) {
+                             actualStatus = po.status;
+                           }
+                           
+                           // If database status is 'delivered' but this is a new PO (no received quantities), force to 'pending'
+                           if (actualStatus === 'delivered' && (!po.received_qty || po.received_qty === 0)) {
+                             actualStatus = 'pending';
+                           }
+                           
+                           // Handle 'new' status as 'pending'
+                           if (actualStatus === 'new') {
+                             actualStatus = 'pending';
+                           }
+                           
+                           // Final fallback to 'pending'
+                           if (!actualStatus) {
+                             actualStatus = 'pending';
+                           }
+                           
+                           console.log('Rendering status for PO', po.purchase_header_id, ':', { 
+                             actualStatus, 
+                             databaseStatus: po.status, 
+                             actualStatuses: actualStatuses,
+                             finalStatus: actualStatus,
+                             receivedQty: po.received_qty
+                           });
+                           return getStatusBadge(actualStatus);
+                         })()}
                        </td>
                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         {/* Actions menu with multiple options */}
@@ -1679,7 +1893,7 @@ function CreatePurchaseOrder() {
                                     </button>
                                   </div>
                                 );
-                              } else if (po.status === 'partial_delivery') {
+                              } else if (po.status === 'partial') {
                                 return (
                                   <div className="flex gap-2">
                                     <button

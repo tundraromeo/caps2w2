@@ -16,7 +16,6 @@
     "@heroui/system-rsc": "^2.3.19",
     "@heroui/theme": "^2.4.22",
     "@heroui/tooltip": "^2.2.20",
-    "@next/swc-win32-x64-msvc": "^15.3.2",
     "@nextui-org/react": "^2.6.11",
     "axios": "^1.9.0",
     "body-parser": "^2.2.0",

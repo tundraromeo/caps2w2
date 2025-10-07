@@ -308,21 +308,50 @@ export const getApiEndpointForAction = (action) => {
   // Map action names to their respective modular API endpoints
   // Expand this mapping as needed for all supported actions
   const actionMap = {
-    // Products
-    get_products: 'products_api.php',
-    update_product_stock: 'products_api.php',
-    duplicate_product_batches: 'products_api.php',
+    // Products - Use backend.php for all product operations since products_api.php has issues
+    get_products: 'backend.php',
+    update_product_stock: 'backend.php',
+    duplicate_product_batches: 'backend.php',
+    get_products_oldest_batch: 'backend.php',
+    get_product_quantities: 'backend.php',
+    add_quantity_to_product: 'backend.php',
     // Inventory
     get_inventory: 'inventory_api.php',
     update_inventory: 'inventory_api.php',
-    // Batch Functions
-    get_batches: 'batch_functions_api.php',
-    update_batch: 'batch_functions_api.php',
+    // Batch Functions - Use backend.php since batch_functions_api.php has issues
+    get_batches: 'backend.php',
+    update_batch: 'backend.php',
+    add_batch_entry: 'backend.php',
     // Barcode
     check_barcode: 'barcode_api.php',
+    // Suppliers
+    get_suppliers: 'backend.php',
+    add_supplier: 'backend.php',
+    update_supplier: 'backend.php',
+    delete_supplier: 'backend.php',
+    // Categories and Brands
+    get_categories: 'backend.php',
+    get_brands: 'backend.php',
+    // FIFO Operations
+    get_fifo_stock: 'backend.php',
+    consume_stock_fifo: 'backend.php',
+    sync_fifo_stock: 'backend.php',
+    force_sync_all_products: 'backend.php',
+    cleanup_duplicate_transfer_products: 'backend.php',
+    // Quantity History
+    get_quantity_history: 'backend.php',
+    // Expiring Products
+    get_expiring_products: 'backend.php',
+    // Product Management
+    delete_product: 'backend.php',
+    update_product: 'backend.php',
+    // Table Creation
+    create_transfer_batch_details_table: 'backend.php',
+    // Warehouse KPIs
+    get_warehouse_kpis: 'backend.php',
     // Add more mappings as needed
   };
-  return actionMap[action] || 'backend.php'; // fallback to legacy if not mapped
+  return actionMap[action] || 'backend.php'; // fallback to backend.php for all unmapped actions
 };
 
 // Additional utility functions for common patterns

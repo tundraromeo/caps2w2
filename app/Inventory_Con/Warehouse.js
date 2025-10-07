@@ -2255,17 +2255,6 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
       }
     }
 
-    // New function to start a new batch session
-    function startNewBatch() {
-      const newBatchNumber = generateBatchRef();
-      setCurrentBatchNumber(newBatchNumber);
-      setTemporaryProducts([]); // Clear existing products
-      setNewProductForm(prev => ({
-        ...prev,
-        batch: newBatchNumber
-      }));
-      safeToast("success", "New batch started with number: " + newBatchNumber);
-    }
 
     // New function to handle batch duplication
     async function handleDuplicateBatches(productId, batchIds = [22, 23]) {
@@ -2766,14 +2755,6 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                   {scannerStatusMessage}
                 </div>
 
-                <button
-                  onClick={startNewBatch}
-                  className="px-3 py-1 rounded flex items-center mr-2"
-                  style={{ backgroundColor: theme.colors.info, color: 'white' }}
-                >
-                  <Package className="h-4 w-4 mr-2" />
-                  New Batch
-                </button>
                 <button
                   onClick={openSupplierModal}
                   className="px-3 py-1 rounded flex items-center"
@@ -5269,17 +5250,6 @@ const fallbackResponse = await handleApiCall("get_products", { location_id: loca
                   focusRingColor: theme.colors.accent
                 }}
               />
-              <button
-                type="button"
-                onClick={() => {
-                  const newBatch = generateBatchRef();
-                  handleNewProductInputChange("batch", newBatch);
-                  setCurrentBatchNumber(newBatch); // Update current batch number
-                }}
-                className="mt-1 px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300"
-              >
-                Generate New Batch
-              </button>
               <p className="text-xs text-gray-500 mt-1">
                 Leave empty to use current batch or enter custom reference
               </p>

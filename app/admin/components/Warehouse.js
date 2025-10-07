@@ -54,7 +54,6 @@ function safeToast(type, message) {
 async function handleApiCall(action, data = {}) {
   const API_BASE_URL = "http://localhost/Enguio_Project/Api/backend.php";
   const payload = { action, ...data };
-  console.log("🚀 API Call Payload:", payload);
 
   try {
     console.log("📡 Making API request to:", API_BASE_URL);
