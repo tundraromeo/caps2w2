@@ -17,7 +17,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Include database connection
-require_once 'conn_mysqli.php';
+require_once __DIR__ . '/conn.php';
+
+// dashboard_transfer_api uses MySQLi syntax, so we need MySQLi connection
+$conn = getMySQLiConnection();
 
 try {
     $action = $_POST['action'] ?? $_GET['action'] ?? '';

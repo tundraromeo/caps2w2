@@ -317,7 +317,7 @@ const Reports = () => {
       toast.info('Generating PDF... Please wait.');
       
       // Fetch reports data
-      const response = await fetch('http://localhost/caps2e2/Api/combined_reports_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/combined_reports_api.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

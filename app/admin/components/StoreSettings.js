@@ -4,7 +4,7 @@ import axios from "axios";
 import { toast } from "react-toastify";
 import { useTheme } from './ThemeContext';
 
-const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
 
 function StoreSettings() {
   const { theme } = useTheme();

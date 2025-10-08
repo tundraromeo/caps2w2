@@ -25,7 +25,7 @@ import {
 // Helper: record login/logout as generic activity (more portable)
 async function recordActivity({ activityType, description, tableName = null, recordId = null }) {
   try {
-    const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
+    const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
     const response = await fetch(API_BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -99,7 +99,7 @@ function Dashboard() {
   // Fetch payment methods data separately
   const fetchPaymentMethods = async (days = 30) => {
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/dashboard_sales_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/dashboard_sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -125,7 +125,7 @@ function Dashboard() {
   // Fetch employee data from database
   const fetchEmployeeData = async () => {
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/backend.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -166,7 +166,7 @@ function Dashboard() {
   // Update admin name in database
   const updateAdminName = async (newName) => {
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/backend.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -209,7 +209,7 @@ function Dashboard() {
   // Update admin password in database
   const updateAdminPassword = async (newPassword) => {
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/backend.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -236,7 +236,7 @@ function Dashboard() {
     try {
       setLoading(true);
       
-      const response = await fetch('http://localhost/caps2e2/Api/backend.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_dashboard_data' })
@@ -259,7 +259,7 @@ function Dashboard() {
 
         // Fetch active cashiers and display them even if no performance yet
         try {
-          const empRes = await fetch('http://localhost/caps2e2/Api/backend.php', {
+          const empRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'display_employee' })

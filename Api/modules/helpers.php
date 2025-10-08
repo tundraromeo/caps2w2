@@ -1,25 +1,6 @@
 <?php
-// Helper functions and database connection setup
-
-// Database connection using PDO
-function getDatabaseConnection() {
-    $servername = "localhost";
-    $username = "root";
-    $password = "";
-    $dbname = "enguio2";
-
-    try {
-        $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
-        $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        return $conn;
-    } catch (Exception $e) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Database connection error: " . $e->getMessage()
-        ]);
-        exit;
-    }
-}
+// Helper functions
+// Note: Database connection is in conn.php. Include that file before using these helpers.
 
 // Helper function to get stock status based on quantity
 function getStockStatus($quantity, $lowStockThreshold = 10) {

@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
 
 export default function POS() {
   const router = useRouter();
@@ -107,6 +108,22 @@ export default function POS() {
     loading: false
   });
 
+  // Centralized API call helper
+  const handleApiCall = async (action, data = {}) => {
+    try {
+      const endpoint = getApiEndpointForAction(action);
+      const response = await apiHandler.callAPI(endpoint, action, data);
+      return response;
+    } catch (error) {
+      console.error("❌ API Call Error:", error);
+      return {
+        success: false,
+        message: error.message || "API call failed",
+        error: "REQUEST_ERROR"
+      };
+    }
+  };
+
   // Focus modal when it opens for keyboard events
   useEffect(() => {
     if (showTotalSalesModal) {
@@ -196,7 +213,7 @@ export default function POS() {
   useEffect(() => {
     const fetchDiscounts = async () => {
       try {
-        const res = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_discounts' })
@@ -407,7 +424,7 @@ export default function POS() {
       let resolvedLocationId = null;
       let resolvedLocationName = null;
       try {
-        const locResp = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+        const locResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_locations' })
@@ -429,7 +446,7 @@ export default function POS() {
       } catch (_) {}
       
       // First, try to find the product in the current location using convenience store API
-      const res = await fetch('http://localhost/caps2e2/Api/convenience_store_api.php', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -507,7 +524,7 @@ export default function POS() {
       console.log(`🔄 Loading all products for location: ${locationName}`);
       
       // Get location ID for the current location
-      const locationResponse = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+      const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_locations' })
@@ -529,7 +546,7 @@ export default function POS() {
           console.log(`📍 Found location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
           
           // Load products for this specific location using convenience store API with accurate stock quantities
-          const productResponse = await fetch('http://localhost/caps2e2/Api/convenience_store_api.php', {
+          const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -600,7 +617,7 @@ export default function POS() {
       console.log(`🔎 Searching products by name in ${locationName}: "${query}"`);
 
       // Resolve current location_id first - ensure exact match
-      const locationResponse = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+      const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_locations' })
@@ -628,7 +645,7 @@ export default function POS() {
       console.log(`📍 Using location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
 
       // Query inventory with search term - only for this specific location using convenience store API
-      const productResponse = await fetch('http://localhost/caps2e2/Api/convenience_store_api.php', {
+      const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1614,7 +1631,7 @@ export default function POS() {
       console.log('Sending receipt data:', receiptData);
       
       // Call the PHP backend directly since Next.js API is broken
-              const response = await fetch('http://localhost/caps2e2/Api/print-receipt-fixed-width.php', {
+              const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1659,8 +1676,8 @@ export default function POS() {
                         String(terminalName || '').toLowerCase().includes('pharmacy');
       
       const apiUrl = isPharmacy 
-        ? 'http://localhost/caps2e2/Api/pharmacy_api.php'
-        : 'http://localhost/caps2e2/Api/convenience_store_api.php';
+        ? `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pharmacy_api.php`
+        : `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`;
       
       const action = isPharmacy 
         ? 'process_pharmacy_sale'
@@ -1706,7 +1723,7 @@ export default function POS() {
       const finalEmpId = empId || localStorage.getItem('pos-emp-id') || '1';
       console.log('👤 Using employee ID:', finalEmpId);
       
-      const salesRes = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+      const salesRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1735,7 +1752,7 @@ export default function POS() {
       // Log activity
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1753,7 +1770,7 @@ export default function POS() {
     } catch (e) {
       console.warn('save_pos_sale failed:', e);
       try {
-        await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1917,7 +1934,7 @@ export default function POS() {
     if (!transactionId.trim()) return;
     
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1956,7 +1973,7 @@ export default function POS() {
 
   const loadRecentTransactions = async () => {
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2059,7 +2076,7 @@ export default function POS() {
       };
 
       console.log('Calling pos_return_api.php for return processing with data:', returnData);
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2152,7 +2169,7 @@ export default function POS() {
     if (!transactionId.trim()) return;
     
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/pos_exchange_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_exchange_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2325,7 +2342,7 @@ export default function POS() {
       
       console.log('Processing exchange with data:', exchangeDataPayload);
       
-      const response = await fetch('http://localhost/caps2e2/Api/pos_exchange_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_exchange_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(exchangeDataPayload)
@@ -2410,7 +2427,7 @@ export default function POS() {
       
       console.log('📤 API Request:', requestBody);
       
-      const response = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -2477,7 +2494,7 @@ export default function POS() {
       console.log('POS Logout attempt - Emp ID:', empId);
       
       // Call logout API
-      const response = await fetch('http://localhost/caps2e2/Api/login.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

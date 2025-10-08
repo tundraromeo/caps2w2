@@ -65,8 +65,6 @@ function ConvenienceInventory() {
   });
   const [alertCount, setAlertCount] = useState(0);
 
-  const API_BASE_URL = "http://localhost/caps2e2/Api/convenience_store_api.php";
-
   // API function - Updated to use centralized API handler
   async function handleApiCall(action, data = {}) {
     try {

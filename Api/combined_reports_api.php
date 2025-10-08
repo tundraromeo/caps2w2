@@ -36,22 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
-// Database connection using PDO
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "enguio2";
-
-try {
-    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (Exception $e) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Database connection error: " . $e->getMessage()
-    ]);
-    exit;
-}
+// Use centralized database connection
+require_once __DIR__ . '/conn.php';
 
 // Clear any output that might have been generated
 ob_clean();

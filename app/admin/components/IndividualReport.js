@@ -5,8 +5,8 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useTheme } from './ThemeContext';
 
-// Use direct API URL for better reliability
-const API_BASE_URL = 'http://localhost/caps2e2/Api/backend.php';
+// Use environment-based API base URL
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
 
 function IndividualReport({ reportType, reportName, reportIcon }) {
   const { theme } = useTheme();

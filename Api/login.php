@@ -9,7 +9,10 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS
     exit(0);
 }
 
-require_once 'conn_mysqli.php';
+require_once __DIR__ . '/conn.php';
+
+// For MySQLi compatibility (login.php uses MySQLi syntax)
+$conn = getMySQLiConnection();
 
 class LoginManager {
     private $conn;

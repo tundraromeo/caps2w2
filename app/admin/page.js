@@ -37,8 +37,8 @@ import LoginLogsReport from './components/LoginLogsReport';
 import ActivityLogsReport from './components/ActivityLogsReport';
 import ReturnManagement from './components/ReturnManagement';
 
-const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
-const LOGIN_API_URL = "http://localhost/caps2e2/Api/login.php";
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
+const LOGIN_API_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`;
 
 // Logout function
 const logoutUser = async () => {

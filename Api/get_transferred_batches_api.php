@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 // Set content type to JSON
 header('Content-Type: application/json');
 
-require_once 'Database.php';
+require_once __DIR__ . '/conn.php';
 
 // Get the data from the request
 $data = json_decode(file_get_contents('php://input'), true) ?? $_POST ?? [];
@@ -28,19 +28,19 @@ $data = json_decode(file_get_contents('php://input'), true) ?? $_POST ?? [];
 $action = $data['action'] ?? $_POST['action'] ?? $_GET['action'] ?? '';
 
 try {
-    $db = new Database();
+    // Use global $conn from conn.php (PDO connection)
     
     switch ($action) {
         case 'get_transferred_batches':
-            getTransferredBatches($db, $data);
+            getTransferredBatches($conn, $data);
             break;
             
         case 'populate_missing_batch_details':
-            populateMissingBatchDetails($db, $data);
+            populateMissingBatchDetails($conn, $data);
             break;
             
         case 'get_batch_transfer_summary':
-            getBatchTransferSummary($db, $data);
+            getBatchTransferSummary($conn, $data);
             break;
             
         default:
@@ -375,8 +375,9 @@ function populateMissingBatchDetails($db, $data) {
 /**
  * Get batch transfer summary for a location
  */
-function getBatchTransferSummary($db, $data) {
+function getBatchTransferSummary($conn, $data) {
     try {
+        // Note: $conn is now PDO connection, not Database class
         $location_id = $data['location_id'] ?? 0;
         $location_name = $data['location_name'] ?? '';
         

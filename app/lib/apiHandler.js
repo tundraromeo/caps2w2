@@ -5,7 +5,9 @@
 
 // API Configuration
 const API_CONFIG = {
-  BASE_URL: 'http://localhost/caps2e2/Api',
+  BASE_URL: (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL)
+    ? process.env.NEXT_PUBLIC_API_BASE_URL
+    : 'http://localhost/caps2e2/Api',
   USE_PROXY: false, // Set to false to use direct calls
   ENDPOINTS: {
     // Main backend API
@@ -365,58 +367,188 @@ export const getApiEndpointForAction = (action) => {
   // Map action names to their respective modular API endpoints
   // Expand this mapping as needed for all supported actions
   const actionMap = {
-    // Products - Use backend.php for all product operations since products_api.php has issues
+    // ============= AUTHENTICATION & USER MANAGEMENT =============
+    login: 'login.php',
+    logout: 'backend.php',
+    generate_captcha: 'backend.php',
+    add_employee: 'backend.php',
+    display_employee: 'backend.php',
+    update_employee_status: 'backend.php',
+    get_login_records: 'backend.php',
+    get_users: 'backend.php',
+    get_activity_records: 'backend.php',
+    register_terminal_route: 'backend.php',
+    get_login_activity: 'backend.php',
+    get_login_activity_count: 'backend.php',
+    log_activity: 'backend.php',
+    get_activity_logs: 'backend.php',
+    get_all_logs: 'backend.php',
+    get_current_user: 'backend.php',
+    reset_password: 'backend.php',
+
+    // ============= PRODUCT MANAGEMENT =============
+    add_product: 'backend.php',
+    update_product: 'backend.php',
+    delete_product: 'backend.php',
     get_products: 'backend.php',
-    update_product_stock: 'backend.php',
-    duplicate_product_batches: 'backend.php',
+    get_products_by_location: 'backend.php',
+    get_products_by_location_name: 'backend.php',
+    get_location_products: 'backend.php',
     get_products_oldest_batch: 'backend.php',
+    get_products_oldest_batch_for_transfer: 'backend.php',
     get_product_quantities: 'backend.php',
     add_quantity_to_product: 'backend.php',
-    // Inventory
-    get_inventory: 'inventory_api.php',
-    update_inventory: 'inventory_api.php',
-    // Batch Functions - Use backend.php since batch_functions_api.php has issues
-    get_batches: 'backend.php',
-    update_batch: 'backend.php',
-    add_batch_entry: 'backend.php',
-    // Barcode
-    check_barcode: 'backend.php',
-    // Suppliers
-    get_suppliers: 'backend.php',
+    duplicate_product_batches: 'backend.php',
+    
+    // Convenience Store Products
+    add_convenience_product: 'convenience_store_api.php',
+    get_convenience_products: 'convenience_store_api.php',
+    get_convenience_products_fifo: 'convenience_store_api.php',
+    get_convenience_batch_details: 'convenience_store_api.php',
+    
+    // Pharmacy Products
+    add_pharmacy_product: 'pharmacy_api.php',
+    get_pharmacy_products: 'pharmacy_api.php',
+    get_pharmacy_products_fifo: 'pharmacy_api.php',
+    
+    // Brand Management
+    addBrand: 'backend.php',
+    displayBrand: 'backend.php',
+    deleteBrand: 'backend.php',
+    add_brand: 'backend.php',
+    get_brands: 'backend.php',
+    
+    // Supplier Management
     add_supplier: 'backend.php',
     update_supplier: 'backend.php',
     delete_supplier: 'backend.php',
-    // Categories and Brands
+    deleteSupplier: 'backend.php',
+    get_suppliers: 'backend.php',
+    restoreSupplier: 'backend.php',
+    displayArchivedSuppliers: 'backend.php',
+    
+    // Categories & Locations
     get_categories: 'backend.php',
-    get_brands: 'backend.php',
-    // FIFO Operations
+    get_locations: 'backend.php',
+    get_inventory_staff: 'backend.php',
+    get_locations_for_filter: 'backend.php',
+
+    // ============= INVENTORY & TRANSFERS =============
+    create_transfer: 'backend.php',
+    update_transfer_status: 'backend.php',
+    delete_transfer: 'backend.php',
+    get_transfers_with_details: 'backend.php',
+    get_transferred_products_by_location: 'backend.php',
+    get_transfer_logs: 'backend.php',
+    get_transfer_log: 'backend.php',
+    get_transfer_log_by_id: 'backend.php',
+    create_transfer_batch_details_table: 'backend.php',
+    get_transfer_batch_details: 'batch_transfer_api.php',
+    get_inventory: 'inventory_api.php',
+    update_inventory: 'inventory_api.php',
+    
+    // Batch Management
+    get_batches: 'batch_tracking.php',
+    update_batch: 'backend.php',
+    add_batch_entry: 'backend.php',
+    get_batch_transfers_by_location: 'convenience_store_api.php',
+    sync_transferred_products: 'convenience_store_api.php',
+    get_transferred_batches: 'get_transferred_batches_api.php',
+    
+    // FIFO Management
     get_fifo_stock: 'backend.php',
     consume_stock_fifo: 'backend.php',
+    transfer_fifo_consumption: 'backend.php',
+    enhanced_fifo_transfer: 'fifo_transfer_api.php',
+    get_fifo_stock_status: 'backend.php',
+    check_fifo_availability: 'backend.php',
     sync_fifo_stock: 'backend.php',
     force_sync_all_products: 'backend.php',
     cleanup_duplicate_transfer_products: 'backend.php',
-    // Quantity History
+    
+    // Movement History
+    get_movement_history: 'backend.php',
     get_quantity_history: 'backend.php',
-    // Expiring Products
-    get_expiring_products: 'backend.php',
-    // Product Management
-    delete_product: 'backend.php',
-    update_product: 'backend.php',
-    // Table Creation
-    create_transfer_batch_details_table: 'backend.php',
-    // Warehouse KPIs
+
+    // ============= POS & SALES =============
+    get_pos_products: 'sales_api.php',
+    check_barcode: 'sales_api.php',
+    get_product_batches: 'sales_api.php',
+    get_discounts: 'sales_api.php',
+    update_product_stock: 'sales_api.php',
+    reduce_product_stock: 'sales_api.php',
+    simple_update_product_stock: 'sales_api.php',
+    
+    // POS Returns & Exchanges
+    create_return: 'pos_return_api.php',
+    get_returns: 'pos_return_api.php',
+    approve_return: 'pos_return_api.php',
+    reject_return: 'pos_return_api.php',
+    create_exchange: 'pos_exchange_api.php',
+    get_exchanges: 'pos_exchange_api.php',
+
+    // ============= REPORTS & ANALYTICS =============
+    get_inventory_kpis: 'backend.php',
+    get_supply_by_location: 'backend.php',
+    get_return_rate_by_product: 'backend.php',
+    get_stockout_items: 'backend.php',
+    get_product_kpis: 'backend.php',
     get_warehouse_kpis: 'backend.php',
-    // Convenience Store Actions
-    get_locations: 'backend.php',
-    get_convenience_products_fifo: 'convenience_store_api.php',
-    get_products_by_location_name: 'backend.php',
-    delete_product: 'backend.php',
-    get_convenience_batch_details: 'convenience_store_api.php',
-    get_fifo_stock: 'backend.php',
-    get_transfer_batch_details: 'backend.php',
-    get_batch_transfers_by_location: 'convenience_store_api.php',
-    sync_transferred_products: 'convenience_store_api.php',
-    // Add more mappings as needed
+    get_warehouse_supply_by_product: 'backend.php',
+    get_warehouse_supply_by_location: 'backend.php',
+    get_warehouse_stockout_items: 'backend.php',
+    get_warehouse_product_kpis: 'backend.php',
+    get_top_products_by_quantity: 'backend.php',
+    get_stock_distribution_by_category: 'backend.php',
+    get_fast_moving_items_trend: 'backend.php',
+    get_critical_stock_alerts: 'backend.php',
+    get_inventory_by_branch_category: 'backend.php',
+    get_reports_data: 'backend.php',
+    get_inventory_summary_report: 'backend.php',
+    get_low_stock_report: 'backend.php',
+    get_expiry_report: 'backend.php',
+    get_movement_history_report: 'backend.php',
+    get_expiring_products: 'backend.php',
+    get_supply_by_product: 'backend.php',
+    
+    // Dashboard Reports
+    get_dashboard_sales: 'dashboard_sales_api.php',
+    get_dashboard_returns: 'dashboard_return_api.php',
+    get_dashboard_transfers: 'dashboard_transfer_api.php',
+    get_combined_reports: 'combined_reports_api.php',
+
+    // ============= STOCK ADJUSTMENTS =============
+    get_stock_adjustments: 'batch_stock_adjustment_api.php',
+    create_stock_adjustment: 'batch_stock_adjustment_api.php',
+    update_stock_adjustment: 'batch_stock_adjustment_api.php',
+    delete_stock_adjustment: 'batch_stock_adjustment_api.php',
+    get_stock_adjustment_stats: 'batch_stock_adjustment_api.php',
+    
+    // Stock Summary
+    get_stock_summary: 'stock_summary_api.php',
+    get_stock_summary_by_location: 'stock_summary_api.php',
+
+    // ============= ARCHIVE MANAGEMENT =============
+    get_archived_products: 'backend.php',
+    get_archived_items: 'backend.php',
+    restore_archived_item: 'backend.php',
+    delete_archived_item: 'backend.php',
+
+    // ============= PURCHASE ORDERS =============
+    create_purchase_order: 'create_purchase_order_api.php',
+    get_purchase_orders: 'purchase_order_api.php',
+    update_purchase_order: 'purchase_order_api.php',
+    delete_purchase_order: 'purchase_order_api.php',
+
+    // ============= ADMIN/DEBUG =============
+    test_connection: 'backend.php',
+    check_table_structure: 'backend.php',
+    debug_brands_suppliers: 'backend.php',
+    clear_brands: 'backend.php',
+    diagnose_warehouse_data: 'backend.php',
+    emergency_restore_warehouse: 'backend.php',
+    test_database_connection: 'backend.php',
+    test_action: 'backend.php',
   };
   return actionMap[action] || 'backend.php'; // fallback to backend.php for all unmapped actions
 };

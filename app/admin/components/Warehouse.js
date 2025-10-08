@@ -157,7 +157,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
     if (response.success) {
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch('http://localhost/caps2e2/Api/backend.php', {
+        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -185,7 +185,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
     
     // Log the error
     try {
-      await fetch('http://localhost/caps2e2/Api/backend.php', {
+      await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

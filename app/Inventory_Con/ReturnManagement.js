@@ -62,7 +62,7 @@ export default function ReturnManagement() {
   const loadPendingReturns = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -89,7 +89,7 @@ export default function ReturnManagement() {
     setLoading(true);
     try {
       console.log('Loading return history...');
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -119,7 +119,7 @@ export default function ReturnManagement() {
 
   const getReturnDetails = async (returnId) => {
     try {
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -151,7 +151,7 @@ export default function ReturnManagement() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -202,7 +202,7 @@ export default function ReturnManagement() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch('http://localhost/caps2e2/Api/pos_return_api.php', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

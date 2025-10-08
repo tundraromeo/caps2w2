@@ -3,8 +3,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useTheme } from './ThemeContext';
 
-// Use direct PHP backend (no proxy)
-const API_BASE_URL = 'http://localhost/caps2e2/Api/backend.php';
+// Use environment-based API base URL
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
 
 function TransactionManager() {
   const { theme } = useTheme();

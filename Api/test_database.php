@@ -11,14 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-try {
-    $servername = "localhost";
-    $username = "root";
-    $password = "";
-    $dbname = "enguio2";
+require_once __DIR__ . '/conn.php';
 
-    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+try {
     
     echo json_encode([
         "success" => true,

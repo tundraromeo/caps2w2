@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import { toast } from 'react-toastify';
 
-const API_BASE_URL = "http://localhost/caps2e2/Api/login.php";
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`;
 
 export default function LoginForm() {
   const [username, setUsername] = useState("");
