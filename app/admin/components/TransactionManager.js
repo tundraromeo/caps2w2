@@ -3,31 +3,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useTheme } from './ThemeContext';
 
-// Determine the correct API URL based on the current environment
-const getAPIBaseURL = () => {
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.hostname;
-    const currentPort = window.location.port;
-    
-    // If running on Next.js dev server (usually port 3000), use the proxy
-    if (currentPort === '3000') {
-      return '/api/proxy';
-    }
-    
-    // If running on localhost without port (Apache), use direct PHP
-    if (currentHost === 'localhost' && !currentPort) {
-      return 'http://localhost/caps2e2/Api/backend.php';
-    }
-    
-    // Otherwise use the same host/port
-    return `${window.location.protocol}//${currentHost}${currentPort ? ':' + currentPort : ''}/caps2e2/Api/backend.php`;
-  }
-  
-  // Fallback for server-side rendering
-  return '/api/proxy';
-};
-
-const API_BASE_URL = getAPIBaseURL();
+// Use direct PHP backend (no proxy)
+const API_BASE_URL = 'http://localhost/caps2e2/Api/backend.php';
 
 function TransactionManager() {
   const { theme } = useTheme();

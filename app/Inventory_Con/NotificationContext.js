@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const NotificationContext = createContext();
 
@@ -34,6 +34,11 @@ export const NotificationProvider = ({ children }) => {
       lowStock: 0,
       expiring: 0,
       outOfStock: 0,
+      lastUpdate: null
+    },
+    returns: {
+      pendingReturns: 0,
+      pendingApprovals: 0,
       lastUpdate: null
     }
   });
@@ -85,6 +90,18 @@ export const NotificationProvider = ({ children }) => {
     }));
   };
 
+  // Update return notifications
+  const updateReturnNotifications = useCallback((data) => {
+    setNotifications(prev => ({
+      ...prev,
+      returns: {
+        pendingReturns: data.pendingReturns || 0,
+        pendingApprovals: data.pendingApprovals || 0,
+        lastUpdate: new Date().toISOString()
+      }
+    }));
+  }, []);
+
   // Update reports notifications
   const updateReportsNotifications = (hasUpdates, count = 0) => {
     setNotifications(prev => ({
@@ -112,6 +129,12 @@ export const NotificationProvider = ({ children }) => {
       return notifications.reports.count;
     }
     
+    if (section === 'returns') {
+      const sectionData = notifications[section];
+      if (!sectionData) return 0;
+      return sectionData.pendingReturns + sectionData.pendingApprovals;
+    }
+    
     const sectionData = notifications[section];
     if (!sectionData) return 0;
     
@@ -135,13 +158,22 @@ export const NotificationProvider = ({ children }) => {
   };
 
   // Clear notifications for a section
-  const clearNotifications = (section) => {
+  const clearNotifications = useCallback((section) => {
     if (section === 'reports') {
       setNotifications(prev => ({
         ...prev,
         reports: {
           hasUpdates: false,
           count: 0,
+          lastUpdate: new Date().toISOString()
+        }
+      }));
+    } else if (section === 'returns') {
+      setNotifications(prev => ({
+        ...prev,
+        returns: {
+          pendingReturns: 0,
+          pendingApprovals: 0,
           lastUpdate: new Date().toISOString()
         }
       }));
@@ -156,7 +188,12 @@ export const NotificationProvider = ({ children }) => {
         }
       }));
     }
-  };
+  }, [notifications]);
+
+  // Mark notifications as viewed (alias for clearNotifications)
+  const markNotificationAsViewed = useCallback((section) => {
+    clearNotifications(section);
+  }, [clearNotifications]);
 
   // Clear system updates
   const clearSystemUpdates = () => {
@@ -216,12 +253,14 @@ export const NotificationProvider = ({ children }) => {
     updateWarehouseNotifications,
     updatePharmacyNotifications,
     updateConvenienceNotifications,
+    updateReturnNotifications,
     updateReportsNotifications,
     updateSystemUpdates,
     getTotalNotifications,
     hasAnyNotifications,
     hasReportsUpdates,
     clearNotifications,
+    markNotificationAsViewed,
     clearSystemUpdates
   };
 

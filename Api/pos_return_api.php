@@ -292,8 +292,7 @@ switch ($action) {
                     pr.created_at,
                     pr.approved_by,
                     pr.approved_by_username,
-                    pr.approved_at,
-                    pr.rejection_reason
+                    pr.approved_at
                 FROM tbl_pos_returns pr
                 ORDER BY pr.created_at DESC
                 LIMIT ? OFFSET ?
@@ -453,27 +452,41 @@ switch ($action) {
                     $locationResult = $locationStmt->fetch(PDO::FETCH_ASSOC);
                     $location_id = $locationResult ? $locationResult['location_id'] : 4;
                     
-                    // Update product stock
-                    $stmt = $conn->prepare("
-                        UPDATE tbl_product 
-                        SET quantity = quantity + ?
-                        WHERE product_id = ? AND location_id = ?
-                    ");
-                    $stmt->execute([$item['quantity'], $item['product_id'], $location_id]);
+                    // Directly restore to tbl_transfer_batch_details - no changes to tbl_product
+                    $quantity_to_restore = $item['quantity'];
+                    $restored_batches = [];
                     
-                    // Insert stock movement record with proper employee details
+                    // Find the original consumed batch and restore it directly
                     $stmt = $conn->prepare("
-                        INSERT INTO tbl_stock_movements 
-                        (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
-                        VALUES (?, 'IN', ?, ?, NOW(), ?, ?)
+                        SELECT tbd.id, tbd.batch_reference, tbd.quantity, tbd.product_id, tbd.location_id
+                        FROM tbl_transfer_batch_details tbd
+                        WHERE tbd.product_id = ? AND tbd.location_id = ?
+                        ORDER BY tbd.created_at ASC
+                        LIMIT 1
                     ");
-                    $stmt->execute([
-                        $item['product_id'],
-                        $item['quantity'],
-                        $return_id,
-                        $empDetails['emp_id'], // Use numeric employee ID instead of formatted name
-                        "Return approved by {$empDetails['emp_role']} - stock restored: " . $notes
-                    ]);
+                    $stmt->execute([$item['product_id'], $location_id]);
+                    $originalBatch = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($originalBatch) {
+                        // Restore quantity to the original batch - keep the same batch_reference
+                        $stmt = $conn->prepare("
+                            UPDATE tbl_transfer_batch_details 
+                            SET quantity = quantity + ?
+                            WHERE id = ?
+                        ");
+                        $stmt->execute([$quantity_to_restore, $originalBatch['id']]);
+                        
+                        $restored_batches[] = [
+                            'batch_reference' => $originalBatch['batch_reference'],
+                            'restored_quantity' => $quantity_to_restore,
+                            'system' => 'Transfer Batch Details'
+                        ];
+                        
+                        error_log("Restored original batch {$originalBatch['batch_reference']} for product {$item['product_id']}: {$quantity_to_restore} units (batch ID: {$originalBatch['id']})");
+                    } else {
+                        // No batch found - this shouldn't happen, but log it
+                        error_log("Warning: No batch found to restore for product {$item['product_id']} at location {$location_id}");
+                    }
                     
                     $restored_items[] = $item['product_id'];
                     $total_quantity_restored += $item['quantity'];
@@ -488,7 +501,10 @@ switch ($action) {
                 'message' => 'Return approved successfully',
                 'location_name' => $location_name,
                 'restored_items' => implode(', ', $restored_items),
-                'total_quantity_restored' => $total_quantity_restored
+                'total_quantity_restored' => $total_quantity_restored,
+                'transfer_details_updated' => true,
+                'restored_batches' => $restored_batches,
+                'note' => 'Returned quantities have been restored to original batches in tbl_transfer_batch_details'
             ]);
             
         } catch (Exception $e) {

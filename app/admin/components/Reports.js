@@ -1,86 +1,13 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { useTheme } from './ThemeContext';
 import { useNotification } from './NotificationContext';
 
-// Determine the correct API URL based on the current environment
-const getAPIBaseURL = () => {
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.hostname;
-    const currentPort = window.location.port;
-    
-    // If running on Next.js dev server (usually port 3000), use the proxy
-    if (currentPort === '3000') {
-      return '/api/proxy';
-    }
-    
-    // If running on localhost without port (Apache), use direct PHP
-    if (currentHost === 'localhost' && !currentPort) {
-      return 'http://localhost/caps2e2/Api/backend.php';
-    }
-    
-    // Otherwise use the same host/port
-    return `${window.location.protocol}//${currentHost}${currentPort ? ':' + currentPort : ''}/caps2e2/Api/backend.php`;
-  }
-  
-  // Fallback for server-side rendering
-  return '/api/proxy';
-};
-
-const API_BASE_URL = getAPIBaseURL();
-
-// Debug function to test API connection with fallback
-const testAPIConnection = async () => {
-  try {
-    console.log('=== API Connection Test ===');
-    console.log('Current window location:', window.location.href);
-    console.log('API URL being used:', API_BASE_URL);
-    console.log('Hostname:', window.location.hostname);
-    console.log('Port:', window.location.port);
-    
-    // Try axios first
-    try {
-      const response = await axios.post(API_BASE_URL, { action: 'test_connection' }, {
-        timeout: 5000,
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-      console.log('✅ API connection test successful (axios):', response.data);
-      return true;
-    } catch (axiosError) {
-      console.warn('⚠️ Axios failed, trying fetch:', axiosError.message);
-      
-      // Fallback to fetch
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({ action: 'test_connection' })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ API connection test successful (fetch):', data);
-        return true;
-      } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-    }
-  } catch (error) {
-    console.error('❌ API connection test failed:', error);
-    console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack
-    });
-    return false;
-  }
-};
+// Use direct PHP backend (no proxy)
+const API_BASE_URL = 'http://localhost/caps2e2/Api/backend.php';
 
 function Reports() {
   const { theme } = useTheme();
@@ -93,6 +20,19 @@ function Reports() {
   const [reportDataLoading, setReportDataLoading] = useState(false);
   const [reportError, setReportError] = useState(null);
   const [dateRange, setDateRange] = useState({
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [selectedGenerateReportType, setSelectedGenerateReportType] = useState('');
+  const [generateDateRange, setGenerateDateRange] = useState({
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+  const [showCombineModal, setShowCombineModal] = useState(false);
+  const [selectedCombineReportType, setSelectedCombineReportType] = useState('');
+  const [selectedReportTypes, setSelectedReportTypes] = useState(['all']);
+  const [combineDateRange, setCombineDateRange] = useState({
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
   });
@@ -251,19 +191,209 @@ function Reports() {
     }
   };
 
-  useEffect(() => {
-    // Test API connection first
-    testAPIConnection().then(isConnected => {
-      if (isConnected) {
+  const generateIndividualReport = async (reportType) => {
+    try {
+      setReportDataLoading(true);
+      const res = await axios.post(API_BASE_URL, {
+        action: 'generate_report',
+        report_type: reportType,
+        generated_by: 'Admin',
+        parameters: {
+          start_date: generateDateRange.startDate,
+          end_date: generateDateRange.endDate
+        }
+      });
+      
+      if (res.data?.success) {
+        // Refresh reports list
         fetchReports();
-      } else {
-        console.error('API connection failed, cannot fetch reports');
+        // Close modal
+        setShowGenerateModal(false);
+        // Show success notification
+        console.log(`${reportTypes.find(t => t.id === reportType)?.name} generated successfully!`);
       }
+    } catch (error) {
+      console.error('Error generating individual report:', error);
+    } finally {
+      setReportDataLoading(false);
+    }
+  };
+
+  const openGenerateModal = (reportType) => {
+    setSelectedGenerateReportType(reportType);
+    setGenerateDateRange({
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0]
     });
+    setShowGenerateModal(true);
+  };
+
+  const combineIndividualReports = async () => {
+    try {
+      setReportDataLoading(true);
+      
+      // Convert selected report types to API format
+      let reportTypesToCombine = selectedReportTypes;
+      if (selectedReportTypes.includes('all')) {
+        reportTypesToCombine = ['stock_in', 'stock_out', 'sales', 'cashier_performance', 'inventory_balance'];
+      }
+      
+      // Generate PDF directly
+      await generateCombinedPDF(reportTypesToCombine);
+      
+      // Close modal
+      setShowCombineModal(false);
+      
+    } catch (error) {
+      console.error('Error combining reports:', error);
+    } finally {
+      setReportDataLoading(false);
+    }
+  };
+
+  const generateCombinedPDF = async (reportTypes) => {
+    try {
+      // Create a temporary div for PDF generation
+      const tempDiv = document.createElement('div');
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.style.top = '-9999px';
+      tempDiv.style.width = '210mm'; // A4 width
+      tempDiv.style.backgroundColor = 'white';
+      tempDiv.style.padding = '20px';
+      tempDiv.style.fontFamily = 'Arial, sans-serif';
+      tempDiv.style.fontSize = '12px';
+      tempDiv.style.lineHeight = '1.4';
+      
+      // Create PDF content
+      const reportNames = reportTypes.map(type => 
+        reportTypes.find(t => t.id === type)?.name || type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+      ).join(', ');
+      
+      tempDiv.innerHTML = `
+        <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: #f8fafc; border: 2px solid #000000;">
+          <div style="font-size: 24px; font-weight: bold; color: #000000; margin-bottom: 5px;">ENGUIO PHARMACY SYSTEM</div>
+          <div style="font-size: 14px; color: #000000;">Combined Reports</div>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #000000;">
+          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Combined Reports</div>
+          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated on: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}</div>
+          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated by: Admin</div>
+        </div>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-left: 4px solid #000000;">
+          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Information</div>
+          <div style="display: table; width: 100%;">
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Types:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reportNames}</div>
+            </div>
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${combineDateRange.startDate} to ${combineDateRange.endDate}</div>
+            </div>
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">File Format:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">PDF Document</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border: 1px solid #000000;">
+          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
+          <div style="font-size: 11px; color: #000000; line-height: 1.6;">
+            This combined report contains data from multiple report types for the specified date range. 
+            Each report type provides detailed information about different aspects of the inventory management system.
+          </div>
+        </div>
+      `;
+      
+      // Add to DOM temporarily
+      document.body.appendChild(tempDiv);
+      
+      // Generate canvas from HTML
+      const canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff'
+      });
+      
+      // Remove temporary div
+      document.body.removeChild(tempDiv);
+      
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      
+      let position = 0;
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      // Save PDF
+      const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
+      pdf.save(fileName);
+      
+      console.log(`PDF downloaded successfully: ${fileName}`);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      throw error;
+    }
+  };
+
+  const openCombineModal = (reportType) => {
+    setSelectedCombineReportType(reportType);
+    setSelectedReportTypes(['all']); // Reset to all reports selected
+    setCombineDateRange({
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0]
+    });
+    setShowCombineModal(true);
+  };
+
+  const handleReportTypeChange = (reportTypeId) => {
+    if (reportTypeId === 'all') {
+      setSelectedReportTypes(['all']);
+    } else {
+      setSelectedReportTypes(prev => {
+        const newSelection = prev.filter(id => id !== 'all');
+        if (newSelection.includes(reportTypeId)) {
+          return newSelection.filter(id => id !== reportTypeId);
+        } else {
+          return [...newSelection, reportTypeId];
+        }
+      });
+    }
+  };
+
+  useEffect(() => {
+    // Initial fetch
+    fetchReports();
     
     // Auto-clear notifications when Reports component is viewed
     markNotificationAsViewed('reports');
     clearSystemUpdates();
+
+    // Auto-refresh every 10 seconds
+    const refreshInterval = setInterval(() => {
+      fetchReports();
+    }, 10000);
+
+    return () => clearInterval(refreshInterval);
   }, []);
 
   // Check for actual system updates (no automatic triggering)
@@ -400,23 +530,59 @@ function Reports() {
       <div className="p-6">
         {/* Report Type Selection */}
         <div className="mb-6">
-          <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {reportTypes.map((type) => (
-              <button
+              <div
                 key={type.id}
-                onClick={() => setSelectedReportType(type.id)}
-                className={`p-3 rounded-lg border transition-all duration-200 hover:scale-105 ${
+                className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-lg ${
                   selectedReportType === type.id ? 'ring-2 ring-blue-500' : ''
                 }`}
                 style={{
                   backgroundColor: selectedReportType === type.id ? theme.colors.accent : theme.bg.card,
                   borderColor: theme.border.default,
-                  color: theme.text.primary
+                  boxShadow: `0 4px 12px ${theme.shadow}`
                 }}
               >
-                <div className="text-2xl mb-1">{type.icon}</div>
-                <div className="text-xs font-medium text-center">{type.name}</div>
-              </button>
+                <button
+                  onClick={() => setSelectedReportType(type.id)}
+                  className="w-full text-left"
+                >
+                  <div className="text-3xl mb-2">{type.icon}</div>
+                  <div className="text-sm font-medium mb-2" style={{ color: theme.text.primary }}>
+                    {type.name}
+                  </div>
+                </button>
+                
+                {/* Individual Action Buttons */}
+                {type.id !== 'all' && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => openGenerateModal(type.id)}
+                      disabled={reportDataLoading}
+                      className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
+                      style={{
+                        backgroundColor: theme.colors.accent,
+                        color: theme.text.primary,
+                        border: `1px solid ${theme.border.default}`
+                      }}
+                    >
+                      📊 Generate Report
+                    </button>
+                    <button
+                      onClick={() => openCombineModal(type.id)}
+                      disabled={reportDataLoading}
+                      className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
+                      style={{
+                        backgroundColor: theme.bg.hover,
+                        color: theme.text.secondary,
+                        border: `1px solid ${theme.border.default}`
+                      }}
+                    >
+                      📋 Combine Reports
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -471,17 +637,6 @@ function Reports() {
                   }}
                 >
                   {reportDataLoading ? 'Generating...' : 'Generate Report'}
-                </button>
-                <button
-                  onClick={() => testAPIConnection()}
-                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 border"
-                  style={{
-                    backgroundColor: theme.bg.card,
-                    borderColor: theme.border.default,
-                    color: theme.text.primary
-                  }}
-                >
-                  Test Connection
                 </button>
               </div>
             </div>
@@ -707,6 +862,331 @@ function Reports() {
           </div>
         )}
       </div>
+
+      {/* Individual Generate Report Modal */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-blue-300"
+            style={{ 
+              backgroundColor: theme.bg.card,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(59, 130, 246, 0.2)'
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
+                  Generate {reportTypes.find(t => t.id === selectedGenerateReportType)?.name}
+                </h3>
+                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+                  Select date range to generate the report
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGenerateModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Quick Select Date Range */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Quick Select</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Today', days: 0 },
+                    { label: 'Yesterday', days: -1 },
+                    { label: 'This Week', days: -7 },
+                    { label: 'Last Week', days: -14 },
+                    { label: 'This Month', days: -30 },
+                    { label: 'Last Month', days: -60 }
+                  ].map((option) => (
+                    <button
+                      key={option.label}
+                      onClick={() => {
+                        const today = new Date();
+                        const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
+                        const dateStr = targetDate.toISOString().split('T')[0];
+                        
+                        if (option.days === 0) {
+                          setGenerateDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else if (option.days === -1) {
+                          setGenerateDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else {
+                          setGenerateDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
+                        }
+                      }}
+                      className="px-3 py-2 text-sm rounded-md border transition-all duration-200 hover:scale-105"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Date Range */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Custom Date Range</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
+                    <input
+                      type="date"
+                      value={generateDateRange.startDate}
+                      onChange={(e) => setGenerateDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
+                    <input
+                      type="date"
+                      value={generateDateRange.endDate}
+                      onChange={(e) => setGenerateDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => generateIndividualReport(selectedGenerateReportType)}
+                  disabled={reportDataLoading}
+                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.colors.accent,
+                    color: theme.text.primary
+                  }}
+                >
+                  {reportDataLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      📊 Generate Report
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowGenerateModal(false)}
+                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.secondary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                >
+                  ✕ Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Individual Combine Reports Modal */}
+      {showCombineModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-purple-300"
+            style={{ 
+              backgroundColor: theme.bg.card,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(147, 51, 234, 0.2)'
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
+                  Combine Reports
+                </h3>
+                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+                  Select date range and report types to download as a single PDF
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCombineModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Quick Select Date Range */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Quick Select</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Today', days: 0 },
+                    { label: 'Yesterday', days: -1 },
+                    { label: 'This Week', days: -7 },
+                    { label: 'Last Week', days: -14 },
+                    { label: 'This Month', days: -30 },
+                    { label: 'Last Month', days: -60 }
+                  ].map((option) => (
+                    <button
+                      key={option.label}
+                      onClick={() => {
+                        const today = new Date();
+                        const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
+                        const dateStr = targetDate.toISOString().split('T')[0];
+                        
+                        if (option.days === 0) {
+                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else if (option.days === -1) {
+                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else {
+                          setCombineDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
+                        }
+                      }}
+                      className="px-3 py-2 text-sm rounded-md border transition-all duration-200 hover:scale-105"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Date Range */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Custom Date Range</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
+                    <input
+                      type="date"
+                      value={combineDateRange.startDate}
+                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
+                    <input
+                      type="date"
+                      value={combineDateRange.endDate}
+                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Report Type Selection */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Types to Combine</h4>
+                <div className="space-y-2">
+                  {reportTypes.filter(type => type.id !== 'all').map((type) => (
+                    <label key={type.id} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedReportTypes.includes(type.id)}
+                        onChange={() => handleReportTypeChange(type.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm" style={{ color: theme.text.secondary }}>
+                        {type.name}
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedReportTypes.includes('all')}
+                      onChange={() => handleReportTypeChange('all')}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
+                      All Reports
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={combineIndividualReports}
+                  disabled={reportDataLoading}
+                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.colors.accent,
+                    color: theme.text.primary
+                  }}
+                >
+                  {reportDataLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      Generating PDF...
+                    </>
+                  ) : (
+                    <>
+                      📋 Download PDF
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowCombineModal(false)}
+                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.secondary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                >
+                  ✕ Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

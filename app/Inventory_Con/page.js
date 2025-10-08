@@ -10,6 +10,7 @@ import PharmacyInventory from "./PharmacyInventory";
 import CreatePurchaseOrder from "./CreatePurchaseOrder";
 import StockAdjustment from "./StockAdjustment";
 import Reports from "./Reports";
+import ReturnManagement from "./ReturnManagement";
 import MovementHistory from "./MovementHistory";
 import Archive from "./Archive";
 import Settings from "./Settings";
@@ -18,6 +19,7 @@ import LogoutConfirm from "./LogoutConfirm";
 import { ThemeProvider } from "./ThemeContext";
 import { NotificationProvider } from "./NotificationContext";
 import { AlertManagerProvider } from "./AlertManager";
+import { SettingsProvider } from "./SettingsContext";
 import ThemeToggle from "./ThemeToggle";
 
 export default function InventoryPage() {
@@ -53,6 +55,7 @@ export default function InventoryPage() {
     CreatePurchaseOrder: <CreatePurchaseOrder />,
     StockAdjustment: <StockAdjustment />,
     Reports: <Reports />,
+    ReturnManagement: <ReturnManagement />,
     MovementHistory: <MovementHistory />,
     Archive: <Archive />,
     Settings: <Settings />
@@ -104,9 +107,10 @@ export default function InventoryPage() {
 
   return (
     <ThemeProvider>
-      <NotificationProvider>
-        <AlertManagerProvider>
-          <div className="flex h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
+      <SettingsProvider>
+        <NotificationProvider>
+          <AlertManagerProvider>
+            <div className="flex h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
         {/* Mobile top bar */}
         <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: 'var(--inventory-bg-secondary)', borderBottom: '1px solid var(--inventory-border)' }}>
           <button
@@ -169,8 +173,9 @@ export default function InventoryPage() {
           />
         )}
         </div>
-        </AlertManagerProvider>
-      </NotificationProvider>
+          </AlertManagerProvider>
+        </NotificationProvider>
+      </SettingsProvider>
     </ThemeProvider>
   );
 }

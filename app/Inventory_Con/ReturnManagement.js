@@ -498,7 +498,7 @@ export default function ReturnManagement() {
       {/* Return Details Modal */}
       {showDetailsModal && selectedReturn && (
         <div className="fixed inset-0 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+          <div className="relative top-20 mx-auto p-5 border-2 border-blue-500 w-11/12 md:w-3/4 lg:w-1/2 shadow-2xl rounded-lg bg-white ring-4 ring-blue-200">
             <div className="mt-3">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">
@@ -619,8 +619,8 @@ export default function ReturnManagement() {
 
       {/* Approval Modal */}
       {showApprovalModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border-2 border-green-500 w-96 shadow-2xl rounded-lg bg-white ring-4 ring-green-200">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Approve Return</h3>
               <div className="mb-4">
@@ -654,8 +654,8 @@ export default function ReturnManagement() {
 
       {/* Rejection Modal */}
       {showRejectionModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border-2 border-red-500 w-96 shadow-2xl rounded-lg bg-white ring-4 ring-red-200">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Reject Return</h3>
               <div className="mb-4">
@@ -691,4 +691,3 @@ export default function ReturnManagement() {
     </div>
   );
 }
-

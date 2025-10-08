@@ -23,7 +23,7 @@ function get_pos_inventory($conn, $data) {
             return;
         }
         
-        // Build the query to get all products in the specified location
+        // Build the query to get all products with stock from transfer batch details
         $sql = "
             SELECT 
                 p.product_id as id,
@@ -31,30 +31,30 @@ function get_pos_inventory($conn, $data) {
                 p.category,
                 p.barcode,
                 p.description,
-                p.quantity,
-                p.unit_price,
+                COALESCE(SUM(tbd.quantity), 0) as quantity,
+                p.srp as unit_price,
                 p.srp,
                 p.prescription,
                 p.bulk,
                 p.expiration,
                 p.status,
-                p.location_id,
-                l.location_name,
+                ? as location_id,
+                ? as location_name,
                 COALESCE(b.brand, '') as brand,
                 COALESCE(s.supplier_name, '') as supplier_name,
                 CASE 
-                    WHEN p.quantity <= 0 THEN 'out of stock'
-                    WHEN p.quantity <= 10 THEN 'low stock'
+                    WHEN COALESCE(SUM(tbd.quantity), 0) <= 0 THEN 'out of stock'
+                    WHEN COALESCE(SUM(tbd.quantity), 0) <= 10 THEN 'low stock'
                     ELSE 'in stock'
                 END as stock_status
             FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
-            WHERE p.location_id = ? AND p.status = 'active'
+            LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
+            WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL)
         ";
         
-        $params = [$location_id];
+        $params = [$location_id, $location_name, $location_id];
         
         // Add search filter if provided
         if (!empty($search)) {
@@ -65,6 +65,8 @@ function get_pos_inventory($conn, $data) {
             $params[] = $searchParam;
         }
         
+        $sql .= " GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.srp, p.prescription, p.bulk, p.expiration, p.status, b.brand, s.supplier_name";
+        $sql .= " HAVING COALESCE(SUM(tbd.quantity), 0) > 0"; // Only show products that have stock in this location
         $sql .= " ORDER BY p.product_name ASC";
         
         $stmt = $conn->prepare($sql);
@@ -93,6 +95,7 @@ function reduce_product_stock($conn, $data) {
         $quantity_to_reduce = $data['quantity'] ?? 0;
         $transaction_id = $data['transaction_id'] ?? '';
         $location_name = $data['location_name'] ?? '';
+        $location_id = $data['location_id'] ?? 0;
         $entry_by = $data['entry_by'] ?? 'POS System';
         
         if (!$product_id || $quantity_to_reduce <= 0) {
@@ -105,9 +108,8 @@ function reduce_product_stock($conn, $data) {
         
         // Get current product details
         $productStmt = $conn->prepare("
-            SELECT product_name, quantity, location_id, location_name 
-            FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            SELECT product_name 
+            FROM tbl_product 
             WHERE product_id = ?
         ");
         $productStmt->execute([$product_id]);
@@ -121,26 +123,92 @@ function reduce_product_stock($conn, $data) {
             return;
         }
         
-        $current_qty = $product['quantity'];
-        $new_qty = max(0, $current_qty - $quantity_to_reduce);
-        
-        // Update product quantity
-        $updateStmt = $conn->prepare("UPDATE tbl_product SET quantity = ? WHERE product_id = ?");
-        $updateStmt->execute([$new_qty, $product_id]);
-        
-        // Log stock movement
-        $logStmt = $conn->prepare("
-            INSERT INTO tbl_stock_movements 
-            (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
-             expiration_date, reference_no, notes, created_by)
-            VALUES (?, 0, 'OUT', ?, ?, 0.00, NULL, ?, ?, ?)
+        // Get current stock from transfer batch details
+        $stockStmt = $conn->prepare("
+            SELECT 
+                COALESCE(SUM(tbd.quantity), 0) as current_stock
+            FROM tbl_transfer_batch_details tbd
+            WHERE tbd.product_id = ? AND tbd.location_id = ?
         ");
-        $logStmt->execute([
+        $stockStmt->execute([$product_id, $location_id]);
+        $current_stock = $stockStmt->fetchColumn();
+        
+        if ($current_stock < $quantity_to_reduce) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Insufficient stock. Available: $current_stock, Requested: $quantity_to_reduce"
+            ]);
+            return;
+        }
+        
+        // Reduce stock from transfer batch details (FIFO - First In, First Out)
+        $remaining_to_reduce = $quantity_to_reduce;
+        
+        // Get batches ordered by oldest first (FIFO)
+        $batchStmt = $conn->prepare("
+            SELECT 
+                tbd.id,
+                tbd.batch_id,
+                tbd.batch_reference,
+                tbd.quantity,
+                tbd.srp,
+                tbd.expiration_date
+            FROM tbl_transfer_batch_details tbd
+            WHERE tbd.product_id = ? AND tbd.location_id = ? AND tbd.quantity > 0
+            ORDER BY tbd.id ASC, tbd.expiration_date ASC
+        ");
+        $batchStmt->execute([$product_id, $location_id]);
+        $batches = $batchStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        foreach ($batches as $batch) {
+            if ($remaining_to_reduce <= 0) break;
+            
+            $batch_quantity = $batch['quantity'];
+            $reduce_from_batch = min($remaining_to_reduce, $batch_quantity);
+            
+            // Update batch quantity
+            $updateBatchStmt = $conn->prepare("
+                UPDATE tbl_transfer_batch_details 
+                SET quantity = quantity - ? 
+                WHERE id = ?
+            ");
+            $updateBatchStmt->execute([$reduce_from_batch, $batch['id']]);
+            
+            // Log stock movement for this batch
+            $logStmt = $conn->prepare("
+                INSERT INTO tbl_stock_movements 
+                (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
+                 expiration_date, reference_no, notes, created_by)
+                VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $logStmt->execute([
+                $product_id,
+                $batch['batch_id'],
+                $reduce_from_batch,
+                $batch_quantity - $reduce_from_batch,
+                $batch['srp'],
+                $batch['expiration_date'],
+                $transaction_id,
+                "POS Sale - Reduced by $reduce_from_batch units from batch {$batch['batch_reference']}",
+                $entry_by
+            ]);
+            
+            $remaining_to_reduce -= $reduce_from_batch;
+        }
+        
+        // Log POS transaction
+        $posTransactionStmt = $conn->prepare("
+            INSERT INTO tbl_pos_transaction 
+            (transaction_id, product_id, quantity, unit_price, total_amount, location_name, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        $posTransactionStmt->execute([
+            $transaction_id,
             $product_id,
             $quantity_to_reduce,
-            $new_qty,
-            $transaction_id,
-            "POS Sale - Reduced by $quantity_to_reduce units",
+            $batches[0]['srp'] ?? 0,
+            ($batches[0]['srp'] ?? 0) * $quantity_to_reduce,
+            $location_name,
             $entry_by
         ]);
         
@@ -150,11 +218,11 @@ function reduce_product_stock($conn, $data) {
             "data" => [
                 "product_id" => $product_id,
                 "product_name" => $product['product_name'],
-                "old_quantity" => $current_qty,
-                "new_quantity" => $new_qty,
+                "old_quantity" => $current_stock,
+                "new_quantity" => $current_stock - $quantity_to_reduce,
                 "reduced_by" => $quantity_to_reduce,
                 "stock_type" => "POS Sale",
-                "location_name" => $product['location_name']
+                "location_name" => $location_name
             ]
         ]);
         

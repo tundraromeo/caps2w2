@@ -177,13 +177,7 @@ export default function LoginForm() {
           if (res.data.user_id) localStorage.setItem('pos-emp-id', String(res.data.user_id));
         }
 
-        toast.success(`Login successful. Welcome ${res.data.full_name}!`,
-          {
-            style: { backgroundColor: "green", color: "white" },
-            position: "top-right",
-            hideProgressBar: true,
-            autoClose: 3000,
-          });
+        toast.success(`Login successful. Welcome ${res.data.full_name}!`);
         
 
         // Robust role-based redirect (map pharmacist into Inventory app)
@@ -214,13 +208,7 @@ export default function LoginForm() {
       } else {
         const msg = res.data.message || "Invalid username or password.";
         setError(msg);
-        toast.error(msg === 'User is inactive. Please contact the administrator.' ? 'User is inactive. Please contact the administrator.' : msg,
-          {
-            style: { backgroundColor: "red", color: "white" },
-            position: "top-right",
-            hideProgressBar: true,
-            autoClose: 3000,
-          });
+        toast.error(msg === 'User is inactive. Please contact the administrator.' ? 'User is inactive. Please contact the administrator.' : msg);
         setPassword(""); // Clear password field on error
         setCaptchaInput(""); // Clear captcha input
         generateCaptcha(); // Generate new captcha

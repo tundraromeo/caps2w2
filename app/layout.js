@@ -1,7 +1,6 @@
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "./providers.js";
+import ClientToastContainer from "./components/ClientToastContainer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,7 +30,7 @@ export default function RootLayout({ children }) {
       >
         <Providers>
           {children}
-          <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} />
+          <ClientToastContainer />
         </Providers>
       </body>
     </html>

@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useNotification } from './NotificationContext';
 import { useSettings } from './SettingsContext';
 
-const API_BASE_URL = "/api/proxy";
+const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
 
 const WarehouseNotificationService = () => {
   const { updateWarehouseNotifications, updateWarehouseSpecificNotifications } = useNotification();
@@ -19,7 +19,6 @@ const WarehouseNotificationService = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          endpoint: 'backend.php',
           action: 'get_warehouse_notifications',
           low_stock_threshold: settings.lowStockThreshold || 10,
           expiry_warning_days: settings.expiryWarningDays || 30
@@ -30,7 +29,13 @@ const WarehouseNotificationService = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (e) {
+        console.warn('Non-JSON response for warehouse notifications');
+        return;
+      }
       
       if (result.success && result.data) {
         const { totals, warehouses } = result.data;

@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useNotification } from './NotificationContext';
 
-const API_BASE_URL = "/api/proxy";
+const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
 
 const RealtimeActivityService = () => {
   const notificationContext = useNotification();
@@ -27,7 +27,6 @@ const RealtimeActivityService = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          endpoint: 'backend.php',
           action: 'get_activity_summary',
           hours: 1 // Check last hour for real-time updates
         }),
@@ -38,7 +37,13 @@ const RealtimeActivityService = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const result = await response.json();
+      let result;
+      try {
+        result = await response.json();
+      } catch (e) {
+        console.warn('Non-JSON response for activity summary');
+        return;
+      }
       
       // Debug logging
       console.log('📊 Activity summary response:', result);

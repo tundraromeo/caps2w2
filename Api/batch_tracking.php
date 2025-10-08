@@ -46,10 +46,6 @@ try {
             checkFifoAvailability($conn, $data);
             break;
             
-        case 'get_fifo_stock':
-            getFifoStock($conn, $data);
-            break;
-            
         case 'create_batch_transfer':
             createBatchTransfer($conn, $data);
             break;
@@ -104,10 +100,6 @@ try {
             
         case 'get_pharmacy_batch_details':
             getPharmacyBatchDetails($conn, $data);
-            break;
-            
-        case 'get_convenience_batch_details':
-            getConvenienceBatchDetails($conn, $data);
             break;
             
         default:
@@ -291,64 +283,6 @@ function checkFifoAvailability($conn, $data) {
         echo json_encode([
             'success' => false,
             'message' => 'Error checking FIFO availability: ' . $e->getMessage()
-        ]);
-    }
-}
-
-/**
- * Get FIFO stock data for a product
- */
-function getFifoStock($conn, $data) {
-    try {
-        $product_id = isset($data['product_id']) ? intval($data['product_id']) : 0;
-        
-        if ($product_id <= 0) {
-            echo json_encode([
-                "success" => false,
-                "message" => "Invalid product ID"
-            ]);
-            return;
-        }
-        
-        // Query to get FIFO stock data for the product with batch dates
-        $stmt = $conn->prepare("
-            SELECT 
-                fs.fifo_id as summary_id,
-                fs.batch_id,
-                fs.batch_id as batch_number,
-                fs.batch_reference,
-                fs.available_quantity,
-                fs.srp as fifo_srp,
-                COALESCE(fs.srp, p.srp, p.unit_price) AS srp,
-                fs.expiration_date,
-                fs.quantity as total_quantity,
-                fs.entry_date as fifo_entry_date,
-                b.entry_date as batch_date,
-                b.entry_time as batch_time,
-                ROW_NUMBER() OVER (ORDER BY b.entry_date ASC, fs.fifo_id ASC) as fifo_order,
-                CASE 
-                    WHEN fs.expiration_date IS NULL THEN NULL
-                    ELSE DATEDIFF(fs.expiration_date, CURDATE())
-                END as days_until_expiry
-            FROM tbl_fifo_stock fs
-            JOIN tbl_batch b ON fs.batch_id = b.batch_id
-            JOIN tbl_product p ON fs.product_id = p.product_id
-            WHERE fs.product_id = ? AND fs.available_quantity > 0
-            ORDER BY b.entry_date ASC, fs.fifo_id ASC
-        ");
-        
-        $stmt->execute([$product_id]);
-        $fifoData = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            "success" => true,
-            "data" => $fifoData
-        ]);
-    } catch (Exception $e) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Database error: " . $e->getMessage(),
-            "data" => []
         ]);
     }
 }
@@ -1176,51 +1110,6 @@ function deleteProduct($conn, $data) {
  * Get pharmacy batch details
  */
 function getPharmacyBatchDetails($conn, $data) {
-    try {
-        $location_id = $data['location_id'] ?? 0;
-        $product_id = $data['product_id'] ?? 0;
-        
-        if (!$location_id || !$product_id) {
-            echo json_encode([
-                "success" => false,
-                "message" => "Location ID and Product ID are required"
-            ]);
-            return;
-        }
-        
-        $stmt = $conn->prepare("
-            SELECT 
-                btd.*,
-                p.product_name,
-                fs.srp,
-                fs.expiration_date
-            FROM tbl_batch_transfer_details btd
-            LEFT JOIN tbl_product p ON btd.product_id = p.product_id
-            LEFT JOIN tbl_fifo_stock fs ON btd.batch_id = fs.batch_id
-            WHERE btd.location_id = ? AND btd.product_id = ?
-            ORDER BY btd.transfer_date DESC
-        ");
-        $stmt->execute([$location_id, $product_id]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            "success" => true,
-            "data" => $rows
-        ]);
-        
-    } catch (Exception $e) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Database error: " . $e->getMessage(),
-            "data" => []
-        ]);
-    }
-}
-
-/**
- * Get convenience store batch details
- */
-function getConvenienceBatchDetails($conn, $data) {
     try {
         $location_id = $data['location_id'] ?? 0;
         $product_id = $data['product_id'] ?? 0;

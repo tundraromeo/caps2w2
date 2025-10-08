@@ -18,6 +18,7 @@ import {
   FaArchive,
   FaTimes,
   FaStore,
+  FaUndo,
   FaExclamationTriangle,
   FaAngleRight,
 } from "react-icons/fa";
@@ -71,6 +72,15 @@ const Sidebar = ({
       hasNotifications: hasReportsUpdates(),
       notificationCount: 0 // Reports notifications are boolean-based
     },
+
+    { 
+      label: "Return Management", 
+      icon: <FaUndo />, 
+      key: "ReturnManagement",
+      hasNotifications: getTotalNotifications('returns') > 0,
+      notificationCount: getTotalNotifications('returns')
+    },
+
     { label: "Movement History", icon: <FaHistory />, key: "MovementHistory" },
     { label: "Archive", icon: <FaArchive />, key: "Archive" },
     { label: "Settings", icon: <FaCog />, key: "Settings" },

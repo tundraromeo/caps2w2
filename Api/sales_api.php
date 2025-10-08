@@ -154,9 +154,17 @@ try {
                 // Map to enum in schema: ('cash','card','Gcash')
                 $payment_enum = ($payment_method === 'gcash') ? 'Gcash' : (($payment_method === 'card') ? 'card' : 'cash');
 
+                // Get employee ID from session or payload
+                $empId = isset($data['emp_id']) ? (int)$data['emp_id'] : 0;
+                if ($empId <= 0) {
+                    if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
+                    if (!empty($_SESSION['user_id'])) { $empId = (int)$_SESSION['user_id']; }
+                }
+                if ($empId <= 0) { $empId = 1; } // Default to admin if no session
+
                 // Create transaction row (schema: transaction_id, date, time, emp_id, payment_type)
-                $txnStmt = $conn->prepare("INSERT INTO tbl_pos_transaction (date, time, emp_id, payment_type) VALUES (CURDATE(), CURTIME(), 1, ?)");
-                $txnStmt->execute([$payment_enum]);
+                $txnStmt = $conn->prepare("INSERT INTO tbl_pos_transaction (date, time, emp_id, payment_type) VALUES (CURDATE(), CURTIME(), ?, ?)");
+                $txnStmt->execute([$empId, $payment_enum]);
                 $transaction_id = (int)$conn->lastInsertId();
 
                 // If no reference number was provided (cash), store the client txn id so we can locate it later if needed
@@ -182,17 +190,17 @@ try {
 
                 // Log activity to system activity logs
                 try {
-                    // Get employee details for logging (using emp_id = 1 as default)
-                    $empStmt = $conn->prepare("SELECT username, CONCAT(Fname, ' ', Lname) as full_name, 'Cashier' as role FROM tbl_employee WHERE emp_id = 1");
-                    $empStmt->execute();
+                    // Get employee details for logging (using actual emp_id)
+                    $empStmt = $conn->prepare("SELECT username, CONCAT(Fname, ' ', Lname) as full_name FROM tbl_employee WHERE emp_id = ?");
+                    $empStmt->execute([$empId]);
                     $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
                     
                     // Insert activity log
                     $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())");
                     $logStmt->execute([
-                        ':user_id' => 1,
+                        ':user_id' => $empId,
                         ':username' => $empData['username'] ?? 'Unknown',
-                        ':role' => $empData['role'] ?? 'Cashier',
+                        ':role' => 'Cashier', // Default role for POS operations
                         ':activity_type' => 'POS_SALE_SAVED',
                         ':activity_description' => "POS Sale completed: ₱{$total_amount} ({$payment_enum}, " . count($items) . " items) - Terminal: {$terminal_name}",
                         ':table_name' => 'tbl_pos_transaction',
@@ -334,18 +342,115 @@ try {
             try {
                 $product_id = $data['product_id'] ?? 0;
                 $quantity = $data['quantity'] ?? 0;
+                $transaction_id = $data['transaction_id'] ?? '';
+                $location_name = $data['location_name'] ?? '';
+                $location_id = $data['location_id'] ?? 0;
+                $entry_by = $data['entry_by'] ?? 'POS System';
                 
                 if ($product_id <= 0 || $quantity <= 0) {
                     echo json_encode(['success' => false, 'message' => 'Invalid product ID or quantity']);
                     break;
                 }
                 
-                $stmt = $conn->prepare("UPDATE tbl_product SET quantity = GREATEST(0, quantity - ?) WHERE product_id = ?");
-                $stmt->execute([$quantity, $product_id]);
+                // Get current stock from transfer batch details
+                $stockStmt = $conn->prepare("
+                    SELECT 
+                        COALESCE(SUM(tbd.quantity), 0) as current_stock
+                    FROM tbl_transfer_batch_details tbd
+                    WHERE tbd.product_id = ? AND tbd.location_id = ?
+                ");
+                $stockStmt->execute([$product_id, $location_id]);
+                $current_stock = $stockStmt->fetchColumn();
+                
+                if ($current_stock < $quantity) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => "Insufficient stock. Available: $current_stock, Requested: $quantity"
+                    ]);
+                    break;
+                }
+                
+                // Reduce stock from transfer batch details (FIFO - First In, First Out)
+                $remaining_to_reduce = $quantity;
+                
+                // Get batches ordered by oldest first (FIFO)
+                $batchStmt = $conn->prepare("
+                    SELECT 
+                        tbd.id,
+                        tbd.batch_id,
+                        tbd.batch_reference,
+                        tbd.quantity,
+                        tbd.srp,
+                        tbd.expiration_date
+                    FROM tbl_transfer_batch_details tbd
+                    WHERE tbd.product_id = ? AND tbd.location_id = ? AND tbd.quantity > 0
+                    ORDER BY tbd.id ASC, tbd.expiration_date ASC
+                ");
+                $batchStmt->execute([$product_id, $location_id]);
+                $batches = $batchStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                foreach ($batches as $batch) {
+                    if ($remaining_to_reduce <= 0) break;
+                    
+                    $batch_quantity = $batch['quantity'];
+                    $reduce_from_batch = min($remaining_to_reduce, $batch_quantity);
+                    
+                    // Update batch quantity
+                    $updateBatchStmt = $conn->prepare("
+                        UPDATE tbl_transfer_batch_details 
+                        SET quantity = quantity - ? 
+                        WHERE id = ?
+                    ");
+                    $updateBatchStmt->execute([$reduce_from_batch, $batch['id']]);
+                    
+                    // Log stock movement for this batch
+                    $logStmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements 
+                        (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
+                         expiration_date, reference_no, notes, created_by)
+                        VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $logStmt->execute([
+                        $product_id,
+                        $batch['batch_id'],
+                        $reduce_from_batch,
+                        $batch_quantity - $reduce_from_batch,
+                        $batch['srp'],
+                        $batch['expiration_date'],
+                        $transaction_id,
+                        "POS Sale - Reduced by $reduce_from_batch units from batch {$batch['batch_reference']}",
+                        $entry_by
+                    ]);
+                    
+                    $remaining_to_reduce -= $reduce_from_batch;
+                }
+                
+                // Log POS transaction
+                $posTransactionStmt = $conn->prepare("
+                    INSERT INTO tbl_pos_transaction 
+                    (transaction_id, product_id, quantity, unit_price, total_amount, location_name, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+                $posTransactionStmt->execute([
+                    $transaction_id,
+                    $product_id,
+                    $quantity,
+                    $batches[0]['srp'] ?? 0,
+                    ($batches[0]['srp'] ?? 0) * $quantity,
+                    $location_name,
+                    $entry_by
+                ]);
                 
                 echo json_encode([
                     'success' => true,
-                    'message' => 'Product stock reduced successfully'
+                    'message' => 'Product stock reduced successfully',
+                    'data' => [
+                        'product_id' => $product_id,
+                        'old_quantity' => $current_stock,
+                        'new_quantity' => $current_stock - $quantity,
+                        'reduced_by' => $quantity,
+                        'location_name' => $location_name
+                    ]
                 ]);
                 
             } catch (Exception $e) {
@@ -355,48 +460,143 @@ try {
 
         case 'get_pos_inventory':
             try {
+                $location_id = $data['location_id'] ?? 0;
+                $location_name = $data['location_name'] ?? '';
                 $location = $data['location'] ?? null;
                 $search = $data['search'] ?? '';
                 
-                $where = "WHERE 1=1";
-                $params = [];
-                
-                if ($location) {
-                    $where .= " AND l.location_name LIKE ?";
-                    $params[] = "%{$location}%";
+                // If location_id is not provided, try to get it from location_name or location
+                if (!$location_id) {
+                    $searchLocation = $location_name ?: $location;
+                    if ($searchLocation) {
+                        $locStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name LIKE ? LIMIT 1");
+                        $locStmt->execute(["%{$searchLocation}%"]);
+                        $location_id = $locStmt->fetchColumn();
+                    }
                 }
                 
-                if (!empty($search)) {
-                    $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ?)";
-                    $searchParam = "%{$search}%";
-                    $params[] = $searchParam;
-                    $params[] = $searchParam;
+                if (!$location_id) {
+                    echo json_encode(['success' => false, 'message' => 'Location ID or Location Name is required']);
+                    break;
                 }
                 
-                $stmt = $conn->prepare("
+                // Build the query to get all products with stock from transfer batch details
+                $sql = "
                     SELECT 
                         p.product_id,
                         p.product_name,
                         p.barcode,
-                        p.quantity,
-                        p.srp as unit_price,
-                        p.srp,
-                        l.location_name,
-                        b.brand,
-                        s.supplier_name
+                        -- For Mang tomas, get quantity from warehouse (location_id = 2), otherwise from current location
+                        CASE 
+                            WHEN p.product_name = 'Mang tomas' THEN 
+                                COALESCE(
+                                    (SELECT SUM(tbd_warehouse.quantity) 
+                                     FROM tbl_transfer_batch_details tbd_warehouse
+                                     JOIN tbl_product p_warehouse ON tbd_warehouse.product_id = p_warehouse.product_id
+                                     WHERE p_warehouse.product_name = 'Mang tomas' 
+                                     AND tbd_warehouse.location_id = 2), 0)
+                            ELSE 
+                                COALESCE(SUM(tbd.quantity), 0)
+                        END as quantity,
+                        -- For Mang tomas, get SRP from warehouse (location_id = 2), otherwise from current location
+                        CASE 
+                            WHEN p.product_name = 'Mang tomas' THEN 
+                                COALESCE(
+                                    (SELECT tbd_warehouse2.srp 
+                                     FROM tbl_transfer_batch_details tbd_warehouse2
+                                     JOIN tbl_product p_warehouse2 ON tbd_warehouse2.product_id = p_warehouse2.product_id
+                                     WHERE p_warehouse2.product_name = 'Mang tomas' 
+                                     AND tbd_warehouse2.location_id = 2
+                                     AND tbd_warehouse2.quantity > 0
+                                     ORDER BY 
+                                        CASE WHEN tbd_warehouse2.expiration_date IS NULL THEN 1 ELSE 0 END,
+                                        tbd_warehouse2.expiration_date ASC,
+                                        tbd_warehouse2.id ASC
+                                     LIMIT 1),
+                                    p.srp, 0)
+                            ELSE 
+                                COALESCE(
+                                    (SELECT tbd2.srp 
+                                     FROM tbl_transfer_batch_details tbd2
+                                     WHERE tbd2.product_id = p.product_id 
+                                     AND tbd2.location_id = ?
+                                     AND tbd2.quantity > 0
+                                     ORDER BY 
+                                        CASE WHEN tbd2.expiration_date IS NULL THEN 1 ELSE 0 END,
+                                        tbd2.expiration_date ASC,
+                                        tbd2.id ASC
+                                     LIMIT 1),
+                                    p.srp, 0)
+                        END as unit_price,
+                        CASE 
+                            WHEN p.product_name = 'Mang tomas' THEN 
+                                COALESCE(
+                                    (SELECT tbd_warehouse3.srp 
+                                     FROM tbl_transfer_batch_details tbd_warehouse3
+                                     JOIN tbl_product p_warehouse3 ON tbd_warehouse3.product_id = p_warehouse3.product_id
+                                     WHERE p_warehouse3.product_name = 'Mang tomas' 
+                                     AND tbd_warehouse3.location_id = 2
+                                     AND tbd_warehouse3.quantity > 0
+                                     ORDER BY 
+                                        CASE WHEN tbd_warehouse3.expiration_date IS NULL THEN 1 ELSE 0 END,
+                                        tbd_warehouse3.expiration_date ASC,
+                                        tbd_warehouse3.id ASC
+                                     LIMIT 1),
+                                    p.srp, 0)
+                            ELSE 
+                                COALESCE(
+                                    (SELECT tbd3.srp 
+                                     FROM tbl_transfer_batch_details tbd3
+                                     WHERE tbd3.product_id = p.product_id 
+                                     AND tbd3.location_id = ?
+                                     AND tbd3.quantity > 0
+                                     ORDER BY 
+                                        CASE WHEN tbd3.expiration_date IS NULL THEN 1 ELSE 0 END,
+                                        tbd3.expiration_date ASC,
+                                        tbd3.id ASC
+                                     LIMIT 1),
+                                    p.srp, 0)
+                        END as srp,
+                        ? as location_name,
+                        COALESCE(b.brand, '') as brand,
+                        COALESCE(s.supplier_name, '') as supplier_name,
+                        p.category,
+                        p.description,
+                        p.prescription,
+                        p.bulk
                     FROM tbl_product p
-                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
-                    {$where}
-                    ORDER BY p.product_name ASC
-                ");
+                    LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
+                    WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL OR p.product_name = 'Mang tomas')
+                ";
+                
+                $params = [$location_id, $location_id, $location_name, $location_id];
+                
+                // Add search filter if provided
+                if (!empty($search)) {
+                    $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR p.category LIKE ? OR p.barcode LIKE ?)";
+                    $searchParam = "%{$search}%";
+                    $params[] = $searchParam;
+                    $params[] = $searchParam;
+                    $params[] = $searchParam;
+                    $params[] = $searchParam;
+                }
+                
+                $sql .= " GROUP BY p.product_id, p.product_name, p.barcode, p.category, p.description, p.prescription, p.bulk, b.brand, s.supplier_name";
+                $sql .= " HAVING COALESCE(SUM(tbd.quantity), 0) > 0"; // Only show products that have stock in this location
+                $sql .= " ORDER BY p.product_name ASC";
+                
+                $stmt = $conn->prepare($sql);
                 $stmt->execute($params);
                 $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 
                 echo json_encode([
                     'success' => true,
-                    'data' => $products
+                    'data' => $products,
+                    'count' => count($products),
+                    'location_id' => $location_id,
+                    'location_name' => $location_name
                 ]);
                 
             } catch (Exception $e) {

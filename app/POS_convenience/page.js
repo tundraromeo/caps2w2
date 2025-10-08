@@ -319,100 +319,41 @@ export default function POS() {
   const normalizeProducts = (rows) => {
     if (!Array.isArray(rows)) return [];
     
-    // First, group products by name to handle duplicates
-    const productGroups = {};
-    rows.forEach((d) => {
-      const name = d.name ?? d.product_name ?? d.productName ?? '';
+    console.log('🔍 normalizeProducts input:', rows);
+    
+    // Since the backend already filters by location, we don't need to combine duplicates
+    // Each product should be unique per location
+    const processedProducts = rows.map((d) => {
       const id = d.id ?? d.product_id ?? d.productId;
+      const name = d.name ?? d.product_name ?? d.productName ?? '';
+      // Prioritize srp over unit_price when unit_price is 0 or null
+      const unitPrice = Number(d.unit_price) || 0;
+      const srp = Number(d.srp) || 0;
+      const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
+      const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
+      const category = d.category ?? d.category_name ?? 'Uncategorized';
+      const location = d.location_name ?? d.location ?? null;
+      const description = d.description ?? '';
+      const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
+      const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
       
-      if (!productGroups[name]) {
-        productGroups[name] = [];
-      }
-      productGroups[name].push(d);
+      // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
+      const requiresPrescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
+      
+      return {
+        id: Number(id ?? 0) || id,
+        name: String(name),
+        price: Number(priceRaw) || 0,
+        quantity: Number(quantityRaw) || 0,
+        category: String(category),
+        description: String(description),
+        location_name: location ? String(location) : null,
+        requires_prescription: requiresPrescription,
+        is_bulk: Boolean(isBulkProduct)
+      };
     });
     
-    // Log duplicate detection
-    const duplicates = Object.keys(productGroups).filter(name => productGroups[name].length > 1);
-    if (duplicates.length > 0) {
-      console.log(`🔄 Found ${duplicates.length} duplicate product(s):`, duplicates);
-      duplicates.forEach(name => {
-        console.log(`  - ${name}: ${productGroups[name].length} entries, combining quantities`);
-      });
-    }
-    
-    // Process each group and combine duplicates
-    const processedProducts = [];
-    Object.keys(productGroups).forEach(productName => {
-      const group = productGroups[productName];
-      
-      if (group.length === 1) {
-        // Single product, process normally
-        const d = group[0];
-        const id = d.id ?? d.product_id ?? d.productId;
-        const name = d.name ?? d.product_name ?? d.productName ?? '';
-        // Prioritize srp over unit_price when unit_price is 0 or null
-        const unitPrice = Number(d.unit_price) || 0;
-        const srp = Number(d.srp) || 0;
-        const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
-        const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
-        const category = d.category ?? d.category_name ?? 'Uncategorized';
-        const location = d.location_name ?? d.location ?? null;
-        const description = d.description ?? '';
-        const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
-        const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
-        
-        // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
-        const requiresPrescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
-        
-        processedProducts.push({
-          id: Number(id ?? 0) || id,
-          name: String(name),
-          price: Number(priceRaw) || 0,
-          quantity: Number(quantityRaw) || 0,
-          category: String(category),
-          description: String(description),
-          location_name: location ? String(location) : null,
-          requires_prescription: requiresPrescription,
-          is_bulk: Boolean(isBulkProduct)
-        });
-      } else {
-        // Multiple products with same name, combine them
-        const combinedProduct = group.reduce((combined, d) => {
-          const id = d.id ?? d.product_id ?? d.productId;
-          const name = d.name ?? d.product_name ?? d.productName ?? '';
-          const unitPrice = Number(d.unit_price) || 0;
-          const srp = Number(d.srp) || 0;
-          const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
-          const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
-          const category = d.category ?? d.category_name ?? 'Uncategorized';
-          const location = d.location_name ?? d.location ?? null;
-          const description = d.description ?? '';
-          const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
-          const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
-          
-          // Use the first product's ID and details, but combine quantities
-          if (!combined.id) {
-            combined.id = Number(id ?? 0) || id;
-            combined.name = String(name);
-            combined.price = Number(priceRaw) || 0;
-            combined.category = String(category);
-            combined.description = String(description);
-            combined.location_name = location ? String(location) : null;
-            combined.requires_prescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
-            combined.is_bulk = Boolean(isBulkProduct);
-            combined.quantity = 0;
-          }
-          
-          // Sum up quantities from all duplicate entries
-          combined.quantity += Number(quantityRaw) || 0;
-          
-          return combined;
-        }, {});
-        
-        processedProducts.push(combinedProduct);
-      }
-    });
-    
+    console.log('🔍 normalizeProducts output:', processedProducts);
     return processedProducts.filter(p => p && p.id && p.name);
   };
 
@@ -487,24 +428,22 @@ export default function POS() {
         }
       } catch (_) {}
       
-      // First, try to find the product in the current location (prefer location_id if available)
-      const res = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+      // First, try to find the product in the current location using convenience store API
+      const res = await fetch('http://localhost/caps2e2/Api/convenience_store_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          action: 'check_barcode', 
-          barcode: code, 
-          location_id: resolvedLocationId, 
-          // Use the exact DB location_name to match backend's strict equality
-          location_name: (resolvedLocationName || locationName || '').trim() 
+          action: 'search_by_barcode', 
+          location_name: (resolvedLocationName || locationName || '').trim(),
+          barcode: code // Use specific barcode search
         })
       });
       const json = await res.json();
       console.log(`📡 API Response for ${locationName}:`, json);
       
-      if (json?.success && json?.product) {
+      if (json?.success && json?.data && Array.isArray(json.data) && json.data.length > 0) {
         // Product found via barcode in current location; show only this product in the list
-        const scannedProduct = json.product;
+        const scannedProduct = json.data[0]; // Get first matching product
         setBarcodeScannedProduct(scannedProduct);
 
         const pRaw = scannedProduct;
@@ -515,11 +454,13 @@ export default function POS() {
         const price = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(pRaw.price) || 0));
         
         const normalized = {
-          id: Number(pRaw.id ?? pRaw.product_id ?? pRaw.productId ?? 0) || (pRaw.id ?? pRaw.product_id ?? pRaw.productId),
-          name: String(pRaw.name ?? pRaw.product_name ?? pRaw.productName ?? ''),
+          id: Number(pRaw.product_id ?? pRaw.id ?? 0) || (pRaw.product_id ?? pRaw.id),
+          name: String(pRaw.product_name ?? pRaw.name ?? ''),
           price: price,
-          quantity: Number(pRaw.quantity ?? pRaw.available_quantity ?? pRaw.stock ?? 0) || 0,
-          category: String(pRaw.category ?? pRaw.category_name ?? 'Uncategorized')
+          quantity: Number(pRaw.available_quantity ?? pRaw.quantity ?? 0) || 0,
+          category: String(pRaw.category ?? 'Uncategorized'),
+          barcode: String(pRaw.barcode ?? ''),
+          location_name: String(pRaw.location_name ?? '')
         };
         console.log('✨ Barcode normalized product:', normalized);
         setProducts([normalized]);
@@ -547,33 +488,13 @@ export default function POS() {
         }, 120);
         
         // Show success message
-        console.log(`✅ Product found in ${locationName}: ${scannedProduct.name || scannedProduct.product_name}`);
+        console.log(`✅ Product found in ${locationName}: ${scannedProduct.product_name || scannedProduct.name}`);
         return;
       }
       
-      // If not found in this location, check if product exists elsewhere
-      console.log(`❌ Product not found in ${locationName}, checking other locations...`);
-      const res2 = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'check_barcode', barcode: code })
-      });
-      const json2 = await res2.json();
-      console.log(`📡 API Response (no location):`, json2);
-      
-      if (json2?.success && json2?.product) {
-        const otherLoc = json2.product?.location_name || 'other location';
-        console.log(`⚠️ Product found in ${otherLoc}, but not in ${locationName}`);
-        
-        // Show more helpful message with product details
-        const productName = json2.product.name || json2.product.product_name || 'Unknown Product';
-        const productPrice = json2.product.unit_price || json2.product.srp || json2.product.price || 0;
-        
-        alert(`Product "${productName}" found in ${otherLoc}, but not in ${locationName}.\n\nProduct Details:\n- Name: ${productName}\n- Price: ₱${Number(productPrice).toFixed(2)}\n- Location: ${otherLoc}\n\nPlease scan products from the correct location or transfer this product to ${locationName}.`);
-      } else {
-        console.log(`❌ Product not found in any location`);
-        alert(`Product with barcode ${code} not found in any location.\n\nPlease check if:\n1. The barcode is correct\n2. The product exists in the system\n3. The product is not archived`);
-      }
+      // Product not found in convenience store
+      console.log(`❌ Product not found in ${locationName}`);
+      alert(`Product with barcode ${code} not found in ${locationName}.\n\nPlease check if:\n1. The barcode is correct\n2. The product exists in this store\n3. The product needs to be transferred to ${locationName}\n4. The product is not archived`);
     } catch (e) {
       console.error('Barcode scan error:', e);
       alert('Scan failed. Please try again.\n\nError: ' + e.message);
@@ -607,13 +528,12 @@ export default function POS() {
         if (currentLocation) {
           console.log(`📍 Found location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
           
-          // Load products for this specific location
-          const productResponse = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+          // Load products for this specific location using convenience store API with accurate stock quantities
+          const productResponse = await fetch('http://localhost/caps2e2/Api/convenience_store_api.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              action: 'get_pos_inventory', 
-              location_id: currentLocation.location_id,
+              action: 'get_pos_products_fifo', 
               location_name: currentLocation.location_name // Pass exact location name
             })
           });
@@ -624,6 +544,11 @@ export default function POS() {
             console.log('📦 Raw product data:', productData.data);
             const normalized = normalizeProducts(productData.data);
             console.log('✨ Normalized products:', normalized);
+            
+            // Log quantity and price information for debugging
+            normalized.forEach(product => {
+              console.log(`📊 Product: ${product.name} - Available Quantity: ${product.quantity} - Price: ₱${product.price} - Location: ${product.location_name || 'Unknown'}`);
+            });
             
             // Additional client-side filtering to ensure products are from correct location
             const filteredProducts = normalized.filter(product => {
@@ -702,13 +627,12 @@ export default function POS() {
 
       console.log(`📍 Using location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
 
-      // Query inventory with search term - only for this specific location
-      const productResponse = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
+      // Query inventory with search term - only for this specific location using convenience store API
+      const productResponse = await fetch('http://localhost/caps2e2/Api/convenience_store_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'get_pos_inventory',
-          location_id: currentLocation.location_id,
+          action: 'get_pos_products_fifo',
           location_name: currentLocation.location_name, // Pass exact location name
           search: query
         })
@@ -716,7 +640,9 @@ export default function POS() {
       const productData = await productResponse.json().catch(() => ({}));
 
       if (productData?.success && Array.isArray(productData.data)) {
+        console.log('🔍 Raw API Response for search:', productData);
         const normalized = normalizeProducts(productData.data);
+        console.log('🔍 Normalized products:', normalized);
         
         // Additional client-side filtering to ensure products are from correct location
         const filteredProducts = normalized.filter(product => {
@@ -824,6 +750,8 @@ export default function POS() {
     }, 150);
   };
 
+
+
   // Initialize data
   useEffect(() => {
     const boot = async () => {
@@ -833,10 +761,8 @@ export default function POS() {
           localStorage.removeItem('pos-products-source');
           localStorage.removeItem('pos-products');
         }
-      } catch (_) {}
-      try {
-        // Do not auto-load products; wait for barcode scan
-      } catch (_) {}
+      } 
+      catch (_) {}
       const savedCart = JSON.parse(localStorage.getItem('pos-cart'));
       if (savedCart) setCart(savedCart);
       const savedHistory = JSON.parse(localStorage.getItem('pos-sales-history')) || [];
@@ -1775,6 +1701,11 @@ export default function POS() {
 
       // Now save the sale to POS sales tables
       console.log('🔄 Saving sale to POS sales tables...');
+      
+      // Use the empId already declared above, or get from localStorage as fallback
+      const finalEmpId = empId || localStorage.getItem('pos-emp-id') || '1';
+      console.log('👤 Using employee ID:', finalEmpId);
+      
       const salesRes = await fetch('http://localhost/caps2e2/Api/sales_api.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1785,6 +1716,7 @@ export default function POS() {
           referenceNumber: paymentMethod === 'gcash' ? referenceNumber : null,
           terminalName: terminalToUse,
           paymentMethod: paymentMethod,
+          emp_id: parseInt(finalEmpId), // Pass employee ID
           items: cart.map(it => ({ 
             product_id: it.product.id, 
             quantity: it.quantity, 
@@ -3797,7 +3729,7 @@ export default function POS() {
                           setCustomerReturnData(prev => ({ ...prev, returnReason: 'Wrong item received' }));
                         } else if (e.key.toLowerCase() === 'c') {
                           e.preventDefault();
-                          setCustomerReturnData(prev => ({ ...prev, returnReason: 'Customer changed mind' }));
+                          setCustomerReturnData(prev => ({ ...prev, returnReason: 'Customer changed Item' }));
                         } else if (e.key === 'ArrowDown') {
                           e.preventDefault();
                           // Go to first quantity input field
@@ -3835,9 +3767,9 @@ export default function POS() {
                       <option value="">Select return reason...</option>
                       <option value="Product damaged/defective">🚫 Product damaged/defective</option>
                       <option value="Wrong item received">❌ Wrong item received</option>
-                      <option value="Customer changed mind">💭 Customer changed mind</option>
+                      <option value="Customer changed Item">💭 Customer changed Item</option>
                     </select>
-                    
+                   
                     {/* Keyboard shortcuts */}
                     <div className="mt-2 text-xs text-gray-500">
                       Quick shortcuts: Press <kbd className="px-1 py-0.5 bg-gray-200 rounded text-xs">D</kbd> for damaged, 

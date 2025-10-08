@@ -29,12 +29,6 @@ error_reporting(E_ALL);
 ini_set('log_errors', 1);
 ini_set('error_log', 'php_errors.log');
 
-// Handle preflight requests
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
 // Only allow POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -75,15 +69,99 @@ $action = $data['action'] ?? '';
 
 try {
     switch ($action) {
-        case 'get_locations':
-            // Get all locations
-            $stmt = $conn->prepare("SELECT location_id, location_name FROM tbl_location ORDER BY location_name ASC");
-            $stmt->execute();
-            $locations = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        case 'get_convenience_products_fifo':
+            // Get products with FIFO-consistent quantities (first batch quantity)
+            $location_name = $data['location_name'] ?? 'convenience';
+            $search = $data['search'] ?? '';
+            $category = $data['category'] ?? 'all';
+            $product_type = $data['product_type'] ?? 'all';
+            
+            $where = "l.location_name LIKE '%convenience%'";
+            $params = [];
+            
+            if (!empty($search)) {
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $searchParam = "%$search%";
+                $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
+            }
+            
+            if ($category !== 'all') {
+                $where .= " AND p.category = ?";
+                $params[] = $category;
+            }
+            
+            if ($product_type !== 'all') {
+                if ($product_type === 'Regular') {
+                    $where .= " AND p.product_type = 'Regular'";
+                } elseif ($product_type === 'Transferred') {
+                    $where .= " AND p.product_type = 'Transferred'";
+                }
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    MIN(p.product_id) as product_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    b.brand,
+                    -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
+                    COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as srp,
+                    -- Sum all batch quantities for same product (handle related products)
+                    COALESCE(
+                        (SELECT SUM(tbd2.quantity) 
+                         FROM tbl_transfer_batch_details tbd2 
+                         WHERE tbd2.product_id IN (
+                             SELECT p2.product_id 
+                             FROM tbl_product p2 
+                             WHERE p2.product_name = p.product_name 
+                             AND p2.barcode = p.barcode
+                         )),
+                        SUM(ss.available_quantity), 
+                        0
+                    ) as total_quantity,
+                    MAX(p.status) as status,
+                    s.supplier_name,
+                    MAX(p.expiration) as expiration,
+                    l.location_name,
+                    tbd.srp as transfer_srp,
+                    tbd.expiration_date as transfer_expiration,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as first_batch_srp
+                FROM tbl_product p
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
+                WHERE $where
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
+                HAVING total_quantity > 0
+                ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
+            ");
+            
+            try {
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {
+                error_log("SQL Error in get_convenience_products_fifo: " . $e->getMessage());
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Database error: " . $e->getMessage(),
+                    "data" => []
+                ]);
+                break;
+            }
+            
+            // Update quantity field to use total_quantity
+            foreach ($rows as &$row) {
+                $row['quantity'] = $row['total_quantity'];
+            }
             
             echo json_encode([
                 "success" => true,
-                "data" => $locations
+                "data" => $rows,
+                "count" => count($rows)
             ]);
             break;
             
@@ -123,32 +201,41 @@ try {
                     p.barcode,
                     p.category,
                     b.brand,
-                    AVG(p.srp) as unit_price,
-                    AVG(p.srp) as srp,
-                    SUM(p.quantity) as total_quantity,
+                    -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
+                    COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as srp,
+                    COALESCE(SUM(ss.available_quantity), 0) as total_quantity,
                     MAX(p.status) as status,
                     s.supplier_name,
                     MAX(p.expiration) as expiration,
                     l.location_name,
-                    COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), AVG(p.srp)) as first_batch_srp
+                    tbd.srp as transfer_srp,
+                    tbd.expiration_date as transfer_expiration,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as first_batch_srp
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
-                LEFT JOIN (
-                    SELECT 
-                        tbd.product_id,
-                        tbd.srp as first_batch_srp,
-                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.id ASC) as rn
-                    FROM tbl_transfer_batch_details tbd
-                    WHERE tbd.srp > 0
-                ) first_transfer_batch ON p.product_id = first_transfer_batch.product_id AND first_transfer_batch.rn = 1
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name, first_transfer_batch.first_batch_srp
-                ORDER BY p.product_name ASC
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
+                HAVING total_quantity > 0
+                ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
-            $stmt->execute($params);
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            try {
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {
+                error_log("SQL Error in get_convenience_products: " . $e->getMessage());
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Database error: " . $e->getMessage(),
+                    "data" => []
+                ]);
+                break;
+            }
             
             // Update quantity field to use total_quantity
             foreach ($rows as &$row) {
@@ -188,32 +275,41 @@ try {
                     p.barcode,
                     p.category,
                     b.brand,
-                    AVG(p.srp) as unit_price,
-                    AVG(p.srp) as srp,
-                    SUM(p.quantity) as total_quantity,
+                    -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
+                    COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as srp,
+                    COALESCE(SUM(ss.available_quantity), 0) as total_quantity,
                     MAX(p.status) as status,
                     s.supplier_name,
                     MAX(p.expiration) as expiration,
                     l.location_name,
-                    COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), AVG(p.srp)) as first_batch_srp
+                    tbd.srp as transfer_srp,
+                    tbd.expiration_date as transfer_expiration,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as first_batch_srp
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
-                LEFT JOIN (
-                    SELECT 
-                        tbd.product_id,
-                        tbd.srp as first_batch_srp,
-                        ROW_NUMBER() OVER (PARTITION BY tbd.product_id ORDER BY tbd.id ASC) as rn
-                    FROM tbl_transfer_batch_details tbd
-                    WHERE tbd.srp > 0
-                ) first_transfer_batch ON p.product_id = first_transfer_batch.product_id AND first_transfer_batch.rn = 1
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_name, p.barcode, p.category, b.brand, s.supplier_name, l.location_name, first_transfer_batch.first_batch_srp
-                ORDER BY p.product_name ASC
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
+                HAVING total_quantity > 0
+                ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
-            $stmt->execute($params);
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            try {
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {
+                error_log("SQL Error in get_convenience_products: " . $e->getMessage());
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Database error: " . $e->getMessage(),
+                    "data" => []
+                ]);
+                break;
+            }
             
             // Update quantity field to use total_quantity
             foreach ($rows as &$row) {
@@ -286,6 +382,12 @@ try {
                     btd.srp,
                     btd.srp as batch_srp,
                     btd.expiration_date,
+                    btd.created_at as transfer_date,
+                    CONCAT('TR-', btd.id) as transfer_id,
+                    CASE 
+                        WHEN btd.quantity > 0 THEN 'Consumed'
+                        ELSE 'Available'
+                    END as status,
                     p.product_name,
                     p.barcode,
                     br.brand,
@@ -296,40 +398,13 @@ try {
                 LEFT JOIN tbl_product p ON btd.product_id = p.product_id
                 LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
                 LEFT JOIN tbl_location l ON btd.location_id = l.location_id
-                WHERE btd.product_id IN ($placeholders) AND btd.location_id = ?
+                WHERE btd.product_id IN ($placeholders)
                 ORDER BY btd.expiration_date ASC, btd.id ASC
             ");
-            $batchStmt->execute(array_merge($relatedProductIds, [$location_id]));
+            $batchStmt->execute($relatedProductIds);
             $batchDetails = $batchStmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // If no data found with location filter, try without location filter to see all transfers
-            if (empty($batchDetails)) {
-                error_log("DEBUG get_convenience_batch_details: No data with location filter, trying without location filter");
-                $batchStmt2 = $conn->prepare("
-                    SELECT 
-                        btd.id,
-                        btd.batch_id,
-                        btd.batch_reference,
-                        btd.quantity as batch_quantity,
-                        btd.srp,
-                        btd.srp as batch_srp,
-                        btd.expiration_date,
-                        p.product_name,
-                        p.barcode,
-                        br.brand,
-                        p.category,
-                        COALESCE(l.location_name, 'Warehouse') as source_location_name,
-                        'System' as employee_name
-                    FROM tbl_transfer_batch_details btd
-                    LEFT JOIN tbl_product p ON btd.product_id = p.product_id
-                    LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
-                    LEFT JOIN tbl_location l ON btd.location_id = l.location_id
-                    WHERE btd.product_id IN ($placeholders)
-                    ORDER BY btd.expiration_date ASC, btd.id ASC
-                ");
-                $batchStmt2->execute($relatedProductIds);
-                $batchDetails = $batchStmt2->fetchAll(PDO::FETCH_ASSOC);
-            }
+            // All batches should now be retrieved without location filter
             
             // Debug: Log the results
             error_log("DEBUG get_convenience_batch_details: batchDetails count=" . count($batchDetails));
@@ -481,6 +556,7 @@ try {
                     JOIN tbl_product p ON tbd.product_id = p.product_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                     LEFT JOIN tbl_location l ON th.destination_location_id = l.location_id
                     LEFT JOIN tbl_location sl ON th.source_location_id = sl.location_id
                     LEFT JOIN tbl_employee e ON th.employee_id = e.emp_id
@@ -552,6 +628,7 @@ try {
                 LEFT JOIN tbl_product p ON btd.product_id = p.product_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_employee e ON btd.transferred_by = e.emp_id
                 WHERE p.location_id = ?
@@ -640,14 +717,11 @@ try {
                             ");
                             $updateFifoStmt->execute([$consume_qty, $batch['fifo_id']]);
                             
-                            // Update batch transfer details status
+                            // Update batch transfer details quantity
                             $updateBatchStmt = $conn->prepare("
                                 UPDATE tbl_transfer_batch_details 
-                                SET status = CASE 
-                                    WHEN batch_quantity <= ? THEN 'Consumed'
-                                    ELSE 'Partially Consumed'
-                                END
-                                WHERE batch_id = ? AND destination_location_id = ?
+                                SET quantity = quantity - ?
+                                WHERE batch_id = ? AND location_id = ?
                             ");
                             $updateBatchStmt->execute([$consume_qty, $batch['batch_id'], $location_id]);
                             
@@ -670,6 +744,47 @@ try {
                         $updateProductStmt->execute([$quantity, $product_id]);
                         $rowsAffected = $updateProductStmt->rowCount();
                         error_log("Product quantity update result: Rows affected: $rowsAffected");
+                        
+                        // Update stock summary
+                        $updateStockSummaryStmt = $conn->prepare("
+                            UPDATE tbl_stock_summary 
+                            SET available_quantity = available_quantity - ?, 
+                                total_quantity = total_quantity - ?,
+                                last_updated = NOW()
+                            WHERE product_id = ?
+                        ");
+                        $updateStockSummaryStmt->execute([$quantity, $quantity, $product_id]);
+                        $stockSummaryRowsAffected = $updateStockSummaryStmt->rowCount();
+                        error_log("Stock summary update result: Rows affected: $stockSummaryRowsAffected");
+                        
+                        // Update transfer batch details quantity (fallback if no FIFO data)
+                        if (empty($consumed_batches)) {
+                            // Get product info for related products lookup
+                            $productInfoStmt = $conn->prepare("SELECT product_name, barcode FROM tbl_product WHERE product_id = ?");
+                            $productInfoStmt->execute([$product_id]);
+                            $productInfo = $productInfoStmt->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($productInfo) {
+                                // Find related products with same name and barcode
+                                $relatedStmt = $conn->prepare("SELECT product_id FROM tbl_product WHERE product_name = ? AND barcode = ?");
+                                $relatedStmt->execute([$productInfo['product_name'], $productInfo['barcode']]);
+                                $relatedProductIds = $relatedStmt->fetchAll(PDO::FETCH_COLUMN);
+                                
+                                // Update transfer batch details for related products
+                                foreach ($relatedProductIds as $relatedProductId) {
+                                $updateTransferBatchStmt = $conn->prepare("
+                                    UPDATE tbl_transfer_batch_details 
+                                    SET quantity = quantity - ?
+                                    WHERE product_id = ? AND location_id = 2
+                                    ORDER BY expiration_date ASC, id ASC
+                                    LIMIT 1
+                                ");
+                                $updateTransferBatchStmt->execute([$quantity, $relatedProductId]);
+                                    $transferBatchRowsAffected = $updateTransferBatchStmt->rowCount();
+                                    error_log("Transfer batch details update for product $relatedProductId: Rows affected: $transferBatchRowsAffected");
+                                }
+                            }
+                        }
                         
                         // Get current product quantity after sale
                         $currentQtyStmt = $conn->prepare("SELECT quantity FROM tbl_product WHERE product_id = ?");
@@ -711,6 +826,306 @@ try {
             } catch (Exception $e) {
                 $conn->rollback();
                 throw $e;
+            }
+            break;
+            
+        case 'get_pos_products_fifo':
+            // Get products for POS with FIFO-consistent quantities (first batch quantity)
+            $location_name = $data['location_name'] ?? 'convenience';
+            $search = $data['search'] ?? '';
+            $category = $data['category'] ?? 'all';
+            
+            $where = "l.location_name LIKE ?";
+            $params = ["%$location_name%"];
+            
+            if (!empty($search)) {
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $searchParam = "%$search%";
+                $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
+            }
+            
+            if ($category !== 'all') {
+                $where .= " AND p.category = ?";
+                $params[] = $category;
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    p.product_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    b.brand,
+                    -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
+                    COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as srp,
+                    -- Sum all batch quantities for same product (handle related products)
+                    COALESCE(
+                        (SELECT SUM(tbd2.quantity) 
+                         FROM tbl_transfer_batch_details tbd2 
+                         WHERE tbd2.product_id IN (
+                             SELECT p2.product_id 
+                             FROM tbl_product p2 
+                             WHERE p2.product_name = p.product_name 
+                             AND p2.barcode = p.barcode
+                         )),
+                        SUM(ss.available_quantity), 
+                        0
+                    ) as available_quantity,
+                    COALESCE(SUM(ss.reserved_quantity), 0) as reserved_quantity,
+                    COALESCE(SUM(ss.total_quantity), 0) as total_quantity,
+                    p.status,
+                    s.supplier_name,
+                    p.expiration,
+                    l.location_name,
+                    ss.batch_reference,
+                    ss.expiration_date,
+                    tbd.srp as transfer_srp,
+                    tbd.expiration_date as transfer_expiration
+                FROM tbl_product p
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
+                WHERE $where
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                HAVING available_quantity > 0
+                ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
+            ");
+            
+            try {
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {
+                error_log("SQL Error in get_pos_products_fifo: " . $e->getMessage());
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Database error: " . $e->getMessage(),
+                    "data" => []
+                ]);
+                break;
+            }
+            
+            // Update quantity field to use available_quantity for POS display
+            foreach ($rows as &$row) {
+                $row['quantity'] = $row['available_quantity'];
+            }
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $rows,
+                "count" => count($rows)
+            ]);
+            break;
+            
+        case 'get_accurate_stock_quantities':
+            // Get accurate stock quantities from tbl_stock_summary for specific location
+            $location_name = $data['location_name'] ?? 'convenience';
+            $search = $data['search'] ?? '';
+            $category = $data['category'] ?? 'all';
+            
+            $where = "l.location_name LIKE ?";
+            $params = ["%$location_name%"];
+            
+            if (!empty($search)) {
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $searchParam = "%$search%";
+                $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
+            }
+            
+            if ($category !== 'all') {
+                $where .= " AND p.category = ?";
+                $params[] = $category;
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    p.product_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    b.brand,
+                    -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
+                    COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as srp,
+                    COALESCE(SUM(ss.available_quantity), 0) as available_quantity,
+                    COALESCE(SUM(ss.reserved_quantity), 0) as reserved_quantity,
+                    COALESCE(SUM(ss.total_quantity), 0) as total_quantity,
+                    p.status,
+                    s.supplier_name,
+                    p.expiration,
+                    l.location_name,
+                    ss.batch_reference,
+                    ss.expiration_date,
+                    tbd.srp as transfer_srp,
+                    tbd.expiration_date as transfer_expiration
+                FROM tbl_product p
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
+                WHERE $where
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                HAVING available_quantity > 0
+                ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
+            ");
+            
+            try {
+                $stmt->execute($params);
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $e) {
+                error_log("SQL Error in get_convenience_products: " . $e->getMessage());
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Database error: " . $e->getMessage(),
+                    "data" => []
+                ]);
+                break;
+            }
+            
+            // Normalize the response to match expected format
+            foreach ($rows as &$row) {
+                $row['quantity'] = $row['available_quantity'];
+            }
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $rows
+            ]);
+            break;
+            
+        case 'search_by_barcode':
+            // Search for a specific product by barcode in convenience store
+            $barcode = $data['barcode'] ?? '';
+            $location_name = $data['location_name'] ?? 'convenience';
+            
+            if (empty($barcode)) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Barcode is required"
+                ]);
+                break;
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    p.product_id,
+                    p.product_name,
+                    p.barcode,
+                    p.category,
+                    b.brand,
+                    -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
+                    COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
+                    COALESCE(ss.srp, tbd.srp, p.srp) as srp,
+                    COALESCE(SUM(ss.available_quantity), 0) as available_quantity,
+                    COALESCE(SUM(ss.reserved_quantity), 0) as reserved_quantity,
+                    COALESCE(SUM(ss.total_quantity), 0) as total_quantity,
+                    p.status,
+                    s.supplier_name,
+                    p.expiration,
+                    l.location_name,
+                    ss.batch_reference,
+                    ss.expiration_date,
+                    tbd.srp as transfer_srp,
+                    tbd.expiration_date as transfer_expiration
+                FROM tbl_product p
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
+                WHERE l.location_name LIKE ? AND p.barcode = ?
+                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                HAVING available_quantity > 0
+                ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
+            ");
+            $stmt->execute(["%$location_name%", $barcode]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Normalize the response to match expected format
+            foreach ($rows as &$row) {
+                $row['quantity'] = $row['available_quantity'];
+            }
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $rows
+            ]);
+            break;
+            
+        case 'sync_transferred_products':
+            // Sync transferred products to stock summary
+            $location_name = $data['location_name'] ?? 'convenience';
+            
+            try {
+                // Get products that have been transferred but need SRP update
+                $stmt = $conn->prepare("
+                    SELECT 
+                        p.product_id,
+                        p.product_name,
+                        p.quantity,
+                        p.srp,
+                        p.batch_id,
+                        p.location_id,
+                        l.location_name,
+                        b.batch_reference,
+                        b.entry_date,
+                        b.entry_time,
+                        tbd.srp as transfer_srp,
+                        tbd.expiration_date as transfer_expiration
+                    FROM tbl_product p
+                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
+                    LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
+                    LEFT JOIN tbl_transfer_batch_details tbd ON tbd.batch_id = p.batch_id
+                    WHERE l.location_name LIKE ? 
+                    AND p.quantity > 0 
+                    AND p.status = 'active'
+                    ORDER BY COALESCE(tbd.expiration_date, p.expiration) ASC
+                ");
+                $stmt->execute(["%$location_name%"]);
+                $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                $synced_count = 0;
+                
+                foreach ($products as $product) {
+                    // Use transfer SRP if available, otherwise use product SRP
+                    $final_srp = $product['transfer_srp'] ?: $product['srp'];
+                    $final_expiration = $product['transfer_expiration'] ?: null;
+                    
+                    // Create stock movement record for sync
+                    $movementStmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements (
+                            product_id, batch_id, movement_type, quantity, 
+                            remaining_quantity, reference_no, notes, created_by
+                        ) VALUES (?, ?, 'SYNC', ?, ?, ?, ?, 'System Sync')
+                    ");
+                    
+                    $movementStmt->execute([
+                        $product['product_id'],
+                        $product['batch_id'],
+                        $product['quantity'],
+                        $product['quantity'],
+                        'SYNC-TRANSFER-' . $product['product_id'],
+                        'Synced transferred product - SRP: ' . $final_srp . ', Expiration: ' . $final_expiration
+                    ]);
+                    
+                    $synced_count++;
+                }
+                
+                echo json_encode([
+                    "success" => true,
+                    "message" => "Synced $synced_count transferred products to stock summary",
+                    "synced_count" => $synced_count
+                ]);
+                
+            } catch (Exception $e) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Sync failed: " . $e->getMessage()
+                ]);
             }
             break;
             

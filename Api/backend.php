@@ -149,12 +149,220 @@ error_log("Processing action: " . $action . " from " . $_SERVER['REMOTE_ADDR']);
 
 try {
     /**
- * Helper function to get data from separate API files
- */
-function getDashboardDataFromAPI($apiFile, $action, $params = []) {
+     * Direct database queries for dashboard chart data
+     */
+    function getSalesChartDataDirect($conn, $days = 7) {
+        try {
+            $sql = "
+                SELECT 
+                    DATE(pt.date) as sales_date,
+                    COALESCE(SUM(psh.total_amount), 0) as daily_sales_amount
+                FROM tbl_pos_transaction pt
+                JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
+                WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                GROUP BY DATE(pt.date)
+                ORDER BY DATE(pt.date) DESC
+            ";
+            
+            $stmt = $conn->prepare($sql);
+            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $chartData = [];
+            foreach ($results as $row) {
+                $chartData[] = [
+                    'day' => date('d', strtotime($row['sales_date'])),
+                    'totalSales' => (float)$row['daily_sales_amount']
+                ];
+            }
+            
+            return ['data' => $chartData];
+        } catch (Exception $e) {
+            return ['data' => []];
+        }
+    }
+
+    function getTransferChartDataDirect($conn, $days = 7) {
+        try {
+            $sql = "
+                SELECT 
+                    DATE(date) as transfer_date,
+                    COUNT(*) as daily_transfer_count
+                FROM tbl_transfer_header
+                WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                GROUP BY DATE(date)
+                ORDER BY DATE(date) DESC
+            ";
+            
+            $stmt = $conn->prepare($sql);
+            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $chartData = [];
+            foreach ($results as $row) {
+                $chartData[] = [
+                    'day' => date('d', strtotime($row['transfer_date'])),
+                    'totalTransfer' => (int)$row['daily_transfer_count']
+                ];
+            }
+            
+            return ['data' => $chartData];
+        } catch (Exception $e) {
+            return ['data' => []];
+        }
+    }
+
+    function getReturnChartDataDirect($conn, $days = 7) {
+        try {
+            $sql = "
+                SELECT 
+                    DATE(pr.created_at) as return_date,
+                    COALESCE(SUM(pr.total_refund), 0) as daily_return_amount
+                FROM tbl_pos_returns pr
+                WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                AND pr.status IN ('pending', 'approved', 'completed')
+                GROUP BY DATE(pr.created_at)
+                ORDER BY DATE(pr.created_at) DESC
+            ";
+            
+            $stmt = $conn->prepare($sql);
+            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $chartData = [];
+            foreach ($results as $row) {
+                $chartData[] = [
+                    'day' => date('d', strtotime($row['return_date'])),
+                    'totalReturn' => (float)$row['daily_return_amount']
+                ];
+            }
+            
+            return ['data' => $chartData];
+        } catch (Exception $e) {
+            return ['data' => []];
+        }
+    }
+
+    function getTopSellingProductsDirect($conn, $limit = 5) {
+        try {
+            $sql = "
+                SELECT 
+                    p.product_name,
+                    SUM(psd.quantity) as total_quantity_sold,
+                    SUM(psd.quantity * psd.price) as total_sales_amount,
+                    p.status,
+                    p.stock_status
+                FROM tbl_pos_sales_details psd
+                JOIN tbl_pos_sales_header psh ON psd.sales_header_id = psh.sales_header_id
+                JOIN tbl_product p ON psd.product_id = p.product_id
+                WHERE p.status IS NULL OR p.status <> 'archived'
+                GROUP BY p.product_id, p.product_name, p.status, p.stock_status
+                ORDER BY total_quantity_sold DESC
+                LIMIT :limit
+            ";
+            
+            $stmt = $conn->prepare($sql);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $topProducts = [];
+            foreach ($results as $row) {
+                $topProducts[] = [
+                    'name' => $row['product_name'],
+                    'quantity' => (int)$row['total_quantity_sold'],
+                    'sales' => number_format((float)$row['total_sales_amount'], 2),
+                    'status' => $row['stock_status'] === 'in stock' ? 'In Stock' : 'Out of Stock'
+                ];
+            }
+            
+            return $topProducts;
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    function getInventoryAlertsDirect($conn) {
+        try {
+            $sql = "
+                SELECT 
+                    p.product_name,
+                    p.quantity,
+                    p.stock_status,
+                    l.location_name,
+                    CASE 
+                        WHEN p.quantity = 0 THEN 'Out of Stock'
+                        WHEN p.stock_status = 'out of stock' THEN 'Stock Out'
+                        WHEN p.quantity <= 10 THEN 'Low Stock'
+                        ELSE 'In Stock'
+                    END as alert_type
+                FROM tbl_product p
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                WHERE (p.status IS NULL OR p.status <> 'archived')
+                AND (p.quantity = 0 OR p.quantity <= 10 OR p.stock_status = 'out of stock')
+                ORDER BY 
+                    CASE 
+                        WHEN p.quantity = 0 THEN 1
+                        WHEN p.stock_status = 'out of stock' THEN 2
+                        WHEN p.quantity <= 10 THEN 3
+                        ELSE 4
+                    END,
+                    p.quantity ASC
+                LIMIT 10
+            ";
+            
+            $stmt = $conn->prepare($sql);
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $alerts = [];
+            foreach ($results as $row) {
+                $alerts[] = [
+                    'name' => $row['product_name'],
+                    'quantity' => (int)$row['quantity'],
+                    'location' => $row['location_name'] ?? 'Unknown',
+                    'alert_type' => $row['alert_type'],
+                    'alerts' => $row['alert_type']
+                ];
+            }
+            
+            return $alerts;
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Helper function to get data from separate API files
+     */
+    function getDashboardDataFromAPI($apiFile, $action, $params = []) {
     try {
-        // For now, return empty arrays to avoid complex API calling
-        // This prevents the dashboard from crashing while we fix the main issues
+        // Prepare request data
+        $requestData = array_merge(['action' => $action], $params);
+        
+        // Make API call
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, 'http://localhost/caps2e2/Api/' . $apiFile);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestData));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode === 200 && $response) {
+            $result = json_decode($response, true);
+            if ($result && isset($result['success']) && $result['success']) {
+                return $result['data'] ?? [];
+            }
+        }
+        
         return [];
         
     } catch (Exception $e) {
@@ -3991,7 +4199,8 @@ case 'get_products_oldest_batch_for_transfer':
             ]);
         }
         break;
-    case 'get_pos_inventory':
+    // Removed duplicate get_pos_inventory case - using sales_api.php instead
+    /*
         try {
             $location_id = $data['location_id'] ?? 0;
             $search = $data['search'] ?? '';
@@ -4016,7 +4225,7 @@ case 'get_products_oldest_batch_for_transfer':
             
             $whereClause = implode(" AND ", $whereConditions);
             
-            // Get products with real-time stock levels including transfers
+            // Get products with real-time stock levels from transfer batch details
             $stmt = $conn->prepare("
                 SELECT 
                     p.product_id,
@@ -4024,9 +4233,26 @@ case 'get_products_oldest_batch_for_transfer':
                     p.category,
                     p.barcode,
                     p.description,
-                    p.quantity,
-                    p.srp,
-                    p.stock_status,
+                    COALESCE(SUM(tbd.quantity), 0) as quantity,
+                    -- Prioritize SRP from earliest expiring batch
+                    COALESCE(
+                        (SELECT tbd2.srp 
+                         FROM tbl_transfer_batch_details tbd2
+                         WHERE tbd2.product_id = p.product_id 
+                         AND tbd2.location_id = ?
+                         AND tbd2.quantity > 0
+                         ORDER BY 
+                            CASE WHEN tbd2.expiration_date IS NULL THEN 1 ELSE 0 END,
+                            tbd2.expiration_date ASC,
+                            tbd2.id ASC
+                         LIMIT 1),
+                        p.srp, 0
+                    ) as srp,
+                    CASE 
+                        WHEN COALESCE(SUM(tbd.quantity), 0) <= 0 THEN 'out of stock'
+                        WHEN COALESCE(SUM(tbd.quantity), 0) <= 10 THEN 'low stock'
+                        ELSE 'in stock'
+                    END as stock_status,
                     p.status,
                     COALESCE(b.brand, '') as brand,
                     COALESCE(s.supplier_name, '') as supplier_name,
@@ -4034,13 +4260,14 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
-                WHERE $whereClause
-                AND p.status = 'active'
-                AND p.quantity > 0
+                LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
+                WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL)
+                GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.status, b.brand, s.supplier_name
+                HAVING COALESCE(SUM(tbd.quantity), 0) > 0
                 ORDER BY p.product_name ASC
             ");
             
-            $stmt->execute($params);
+            $stmt->execute(array_merge([$location_id, $location_id], $params));
             $regularProducts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // Get transferred products with current available quantities
@@ -4134,6 +4361,7 @@ case 'get_products_oldest_batch_for_transfer':
             ]);
         }
         break;
+    */
     case 'get_quantity_history':
         try {
             $product_id = $data['product_id'] ?? 0;
@@ -8511,7 +8739,33 @@ case 'get_products_oldest_batch_for_transfer':
             $returnData = getDashboardDataFromAPI('dashboard_return_api.php', 'get_total_return');
             $paymentMethodsData = getDashboardDataFromAPI('dashboard_sales_api.php', 'get_payment_methods');
             
-            // Build summary cards from real data
+            // If helper APIs returned empty, compute simple fallbacks directly from DB
+            if (empty($transferData)) {
+                try {
+                    $stmt = $conn->prepare("SELECT COUNT(*) AS total FROM tbl_transfer_header");
+                    $stmt->execute();
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0];
+                    $transferData = [
+                        'total_transfer' => (string)($row['total'] ?? 0),
+                        'trend' => '0.0%',
+                        'trend_direction' => 'up',
+                    ];
+
+                    // summary over last 10 days
+                    $sumStmt = $conn->prepare("SELECT DATE_FORMAT(date, '%d') AS day, COUNT(*) AS totalTransfer FROM tbl_transfer_header WHERE date >= DATE_SUB(CURDATE(), INTERVAL 10 DAY) GROUP BY DATE(date) ORDER BY DATE(date)");
+                    $sumStmt->execute();
+                    $transferChartRows = $sumStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                    $transferChartData = [ 'data' => array_map(function($r){ return [ 'day' => $r['day'], 'totalTransfer' => (float)$r['totalTransfer'] ]; }, $transferChartRows) ];
+                } catch (Exception $e) {
+                    error_log('Transfer fallback failed: ' . $e->getMessage());
+                }
+            }
+
+            if (empty($salesData)) { $salesData = ['total_sales' => '0.00', 'trend' => '0.0%', 'trend_direction' => 'up']; }
+            if (empty($returnData)) { $returnData = ['total_return' => '0.00', 'trend' => '0.0%', 'trend_direction' => 'up']; }
+            if (empty($paymentMethodsData)) { $paymentMethodsData = ['data' => []]; }
+
+            // Build summary cards from real data or fallbacks
             $summaryCards = [
                 [
                     'title' => 'Total Transfer',
@@ -8533,10 +8787,16 @@ case 'get_products_oldest_batch_for_transfer':
                 ]
             ];
 
-            // Get chart data
-            $salesChartData = getDashboardDataFromAPI('dashboard_sales_api.php', 'get_sales_summary', ['days' => 7]);
-            $transferChartData = getDashboardDataFromAPI('dashboard_transfer_api.php', 'get_transfer_summary', ['days' => 7]);
-            $returnChartData = getDashboardDataFromAPI('dashboard_return_api.php', 'get_return_summary', ['days' => 7]);
+            // Get chart data - use direct database queries instead of API calls
+            $salesChartData = getSalesChartDataDirect($conn, 7);
+            $transferChartData = isset($transferChartData) ? $transferChartData : getTransferChartDataDirect($conn, 7);
+            $returnChartData = getReturnChartDataDirect($conn, 7);
+            
+            // Get top selling products - call function directly
+            $topProductsData = getTopSellingProductsDirect($conn, 5);
+            
+            // Get inventory alerts
+            $inventoryAlertsData = getInventoryAlertsDirect($conn);
             
             // Combine chart data
             $combinedChartData = [];
@@ -8583,18 +8843,8 @@ case 'get_products_oldest_batch_for_transfer':
                 ];
             }
 
-            // Get top returned products for inventory alerts
-            $topReturnedProducts = getDashboardDataFromAPI('dashboard_return_api.php', 'get_top_returned_products', ['days' => 30, 'limit' => 5]);
-            $inventoryAlerts = [];
-            
-            if (isset($topReturnedProducts['data'])) {
-                foreach ($topReturnedProducts['data'] as $product) {
-                    $inventoryAlerts[] = [
-                        'name' => $product['product_name'],
-                        'alerts' => $product['return_count']
-                    ];
-                }
-            }
+            // Use the inventory alerts data we already fetched
+            $inventoryAlerts = $inventoryAlertsData;
 
             echo json_encode([
                 'success' => true,
@@ -8602,7 +8852,7 @@ case 'get_products_oldest_batch_for_transfer':
                     'summaryCards' => $summaryCards,
                     'salesData' => $combinedChartData,
                     'paymentMethods' => $paymentMethodsData['data'] ?? [],
-                    'topProducts' => [], // Will be populated from actual sales data
+                    'topProducts' => $topProductsData,
                     'inventoryAlerts' => $inventoryAlerts,
                     'employeePerformance' => [] // Will be populated from actual employee data
                 ]
@@ -8614,6 +8864,26 @@ case 'get_products_oldest_batch_for_transfer':
                 'message' => 'Error fetching dashboard data: ' . $e->getMessage()
             ]);
         }
+        break;
+
+    case 'get_admin_employee_info':
+        require_once __DIR__ . '/modules/admin.php';
+        handle_get_admin_employee_info($conn, $data);
+        break;
+
+    case 'update_admin_name':
+        require_once __DIR__ . '/modules/admin.php';
+        handle_update_admin_name($conn, $data);
+        break;
+
+    case 'update_admin_employee_info':
+        require_once __DIR__ . '/modules/admin.php';
+        handle_update_admin_employee_info($conn, $data);
+        break;
+
+    case 'change_admin_password':
+        require_once __DIR__ . '/modules/admin.php';
+        handle_change_admin_password($conn, $data);
         break;
 
 } // End of switch statement

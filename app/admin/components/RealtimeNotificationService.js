@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useNotification } from './NotificationContext';
 
-const API_BASE_URL = "/api/proxy";
+const API_BASE_URL = "http://localhost/caps2e2/Api/backend.php";
 
 const RealtimeNotificationService = () => {
   const { 
@@ -20,13 +20,22 @@ const RealtimeNotificationService = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          endpoint: 'backend.php',
           action: 'check_new_sales',
           since: lastCheckRef.current.toISOString()
         })
       });
 
-      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      let result;
+      try {
+        result = await response.json();
+      } catch (e) {
+        console.warn('Non-JSON response when checking new sales');
+        return;
+      }
       
       if (result.success && result.data) {
         const { newSales, newCashierActivity } = result.data;

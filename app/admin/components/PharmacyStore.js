@@ -1047,7 +1047,7 @@ const PharmacyStore = () => {
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transfer Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
@@ -1068,7 +1068,7 @@ const PharmacyStore = () => {
                         quantityHistoryData.map((batch, index) => {
                           const expiryDate = batch.expiration_date && batch.expiration_date !== 'null' ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A';
                           const quantityUsed = batch.batch_quantity || batch.quantity || 0;
-                          const unitCost = batch.unit_cost || batch.srp || 0;
+                          const batchSrp = batch.batch_srp || batch.srp || 0;
                           const batchReference = batch.batch_reference || `BR-${batch.batch_id || index + 1}`;
                           const isConsumed = quantityUsed > 0;
                           const isOldest = index === 0;
@@ -1108,7 +1108,7 @@ const PharmacyStore = () => {
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                                ₱{Number.parseFloat(unitCost).toFixed(2)}
+                                ₱{Number.parseFloat(batchSrp).toFixed(2)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 {transferDate}

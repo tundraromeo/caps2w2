@@ -16,6 +16,7 @@ const API_CONFIG = {
     TRANSFER: 'transfer_api.php',
     CONVENIENCE: 'convenience_store_api.php',
     PHARMACY: 'pharmacy_api.php',
+    get_pharmacy_products_fifo: 'pharmacy_api.php',
     PURCHASE_ORDER: 'purchase_order_api_simple_clean.php',
     STOCK_ADJUSTMENT: 'stock_adjustment_consolidated.php',
     STOCK_SUMMARY: 'stock_summary_api.php',
@@ -407,13 +408,14 @@ export const getApiEndpointForAction = (action) => {
     get_warehouse_kpis: 'backend.php',
     // Convenience Store Actions
     get_locations: 'backend.php',
-    get_convenience_products: 'convenience_store_api.php',
+    get_convenience_products_fifo: 'convenience_store_api.php',
     get_products_by_location_name: 'backend.php',
     delete_product: 'backend.php',
     get_convenience_batch_details: 'convenience_store_api.php',
     get_fifo_stock: 'backend.php',
     get_transfer_batch_details: 'backend.php',
     get_batch_transfers_by_location: 'convenience_store_api.php',
+    sync_transferred_products: 'convenience_store_api.php',
     // Add more mappings as needed
   };
   return actionMap[action] || 'backend.php'; // fallback to backend.php for all unmapped actions

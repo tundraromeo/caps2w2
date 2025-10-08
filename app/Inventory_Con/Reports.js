@@ -883,28 +883,28 @@ const Reports = () => {
   // Theme-based styles
   const themeStyles = {
     container: {
-      backgroundColor: isDarkMode ? 'var(--inventory-bg-primary)' : 'var(--inventory-bg-primary)',
-      color: isDarkMode ? 'var(--inventory-text-primary)' : 'var(--inventory-text-primary)'
+      backgroundColor: isDarkMode ? '#1e293b' : '#f8fafc',
+      color: isDarkMode ? '#f1f5f9' : '#1e293b'
     },
     card: {
-      backgroundColor: isDarkMode ? 'var(--inventory-bg-card)' : 'var(--inventory-bg-card)',
-      borderColor: isDarkMode ? 'var(--inventory-border)' : 'var(--inventory-border)',
-      boxShadow: isDarkMode ? 'var(--inventory-shadow)' : 'var(--inventory-shadow)'
+      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
+      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
+      boxShadow: isDarkMode ? '0 4px 6px -1px rgba(0, 0, 0, 0.3)' : '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
     },
     text: {
-      primary: isDarkMode ? 'var(--inventory-text-primary)' : 'var(--inventory-text-primary)',
-      secondary: isDarkMode ? 'var(--inventory-text-secondary)' : 'var(--inventory-text-secondary)',
-      muted: isDarkMode ? 'var(--inventory-text-muted)' : 'var(--inventory-text-muted)'
+      primary: isDarkMode ? '#f1f5f9' : '#1e293b',
+      secondary: isDarkMode ? '#cbd5e1' : '#64748b',
+      muted: isDarkMode ? '#94a3b8' : '#94a3b8'
     },
     border: {
-      color: isDarkMode ? 'var(--inventory-border)' : 'var(--inventory-border)',
-      light: isDarkMode ? 'var(--inventory-border-light)' : 'var(--inventory-border-light)'
+      color: isDarkMode ? '#475569' : '#e2e8f0',
+      light: isDarkMode ? '#64748b' : '#f1f5f9'
     },
     input: {
-      backgroundColor: isDarkMode ? 'var(--inventory-bg-card)' : 'var(--inventory-bg-card)',
-      borderColor: isDarkMode ? 'var(--inventory-border)' : 'var(--inventory-border)',
-      color: isDarkMode ? 'var(--inventory-text-primary)' : 'var(--inventory-text-primary)',
-      placeholderColor: isDarkMode ? 'var(--inventory-text-muted)' : 'var(--inventory-text-muted)'
+      backgroundColor: isDarkMode ? '#334155' : '#ffffff',
+      borderColor: isDarkMode ? '#475569' : '#e2e8f0',
+      color: isDarkMode ? '#f1f5f9' : '#1e293b',
+      placeholderColor: isDarkMode ? '#94a3b8' : '#94a3b8'
     }
   };
 
@@ -923,7 +923,11 @@ const Reports = () => {
                     <FaBell className="h-6 w-6 text-orange-500 animate-pulse" />
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></div>
                   </div>
-                  <span className="text-sm font-medium text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/20 px-3 py-1 rounded-full">
+                    <span className={`text-sm font-medium px-3 py-1 rounded-full ${
+                      isDarkMode 
+                        ? 'text-orange-300 bg-orange-900/30 border border-orange-700' 
+                        : 'text-orange-600 bg-orange-100 border border-orange-300'
+                    }`}>
                     System Updates Available
                   </span>
                   <button
@@ -932,7 +936,11 @@ const Reports = () => {
                       clearSystemUpdates();
                       toast.success('Notifications cleared');
                     }}
-                    className="ml-2 p-1 text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-200 transition-colors"
+                      className={`ml-2 p-1 transition-colors ${
+                        isDarkMode 
+                          ? 'text-orange-300 hover:text-orange-200' 
+                          : 'text-orange-600 hover:text-orange-800'
+                      }`}
                     title="Clear notifications"
                   >
                     <FaTimes className="h-4 w-4" />
@@ -944,27 +952,6 @@ const Reports = () => {
           </div>
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={() => {
-              fetchReportsData(true);
-              setLastRefresh(new Date());
-            }}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
-          >
-            <FaChartBar className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            {isLoading ? 'Refreshing...' : 'Refresh'}
-          </button>
-          <select
-            value={refreshInterval}
-            onChange={(e) => setRefreshInterval(parseInt(e.target.value))}
-            className="px-3 py-2 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-md text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value={10000}>10 seconds</option>
-            <option value={30000}>30 seconds</option>
-            <option value={60000}>1 minute</option>
-            <option value={300000}>5 minutes</option>
-          </select>
           <button 
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
@@ -984,36 +971,41 @@ const Reports = () => {
             <FaFileAlt className="h-4 w-4" />
             Combine Reports
           </button>
-          <button 
-            onClick={() => handleGenerateReport('inventory_summary')}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 text-white rounded-md disabled:opacity-50 transition-colors"
-            style={{ backgroundColor: theme.colors.accent }}
-          >
-            <FaChartBar className="h-4 w-4" />
-            {isLoading ? 'Generating...' : 'Generate Report'}
-          </button>
         </div>
       </div>
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-purple-50 dark:from-gray-900/20 dark:to-purple-900/20 rounded-xl border border-gray-200 dark:border-gray-800">
+      <div className={`flex items-center justify-between p-4 rounded-xl border ${
+        isDarkMode 
+          ? 'bg-gradient-to-r from-slate-800/50 to-purple-900/20 border-slate-700' 
+          : 'bg-gradient-to-r from-gray-50 to-purple-50 border-gray-200'
+      }`}>
         <div className="flex items-center gap-3">
           <div className={`w-3 h-3 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
-          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          <span className={`text-sm font-medium ${
+            isDarkMode ? 'text-slate-200' : 'text-slate-700'
+          }`}>
             {autoRefresh ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}
           </span>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className={`text-xs ${
+            isDarkMode ? 'text-slate-400' : 'text-slate-500'
+          }`}>
             (Every {refreshInterval / 1000}s)
           </span>
           {isLoading && (
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+            <div className={`flex items-center gap-2 ${
+              isDarkMode ? 'text-slate-400' : 'text-gray-600'
+            }`}>
+              <div className={`animate-spin rounded-full h-4 w-4 border-b-2 ${
+                isDarkMode ? 'border-slate-400' : 'border-gray-600'
+              }`}></div>
               <span className="text-xs font-medium">Updating...</span>
             </div>
           )}
         </div>
-        <div className="text-sm text-slate-600 dark:text-slate-400">
+        <div className={`text-sm ${
+          isDarkMode ? 'text-slate-400' : 'text-slate-600'
+        }`}>
           Last updated: {lastRefresh.toLocaleTimeString()}
         </div>
       </div>
@@ -1093,7 +1085,11 @@ const Reports = () => {
 
       {/* Category Distribution */}
       {topCategories.length > 0 && (
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 p-8 shadow-xl border border-slate-200 dark:border-slate-700">
+        <div className={`relative overflow-hidden rounded-2xl p-8 shadow-xl border ${
+          isDarkMode 
+            ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700' 
+            : 'bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200'
+        }`}>
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
           <div className="relative">
             <div className="flex items-center gap-4 mb-8">
@@ -1101,8 +1097,12 @@ const Reports = () => {
                 <PieChart className="h-6 w-6 text-white" />
           </div>
               <div>
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-white">Top Categories Distribution</h3>
-                <p className="text-slate-600 dark:text-slate-300 text-sm">Product category breakdown</p>
+                <h3 className={`text-2xl font-bold ${
+                  isDarkMode ? 'text-white' : 'text-slate-800'
+                }`}>Top Categories Distribution</h3>
+                <p className={`text-sm ${
+                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                }`}>Product category breakdown</p>
               </div>
             </div>
             <div className="space-y-6">
@@ -1111,17 +1111,27 @@ const Reports = () => {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <div className={`w-4 h-4 rounded-full ${categoryColors[index % categoryColors.length]} shadow-sm`}></div>
-                      <span className="font-semibold text-slate-800 dark:text-white">{category.category_name}</span>
+                      <span className={`font-semibold ${
+                        isDarkMode ? 'text-white' : 'text-slate-800'
+                      }`}>{category.category_name}</span>
                 </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-slate-600 dark:text-slate-300">{category.product_count} products</span>
-                      <span className="font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-700 px-3 py-1 rounded-full text-sm">
+                      <span className={`text-sm ${
+                        isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                      }`}>{category.product_count} products</span>
+                      <span className={`font-bold px-3 py-1 rounded-full text-sm ${
+                        isDarkMode 
+                          ? 'text-white bg-slate-700 border border-slate-600' 
+                          : 'text-slate-800 bg-slate-100 border border-slate-300'
+                      }`}>
                         {category.percentage}%
                       </span>
                     </div>
                   </div>
                   <div className="relative">
-                    <div className="w-full rounded-full h-3 bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <div className={`w-full rounded-full h-3 overflow-hidden ${
+                      isDarkMode ? 'bg-slate-700' : 'bg-slate-200'
+                    }`}>
                       <div 
                         className={`h-3 rounded-full transition-all duration-1000 ease-out ${categoryColors[index % categoryColors.length]} shadow-sm`}
                       style={{ width: `${category.percentage}%` }}
@@ -1136,7 +1146,11 @@ const Reports = () => {
       )}
 
       {/* Filters and Search */}
-      <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-8 shadow-xl border border-slate-200 dark:border-slate-700">
+      <div className={`relative overflow-hidden rounded-2xl p-8 shadow-xl border ${
+        isDarkMode 
+          ? 'bg-slate-800 border-slate-700' 
+          : 'bg-white border-slate-200'
+      }`}>
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
             <div className="relative">
           <div className="flex items-center gap-4 mb-6">
@@ -1144,30 +1158,48 @@ const Reports = () => {
               <FaFilter className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-800 dark:text-white">Search & Filter Reports</h3>
-              <p className="text-slate-600 dark:text-slate-300 text-sm">Find specific reports quickly</p>
+              <h3 className={`text-xl font-bold ${
+                isDarkMode ? 'text-white' : 'text-slate-800'
+              }`}>Search & Filter Reports</h3>
+              <p className={`text-sm ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+              }`}>Find specific reports quickly</p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search Reports</label>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}>Search Reports</label>
               <div className="relative group">
-                <FaFilter className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-gray-500 transition-colors" />
+                <FaFilter className={`absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 transition-colors ${
+                  isDarkMode ? 'text-slate-400 group-focus-within:text-slate-300' : 'text-slate-400 group-focus-within:text-gray-500'
+                }`} />
               <input
                 type="text"
                   placeholder="Search by title, type, or description..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-slate-800 dark:text-white placeholder-slate-400"
+                  className={`w-full pl-12 pr-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+                    isDarkMode 
+                      ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400' 
+                      : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400'
+                  }`}
               />
             </div>
           </div>
           <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Report Type</label>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}>Report Type</label>
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-slate-800 dark:text-white"
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+                  isDarkMode 
+                    ? 'bg-slate-700 border-slate-600 text-white' 
+                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                }`}
             >
               {reportTypes.map((type) => (
                 <option key={type} value={type}>
@@ -1177,11 +1209,17 @@ const Reports = () => {
             </select>
           </div>
           <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date Range</label>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+              }`}>Date Range</label>
             <select
               value={selectedDateRange}
               onChange={(e) => setSelectedDateRange(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-slate-800 dark:text-white"
+                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+                  isDarkMode 
+                    ? 'bg-slate-700 border-slate-600 text-white' 
+                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                }`}
             >
               {dateRanges.map((range) => (
                 <option key={range} value={range}>
@@ -1198,23 +1236,37 @@ const Reports = () => {
       </div>
 
       {/* Reports Table */}
-      <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700">
+      <div className={`relative overflow-hidden rounded-2xl shadow-xl border ${
+        isDarkMode 
+          ? 'bg-slate-800 border-slate-700' 
+          : 'bg-white border-slate-200'
+      }`}>
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
         <div className="relative">
-          <div className="px-8 py-6 border-b border-slate-200 dark:border-slate-700">
+          <div className={`px-8 py-6 border-b ${
+            isDarkMode ? 'border-slate-700' : 'border-slate-200'
+          }`}>
           <div className="flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
                   <FaFileAlt className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-800 dark:text-white">Generated Reports</h3>
-                  <p className="text-slate-600 dark:text-slate-300 text-sm">Manage and view all your reports</p>
+                  <h3 className={`text-2xl font-bold ${
+                    isDarkMode ? 'text-white' : 'text-slate-800'
+                  }`}>Generated Reports</h3>
+                  <p className={`text-sm ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>Manage and view all your reports</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-full">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                <div className={`px-4 py-2 rounded-full ${
+                  isDarkMode ? 'bg-slate-700' : 'bg-slate-100'
+                }`}>
+                  <span className={`text-sm font-medium ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                  }`}>
               {filteredReports.length} reports found
                   </span>
                 </div>
@@ -1223,42 +1275,70 @@ const Reports = () => {
         </div>
         <div className="overflow-x-auto max-h-96">
             <table className="w-full min-w-max">
-              <thead className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800 border-b border-slate-200 dark:border-slate-600 sticky top-0 z-10">
+              <thead className={`bg-gradient-to-r border-b sticky top-0 z-10 ${
+                isDarkMode 
+                  ? 'from-slate-700 to-slate-800 border-slate-600' 
+                  : 'from-slate-50 to-slate-100 border-slate-200'
+              }`}>
               <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   REPORT TITLE
                 </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   TYPE
                 </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   GENERATED BY
                 </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   DATE & TIME
                 </th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   STATUS
                 </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   FILE INFO
                 </th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className={`px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>
                   ACTIONS
                 </th>
               </tr>
             </thead>
-              <tbody className="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
+              <tbody className={`divide-y ${
+                isDarkMode 
+                  ? 'bg-slate-800 divide-slate-700' 
+                  : 'bg-white divide-slate-200'
+              }`}>
                 {items.map((item, index) => (
-                  <tr key={item.movement_id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all duration-200 group">
+                  <tr key={item.movement_id} className={`transition-all duration-200 group ${
+                    isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'
+                  }`}>
                     <td className="px-6 py-5">
                       <div className="flex items-start gap-3">
                         <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-sm group-hover:shadow-md transition-shadow">
                           <FaFileAlt className="h-4 w-4 text-white" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-semibold text-slate-800 dark:text-white truncate">{item.title}</div>
-                          <div className="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs">{item.description}</div>
+                          <div className={`text-sm font-semibold truncate ${
+                            isDarkMode ? 'text-white' : 'text-slate-800'
+                          }`}>{item.title}</div>
+                          <div className={`text-sm truncate max-w-xs ${
+                            isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                          }`}>{item.description}</div>
                         </div>
                     </div>
                   </td>
@@ -1273,13 +1353,19 @@ const Reports = () => {
                         <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center">
                           <span className="text-white text-xs font-bold">{item.generatedBy?.charAt(0) || 'A'}</span>
                         </div>
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.generatedBy}</span>
+                        <span className={`text-sm font-medium ${
+                          isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                        }`}>{item.generatedBy}</span>
                       </div>
                   </td>
                     <td className="px-6 py-5">
                       <div className="text-sm">
-                        <div className="font-semibold text-slate-800 dark:text-white">{item.date}</div>
-                        <div className="text-slate-500 dark:text-slate-400">{item.time}</div>
+                        <div className={`font-semibold ${
+                          isDarkMode ? 'text-white' : 'text-slate-800'
+                        }`}>{item.date}</div>
+                        <div className={`${
+                          isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                        }`}>{item.time}</div>
                     </div>
                   </td>
                     <td className="px-6 py-5 text-center">
@@ -1294,29 +1380,45 @@ const Reports = () => {
                   </td>
                     <td className="px-6 py-5">
                       <div className="text-sm">
-                        <div className="font-semibold text-slate-800 dark:text-white">{item.format}</div>
-                        <div className="text-slate-500 dark:text-slate-400">{item.fileSize}</div>
+                        <div className={`font-semibold ${
+                          isDarkMode ? 'text-white' : 'text-slate-800'
+                        }`}>{item.format}</div>
+                        <div className={`${
+                          isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                        }`}>{item.fileSize}</div>
                     </div>
                   </td>
                     <td className="px-6 py-5 text-center">
                       <div className="flex justify-center gap-1">
                       <button 
                         onClick={() => handleViewDetails(item)}
-                          className="p-2 text-gray-500 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-900/20 rounded-lg transition-all duration-200 group"
+                          className={`p-2 rounded-lg transition-all duration-200 group ${
+                            isDarkMode 
+                              ? 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50' 
+                              : 'text-gray-500 hover:text-gray-600 hover:bg-gray-50'
+                          }`}
                           title="View Details"
                       >
                           <FaEye className="h-4 w-4 group-hover:scale-110 transition-transform" />
                       </button>
                       <button 
                         onClick={() => handleDownload(item)}
-                          className="p-2 text-green-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-all duration-200 group"
+                          className={`p-2 rounded-lg transition-all duration-200 group ${
+                            isDarkMode 
+                              ? 'text-green-400 hover:text-green-300 hover:bg-green-900/20' 
+                              : 'text-green-500 hover:text-green-600 hover:bg-green-50'
+                          }`}
                           title="Download"
                       >
                           <FaDownload className="h-4 w-4 group-hover:scale-110 transition-transform" />
                       </button>
                       <button 
                         onClick={() => handlePrint(item)}
-                          className="p-2 text-purple-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-all duration-200 group"
+                          className={`p-2 rounded-lg transition-all duration-200 group ${
+                            isDarkMode 
+                              ? 'text-purple-400 hover:text-purple-300 hover:bg-purple-900/20' 
+                              : 'text-purple-500 hover:text-purple-600 hover:bg-purple-50'
+                          }`}
                           title="Print"
                       >
                           <FaPrint className="h-4 w-4 group-hover:scale-110 transition-transform" />
@@ -1331,16 +1433,24 @@ const Reports = () => {
 
         {/* Pagination */}
         {pages > 1 && (
-            <div className="px-8 py-6 border-t border-slate-200 dark:border-slate-700">
+            <div className={`px-8 py-6 border-t ${
+              isDarkMode ? 'border-slate-700' : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
-                <div className="text-sm text-slate-600 dark:text-slate-400">
+                <div className={`text-sm ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-600'
+                }`}>
                   Showing {((page - 1) * rowsPerPage) + 1} to {Math.min(page * rowsPerPage, filteredReports.length)} of {filteredReports.length} reports
                 </div>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setPage(Math.max(1, page - 1))}
                 disabled={page === 1}
-                    className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${
+                      isDarkMode 
+                        ? 'text-slate-300 bg-slate-700 border border-slate-600 hover:bg-slate-600' 
+                        : 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50'
+                    }`}
               >
                 Previous
               </button>
@@ -1354,10 +1464,11 @@ const Reports = () => {
                           onClick={() => setPage(pageNum)}
                           className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
                             pageNum === page
-                              ? 'text-white shadow-lg'
-                              : 'text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600'
+                              ? 'text-white shadow-lg bg-blue-600'
+                              : isDarkMode 
+                                ? 'text-slate-300 bg-slate-700 border border-slate-600 hover:bg-slate-600' 
+                                : 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50'
                           }`}
-                          style={pageNum === page ? { backgroundColor: theme.colors.accent } : {}}
                         >
                           {pageNum}
                         </button>
@@ -1367,7 +1478,11 @@ const Reports = () => {
               <button
                 onClick={() => setPage(Math.min(pages, page + 1))}
                 disabled={page === pages}
-                    className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ${
+                      isDarkMode 
+                        ? 'text-slate-300 bg-slate-700 border border-slate-600 hover:bg-slate-600' 
+                        : 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50'
+                    }`}
               >
                 Next
               </button>
@@ -1381,164 +1496,319 @@ const Reports = () => {
 
       {/* Report Details Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-gray-200 bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className={`rounded-2xl shadow-2xl max-w-3xl w-full max-h-[40vh] overflow-hidden border-2 ${
+            isDarkMode 
+              ? 'bg-slate-800 border-blue-500 shadow-blue-500/20' 
+              : 'bg-white border-blue-600 shadow-blue-600/20'
+          }`}>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <div className={`px-6 py-4 border-b ${
+              isDarkMode ? 'border-slate-700' : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                  <h2 className={`text-xl font-semibold ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>
                     {selectedReport?.title}
                   </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                  <p className={`text-sm mt-1 ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-600'
+                  }`}>
                     Report Details - {selectedReport?.type}
                   </p>
                 </div>
                 <button 
                   onClick={() => setShowModal(false)}
-                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                  className={`p-2 rounded-lg transition-colors duration-200 ${
+                    isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-100'
+                  }`}
                 >
-                  <FaTimes className="h-5 w-5 text-slate-500" />
+                  <FaTimes className={`h-5 w-5 ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`} />
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+            <div className="p-6 overflow-y-auto max-h-[calc(40vh-140px)]">
               {isLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-500"></div>
-                  <span className="ml-3 text-slate-600 dark:text-slate-300">Loading report details...</span>
+                  <div className={`animate-spin rounded-full h-8 w-8 border-b-2 ${
+                    isDarkMode ? 'border-slate-400' : 'border-gray-500'
+                  }`}></div>
+                  <span className={`ml-3 ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                  }`}>Loading report details...</span>
                 </div>
               ) : (
                 <div className="space-y-6">
                   {/* Report Information */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-gray-50 dark:bg-gray-900/20 p-4 rounded-lg border border-gray-200 dark:border-gray-800">
+                    <div className={`p-4 rounded-lg border ${
+                      isDarkMode 
+                        ? 'bg-slate-700/50 border-slate-600' 
+                        : 'bg-gray-50 border-gray-200'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <FaInfoCircle className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                        <FaInfoCircle className={`h-5 w-5 ${
+                          isDarkMode ? 'text-slate-400' : 'text-gray-600'
+                        }`} />
                     <div>
-                          <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">Report Type</p>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedReport?.type}</p>
+                          <p className={`text-xs font-medium ${
+                            isDarkMode ? 'text-slate-400' : 'text-gray-600'
+                          }`}>Report Type</p>
+                          <p className={`text-sm font-semibold ${
+                            isDarkMode ? 'text-white' : 'text-slate-900'
+                          }`}>{selectedReport?.type}</p>
                         </div>
                         </div>
                     </div>
                     
-                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className={`p-4 rounded-lg border ${
+                      isDarkMode 
+                        ? 'bg-green-900/20 border-green-700' 
+                        : 'bg-green-50 border-green-200'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <FaCheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        <FaCheckCircle className={`h-5 w-5 ${
+                          isDarkMode ? 'text-green-400' : 'text-green-600'
+                        }`} />
                         <div>
-                          <p className="text-xs text-green-600 dark:text-green-400 font-medium">Status</p>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedReport?.status}</p>
+                          <p className={`text-xs font-medium ${
+                            isDarkMode ? 'text-green-400' : 'text-green-600'
+                          }`}>Status</p>
+                          <p className={`text-sm font-semibold ${
+                            isDarkMode ? 'text-white' : 'text-slate-900'
+                          }`}>{selectedReport?.status}</p>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <div className={`p-4 rounded-lg border ${
+                      isDarkMode 
+                        ? 'bg-purple-900/20 border-purple-700' 
+                        : 'bg-purple-50 border-purple-200'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <FaFileAlt className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                        <FaFileAlt className={`h-5 w-5 ${
+                          isDarkMode ? 'text-purple-400' : 'text-purple-600'
+                        }`} />
                     <div>
-                          <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">File Format</p>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedReport?.format}</p>
+                          <p className={`text-xs font-medium ${
+                            isDarkMode ? 'text-purple-400' : 'text-purple-600'
+                          }`}>File Format</p>
+                          <p className={`text-sm font-semibold ${
+                            isDarkMode ? 'text-white' : 'text-slate-900'
+                          }`}>{selectedReport?.format}</p>
                         </div>
                         </div>
                     </div>
                     
-                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <div className={`p-4 rounded-lg border ${
+                      isDarkMode 
+                        ? 'bg-orange-900/20 border-orange-700' 
+                        : 'bg-orange-50 border-orange-200'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <FaWeight className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                        <FaWeight className={`h-5 w-5 ${
+                          isDarkMode ? 'text-orange-400' : 'text-orange-600'
+                        }`} />
                         <div>
-                          <p className="text-xs text-orange-600 dark:text-orange-400 font-medium">File Size</p>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedReport?.fileSize}</p>
+                          <p className={`text-xs font-medium ${
+                            isDarkMode ? 'text-orange-400' : 'text-orange-600'
+                          }`}>File Size</p>
+                          <p className={`text-sm font-semibold ${
+                            isDarkMode ? 'text-white' : 'text-slate-900'
+                          }`}>{selectedReport?.fileSize}</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Description */}
-                  <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Description</h3>
-                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                  <div className={`p-4 rounded-lg border ${
+                    isDarkMode 
+                      ? 'bg-slate-700 border-slate-600' 
+                      : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <h3 className={`text-sm font-semibold mb-2 ${
+                      isDarkMode ? 'text-white' : 'text-slate-900'
+                    }`}>Description</h3>
+                    <p className={`text-sm ${
+                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                    }`}>
                       {selectedReport?.description}
                     </p>
                   </div>
 
                   {/* Generated On */}
-                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Generated On</h3>
+                  <div className={`p-4 rounded-lg border ${
+                    isDarkMode 
+                      ? 'bg-indigo-900/20 border-indigo-700' 
+                      : 'bg-indigo-50 border-indigo-200'
+                  }`}>
+                    <h3 className={`text-sm font-semibold mb-2 ${
+                      isDarkMode ? 'text-white' : 'text-slate-900'
+                    }`}>Generated On</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">Date</p>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedReport?.date}</p>
+                        <p className={`text-xs ${
+                          isDarkMode ? 'text-slate-400' : 'text-slate-600'
+                        }`}>Date</p>
+                        <p className={`text-sm font-medium ${
+                          isDarkMode ? 'text-white' : 'text-slate-900'
+                        }`}>{selectedReport?.date}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-600 dark:text-slate-400">Time</p>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedReport?.time}</p>
+                        <p className={`text-xs ${
+                          isDarkMode ? 'text-slate-400' : 'text-slate-600'
+                        }`}>Time</p>
+                        <p className={`text-sm font-medium ${
+                          isDarkMode ? 'text-white' : 'text-slate-900'
+                        }`}>{selectedReport?.time}</p>
                       </div>
                     </div>
                   </div>
 
                   {/* Report Line Items */}
                   {reportDetails.length > 0 && (
-                    <div className="bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
-                      <div className="px-4 py-3 bg-slate-50 dark:bg-slate-600 border-b border-slate-200 dark:border-slate-600">
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                    <div className={`rounded-lg border overflow-hidden ${
+                      isDarkMode 
+                        ? 'bg-slate-700 border-slate-600' 
+                        : 'bg-white border-slate-200'
+                    }`}>
+                      <div className={`px-4 py-3 border-b ${
+                        isDarkMode 
+                          ? 'bg-slate-600 border-slate-600' 
+                          : 'bg-slate-50 border-slate-200'
+                      }`}>
+                        <h3 className={`text-sm font-semibold ${
+                          isDarkMode ? 'text-white' : 'text-slate-900'
+                        }`}>
                           Report Line Items ({reportDetails.length} items)
                         </h3>
                     </div>
                       
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-slate-100 dark:bg-slate-600">
+                          <thead className={isDarkMode ? 'bg-slate-600' : 'bg-slate-100'}>
                             <tr>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Product Name</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Barcode</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Category</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Quantity</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">SRP</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Movement Type</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Reference No</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Date</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Time</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Location</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Supplier</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Brand</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Expiration Date</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Notes</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Product Name</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Barcode</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Category</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Quantity</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>SRP</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Movement Type</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Reference No</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Date</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Time</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Location</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Supplier</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Brand</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Expiration Date</th>
+                              <th className={`px-3 py-2 text-left text-xs font-medium uppercase tracking-wider ${
+                                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                              }`}>Notes</th>
                             </tr>
                           </thead>
-                          <tbody className="bg-white dark:bg-slate-700 divide-y divide-slate-200 dark:divide-slate-600">
+                          <tbody className={`divide-y ${
+                            isDarkMode 
+                              ? 'bg-slate-700 divide-slate-600' 
+                              : 'bg-white divide-slate-200'
+                          }`}>
                             {reportDetails.map((item, index) => (
-                              <tr key={index} className="hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors duration-150">
-                                <td className="px-3 py-2 text-sm font-medium text-slate-900 dark:text-white">{item.product_name || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.barcode || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.category || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.quantity || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">₱{parseFloat(item.srp || 0).toFixed(2)}</td>
+                              <tr key={index} className={`transition-colors duration-150 ${
+                                isDarkMode ? 'hover:bg-slate-600' : 'hover:bg-slate-50'
+                              }`}>
+                                <td className={`px-3 py-2 text-sm font-medium ${
+                                  isDarkMode ? 'text-white' : 'text-slate-900'
+                                }`}>{item.product_name || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.barcode || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.category || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.quantity || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>₱{parseFloat(item.srp || 0).toFixed(2)}</td>
                                 <td className="px-3 py-2 text-sm">
                                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                    item.movement_type === 'IN' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                    item.movement_type === 'OUT' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                                    item.movement_type === 'ADJUSTMENT' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                    'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                                    item.movement_type === 'IN' ? 
+                                      (isDarkMode ? 'bg-green-900 text-green-200' : 'bg-green-100 text-green-800') :
+                                    item.movement_type === 'OUT' ? 
+                                      (isDarkMode ? 'bg-red-900 text-red-200' : 'bg-red-100 text-red-800') :
+                                    item.movement_type === 'ADJUSTMENT' ? 
+                                      (isDarkMode ? 'bg-yellow-900 text-yellow-200' : 'bg-yellow-100 text-yellow-800') :
+                                      (isDarkMode ? 'bg-gray-900 text-gray-200' : 'bg-gray-100 text-gray-800')
                                   }`}>
                                     {item.movement_type || ''}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.reference_no || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.date || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.time || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.location_name || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.supplier_name || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.brand || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.expiration_date || ''}</td>
-                                <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{item.notes || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.reference_no || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.date || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.time || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.location_name || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.supplier_name || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.brand || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.expiration_date || ''}</td>
+                                <td className={`px-3 py-2 text-sm ${
+                                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                                }`}>{item.notes || ''}</td>
                               </tr>
                             ))}
                           </tbody>
-                          <tfoot className="bg-green-50 dark:bg-green-900/20">
+                          <tfoot className={isDarkMode ? 'bg-green-900/20' : 'bg-green-50'}>
                             <tr>
-                              <td colSpan="13" className="px-3 py-2 text-center text-sm font-semibold text-slate-900 dark:text-white">End of Report</td>
+                              <td colSpan="13" className={`px-3 py-2 text-center text-sm font-semibold ${
+                                isDarkMode ? 'text-white' : 'text-slate-900'
+                              }`}>End of Report</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1550,7 +1820,11 @@ const Reports = () => {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+            <div className={`px-6 py-4 border-t ${
+              isDarkMode 
+                ? 'border-slate-700 bg-slate-800' 
+                : 'border-slate-200 bg-slate-50'
+            }`}>
               <div className="flex justify-end gap-3">
               <button 
                 onClick={() => handleDownload(selectedReport)}
@@ -1581,34 +1855,50 @@ const Reports = () => {
 
       {/* Combined Reports Modal */}
       {showCombineModal && (
-        <div className="fixed inset-0 bg-gray-200 bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className={`rounded-2xl shadow-2xl max-w-lg w-full max-h-[35vh] overflow-hidden border-2 ${
+            isDarkMode 
+              ? 'bg-slate-800 border-purple-500 shadow-purple-500/20' 
+              : 'bg-white border-purple-600 shadow-purple-600/20'
+          }`}>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <div className={`px-6 py-4 border-b ${
+              isDarkMode ? 'border-slate-700' : 'border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                  <h2 className={`text-xl font-semibold ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>
                     Combine Reports
                   </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                  <p className={`text-sm mt-1 ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-600'
+                  }`}>
                     Select date range and report types to combine into a single PDF
                   </p>
                 </div>
                 <button 
                   onClick={() => setShowCombineModal(false)}
-                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors duration-200"
+                  className={`p-2 rounded-lg transition-colors duration-200 ${
+                    isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-100'
+                  }`}
                 >
-                  <FaTimes className="h-5 w-5 text-slate-500" />
+                  <FaTimes className={`h-5 w-5 ${
+                    isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`} />
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+            <div className="p-6 overflow-y-auto max-h-[calc(35vh-140px)]">
               <div className="space-y-6">
                 {/* Quick Select Options */}
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Select</h3>
+                  <h3 className={`text-lg font-semibold mb-4 ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>Quick Select</h3>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {[
                       { key: 'today', label: 'Today' },
@@ -1632,28 +1922,42 @@ const Reports = () => {
 
                 {/* Custom Date Range */}
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Custom Date Range</h3>
+                  <h3 className={`text-lg font-semibold mb-4 ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>Custom Date Range</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      <label className={`block text-sm font-medium mb-2 ${
+                        isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                      }`}>
                         Start Date
                       </label>
                       <input
                         type="date"
                         value={combineStartDate}
                         onChange={(e) => setCombineStartDate(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
+                        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          isDarkMode 
+                            ? 'bg-slate-700 border-slate-600 text-white' 
+                            : 'bg-slate-50 border-slate-200 text-slate-800'
+                        }`}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      <label className={`block text-sm font-medium mb-2 ${
+                        isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                      }`}>
                         End Date
                       </label>
                       <input
                         type="date"
                         value={combineEndDate}
                         onChange={(e) => setCombineEndDate(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
+                        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          isDarkMode 
+                            ? 'bg-slate-700 border-slate-600 text-white' 
+                            : 'bg-slate-50 border-slate-200 text-slate-800'
+                        }`}
                       />
                     </div>
                   </div>
@@ -1661,7 +1965,9 @@ const Reports = () => {
 
                 {/* Report Types Selection */}
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Report Types</h3>
+                  <h3 className={`text-lg font-semibold mb-4 ${
+                    isDarkMode ? 'text-white' : 'text-slate-900'
+                  }`}>Report Types</h3>
                   <div className="space-y-2">
                     {[
                       { key: 'all', label: 'All Reports' },
@@ -1688,7 +1994,9 @@ const Reports = () => {
                           }}
                           className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                         />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">{type.label}</span>
+                        <span className={`text-sm ${
+                          isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                        }`}>{type.label}</span>
                       </label>
                     ))}
                   </div>
@@ -1697,7 +2005,11 @@ const Reports = () => {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+            <div className={`px-6 py-4 border-t ${
+              isDarkMode 
+                ? 'border-slate-700 bg-slate-800' 
+                : 'border-slate-200 bg-slate-50'
+            }`}>
               <div className="flex justify-end gap-3">
                 <button 
                   onClick={() => {

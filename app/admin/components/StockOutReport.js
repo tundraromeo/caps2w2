@@ -1,34 +1,13 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { useTheme } from './ThemeContext';
 import { useNotification } from './NotificationContext';
 
-// Use the same API approach as inventory stock adjustment
-const getAPIBaseURL = () => {
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.hostname;
-    const currentPort = window.location.port;
-    
-    // If running on Next.js dev server (usually port 3000), use the proxy
-    if (currentPort === '3000') {
-      return '/api/proxy';
-    }
-    
-    // If running on localhost without port (Apache), use direct PHP
-    if (currentHost === 'localhost' && !currentPort) {
-      return 'http://localhost/caps2e2/Api/backend.php';
-    }
-    
-    // Otherwise use the same host/port
-    return `${window.location.protocol}//${currentHost}${currentPort ? ':' + currentPort : ''}/caps2e2/Api/backend.php`;
-  }
-  
-  // Fallback for server-side rendering
-  return '/api/proxy';
-};
-
-const API_BASE_URL = getAPIBaseURL();
+// Use direct PHP backend (no proxy)
+const API_BASE_URL = 'http://localhost/caps2e2/Api/backend.php';
 
 function StockOutReport() {
   const { theme } = useTheme();
@@ -40,6 +19,20 @@ function StockOutReport() {
     startDate: new Date('2025-09-01').toISOString().split('T')[0], // Start from September 1
     endDate: new Date().toISOString().split('T')[0]
   });
+  const [showCombineModal, setShowCombineModal] = useState(false);
+  const [selectedReportTypes, setSelectedReportTypes] = useState(['stock_out']);
+  const [combineDateRange, setCombineDateRange] = useState({
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+
+  const reportTypes = [
+    { id: 'stock_in', name: 'Stock In Reports' },
+    { id: 'stock_out', name: 'Stock Out Reports' },
+    { id: 'sales', name: 'Sales Reports' },
+    { id: 'cashier_performance', name: 'Cashier Performance Reports' },
+    { id: 'inventory_balance', name: 'Inventory Balance Reports' }
+  ];
 
   // API Functions - same approach as inventory stock adjustment
   const handleApiCall = async (action, data = {}) => {
@@ -121,40 +114,144 @@ function StockOutReport() {
     }
   };
 
-  const fetchAllStockOutDataWithoutFilter = async () => {
+  const combineReports = async () => {
     try {
       setLoading(true);
-      setError(null);
       
-      // Use the same API call as inventory stock adjustment but filter for stock-out only
-      const result = await handleApiCall('get_stock_adjustments', {
-        search: '',
-        type: 'OUT', // Only get stock-out movements
-        status: 'all',
-        page: 1,
-        limit: 1000 // Get all records
-      });
+      // Generate PDF directly
+      await generateCombinedPDF(selectedReportTypes);
       
-      // Don't filter by date - show all data
-      setStockOutData(result.data);
-      setError(null);
-      console.log('All stock-out data fetched successfully:', result.data.length, 'records');
+      // Close modal
+      setShowCombineModal(false);
       
     } catch (error) {
-      console.error('Error fetching stock-out data:', error);
-      setStockOutData([]);
-      
-      // Set user-friendly error message
-      if (error.message === 'Network Error' || error.message.includes('fetch')) {
-        setError('Network Error: Please check if XAMPP services (Apache & MySQL) are running');
-      } else if (error.message.includes('timeout')) {
-        setError('Request timeout: Server may be slow, please try again');
-      } else {
-        setError(`Failed to load stock-out data: ${error.message}`);
-      }
+      console.error('Error combining reports:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const generateCombinedPDF = async (reportTypes) => {
+    try {
+      // Create a temporary div for PDF generation
+      const tempDiv = document.createElement('div');
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.style.top = '-9999px';
+      tempDiv.style.width = '210mm'; // A4 width
+      tempDiv.style.backgroundColor = 'white';
+      tempDiv.style.padding = '20px';
+      tempDiv.style.fontFamily = 'Arial, sans-serif';
+      tempDiv.style.fontSize = '12px';
+      tempDiv.style.lineHeight = '1.4';
+      
+      // Create PDF content
+      const reportNames = reportTypes.map(type => 
+        reportTypes.find(t => t.id === type)?.name || type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
+      ).join(', ');
+      
+      tempDiv.innerHTML = `
+        <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: #f8fafc; border: 2px solid #000000;">
+          <div style="font-size: 24px; font-weight: bold; color: #000000; margin-bottom: 5px;">ENGUIO PHARMACY SYSTEM</div>
+          <div style="font-size: 14px; color: #000000;">Combined Reports</div>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #000000;">
+          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Combined Reports</div>
+          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated on: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}</div>
+          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated by: Admin</div>
+        </div>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-left: 4px solid #000000;">
+          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Information</div>
+          <div style="display: table; width: 100%;">
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Types:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reportNames}</div>
+            </div>
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${combineDateRange.startDate} to ${combineDateRange.endDate}</div>
+            </div>
+            <div style="display: table-row;">
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">File Format:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">PDF Document</div>
+            </div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border: 1px solid #000000;">
+          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
+          <div style="font-size: 11px; color: #000000; line-height: 1.6;">
+            This combined report contains data from multiple report types for the specified date range. 
+            Each report type provides detailed information about different aspects of the inventory management system.
+          </div>
+        </div>
+      `;
+      
+      // Add to DOM temporarily
+      document.body.appendChild(tempDiv);
+      
+      // Generate canvas from HTML
+      const canvas = await html2canvas(tempDiv, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff'
+      });
+      
+      // Remove temporary div
+      document.body.removeChild(tempDiv);
+      
+      // Create PDF
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      
+      let position = 0;
+      
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      // Save PDF
+      const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
+      pdf.save(fileName);
+      
+      console.log(`PDF downloaded successfully: ${fileName}`);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      throw error;
+    }
+  };
+
+  const handleReportTypeChange = (reportTypeId) => {
+    setSelectedReportTypes(prev => {
+      if (prev.includes(reportTypeId)) {
+        return prev.filter(id => id !== reportTypeId);
+      } else {
+        return [...prev, reportTypeId];
+      }
+    });
+  };
+
+  const openCombineModal = () => {
+    setSelectedReportTypes(['stock_out']); // Default to stock out
+    setCombineDateRange({
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0]
+    });
+    setShowCombineModal(true);
   };
 
   useEffect(() => {
@@ -162,6 +259,13 @@ function StockOutReport() {
     
     // Auto-clear Stock Out Report notification when viewed
     markNotificationAsViewed('reports', 'Stock Out Report');
+
+    // Auto-refresh every 10 seconds
+    const refreshInterval = setInterval(() => {
+      fetchAllStockOutData();
+    }, 10000);
+
+    return () => clearInterval(refreshInterval);
   }, [dateRange]);
 
   const formatCell = (row, column) => {
@@ -388,6 +492,20 @@ function StockOutReport() {
               </div>
             </div>
           </div>
+          <div className="flex gap-3">
+            <button
+              onClick={openCombineModal}
+              disabled={loading}
+              className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2"
+              style={{
+                backgroundColor: theme.bg.hover,
+                color: theme.text.secondary,
+                border: `1px solid ${theme.border.default}`
+              }}
+            >
+              📋 Combine Reports
+            </button>
+          </div>
         </div>
       </div>
 
@@ -432,28 +550,6 @@ function StockOutReport() {
                   }}
                 />
               </div>
-              <button
-                onClick={() => fetchAllStockOutData()}
-                disabled={loading}
-                className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                style={{
-                  backgroundColor: theme.colors.accent,
-                  color: theme.text.primary
-                }}
-              >
-                {loading ? 'Loading...' : 'Refresh Data'}
-              </button>
-              <button
-                onClick={() => fetchAllStockOutDataWithoutFilter()}
-                disabled={loading}
-                className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 ml-2"
-                style={{
-                  backgroundColor: theme.colors.danger,
-                  color: theme.text.primary
-                }}
-              >
-                Show All Data
-              </button>
             </div>
           </div>
         </div>
@@ -575,6 +671,173 @@ function StockOutReport() {
           </div>
         </div>
       </div>
+
+      {/* Combine Reports Modal */}
+      {showCombineModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-red-300"
+            style={{ 
+              backgroundColor: theme.bg.card,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(239, 68, 68, 0.2)'
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
+                  Combine Stock Out Reports
+                </h3>
+                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+                  Select date range and report types to download as a single PDF
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCombineModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {/* Quick Select Date Range */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Quick Select</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Today', days: 0 },
+                    { label: 'Yesterday', days: -1 },
+                    { label: 'This Week', days: -7 },
+                    { label: 'Last Week', days: -14 },
+                    { label: 'This Month', days: -30 },
+                    { label: 'Last Month', days: -60 }
+                  ].map((option) => (
+                    <button
+                      key={option.label}
+                      onClick={() => {
+                        const today = new Date();
+                        const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
+                        const dateStr = targetDate.toISOString().split('T')[0];
+                        
+                        if (option.days === 0) {
+                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else if (option.days === -1) {
+                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else {
+                          setCombineDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
+                        }
+                      }}
+                      className="px-3 py-2 text-sm rounded-md border transition-all duration-200 hover:scale-105"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Date Range */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Custom Date Range</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
+                    <input
+                      type="date"
+                      value={combineDateRange.startDate}
+                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
+                    <input
+                      type="date"
+                      value={combineDateRange.endDate}
+                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      style={{
+                        backgroundColor: theme.bg.input,
+                        borderColor: theme.border.default,
+                        color: theme.text.primary
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Report Type Selection */}
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Types to Combine</h4>
+                <div className="space-y-2">
+                  {reportTypes.map((type) => (
+                    <label key={type.id} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedReportTypes.includes(type.id)}
+                        onChange={() => handleReportTypeChange(type.id)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm" style={{ color: theme.text.secondary }}>
+                        {type.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={combineReports}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.colors.accent,
+                    color: theme.text.primary
+                  }}
+                >
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      Generating PDF...
+                    </>
+                  ) : (
+                    <>
+                      📋 Download PDF
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowCombineModal(false)}
+                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.secondary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                >
+                  ✕ Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -185,7 +185,7 @@ function ConvenienceStore() {
       console.log("🔄 Loading convenience store products...");
       
       // Use the new convenience store products API
-      const response = await handleApiCall("get_convenience_products", {
+      const response = await handleApiCall("get_convenience_products_fifo", {
         location_name: "convenience",
         search: searchTerm,
         category: selectedCategory,
@@ -1228,7 +1228,7 @@ function ConvenienceStore() {
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
                       </tr>
@@ -1245,15 +1245,15 @@ function ConvenienceStore() {
                           </td>
                         </tr>
                       ) : batchData.length > 0 ? (
-                        batchData.filter(batch => batch && typeof batch === 'object').map((batch, index) => {
+                        batchData.filter(batch => batch && typeof batch === 'object' && (batch.batch_quantity || batch.quantity || 0) > 0).map((batch, index) => {
                           const expiryDate = batch.expiration_date && batch.expiration_date !== 'null' ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A';
                           const quantityUsed = batch.batch_quantity || batch.quantity || 0;
-                          const unitCost = batch.unit_cost || 0;
+                          const batchSrp = batch.batch_srp || batch.srp || 0;
                           const batchReference = batch.batch_reference || `BR-${batch.batch_id || index + 1}`;
                           const isConsumed = quantityUsed > 0;
                           
                           return (
-                            <tr key={batch.batch_transfer_id || batch.batch_id || index} className="hover:bg-gray-50">
+                            <tr key={batch.id || batch.batch_transfer_id || index} className="hover:bg-gray-50">
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 {index + 1}
                               </td>
@@ -1268,7 +1268,7 @@ function ConvenienceStore() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                                ₱{Number.parseFloat(unitCost).toFixed(2)}
+                                ₱{Number.parseFloat(batchSrp).toFixed(2)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
                                 {expiryDate}
@@ -1425,7 +1425,7 @@ function ConvenienceStore() {
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Unit Cost</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
                       </tr>
@@ -1442,15 +1442,15 @@ function ConvenienceStore() {
                           </td>
                         </tr>
                       ) : batchData.length > 0 ? (
-                        batchData.filter(batch => batch && typeof batch === 'object').map((batch, index) => {
+                        batchData.filter(batch => batch && typeof batch === 'object' && (batch.batch_quantity || batch.quantity || 0) > 0).map((batch, index) => {
                           const expiryDate = batch.expiration_date && batch.expiration_date !== 'null' ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A';
                           const quantityUsed = batch.batch_quantity || batch.quantity || 0;
-                          const unitCost = batch.unit_cost || 0;
+                          const batchSrp = batch.batch_srp || batch.srp || 0;
                           const batchReference = batch.batch_reference || `BR-${batch.batch_id || index + 1}`;
                           const isConsumed = quantityUsed > 0;
                           
                           return (
-                            <tr key={batch.batch_transfer_id || batch.batch_id || index} className="hover:bg-gray-50">
+                            <tr key={batch.id || batch.batch_transfer_id || index} className="hover:bg-gray-50">
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 {index + 1}
                               </td>
@@ -1465,7 +1465,7 @@ function ConvenienceStore() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                                ₱{Number.parseFloat(unitCost).toFixed(2)}
+                                ₱{Number.parseFloat(batchSrp).toFixed(2)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
                                 {expiryDate}
@@ -1623,7 +1623,7 @@ function ConvenienceStore() {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Batch Reference</th>
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Cost</th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">SRP</th>
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">SRP</th>
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry Date</th>
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>

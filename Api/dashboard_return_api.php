@@ -16,21 +16,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Include database connection
-require_once 'conn_mysqli.php';
+// Database connection using PDO
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "enguio2";
 
 try {
-    $action = $_POST['action'] ?? $_GET['action'] ?? '';
+    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (Exception $e) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Database connection error: " . $e->getMessage()
+    ]);
+    exit;
+}
+
+try {
+    // Get JSON input
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true);
+    
+    $action = $data['action'] ?? $_POST['action'] ?? $_GET['action'] ?? '';
     
     switch ($action) {
         case 'get_total_return':
             getTotalReturn($conn);
             break;
         case 'get_return_summary':
-            getReturnSummary($conn);
+            getReturnSummary($conn, $data);
             break;
         case 'get_top_returned_products':
-            getTopReturnedProducts($conn);
+            getTopReturnedProducts($conn, $data);
             break;
         default:
             echo json_encode([
@@ -55,13 +73,13 @@ function getTotalReturn($conn) {
         // Get total return amount from last 30 days
         $sql = "
             SELECT 
-                COALESCE(SUM(pr.total_amount), 0) as total_return_amount,
+                COALESCE(SUM(pr.total_refund), 0) as total_return_amount,
                 COUNT(DISTINCT pr.return_id) as total_returns,
-                COUNT(pri.item_id) as total_items_returned
+                COUNT(pri.id) as total_items_returned
             FROM tbl_pos_returns pr
             LEFT JOIN tbl_pos_return_items pri ON pr.return_id = pri.return_id
-            WHERE DATE(pr.return_date) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-            AND pr.status IN ('approved', 'completed')
+            WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+            AND pr.status IN ('pending', 'approved', 'completed')
         ";
         
         $stmt = $conn->prepare($sql);
@@ -71,11 +89,11 @@ function getTotalReturn($conn) {
         // Get today's returns
         $sqlToday = "
             SELECT 
-                COALESCE(SUM(pr.total_amount), 0) as today_return_amount,
+                COALESCE(SUM(pr.total_refund), 0) as today_return_amount,
                 COUNT(DISTINCT pr.return_id) as today_returns
             FROM tbl_pos_returns pr
-            WHERE DATE(pr.return_date) = CURDATE()
-            AND pr.status IN ('approved', 'completed')
+            WHERE DATE(pr.created_at) = CURDATE()
+            AND pr.status IN ('pending', 'approved', 'completed')
         ";
         
         $stmtToday = $conn->prepare($sqlToday);
@@ -85,10 +103,10 @@ function getTotalReturn($conn) {
         // Get yesterday's returns for comparison
         $sqlYesterday = "
             SELECT 
-                COALESCE(SUM(pr.total_amount), 0) as yesterday_return_amount
+                COALESCE(SUM(pr.total_refund), 0) as yesterday_return_amount
             FROM tbl_pos_returns pr
-            WHERE DATE(pr.return_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
-            AND pr.status IN ('approved', 'completed')
+            WHERE DATE(pr.created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+            AND pr.status IN ('pending', 'approved', 'completed')
         ";
         
         $stmtYesterday = $conn->prepare($sqlYesterday);
@@ -134,23 +152,23 @@ function getTotalReturn($conn) {
 /**
  * Get return summary for charts
  */
-function getReturnSummary($conn) {
+function getReturnSummary($conn, $data = []) {
     try {
-        $days = $_POST['days'] ?? 7; // Default to 7 days
+        $days = $data['days'] ?? $_POST['days'] ?? 7; // Default to 7 days
         $days = max(1, min(30, (int)$days)); // Limit between 1-30 days
         
         $sql = "
             SELECT 
-                DATE(pr.return_date) as return_date,
-                COALESCE(SUM(pr.total_amount), 0) as daily_return_amount,
+                DATE(pr.created_at) as return_date,
+                COALESCE(SUM(pr.total_refund), 0) as daily_return_amount,
                 COUNT(DISTINCT pr.return_id) as daily_return_count,
-                COUNT(pri.item_id) as daily_items_returned
+                COUNT(pri.id) as daily_items_returned
             FROM tbl_pos_returns pr
             LEFT JOIN tbl_pos_return_items pri ON pr.return_id = pri.return_id
-            WHERE DATE(pr.return_date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
-            AND pr.status IN ('approved', 'completed')
-            GROUP BY DATE(pr.return_date)
-            ORDER BY DATE(pr.return_date) DESC
+            WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+            AND pr.status IN ('pending', 'approved', 'completed')
+            GROUP BY DATE(pr.created_at)
+            ORDER BY DATE(pr.created_at) DESC
         ";
         
         $stmt = $conn->prepare($sql);
@@ -187,26 +205,26 @@ function getReturnSummary($conn) {
 /**
  * Get top returned products
  */
-function getTopReturnedProducts($conn) {
+function getTopReturnedProducts($conn, $data = []) {
     try {
-        $days = $_POST['days'] ?? 30; // Default to 30 days
+        $days = $data['days'] ?? $_POST['days'] ?? 30; // Default to 30 days
         $days = max(1, min(365, (int)$days)); // Limit between 1-365 days
-        $limit = $_POST['limit'] ?? 10; // Default to top 10
+        $limit = $data['limit'] ?? $_POST['limit'] ?? 10; // Default to top 10
         $limit = max(1, min(50, (int)$limit)); // Limit between 1-50
         
         $sql = "
             SELECT 
                 p.product_name,
                 p.product_id,
-                COUNT(pri.item_id) as return_count,
-                COALESCE(SUM(pri.return_quantity), 0) as total_quantity_returned,
-                COALESCE(SUM(pri.return_amount), 0) as total_return_amount,
-                COALESCE(AVG(pri.return_amount), 0) as avg_return_amount
+                COUNT(pri.id) as return_count,
+                COALESCE(SUM(pri.quantity), 0) as total_quantity_returned,
+                COALESCE(SUM(pri.total), 0) as total_return_amount,
+                COALESCE(AVG(pri.total), 0) as avg_return_amount
             FROM tbl_pos_return_items pri
             JOIN tbl_pos_returns pr ON pri.return_id = pr.return_id
             JOIN tbl_product p ON pri.product_id = p.product_id
-            WHERE DATE(pr.return_date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
-            AND pr.status IN ('approved', 'completed')
+            WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+            AND pr.status IN ('pending', 'approved', 'completed')
             GROUP BY p.product_id, p.product_name
             ORDER BY total_return_amount DESC
             LIMIT :limit

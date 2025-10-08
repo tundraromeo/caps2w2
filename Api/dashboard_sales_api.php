@@ -16,21 +16,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Include database connection
-require_once 'conn_mysqli.php';
+// Database connection using PDO
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "enguio2";
 
 try {
-    $action = $_POST['action'] ?? $_GET['action'] ?? '';
+    $conn = new PDO("mysql:host=$servername;dbname=$dbname", $username, $password);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (Exception $e) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Database connection error: " . $e->getMessage()
+    ]);
+    exit;
+}
+
+try {
+    // Get JSON input
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true);
+    
+    $action = $data['action'] ?? $_POST['action'] ?? $_GET['action'] ?? '';
     
     switch ($action) {
         case 'get_total_sales':
             getTotalSales($conn);
             break;
         case 'get_sales_summary':
-            getSalesSummary($conn);
+            getSalesSummary($conn, $data);
             break;
         case 'get_payment_methods':
-            getPaymentMethods($conn);
+            getPaymentMethods($conn, $data);
+            break;
+        case 'get_top_selling_products':
+            getTopSellingProducts($conn, $data);
             break;
         default:
             echo json_encode([
@@ -133,9 +154,9 @@ function getTotalSales($conn) {
 /**
  * Get sales summary for charts
  */
-function getSalesSummary($conn) {
+function getSalesSummary($conn, $data = []) {
     try {
-        $days = $_POST['days'] ?? 7; // Default to 7 days
+        $days = $data['days'] ?? $_POST['days'] ?? 7; // Default to 7 days
         $days = max(1, min(30, (int)$days)); // Limit between 1-30 days
         
         $sql = "
@@ -189,9 +210,9 @@ function getSalesSummary($conn) {
 /**
  * Get payment methods breakdown
  */
-function getPaymentMethods($conn) {
+function getPaymentMethods($conn, $data = []) {
     try {
-        $days = $_POST['days'] ?? 30; // Default to 30 days
+        $days = $data['days'] ?? $_POST['days'] ?? 30; // Default to 30 days
         $days = max(1, min(365, (int)$days)); // Limit between 1-365 days
         
         $sql = "
@@ -246,6 +267,59 @@ function getPaymentMethods($conn) {
         echo json_encode([
             'success' => false,
             'message' => 'Error getting payment methods: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * Get top selling products by quantity
+ */
+function getTopSellingProducts($conn, $data = []) {
+    try {
+        $limit = $data['limit'] ?? $_POST['limit'] ?? 5; // Default to 5 products
+        $limit = max(1, min(20, (int)$limit)); // Limit between 1-20 products
+        
+        $sql = "
+            SELECT 
+                p.product_name,
+                SUM(psd.quantity) as total_quantity_sold,
+                SUM(psd.quantity * psd.price) as total_sales_amount,
+                p.status,
+                p.stock_status
+            FROM tbl_pos_sales_details psd
+            JOIN tbl_pos_sales_header psh ON psd.sales_header_id = psh.sales_header_id
+            JOIN tbl_product p ON psd.product_id = p.product_id
+            WHERE p.status IS NULL OR p.status <> 'archived'
+            GROUP BY p.product_id, p.product_name, p.status, p.stock_status
+            ORDER BY total_quantity_sold DESC
+            LIMIT :limit
+        ";
+        
+        $stmt = $conn->prepare($sql);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $topProducts = [];
+        foreach ($results as $row) {
+            $topProducts[] = [
+                'name' => $row['product_name'],
+                'quantity' => (int)$row['total_quantity_sold'],
+                'sales' => number_format((float)$row['total_sales_amount'], 2),
+                'status' => $row['stock_status'] === 'in stock' ? 'In Stock' : 'Out of Stock'
+            ];
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'data' => $topProducts,
+            'limit' => $limit
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error getting top selling products: ' . $e->getMessage()
         ]);
     }
 }
