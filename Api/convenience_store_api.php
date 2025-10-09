@@ -66,13 +66,13 @@ try {
             $params = [];
             
             if (!empty($search)) {
-                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
                 $searchParam = "%$search%";
                 $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
             }
             
             if ($category !== 'all') {
-                $where .= " AND p.category = ?";
+                $where .= " AND c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -89,7 +89,7 @@ try {
                     MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -115,13 +115,14 @@ try {
                     tbd.expiration_date as transfer_expiration,
                     COALESCE(ss.srp, tbd.srp, p.srp) as first_batch_srp
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
                 HAVING total_quantity > 0
                 ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
@@ -162,13 +163,13 @@ try {
             $params = [];
             
             if (!empty($search)) {
-                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
                 $searchParam = "%$search%";
                 $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
             }
             
             if ($category !== 'all') {
-                $where .= " AND p.category = ?";
+                $where .= " AND c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -185,7 +186,7 @@ try {
                     MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -199,13 +200,14 @@ try {
                     tbd.expiration_date as transfer_expiration,
                     COALESCE(ss.srp, tbd.srp, p.srp) as first_batch_srp
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
                 HAVING total_quantity > 0
                 ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
@@ -244,13 +246,13 @@ try {
             $params = ["%$location_name%"];
             
             if (!empty($search)) {
-                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
                 $searchParam = "%$search%";
                 $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
             }
             
             if ($category !== 'all') {
-                $where .= " AND p.category = ?";
+                $where .= " AND c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -259,7 +261,7 @@ try {
                     MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -273,13 +275,14 @@ try {
                     tbd.expiration_date as transfer_expiration,
                     COALESCE(ss.srp, tbd.srp, p.srp) as first_batch_srp
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, s.supplier_name, l.location_name, tbd.srp, tbd.expiration_date
                 HAVING total_quantity > 0
                 ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
@@ -377,7 +380,7 @@ try {
                     p.product_name,
                     p.barcode,
                     br.brand,
-                    p.category,
+                    c.category_name as category,
                     COALESCE(l.location_name, 'Warehouse') as source_location_name,
                     'System' as employee_name
                 FROM tbl_transfer_batch_details btd
@@ -412,7 +415,7 @@ try {
                         p.product_name,
                         p.barcode,
                         b.brand,
-                        p.category,
+                        c.category_name as category,
                         'Warehouse' as source_location_name,
                         fs.entry_by as employee_name
                     FROM tbl_fifo_stock fs
@@ -441,7 +444,7 @@ try {
                         p.product_name,
                         p.barcode,
                         br.brand,
-                        p.category,
+                        c.category_name as category,
                         sl.location_name as source_location_name,
                         e.Fname as employee_name
                     FROM tbl_transfer_dtl td
@@ -603,7 +606,7 @@ try {
                     btd.expiration_date,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     s.supplier_name,
                     l.location_name as source_location_name,
@@ -825,13 +828,13 @@ try {
             $params = ["%$location_name%"];
             
             if (!empty($search)) {
-                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
                 $searchParam = "%$search%";
                 $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
             }
             
             if ($category !== 'all') {
-                $where .= " AND p.category = ?";
+                $where .= " AND c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -840,7 +843,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -869,13 +872,14 @@ try {
                     tbd.srp as transfer_srp,
                     tbd.expiration_date as transfer_expiration
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
                 HAVING available_quantity > 0
                 ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
@@ -915,13 +919,13 @@ try {
             $params = ["%$location_name%"];
             
             if (!empty($search)) {
-                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+                $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
                 $searchParam = "%$search%";
                 $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
             }
             
             if ($category !== 'all') {
-                $where .= " AND p.category = ?";
+                $where .= " AND c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -930,7 +934,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -947,13 +951,14 @@ try {
                     tbd.srp as transfer_srp,
                     tbd.expiration_date as transfer_expiration
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
                 HAVING available_quantity > 0
                 ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
@@ -1000,7 +1005,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -1017,13 +1022,14 @@ try {
                     tbd.srp as transfer_srp,
                     tbd.expiration_date as transfer_expiration
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE l.location_name LIKE ? AND p.barcode = ?
-                GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
                 HAVING available_quantity > 0
                 ORDER BY COALESCE(tbd.expiration_date, ss.expiration_date, p.expiration) ASC, p.product_name ASC
             ");
@@ -1062,7 +1068,8 @@ try {
                         tbd.srp as transfer_srp,
                         tbd.expiration_date as transfer_expiration
                     FROM tbl_product p
-                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                     LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
                     LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                     LEFT JOIN tbl_transfer_batch_details tbd ON tbd.batch_id = p.batch_id

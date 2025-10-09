@@ -28,7 +28,7 @@ function get_pos_inventory($conn, $data) {
             SELECT 
                 p.product_id as id,
                 p.product_name as name,
-                p.category,
+                c.category_name,
                 p.barcode,
                 p.description,
                 COALESCE(SUM(tbd.quantity), 0) as quantity,
@@ -48,7 +48,8 @@ function get_pos_inventory($conn, $data) {
                     ELSE 'in stock'
                 END as stock_status
             FROM tbl_product p
-            LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
             WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL)
@@ -58,14 +59,14 @@ function get_pos_inventory($conn, $data) {
         
         // Add search filter if provided
         if (!empty($search)) {
-            $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR p.category LIKE ?)";
+            $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR c.category_name LIKE ?)";
             $searchParam = "%$search%";
             $params[] = $searchParam;
             $params[] = $searchParam;
             $params[] = $searchParam;
         }
         
-        $sql .= " GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.srp, p.prescription, p.bulk, p.expiration, p.status, b.brand, s.supplier_name";
+        $sql .= " GROUP BY p.product_id, p.product_name, c.category_name, p.barcode, p.description, p.srp, p.prescription, p.bulk, p.expiration, p.status, b.brand, s.supplier_name";
         $sql .= " HAVING COALESCE(SUM(tbd.quantity), 0) > 0"; // Only show products that have stock in this location
         $sql .= " ORDER BY p.product_name ASC";
         
@@ -320,7 +321,7 @@ function get_products($conn, $data) {
             SELECT 
                 p.product_id as id,
                 p.product_name as name,
-                p.category,
+                c.category_name,
                 p.barcode,
                 p.description,
                 p.quantity,
@@ -335,7 +336,8 @@ function get_products($conn, $data) {
                 COALESCE(b.brand, '') as brand,
                 COALESCE(s.supplier_name, '') as supplier_name
             FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             WHERE p.status = 'active'
@@ -349,7 +351,7 @@ function get_products($conn, $data) {
         }
         
         if (!empty($search)) {
-            $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR p.category LIKE ?)";
+            $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR c.category_name LIKE ?)";
             $searchParam = "%$search%";
             $params[] = $searchParam;
             $params[] = $searchParam;
@@ -386,7 +388,7 @@ function get_product_quantities($conn, $data) {
                 p.product_id as id,
                 p.product_name as name,
                 p.quantity,
-                p.category,
+                c.category_name,
                 p.barcode,
                 CASE 
                     WHEN p.quantity <= 0 THEN 'out of stock'
@@ -394,7 +396,8 @@ function get_product_quantities($conn, $data) {
                     ELSE 'in stock'
                 END as stock_status
             FROM tbl_product p
-            WHERE p.status = 'active'
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                WHERE p.status = 'active'
         ";
         
         $params = [];
@@ -436,11 +439,12 @@ function get_expiring_products($conn, $data) {
                 p.product_name as name,
                 p.quantity,
                 p.expiration,
-                p.category,
+                c.category_name,
                 p.barcode,
                 DATEDIFF(p.expiration, CURDATE()) as days_until_expiry
             FROM tbl_product p
-            WHERE p.status = 'active' 
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                WHERE p.status = 'active' 
             AND p.expiration IS NOT NULL 
             AND DATEDIFF(p.expiration, CURDATE()) <= ?
             AND DATEDIFF(p.expiration, CURDATE()) >= 0

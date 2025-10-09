@@ -345,7 +345,7 @@ function getReportsInDateRange($conn, $startDate, $endDate, $reportTypes) {
                 sm.created_by,
                 p.product_name,
                 p.barcode,
-                p.category,
+                c.category_name as category,
                 p.srp,
                 COALESCE(l.location_name, 'Warehouse') as location_name,
                 COALESCE(s.supplier_name, 'Unknown') as supplier_name,
@@ -353,6 +353,7 @@ function getReportsInDateRange($conn, $startDate, $endDate, $reportTypes) {
                 p.expiration
             FROM tbl_stock_movements sm
             JOIN tbl_product p ON sm.product_id = p.product_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id

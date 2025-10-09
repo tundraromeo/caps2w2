@@ -139,19 +139,20 @@ try {
      */
     function getSalesChartDataDirect($conn, $days = 7) {
         try {
+            $days = max(1, min(30, (int)$days)); // Sanitize as integer
+            
             $sql = "
                 SELECT 
                     DATE(pt.date) as sales_date,
                     COALESCE(SUM(psh.total_amount), 0) as daily_sales_amount
                 FROM tbl_pos_transaction pt
                 JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
-                WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
                 GROUP BY DATE(pt.date)
                 ORDER BY DATE(pt.date) DESC
             ";
             
             $stmt = $conn->prepare($sql);
-            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
@@ -171,18 +172,19 @@ try {
 
     function getTransferChartDataDirect($conn, $days = 7) {
         try {
+            $days = max(1, min(30, (int)$days)); // Sanitize as integer
+            
             $sql = "
                 SELECT 
                     DATE(date) as transfer_date,
                     COUNT(*) as daily_transfer_count
                 FROM tbl_transfer_header
-                WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
                 GROUP BY DATE(date)
                 ORDER BY DATE(date) DESC
             ";
             
             $stmt = $conn->prepare($sql);
-            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
@@ -202,19 +204,20 @@ try {
 
     function getReturnChartDataDirect($conn, $days = 7) {
         try {
+            $days = max(1, min(30, (int)$days)); // Sanitize as integer
+            
             $sql = "
                 SELECT 
                     DATE(pr.created_at) as return_date,
                     COALESCE(SUM(pr.total_refund), 0) as daily_return_amount
                 FROM tbl_pos_returns pr
-                WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
                 AND pr.status IN ('pending', 'approved', 'completed')
                 GROUP BY DATE(pr.created_at)
                 ORDER BY DATE(pr.created_at) DESC
             ";
             
             $stmt = $conn->prepare($sql);
-            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
             $stmt->execute();
             $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
@@ -1878,7 +1881,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -1924,7 +1927,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -1969,7 +1972,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -2013,7 +2016,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -2066,7 +2069,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                 
@@ -2111,7 +2114,8 @@ case 'get_products_oldest_batch_for_transfer':
                      LIMIT 1) as new_quantity,
                     -- Show total quantity
                     ss.available_quantity as total_quantity
-                FROM tbl_product p 
+                FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -2119,7 +2123,7 @@ case 'get_products_oldest_batch_for_transfer':
                 INNER JOIN tbl_batch b ON ss.batch_id = b.batch_id
                 WHERE ss.available_quantity > 0
                 $whereClause
-                GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.,
+                GROUP BY p.product_id, p.product_name, c.category_name as category, p.barcode, p.description,
                          p.brand_id, p.supplier_id, p.location_id, p.stock_status, 
                          s.supplier_name, b.brand, l.location_name, ss.batch_id, ss.batch_reference, 
                          b.entry_date, b.entry_by, ss.available_quantity
@@ -2131,7 +2135,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                     p.prescription,
@@ -2155,7 +2159,8 @@ case 'get_products_oldest_batch_for_transfer':
                     b.entry_by as batch_entry_by,
                     b.order_no as batch_order_no,
                     COALESCE(p.date_added, CURDATE()) as date_added_formatted
-                FROM tbl_product p 
+                FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id 
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -2312,7 +2317,7 @@ case 'get_products_oldest_batch_for_transfer':
             foreach ($transfers as &$transfer) {
                 $stmt2 = $conn->prepare("
                     SELECT 
-                        p.product_name, p.category, p.barcode,
+                        p.product_name, c.category_name as category, p.barcode,
                          p.description, p.brand_id,
                         b.brand,
                         td.qty as qty
@@ -3491,7 +3496,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.quantity,
                     p.srp,
                     l.location_name
@@ -4216,7 +4221,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                     COALESCE(SUM(tbd.quantity), 0) as quantity,
@@ -4248,7 +4253,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
                 WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL)
-                GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.status, b.brand, s.supplier_name
+                GROUP BY p.product_id, p.product_name, c.category_name as category, p.barcode, p.description, p.status, b.brand, s.supplier_name
                 HAVING COALESCE(SUM(tbd.quantity), 0) > 0
                 ORDER BY p.product_name ASC
             ");
@@ -4261,7 +4266,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                     td.qty as quantity,
@@ -4465,7 +4470,7 @@ case 'get_products_oldest_batch_for_transfer':
                     END as status,
                     NULL as notes,
                     CONCAT('TR-', th.transfer_header_id) as reference,
-                    p.category,
+                    c.category_name as category,
                     p.description,
                     b.brand
                 FROM tbl_transfer_header th
@@ -4800,7 +4805,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     p.quantity,
                     b.brand,
                     s.supplier_name,
@@ -4842,7 +4847,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -4889,7 +4894,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -4934,7 +4939,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -4978,7 +4983,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5021,7 +5026,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5064,7 +5069,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5125,7 +5130,7 @@ case 'get_products_oldest_batch_for_transfer':
             // If no location filter or 'All' is selected, don't filter by location
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5181,7 +5186,7 @@ case 'get_products_oldest_batch_for_transfer':
             }
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5230,7 +5235,7 @@ case 'get_products_oldest_batch_for_transfer':
             }
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5279,7 +5284,7 @@ case 'get_products_oldest_batch_for_transfer':
             }
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5325,7 +5330,7 @@ case 'get_products_oldest_batch_for_transfer':
             }
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5369,7 +5374,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5411,7 +5416,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5424,12 +5429,12 @@ case 'get_products_oldest_batch_for_transfer':
             
             $stmt = $conn->prepare("
                 SELECT 
-                    p.category,
+                    c.category_name as category,
                     SUM(p.quantity) as quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
-                GROUP BY p.category
+                GROUP BY c.category_name
                 ORDER BY quantity DESC
                 LIMIT 8
             ");
@@ -5454,7 +5459,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5511,7 +5516,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5554,7 +5559,7 @@ case 'get_products_oldest_batch_for_transfer':
             $params = [];
             
             if ($product_filter) {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $product_filter;
             }
             
@@ -5568,12 +5573,12 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt = $conn->prepare("
                 SELECT 
                     l.location_name as location,
-                    p.category,
+                    c.category_name as category,
                     SUM(p.quantity) as quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
-                GROUP BY l.location_name, p.category
+                GROUP BY l.location_name, c.category_name
                 ORDER BY l.location_name, quantity DESC
                 LIMIT 20
             ");
@@ -5606,7 +5611,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     p.description,
                     p.prescription,
                     p.bulk,
@@ -5628,13 +5633,14 @@ case 'get_products_oldest_batch_for_transfer':
                     batch.entry_by,
                     COALESCE(p.date_added, CURDATE()) as date_added
                 FROM tbl_product p 
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
                 AND l.location_name = ?
-                GROUP BY p.product_name, p.barcode, p.category, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, s.supplier_name, b.brand, l.location_name, batch.batch, batch.entry_date, batch.entry_by
+                GROUP BY p.product_name, p.barcode, c.category_name as category, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, s.supplier_name, b.brand, l.location_name, batch.batch, batch.entry_date, batch.entry_by
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute([$location_name]);
@@ -5677,7 +5683,7 @@ case 'get_products_oldest_batch_for_transfer':
             }
             
             if ($category && $category !== 'all') {
-                $where_conditions[] = "p.category = ?";
+                $where_conditions[] = "c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -5689,7 +5695,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     p.description,
                     p.prescription,
                     p.bulk,
@@ -5722,7 +5728,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 $where_clause
                 AND p.status = 'active'
-                GROUP BY p.product_name, p.barcode, p.category, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
+                GROUP BY p.product_name, p.barcode, c.category_name as category, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
                 ORDER BY p.product_name ASC
             ");
             
@@ -5740,7 +5746,7 @@ case 'get_products_oldest_batch_for_transfer':
             }
             
             if ($category && $category !== 'all') {
-                $transferWhereConditions[] = "p.category = ?";
+                $transferWhereConditions[] = "c.category_name = ?";
                 $transferParams[] = $category;
             }
             
@@ -5761,7 +5767,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                     p.prescription,
@@ -5802,7 +5808,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_employee e ON th.employee_id = e.emp_id
                 $transferWhereClause
                 AND th.status = 'approved'
-                GROUP BY p.product_name, p.category, p.barcode, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
+                GROUP BY p.product_name, c.category_name as category, p.barcode, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
                 ORDER BY p.product_name ASC
             ");
             
@@ -5887,12 +5893,12 @@ case 'get_products_oldest_batch_for_transfer':
             // Get top categories distribution
             $stmt = $conn->prepare("
                 SELECT 
-                    p.category as category_name,
+                    c.category_name_name,
                     COUNT(p.product_id) as product_count,
                     ROUND(COUNT(p.product_id) * 100.0 / (SELECT COUNT(*) FROM tbl_product WHERE (status IS NULL OR status <> 'archived')), 1) as percentage
                 FROM tbl_product p
                 WHERE (p.status IS NULL OR p.status <> 'archived')
-                GROUP BY p.category
+                GROUP BY c.category_name
                 ORDER BY product_count DESC
                 LIMIT 5
             ");
@@ -6003,7 +6009,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.barcode,
                     p.quantity,
                     p.stock_status,
-                    p.category as category_name,
+                    c.category_name_name,
                     b.brand,
                     l.location_name,
                     s.supplier_name,
@@ -6040,7 +6046,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name,
                     p.barcode,
                     p.quantity,
-                    c.category_name,
+                    c.category_name as category,
                     b.brand,
                     l.location_name,
                     s.supplier_name,
@@ -6082,7 +6088,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.quantity,
                     p.expiration,
                     DATEDIFF(p.expiration, CURDATE()) as days_until_expiry,
-                    c.category_name,
+                    c.category_name as category,
                     b.brand,
                     l.location_name,
                     (p.quantity * p.srp) as total_value
@@ -7398,7 +7404,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     p.quantity as product_quantity,
                     p.srp,
                     p.brand_id,

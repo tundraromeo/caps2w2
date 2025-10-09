@@ -169,9 +169,9 @@ function getPurchaseOrderDetails($conn) {
         
         // Get details
         $detailsQuery = "SELECT 
-                          pod.*, p.product_name, p.category
-                        FROM tbl_purchase_order_dtl pod
+                          pod.*, p.product_name, c.category_name as category FROM tbl_purchase_order_dtl pod
                         JOIN tbl_product p ON pod.product_id = p.product_id
+                        LEFT JOIN tbl_category c ON p.category_id = c.category_id
                         WHERE pod.purchase_header_id = ?";
         $detailStmt = $conn->prepare($detailsQuery);
         $detailStmt->execute([$poId]);

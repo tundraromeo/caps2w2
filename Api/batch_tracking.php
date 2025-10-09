@@ -922,13 +922,13 @@ function getPharmacyProducts($conn, $data) {
         $params = [];
         
         if (!empty($search)) {
-            $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+            $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
             $searchParam = "%$search%";
             $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
         }
         
         if ($category !== 'all') {
-            $where .= " AND p.category = ?";
+            $where .= " AND c.category_name = ?";
             $params[] = $category;
         }
         
@@ -937,7 +937,7 @@ function getPharmacyProducts($conn, $data) {
                 p.product_id,
                 p.product_name,
                 p.barcode,
-                p.category,
+                c.category_name as category,
                 b.brand,
                 p.unit_price,
                 p.srp,
@@ -948,7 +948,8 @@ function getPharmacyProducts($conn, $data) {
                 l.location_name,
                 COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), p.srp) as first_batch_srp
             FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN (
@@ -1023,13 +1024,13 @@ function getLocationProducts($conn, $data) {
         $params = [$location_id];
         
         if (!empty($search)) {
-            $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR p.category LIKE ?)";
+            $where .= " AND (p.product_name LIKE ? OR p.barcode LIKE ? OR c.category_name LIKE ?)";
             $searchParam = "%$search%";
             $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
         }
         
         if ($category !== 'all') {
-            $where .= " AND p.category = ?";
+            $where .= " AND c.category_name = ?";
             $params[] = $category;
         }
         
@@ -1038,7 +1039,7 @@ function getLocationProducts($conn, $data) {
                 p.product_id,
                 p.product_name,
                 p.barcode,
-                p.category,
+                c.category_name as category,
                 b.brand,
                 p.unit_price,
                 p.srp,
@@ -1049,12 +1050,13 @@ function getLocationProducts($conn, $data) {
                 l.location_name,
                 COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_srp_value
             FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id
             WHERE $where
-            GROUP BY p.product_id, p.product_name, p.barcode, p.category, b.brand, p.unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
+            GROUP BY p.product_id, p.product_name, p.barcode, c.category_name as category, b.brand, p.unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
             ORDER BY p.product_name ASC
         ");
         $stmt->execute($params);

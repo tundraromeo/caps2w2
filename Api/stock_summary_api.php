@@ -169,7 +169,7 @@ switch ($action) {
             }
             
             if ($category && $category !== 'all') {
-                $whereConditions[] = "p.category = ?";
+                $whereConditions[] = "c.category_name = ?";
                 $params[] = $category;
             }
             
@@ -184,6 +184,7 @@ switch ($action) {
             $countStmt = $conn->prepare("
                 SELECT COUNT(DISTINCT p.product_id) as total
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 INNER JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 INNER JOIN tbl_batch b ON ss.batch_id = b.batch_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -199,7 +200,7 @@ switch ($action) {
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                     p.quantity as current_stock,
@@ -220,6 +221,7 @@ switch ($action) {
                     b.entry_date as batch_date,
                     b.entry_by
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 INNER JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 INNER JOIN tbl_batch b ON ss.batch_id = b.batch_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id

@@ -186,9 +186,10 @@ switch ($action) {
             }
             
             $productStmt = $conn->prepare("
-                SELECT p.product_id, p.product_name, p.barcode, p.category, p.quantity,
+                SELECT p.product_id, p.product_name, p.barcode, c.category_name as category, p.quantity,
                        b.brand, s.supplier_name, l.location_name
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -410,7 +411,7 @@ switch ($action) {
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.quantity,
                     p.barcode,
                     p.unit_price,

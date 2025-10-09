@@ -533,7 +533,7 @@ function handle_get_products($conn, $data) {
                 SELECT
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
 
@@ -579,6 +579,7 @@ function handle_get_products($conn, $data) {
                     -- Show total quantity
                     ss.available_quantity as total_quantity
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -586,7 +587,7 @@ function handle_get_products($conn, $data) {
                 INNER JOIN tbl_batch b ON ss.batch_id = b.batch_id
                 WHERE ss.available_quantity > 0
                 $whereClause
-                GROUP BY p.product_id, p.product_name, p.category, p.barcode, p.description, p.,
+                GROUP BY p.product_id, p.product_name, c.category_name as category, p.barcode, p.description,
                          p.brand_id, p.supplier_id, p.location_id, p.srp, p.stock_status,
                          s.supplier_name, b.brand, l.location_name, ss.batch_id, ss.batch_reference,
                          b.entry_date, b.entry_by, ss.available_quantity
@@ -598,7 +599,7 @@ function handle_get_products($conn, $data) {
                 SELECT
                     p.product_id,
                     p.product_name,
-                    p.category,
+                    c.category_name as category,
                     p.barcode,
                     p.description,
                     p.prescription,
@@ -624,6 +625,7 @@ function handle_get_products($conn, $data) {
                     b.order_no as batch_order_no,
                     COALESCE(p.date_added, CURDATE()) as date_added_formatted
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -770,7 +772,7 @@ function handle_get_products_oldest_batch_for_transfer($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                p.category,
+                c.category_name as category,
                 p.barcode,
                 p.description,
 
@@ -787,6 +789,7 @@ function handle_get_products_oldest_batch_for_transfer($conn, $data) {
                 'N/A' as expiration_date,
                 1 as total_batches
             FROM tbl_product p
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -829,7 +832,7 @@ function handle_get_products_oldest_batch($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                p.category,
+                c.category_name as category,
                 p.barcode,
                 p.description,
                 COALESCE(b.brand, '') as brand,
@@ -858,6 +861,7 @@ function handle_get_products_oldest_batch($conn, $data) {
                 -- Fallback to product quantity if no stock summary
                 COALESCE(total_qty.total_quantity, p.quantity) as quantity
             FROM tbl_product p
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -940,7 +944,7 @@ function handle_get_inventory_kpis($conn, $data) {
         $params = [];
 
         if ($product_filter) {
-            $whereConditions[] = "p.category = ?";
+            $whereConditions[] = "c.category_name = ?";
             $params[] = $product_filter;
         }
 
@@ -986,7 +990,7 @@ function handle_get_supply_by_location($conn, $data) {
         $params = [];
 
         if ($product_filter) {
-            $whereConditions[] = "p.category = ?";
+            $whereConditions[] = "c.category_name = ?";
             $params[] = $product_filter;
         }
 
@@ -1031,7 +1035,7 @@ function handle_get_return_rate_by_product($conn, $data) {
         $params = [];
 
         if ($product_filter) {
-            $whereConditions[] = "p.category = ?";
+            $whereConditions[] = "c.category_name = ?";
             $params[] = $product_filter;
         }
 
@@ -1075,7 +1079,7 @@ function handle_get_stockout_items($conn, $data) {
         $params = [];
 
         if ($product_filter) {
-            $whereConditions[] = "p.category = ?";
+            $whereConditions[] = "c.category_name = ?";
             $params[] = $product_filter;
         }
 
@@ -1326,7 +1330,7 @@ function handle_get_products_by_location_name($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                p.category,
+                c.category_name as category,
                 p.barcode,
                 p.description,
                 p.prescription,
@@ -1352,6 +1356,7 @@ function handle_get_products_by_location_name($conn, $data) {
                 b.order_no as batch_order_no,
                 COALESCE(p.date_added, CURDATE()) as date_added_formatted
             FROM tbl_product p
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
             LEFT JOIN tbl_location l ON p.location_id = l.location_id
@@ -1393,7 +1398,7 @@ function handle_get_location_products($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                p.category,
+                c.category_name as category,
                 p.barcode,
                 p.description,
                 p.prescription,
@@ -1419,6 +1424,7 @@ function handle_get_location_products($conn, $data) {
                 b.order_no as batch_order_no,
                 COALESCE(p.date_added, CURDATE()) as date_added_formatted
             FROM tbl_product p
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
             LEFT JOIN tbl_location l ON p.location_id = l.location_id

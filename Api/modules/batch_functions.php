@@ -49,7 +49,7 @@ function getTransferBatchDetails($conn, $data) {
                     th.date as transfer_date,
                     p.product_name,
                     p.barcode,
-                    p.unit_price,
+                    p.srp as unit_price,
                     p.srp,
                     b.brand,
                     s.supplier_name,
@@ -173,7 +173,7 @@ function getBatchTransferDetailsByProduct($conn, $data) {
                 btd.transfer_date,
                 p.product_name,
                 p.barcode,
-                p.unit_price,
+                p.srp as unit_price,
                 p.srp,
                 b.brand,
                 s.supplier_name,
@@ -255,8 +255,8 @@ function getBatchTransfersByLocation($conn, $data) {
                 btd.created_at,
                 p.product_name,
                 p.barcode,
-                p.category,
-                p.unit_price,
+                c.category_name as category,
+                p.srp as unit_price,
                 p.srp as product_srp,
                 b.brand,
                 s.supplier_name,
@@ -269,6 +269,7 @@ function getBatchTransfersByLocation($conn, $data) {
                 CONCAT(e.Fname, ' ', e.Lname) as employee_name
             FROM tbl_batch_transfer_details btd
             LEFT JOIN tbl_product p ON btd.product_id = p.product_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_location l ON btd.location_id = l.location_id
@@ -562,7 +563,7 @@ function getProductsOldestBatchForTransfer($conn, $data) {
                 p.product_id,
                 p.product_name,
                 p.barcode,
-                p.unit_price,
+                p.srp as unit_price,
                 p.srp,
                 fs.batch_id,
                 fs.batch_reference,
@@ -617,7 +618,7 @@ function getProductsOldestBatch($conn, $data) {
                 p.product_id,
                 p.product_name,
                 p.barcode,
-                p.unit_price,
+                p.srp as unit_price,
                 p.srp,
                 fs.batch_id,
                 fs.batch_reference,
@@ -775,11 +776,11 @@ function get_products_oldest_batch($conn, $data) {
             SELECT 
                 p.product_id,
                 p.product_name,
-                p.category,
+                c.category_name as category,
                 p.quantity,
                 p.barcode,
                 p.srp,
-                p.unit_price,
+                p.srp as unit_price,
                 p.location_id,
                 l.location_name,
                 COALESCE(b.brand, '') as brand,
@@ -789,6 +790,7 @@ function get_products_oldest_batch($conn, $data) {
                 DATEDIFF(MIN(fs.expiration_date), CURDATE()) as days_until_expiry,
                 COALESCE(NULLIF(first_batch.first_batch_srp, 0), p.srp) as first_batch_srp
             FROM tbl_product p
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id AND fs.available_quantity > 0
             LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
@@ -811,7 +813,7 @@ function get_products_oldest_batch($conn, $data) {
             $params[] = $location_id;
         }
         
-        $sql .= " GROUP BY p.product_id ORDER BY earliest_expiry ASC";
+        $sql .= " GROUP BY p.product_id, p.product_name, c.category_name, p.quantity, p.barcode, p.srp, p.location_id, l.location_name, b.brand, s.supplier_name ORDER BY earliest_expiry ASC";
         
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
@@ -848,9 +850,10 @@ function get_batches($conn, $data) {
                 fs.expiration_date,
                 fs.created_at,
                 p.product_name,
-                p.category
+                c.category_name as category
             FROM tbl_fifo_stock fs
             LEFT JOIN tbl_product p ON fs.product_id = p.product_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
             WHERE fs.available_quantity > 0
         ";
         

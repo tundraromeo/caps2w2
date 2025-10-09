@@ -85,6 +85,7 @@ try {
             $stmt = $conn->prepare("
                 SELECT p.*, l.location_name 
                 FROM tbl_product p 
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id 
                 WHERE p.barcode = ? 
                 LIMIT 1
@@ -546,12 +547,13 @@ try {
                         ? as location_name,
                         COALESCE(b.brand, '') as brand,
                         COALESCE(s.supplier_name, '') as supplier_name,
-                        p.category,
+                        c.category_name as category,
                         p.description,
                         p.prescription,
                         p.bulk
                     FROM tbl_product p
-                    LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                     LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
                     WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL OR p.product_name = 'Mang tomas')
@@ -561,7 +563,7 @@ try {
                 
                 // Add search filter if provided
                 if (!empty($search)) {
-                    $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR p.category LIKE ? OR p.barcode LIKE ?)";
+                    $sql .= " AND (p.product_name LIKE ? OR p.description LIKE ? OR c.category_name LIKE ? OR p.barcode LIKE ?)";
                     $searchParam = "%{$search}%";
                     $params[] = $searchParam;
                     $params[] = $searchParam;
@@ -569,7 +571,7 @@ try {
                     $params[] = $searchParam;
                 }
                 
-                $sql .= " GROUP BY p.product_id, p.product_name, p.barcode, p.category, p.description, p.prescription, p.bulk, b.brand, s.supplier_name";
+                $sql .= " GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, p.description, p.prescription, p.bulk, b.brand, s.supplier_name";
                 $sql .= " HAVING COALESCE(SUM(tbd.quantity), 0) > 0"; // Only show products that have stock in this location
                 $sql .= " ORDER BY p.product_name ASC";
                 
@@ -767,13 +769,14 @@ try {
                 // Get top categories
                 $stmt = $conn->prepare("
                     SELECT 
-                        p.category as category_name,
+                        c.category_name as category_name,
                         COUNT(*) as product_count,
                         ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM tbl_product WHERE status IS NULL OR status <> 'archived')), 1) as percentage
                     FROM tbl_product p
-                    WHERE p.status IS NULL OR p.status <> 'archived'
-                    AND p.category IS NOT NULL AND p.category <> ''
-                    GROUP BY p.category
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                WHERE p.status IS NULL OR p.status <> 'archived'
+                    AND c.category_name IS NOT NULL AND c.category_name <> ''
+                    GROUP BY c.category_name
                     ORDER BY product_count DESC
                     LIMIT 6
                 ");
@@ -818,7 +821,7 @@ try {
                         sm.movement_id,
                         p.product_name,
                         p.barcode,
-                        p.category,
+                        c.category_name as category,
                         sm.quantity,
                         p.srp as unit_price,
                         sm.movement_type,
@@ -847,7 +850,7 @@ try {
                             th.transfer_header_id as movement_id,
                             p.product_name,
                             p.barcode,
-                            p.category,
+                            c.category_name as category,
                             td.qty as quantity,
                             p.srp as unit_price,
                             'TRANSFER' as movement_type,

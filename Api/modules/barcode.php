@@ -21,7 +21,7 @@ function check_barcode($conn, $data) {
             SELECT 
                 p.product_id,
                 p.product_name,
-                p.category,
+                c.category_name as category,
                 p.barcode,
                 p.description,
                 p.quantity,
@@ -36,7 +36,8 @@ function check_barcode($conn, $data) {
                 COALESCE(b.brand, '') as brand,
                 COALESCE(s.supplier_name, '') as supplier_name
             FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             WHERE p.barcode = ? AND p.status = 'active'

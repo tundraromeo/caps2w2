@@ -143,8 +143,9 @@ function getTotalSales($conn) {
 function getSalesSummary($conn, $data = []) {
     try {
         $days = $data['days'] ?? $_POST['days'] ?? 7; // Default to 7 days
-        $days = max(1, min(30, (int)$days)); // Limit between 1-30 days
+        $days = max(1, min(30, (int)$days)); // Limit between 1-30 days - sanitized as integer
         
+        // Note: MySQL doesn't allow parameter binding in INTERVAL clause
         $sql = "
             SELECT 
                 DATE(pt.date) as sales_date,
@@ -155,13 +156,12 @@ function getSalesSummary($conn, $data = []) {
                 COALESCE(SUM(CASE WHEN pt.payment_type = 'Gcash' THEN psh.total_amount ELSE 0 END), 0) as daily_gcash_sales
             FROM tbl_pos_transaction pt
             JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
-            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
             GROUP BY DATE(pt.date)
             ORDER BY DATE(pt.date) DESC
         ";
         
         $stmt = $conn->prepare($sql);
-        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
@@ -199,8 +199,9 @@ function getSalesSummary($conn, $data = []) {
 function getPaymentMethods($conn, $data = []) {
     try {
         $days = $data['days'] ?? $_POST['days'] ?? 30; // Default to 30 days
-        $days = max(1, min(365, (int)$days)); // Limit between 1-365 days
+        $days = max(1, min(365, (int)$days)); // Limit between 1-365 days - sanitized as integer
         
+        // Note: MySQL doesn't allow parameter binding in INTERVAL clause, so we use the sanitized integer directly
         $sql = "
             SELECT 
                 pt.payment_type,
@@ -210,17 +211,16 @@ function getPaymentMethods($conn, $data = []) {
                     SELECT COUNT(DISTINCT pt2.transaction_id) 
                     FROM tbl_pos_transaction pt2
                     JOIN tbl_pos_sales_header psh2 ON pt2.transaction_id = psh2.transaction_id
-                    WHERE DATE(pt2.date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+                    WHERE DATE(pt2.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
                 )), 1) as percentage
             FROM tbl_pos_transaction pt
             JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
-            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL :days DAY)
+            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
             GROUP BY pt.payment_type
             ORDER BY total_amount DESC
         ";
         
         $stmt = $conn->prepare($sql);
-        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
         $stmt->execute();
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         

@@ -198,13 +198,14 @@ class ReportsModule {
         try {
             $stmt = $this->conn->prepare("
                 SELECT 
-                    p.category as category_name,
+                    c.category_name as category_name,
                     COUNT(*) as product_count,
                     ROUND((COUNT(*) * 100.0 / (SELECT COUNT(*) FROM tbl_product WHERE status IS NULL OR status <> 'archived')), 1) as percentage
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 WHERE p.status IS NULL OR p.status <> 'archived'
-                AND p.category IS NOT NULL AND p.category <> ''
-                GROUP BY p.category
+                AND c.category_name IS NOT NULL AND c.category_name <> ''
+                GROUP BY c.category_name
                 ORDER BY product_count DESC
                 LIMIT 6
             ");
@@ -452,7 +453,7 @@ class ReportsModule {
             SELECT 
                 p.product_name,
                 p.barcode,
-                p.category,
+                c.category_name as category,
                 p.quantity as current_stock,
                 p.srp as unit_price,
                 (p.quantity * p.srp) as total_value,
@@ -466,7 +467,8 @@ class ReportsModule {
                     ELSE 'In Stock'
                 END as status
             FROM tbl_product p
-            LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             WHERE (p.status IS NULL OR p.status <> 'archived')
@@ -915,7 +917,7 @@ class ReportsModule {
                     sm.movement_id,
                     p.product_name,
                     p.barcode,
-                    p.category,
+                    c.category_name as category,
                     sm.quantity,
                     sm.unit_cost as unit_price,
                     (sm.quantity * sm.unit_cost) as total_value,
@@ -945,7 +947,7 @@ class ReportsModule {
                         th.transfer_header_id as movement_id,
                         p.product_name,
                         p.barcode,
-                        p.category,
+                        c.category_name as category,
                         td.qty as quantity,
                         p.srp as unit_price,
                         (td.qty * p.srp) as total_value,
@@ -1137,7 +1139,8 @@ function get_warehouse_kpis($conn, $data) {
         $suppliersStmt = $conn->prepare("
             SELECT COUNT(DISTINCT p.supplier_id) as suppliers_count 
             FROM tbl_product p 
-            WHERE p.status = 'active' AND p.location_id = ? 
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                WHERE p.status = 'active' AND p.location_id = ? 
             AND p.supplier_id IS NOT NULL
         ");
         $suppliersStmt->execute([$location_id]);
