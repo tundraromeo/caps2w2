@@ -1633,6 +1633,16 @@ switch ($action) {
             echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
         }
         break;
+
+    case 'get_employee_profile':
+        require_once 'modules/employees.php';
+        handle_get_employee_profile($conn, $data);
+        break;
+
+    case 'update_employee_profile':
+        require_once 'modules/employees.php';
+        handle_update_employee_profile($conn, $data);
+        break;
         //convenience
     case 'add_convenience_product':
         require_once __DIR__ . '/modules/products.php';
@@ -6811,18 +6821,46 @@ case 'get_products_oldest_batch_for_transfer':
 
     case 'get_current_user':
         try {
+            // Start session to get current user
             session_start();
             
-            if (isset($_SESSION['user_id']) && isset($_SESSION['full_name'])) {
-                echo json_encode([
-                    "success" => true,
-                    "data" => [
-                        "user_id" => $_SESSION['user_id'],
-                        "username" => $_SESSION['username'] ?? '',
-                        "full_name" => $_SESSION['full_name'],
-                        "role" => $_SESSION['role'] ?? ''
-                    ]
-                ]);
+            if (isset($_SESSION['user_id']) && isset($_SESSION['username'])) {
+                // Get current user's full data from database
+                $userStmt = $conn->prepare("
+                    SELECT 
+                        emp_id,
+                        Fname,
+                        Lname,
+                        CONCAT(Fname, ' ', Lname) as fullName,
+                        email,
+                        username,
+                        role_id,
+                        status
+                    FROM tbl_employee 
+                    WHERE emp_id = :user_id AND status = 'active'
+                    LIMIT 1
+                ");
+                $userStmt->bindParam(':user_id', $_SESSION['user_id'], PDO::PARAM_INT);
+                $userStmt->execute();
+                $user = $userStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($user) {
+                    echo json_encode([
+                        "success" => true,
+                        "data" => [
+                            "user_id" => $user['emp_id'],
+                            "username" => $user['username'],
+                            "fullName" => $user['fullName'],
+                            "email" => $user['email'],
+                            "role" => $_SESSION['role'] ?? 'User'
+                        ]
+                    ]);
+                } else {
+                    echo json_encode([
+                        "success" => false,
+                        "message" => "User not found or inactive"
+                    ]);
+                }
             } else {
                 echo json_encode([
                     "success" => false,
@@ -8876,6 +8914,16 @@ case 'get_products_oldest_batch_for_transfer':
     case 'change_admin_password':
         require_once __DIR__ . '/modules/admin.php';
         handle_change_admin_password($conn, $data);
+        break;
+
+    case 'update_current_user_info':
+        require_once __DIR__ . '/modules/admin.php';
+        handle_update_current_user_info($conn, $data);
+        break;
+
+    case 'change_current_user_password':
+        require_once __DIR__ . '/modules/admin.php';
+        handle_change_current_user_password($conn, $data);
         break;
 
 } // End of switch statement

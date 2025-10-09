@@ -108,6 +108,42 @@ try {
             }
             break;
 
+        case 'check_product_name':
+            // Check if product name exists
+            $product_name = $data['product_name'] ?? '';
+            
+            if (empty($product_name)) {
+                echo json_encode(['success' => false, 'message' => 'Product name is required']);
+                break;
+            }
+            
+            $stmt = $conn->prepare("
+                SELECT p.*, l.location_name 
+                FROM tbl_product p 
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id 
+                WHERE LOWER(p.product_name) LIKE LOWER(?) 
+                AND p.status = 'active'
+                LIMIT 1
+            ");
+            $stmt->execute(["%{$product_name}%"]);
+            $product = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($product) {
+                echo json_encode([
+                    "success" => true,
+                    "found" => true,
+                    "product" => $product
+                ]);
+            } else {
+                echo json_encode([
+                    "success" => true,
+                    "found" => false,
+                    "message" => "Product not found"
+                ]);
+            }
+            break;
+
         case 'save_pos_sale':
             try {
                 $client_txn_id = $data['transactionId'] ?? '';

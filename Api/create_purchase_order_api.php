@@ -73,14 +73,16 @@ function createPurchaseOrder($conn) {
         // Generate PO number
         $poNumber = 'PO-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
         
-        // Insert purchase order header
+        // Insert purchase order header with status from input (default: 'delivered')
+        $status = $input['status'] ?? 'delivered';
         $headerQuery = "INSERT INTO tbl_purchase_order_header (supplier_id, total_amount, expected_delivery_date, created_by, status, date, time, notes, po_number) 
-                       VALUES (?, 0, ?, ?, 'delivered', CURDATE(), CURTIME(), ?, ?)";
+                       VALUES (?, 0, ?, ?, ?, CURDATE(), CURTIME(), ?, ?)";
         $stmt = $conn->prepare($headerQuery);
         $stmt->execute([
             $input['supplier_id'], 
             $input['expected_delivery_date'] ?? null, 
             $input['created_by'] ?? 21,
+            $status,
             $input['notes'] ?? '',
             $poNumber
         ]);
@@ -116,7 +118,8 @@ function createPurchaseOrder($conn) {
             'success' => true, 
             'message' => 'Purchase order created successfully',
             'po_number' => $poNumber,
-            'purchase_order_id' => $purchaseHeaderId
+            'po_id' => $purchaseHeaderId,  // Changed from purchase_order_id to po_id for frontend compatibility
+            'purchase_header_id' => $purchaseHeaderId
         ]);
         
     } catch (Exception $e) {

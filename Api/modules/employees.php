@@ -112,3 +112,122 @@ function handle_update_employee_status($conn, $data) {
         echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
     }
 }
+
+function handle_get_employee_profile($conn, $data) {
+    try {
+        session_start();
+        
+        // Get employee ID from session or data
+        $emp_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : (isset($data['emp_id']) ? $data['emp_id'] : (isset($data['user_id']) ? $data['user_id'] : null));
+        
+        if (!$emp_id) {
+            echo json_encode(["success" => false, "message" => "Employee ID not found. Please ensure you are logged in."]);
+            return;
+        }
+
+        $stmt = $conn->prepare("
+            SELECT e.emp_id, e.Fname, e.Mname, e.Lname, e.email, e.contact_num, e.role_id, 
+                   e.username, e.age, e.address, e.status, e.gender, e.birthdate, e.location_id,
+                   r.role as role_name
+            FROM tbl_employee e
+            LEFT JOIN tbl_role r ON e.role_id = r.role_id
+            WHERE e.emp_id = :emp_id
+        ");
+        $stmt->bindParam(":emp_id", $emp_id, PDO::PARAM_INT);
+        $stmt->execute();
+        $employee = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($employee) {
+            // Capitalize role name for display
+            $employee['role_name'] = ucfirst($employee['role_name'] ?? 'Unknown');
+            
+            echo json_encode([
+                "success" => true,
+                "employee" => $employee
+            ]);
+        } else {
+            echo json_encode([
+                "success" => false,
+                "message" => "Employee not found"
+            ]);
+        }
+    } catch (Exception $e) {
+        echo json_encode([
+            "success" => false,
+            "message" => "Database error: " . $e->getMessage()
+        ]);
+    }
+}
+
+function handle_update_employee_profile($conn, $data) {
+    try {
+        session_start();
+        
+        // Get employee ID from session or data
+        $emp_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : (isset($data['emp_id']) ? $data['emp_id'] : (isset($data['user_id']) ? $data['user_id'] : null));
+        
+        if (!$emp_id) {
+            echo json_encode(["success" => false, "message" => "Employee ID not found. Please ensure you are logged in."]);
+            return;
+        }
+
+        // Get form data
+        $fname = isset($data['firstName']) ? trim($data['firstName']) : '';
+        $mname = isset($data['middleName']) ? trim($data['middleName']) : '';
+        $lname = isset($data['lastName']) ? trim($data['lastName']) : '';
+        $email = isset($data['email']) ? trim($data['email']) : '';
+        $contact = isset($data['phoneNumber']) ? trim($data['phoneNumber']) : '';
+        $address = isset($data['address']) ? trim($data['address']) : '';
+        $age = isset($data['age']) ? (int)$data['age'] : null;
+        $gender = isset($data['gender']) ? trim($data['gender']) : '';
+        $birthdate = isset($data['birthdate']) ? trim($data['birthdate']) : '';
+
+        // Validate required fields
+        if (empty($fname) || empty($lname) || empty($email)) {
+            echo json_encode(["success" => false, "message" => "First name, last name, and email are required"]);
+            return;
+        }
+
+        // Check if email is already taken by another employee
+        $checkStmt = $conn->prepare("SELECT emp_id FROM tbl_employee WHERE email = :email AND emp_id != :emp_id");
+        $checkStmt->bindParam(":email", $email, PDO::PARAM_STR);
+        $checkStmt->bindParam(":emp_id", $emp_id, PDO::PARAM_INT);
+        $checkStmt->execute();
+        
+        if ($checkStmt->fetch()) {
+            echo json_encode(["success" => false, "message" => "Email already exists for another employee"]);
+            return;
+        }
+
+        // Update employee profile
+        $updateStmt = $conn->prepare("
+            UPDATE tbl_employee 
+            SET Fname = :fname, Mname = :mname, Lname = :lname, 
+                email = :email, contact_num = :contact, address = :address,
+                age = :age, gender = :gender, birthdate = :birthdate
+            WHERE emp_id = :emp_id
+        ");
+
+        $updateStmt->bindParam(":fname", $fname, PDO::PARAM_STR);
+        $updateStmt->bindParam(":mname", $mname, PDO::PARAM_STR);
+        $updateStmt->bindParam(":lname", $lname, PDO::PARAM_STR);
+        $updateStmt->bindParam(":email", $email, PDO::PARAM_STR);
+        $updateStmt->bindParam(":contact", $contact, PDO::PARAM_STR);
+        $updateStmt->bindParam(":address", $address, PDO::PARAM_STR);
+        $updateStmt->bindParam(":age", $age, PDO::PARAM_INT);
+        $updateStmt->bindParam(":gender", $gender, PDO::PARAM_STR);
+        $updateStmt->bindParam(":birthdate", $birthdate, PDO::PARAM_STR);
+        $updateStmt->bindParam(":emp_id", $emp_id, PDO::PARAM_INT);
+
+        if ($updateStmt->execute()) {
+            // Update session data
+            $_SESSION['full_name'] = $fname . ' ' . $lname;
+            
+            echo json_encode(["success" => true, "message" => "Profile updated successfully"]);
+        } else {
+            echo json_encode(["success" => false, "message" => "Failed to update profile"]);
+        }
+    } catch (Exception $e) {
+        echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
+    }
+}

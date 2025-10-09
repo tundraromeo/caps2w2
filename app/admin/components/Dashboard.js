@@ -79,8 +79,7 @@ function Dashboard() {
     fullName: 'Admin User',
     email: 'admin@enguio.com',
     username: 'admin',
-    position: 'System Administrator',
-    department: 'IT Department'
+    position: 'System Administrator'
   });
   
   // Change name modal state
@@ -140,8 +139,7 @@ function Dashboard() {
           fullName: result.data.fullName || 'Admin User',
           email: result.data.email || 'admin@enguio.com',
           username: result.data.username || 'admin',
-          position: result.data.position || 'System Administrator',
-          department: result.data.department || 'IT Department'
+          position: result.data.position || 'System Administrator'
         });
         
         // Update change name data with current full name
@@ -1021,21 +1019,21 @@ function Dashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: theme.text.secondary }}>Position</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: theme.text.secondary }}>Username</label>
                 <input 
                   type="text" 
-                  value={employeeData.position}
-                  onChange={(e) => setEmployeeData(prev => ({ ...prev, position: e.target.value }))}
+                  value={employeeData.username}
+                  onChange={(e) => setEmployeeData(prev => ({ ...prev, username: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   style={{ borderColor: theme.border.default }}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: theme.text.secondary }}>Department</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: theme.text.secondary }}>Position</label>
                 <input 
                   type="text" 
-                  value={employeeData.department}
-                  onChange={(e) => setEmployeeData(prev => ({ ...prev, department: e.target.value }))}
+                  value={employeeData.position}
+                  onChange={(e) => setEmployeeData(prev => ({ ...prev, position: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   style={{ borderColor: theme.border.default }}
                 />
@@ -1050,9 +1048,78 @@ function Dashboard() {
                 Cancel
               </button>
               <button 
-                onClick={() => {
-                  // Handle save employee info logic here
-                  setShowEmployeeInfoModal(false);
+                onClick={async () => {
+                  if (!employeeData.fullName.trim()) {
+                    toast.error('Full name is required');
+                    return;
+                  }
+                  
+                  if (!employeeData.email.trim()) {
+                    toast.error('Email is required');
+                    return;
+                  }
+                  
+                  if (!employeeData.username.trim()) {
+                    toast.error('Username is required');
+                    return;
+                  }
+                  
+                  // Validate email format
+                  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                  if (!emailRegex.test(employeeData.email)) {
+                    toast.error('Please enter a valid email address');
+                    return;
+                  }
+                  
+                  // Validate username format (alphanumeric and underscores only, 3-20 characters)
+                  const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+                  if (!usernameRegex.test(employeeData.username)) {
+                    toast.error('Username must be 3-20 characters long and contain only letters, numbers, and underscores');
+                    return;
+                  }
+                  
+                  try {
+                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                        action: 'update_admin_employee_info',
+                        fullName: employeeData.fullName.trim(),
+                        email: employeeData.email.trim(),
+                        username: employeeData.username.trim(),
+                        position: employeeData.position.trim()
+                      })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                      toast.success('Employee information updated successfully!');
+                      
+                      // Update admin profile for top navigation
+                      setAdminProfile(prev => ({
+                        ...prev,
+                        name: result.data.fullName,
+                        email: result.data.email
+                      }));
+                      
+                      // Update local employee data with response
+                      setEmployeeData(prev => ({
+                        ...prev,
+                        fullName: result.data.fullName,
+                        email: result.data.email,
+                        username: result.data.username,
+                        position: result.data.position
+                      }));
+                      
+                      setShowEmployeeInfoModal(false);
+                    } else {
+                      toast.error('Error: ' + result.message);
+                    }
+                  } catch (error) {
+                    console.error('Error updating employee info:', error);
+                    toast.error('Network error occurred');
+                  }
                 }}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
               >

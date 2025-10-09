@@ -99,16 +99,16 @@ async function handleApiCall(action, data = {}) {
   }
 }
 
-// New function to check if barcode exists
-async function checkBarcodeExists(barcode) {
+// New function to check if product name exists
+async function checkProductNameExists(productName) {
   try {
-    console.log("🔍 Calling checkBarcodeExists with barcode:", barcode);
-    const response = await handleApiCall("check_barcode", { barcode });
-    console.log("🔍 checkBarcodeExists response:", response);
+    console.log("🔍 Calling checkProductNameExists with product name:", productName);
+    const response = await handleApiCall("check_product_name", { product_name: productName });
+    console.log("🔍 checkProductNameExists response:", response);
     return response;
   } catch (error) {
-    console.error("❌ Error in checkBarcodeExists:", error);
-    safeToast("error", "Error checking barcode:", error);
+    console.error("❌ Error in checkProductNameExists:", error);
+    safeToast("error", "Error checking product name:", error);
     return { success: false, error: error.message };
   }
 }
@@ -237,6 +237,11 @@ function Warehouse() {
     // State Management
     const [scannerStatusMessage, setScannerStatusMessage] = useState("🔍 Scanner is ready and active - Scan any barcode to continue");
     const [scanTimeout, setScanTimeout] = useState(null);
+    
+    // Product name checking states
+    const [productNameInput, setProductNameInput] = useState("");
+    const [productNameStatusMessage, setProductNameStatusMessage] = useState("📝 Enter product name to check if it exists");
+    const [isCheckingProductName, setIsCheckingProductName] = useState(false);
   
     const [inventoryData, setInventoryData] = useState([])
     const [suppliersData, setSuppliersData] = useState([])
@@ -1001,6 +1006,104 @@ calculateLowStockAndExpiring(activeProducts);
       }))
     }
   
+    // Enhanced Product Name Checking Functions
+  async function handleProductNameCheck(productName) {
+    if (!productName || productName.trim() === "") {
+      setProductNameStatusMessage("❌ Please enter a product name");
+      return;
+    }
+
+    setIsCheckingProductName(true);
+    setProductNameStatusMessage("🔍 Checking if product name exists...");
+
+    try {
+      console.log("🔍 Checking product name in database:", productName);
+      
+      // First, try to find the product in existing inventory data
+      const existingProductInInventory = inventoryData.find(product => 
+        product.product_name && product.product_name.toLowerCase().includes(productName.toLowerCase())
+      );
+      
+      if (existingProductInInventory) {
+        console.log("✅ Product found in inventory data:", existingProductInInventory);
+        // Product exists - show update stock modal
+        setExistingProduct(existingProductInInventory);
+        setNewStockQuantity("");
+        
+        // Set default configuration mode based on product data
+        const hasBulkFields = existingProductInInventory.boxes || existingProductInInventory.strips_per_box || 
+                              existingProductInInventory.tablets_per_strip || 
+                              existingProductInInventory.pieces_per_pack;
+        setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
+        
+        setShowUpdateStockModal(true);
+        setProductNameStatusMessage("✅ Product found! Opening update stock modal.");
+      } else {
+        console.log("🔍 Product not in inventory data, checking API...");
+        // If not in inventory, check API
+        const productNameCheck = await checkProductNameExists(productName);
+        console.log("🔍 Product name check result:", productNameCheck);
+        
+        if (productNameCheck.success && productNameCheck.product) {
+          console.log("✅ Product found via API, opening update stock modal:", productNameCheck.product);
+          setExistingProduct(productNameCheck.product);
+          setNewStockQuantity("");
+          
+          // Set default configuration mode based on product data
+          const hasBulkFields = productNameCheck.product.boxes || productNameCheck.product.strips_per_box || 
+                                productNameCheck.product.tablets_per_strip || 
+                                productNameCheck.product.pieces_per_pack;
+          setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
+          
+          setShowUpdateStockModal(true);
+          setProductNameStatusMessage("✅ Product found! Opening update stock modal.");
+        } else {
+          console.log("❌ Product not found, opening new product modal");
+          // Product doesn't exist - show new product modal
+          setNewProductForm({
+            product_name: productName, // Pre-fill with entered product name
+            category: "",
+            product_type: "",
+            configMode: "bulk", // Default to bulk mode
+            barcode: "", // Empty barcode for manual entry
+            description: "",
+            srp: "",
+            brand_id: "",
+            brand_search: "",
+            supplier_id: "",
+            expiration: "",
+            date_added: new Date().toISOString().split('T')[0], // Auto-set current date
+            batch: generateBatchRef(), // Auto-generate batch
+            order_number: "",
+            prescription: 0,
+            bulk: 0,
+            // Medicine fields
+            boxes: "",
+            strips_per_box: "",
+            tablets_per_strip: "",
+            total_tablets: "",
+            // Non-Medicine fields
+            pieces_per_pack: "",
+            total_pieces: ""
+          });
+          setShowNewProductModal(true);
+          setProductNameStatusMessage("✅ New product detected! Opening new product modal.");
+        }
+      }
+    } catch (error) {
+      safeToast("error", "Error checking product name:", error);
+      setProductNameStatusMessage("❌ Error checking product name. Please try again.");
+      safeToast("error", "Failed to check product name");
+    } finally {
+      setIsCheckingProductName(false);
+      
+      // Reset product name status after a delay
+      setTimeout(() => {
+        setProductNameStatusMessage("📝 Enter product name to check if it exists");
+      }, 3000);
+    }
+  }
+
     // Enhanced Scanner Functions with Barcode Checking
   async function handleScannerOperation(operation, data) {
     // "Scanner operation:", operation, "Data:", data);
@@ -2815,6 +2918,51 @@ console.log("API response for product quantities:", response);
                 </div>
                 <div className="text-sm max-w-md" style={{ color: theme.text.secondary }}>
                   {scannerStatusMessage}
+                </div>
+
+                {/* Manual Entry Section */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    placeholder="Enter product name..."
+                    value={productNameInput}
+                    onChange={(e) => setProductNameInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleProductNameCheck(productNameInput);
+                      }
+                    }}
+                    className="px-3 py-1 text-sm border rounded focus:outline-none focus:ring-1 w-48"
+                    style={{ 
+                      borderColor: theme.border.default,
+                      backgroundColor: theme.bg.secondary,
+                      color: theme.text.primary,
+                      focusRingColor: theme.colors.accent
+                    }}
+                    disabled={isCheckingProductName}
+                  />
+                  <button
+                    onClick={() => handleProductNameCheck(productNameInput)}
+                    disabled={isCheckingProductName || !productNameInput.trim()}
+                    className="px-3 py-1 rounded flex items-center text-sm font-medium transition-colors"
+                    style={{ 
+                      backgroundColor: isCheckingProductName || !productNameInput.trim() 
+                        ? theme.bg.muted 
+                        : theme.colors.warning,
+                      color: isCheckingProductName || !productNameInput.trim() 
+                        ? theme.text.muted 
+                        : 'white',
+                      cursor: isCheckingProductName || !productNameInput.trim() 
+                        ? 'not-allowed' 
+                        : 'pointer'
+                    }}
+                  >
+                    <Search className="h-4 w-4 mr-1" />
+                    {isCheckingProductName ? 'Checking...' : 'Check'}
+                  </button>
+                </div>
+                <div className="text-sm max-w-md" style={{ color: theme.text.secondary }}>
+                  {productNameStatusMessage}
                 </div>
 
                 <button

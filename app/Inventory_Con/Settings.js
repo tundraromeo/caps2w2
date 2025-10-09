@@ -5,6 +5,7 @@ import { FaSave, FaCog, FaBell, FaShieldAlt, FaUser, FaDatabase, FaPalette, FaGl
 import { Settings as SettingsIcon, Bell, Shield, Database, Palette, Key } from "lucide-react";
 import { useTheme } from './ThemeContext';
 import { useSettings } from './SettingsContext';
+import apiHandler from '../lib/apiHandler';
 
 const Settings = () => {
   const { isDarkMode } = useTheme();
@@ -21,11 +22,29 @@ const Settings = () => {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
+  const [employeeInfo, setEmployeeInfo] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    employeeId: "",
+    position: "",
+    department: "",
+    phoneNumber: "",
+    address: "",
+    age: "",
+    gender: "",
+    birthdate: ""
+  });
 
   // Theme switching functionality
   useEffect(() => {
     applyTheme(settings.theme);
   }, [settings.theme]);
+
+  // Load employee data on component mount
+  useEffect(() => {
+    fetchEmployeeProfile();
+  }, []);
 
   // Load saved theme from localStorage on component mount
   useEffect(() => {
@@ -117,6 +136,107 @@ const Settings = () => {
 
   const togglePasswordVisibility = (field) => {
     setShowPasswords(prev => ({ ...prev, [field]: !prev[field] }));
+  };
+
+  const fetchEmployeeProfile = async () => {
+    try {
+      // Get user ID from sessionStorage
+      const userSession = sessionStorage.getItem('user_data');
+      let userId = null;
+      
+      if (userSession) {
+        try {
+          const userData = JSON.parse(userSession);
+          userId = userData.user_id;
+        } catch (error) {
+          console.error('Error parsing user session:', error);
+        }
+      }
+      
+      if (!userId) {
+        toast.error('Please log in to view employee information');
+        return;
+      }
+      
+      const result = await apiHandler.callAPI('backend.php', 'get_employee_profile', { user_id: userId });
+      
+      if (result.success && result.employee) {
+        const emp = result.employee;
+        setEmployeeInfo({
+          firstName: emp.Fname || "",
+          lastName: emp.Lname || "",
+          email: emp.email || "",
+          employeeId: emp.emp_id || "",
+          position: emp.role_name || "Employee",
+          department: "Warehouse", // Default or you can add department to employee table
+          phoneNumber: emp.contact_num || "",
+          address: emp.address || "",
+          age: emp.age || "",
+          gender: emp.gender || "",
+          birthdate: emp.birthdate || ""
+        });
+      } else {
+        console.error('Failed to fetch employee profile:', result.message);
+        toast.error(result.message || 'Failed to load employee information!');
+      }
+    } catch (error) {
+      console.error('Error fetching employee profile:', error);
+      toast.error('Failed to load employee information!');
+    }
+  };
+
+  const handleEmployeeInfoChange = (key, value) => {
+    setEmployeeInfo(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveEmployeeInfo = async () => {
+    setIsLoading(true);
+    try {
+      // Get user ID from sessionStorage
+      const userSession = sessionStorage.getItem('user_data');
+      let userId = null;
+      
+      if (userSession) {
+        try {
+          const userData = JSON.parse(userSession);
+          userId = userData.user_id;
+        } catch (error) {
+          console.error('Error parsing user session:', error);
+        }
+      }
+      
+      if (!userId) {
+        setIsLoading(false);
+        toast.error('Please log in to update employee information');
+        return;
+      }
+      
+      const result = await apiHandler.callAPI('backend.php', 'update_employee_profile', {
+        user_id: userId,
+        firstName: employeeInfo.firstName,
+        lastName: employeeInfo.lastName,
+        email: employeeInfo.email,
+        phoneNumber: employeeInfo.phoneNumber,
+        address: employeeInfo.address,
+        age: employeeInfo.age,
+        gender: employeeInfo.gender,
+        birthdate: employeeInfo.birthdate
+      });
+      
+      if (result.success) {
+        setIsLoading(false);
+        toast.success('Employee information updated successfully!');
+        // Refresh the profile data
+        await fetchEmployeeProfile();
+      } else {
+        setIsLoading(false);
+        toast.error(result.message || 'Failed to update employee information!');
+      }
+    } catch (error) {
+      setIsLoading(false);
+      console.error('Error updating employee profile:', error);
+      toast.error('Failed to update employee information!');
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -231,6 +351,141 @@ const Settings = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Employee Information */}
+        <div className="rounded-3xl shadow-xl p-6 border" style={themeStyles.card}>
+          <div className="flex items-center gap-3 mb-6">
+            <FaUser className="h-6 w-6 text-purple-500" />
+            <h3 className="text-xl font-semibold" style={{ color: themeStyles.text.primary }}>Employee Information</h3>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>First Name</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.firstName}
+                  onChange={(e) => handleEmployeeInfoChange("firstName", e.target.value)}
+                  placeholder="Juan"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Last Name</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.lastName}
+                  onChange={(e) => handleEmployeeInfoChange("lastName", e.target.value)}
+                  placeholder="Dela Cruz"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Email Address</label>
+              <input
+                type="email"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                style={themeStyles.input}
+                value={employeeInfo.email}
+                onChange={(e) => handleEmployeeInfoChange("email", e.target.value)}
+                placeholder="juan.delacruz@enguio.com"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Employee ID</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.employeeId}
+                  onChange={(e) => handleEmployeeInfoChange("employeeId", e.target.value)}
+                  placeholder="EMP-001"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Phone Number</label>
+                <input
+                  type="tel"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.phoneNumber}
+                  onChange={(e) => handleEmployeeInfoChange("phoneNumber", e.target.value)}
+                  placeholder="+63 912 345 6789"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Address</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                style={themeStyles.input}
+                value={employeeInfo.address}
+                onChange={(e) => handleEmployeeInfoChange("address", e.target.value)}
+                placeholder="Complete address"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Age</label>
+                <input
+                  type="number"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.age}
+                  onChange={(e) => handleEmployeeInfoChange("age", e.target.value)}
+                  placeholder="25"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Gender</label>
+                <select
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.gender}
+                  onChange={(e) => handleEmployeeInfoChange("gender", e.target.value)}
+                >
+                  <option value="">Select Gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Birth Date</label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                  style={themeStyles.input}
+                  value={employeeInfo.birthdate}
+                  onChange={(e) => handleEmployeeInfoChange("birthdate", e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: themeStyles.text.secondary }}>Position</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                style={themeStyles.input}
+                value={employeeInfo.position}
+                readOnly
+                placeholder="Position (from role)"
+              />
+            </div>
+            <button
+              onClick={handleSaveEmployeeInfo}
+              disabled={isLoading}
+              className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors"
+            >
+              {isLoading ? 'Saving...' : 'Update Employee Information'}
+            </button>
+          </div>
+        </div>
 
         {/* Notification Settings */}
         <div className="rounded-3xl shadow-xl p-6 border" style={themeStyles.card}>

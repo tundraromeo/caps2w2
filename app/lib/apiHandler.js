@@ -101,6 +101,26 @@ class APIHandler {
     return this.callAPI(this.endpoints.BACKEND, 'login', credentials);
   }
 
+  async getCurrentUser() {
+    return this.callAPI(this.endpoints.BACKEND, 'get_current_user');
+  }
+
+  async updateAdminEmployeeInfo(employeeData) {
+    return this.callAPI(this.endpoints.BACKEND, 'update_admin_employee_info', employeeData);
+  }
+
+  async changeAdminPassword(passwordData) {
+    return this.callAPI(this.endpoints.BACKEND, 'change_admin_password', passwordData);
+  }
+
+  async updateCurrentUserInfo(userData) {
+    return this.callAPI(this.endpoints.BACKEND, 'update_current_user_info', userData);
+  }
+
+  async changeCurrentUserPassword(passwordData) {
+    return this.callAPI(this.endpoints.BACKEND, 'change_current_user_password', passwordData);
+  }
+
   async getCategories() {
     return this.callAPI(this.endpoints.BACKEND, 'get_categories');
   }
@@ -473,6 +493,7 @@ export const getApiEndpointForAction = (action) => {
     // ============= POS & SALES =============
     get_pos_products: 'sales_api.php',
     check_barcode: 'sales_api.php',
+    check_product_name: 'sales_api.php',
     get_product_batches: 'sales_api.php',
     get_discounts: 'sales_api.php',
     update_product_stock: 'sales_api.php',

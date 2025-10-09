@@ -61,25 +61,21 @@ export default function POS() {
   const transactionIdRef = useRef(null);
   const [returnQuantities, setReturnQuantities] = useState({});
 
-  // Exchange state
-  const [showExchangeModal, setShowExchangeModal] = useState(false);
-  const [exchangeData, setExchangeData] = useState({
-    originalTransactionId: '',
-    originalTransaction: null,
-    selectedItems: [],
-    newItems: [],
-    priceDifference: 0,
-    requiresManagerApproval: false
-  });
-  const [exchangeQuantities, setExchangeQuantities] = useState({});
-  const [exchangeNewItemQuantities, setExchangeNewItemQuantities] = useState({});
-  const [showExchangeConfirmModal, setShowExchangeConfirmModal] = useState(false);
-  const [isExchangeProcessing, setIsExchangeProcessing] = useState(false);
-  const [managerApproval, setManagerApproval] = useState(false);
-  const [managerUsername, setManagerUsername] = useState('');
-
   // Logout state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // Credentials update state
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [credentialsData, setCredentialsData] = useState({
+    fullName: '',
+    email: '',
+    username: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [credentialsFocusIndex, setCredentialsFocusIndex] = useState(0); // 0: Name, 1: Email, 2: Username, 3: Password, 4: Confirm Password, 5: Save, 6: Cancel
+  const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
+  const credentialsRefs = useRef([]);
 
   // Auto-focus Transaction ID field when modal opens
   useEffect(() => {
@@ -95,6 +91,22 @@ export default function POS() {
       });
     }
   }, [showCustomerReturnModal]);
+
+  // Auto-focus credentials modal fields
+  useEffect(() => {
+    if (showCredentialsModal && credentialsRefs.current[credentialsFocusIndex]) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          credentialsRefs.current[credentialsFocusIndex]?.focus();
+        }, 100);
+      });
+    }
+  }, [showCredentialsModal, credentialsFocusIndex]);
+
+  // Debug log for credentials data changes
+  useEffect(() => {
+    console.log('Credentials data changed:', credentialsData);
+  }, [credentialsData]);
 
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [showRecentTransactions, setShowRecentTransactions] = useState(false);
@@ -960,6 +972,36 @@ export default function POS() {
   // Keyboard Navigation (Search, Products, Checkout)
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Handle credentials modal navigation
+      if (showCredentialsModal) {
+        switch (e.key) {
+          case 'Tab':
+            e.preventDefault();
+            setCredentialsFocusIndex(prev => (prev + 1) % 7);
+            break;
+          case 'Enter':
+            e.preventDefault();
+            if (credentialsFocusIndex === 5) { // Save button
+              saveCredentials();
+            } else if (credentialsFocusIndex === 6) { // Cancel button
+              closeCredentialsModal();
+            }
+            break;
+          case 'Escape':
+            e.preventDefault();
+            closeCredentialsModal();
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            setCredentialsFocusIndex(prev => prev > 0 ? prev - 1 : 6);
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            setCredentialsFocusIndex(prev => (prev + 1) % 7);
+            break;
+        }
+        return;
+      }
       // F1: New Transaction
       if (e.key === 'F1') {
         e.preventDefault();
@@ -1055,17 +1097,17 @@ export default function POS() {
         return;
       }
 
-      // Global toggle for Exchange modal via Alt+E
-      if (e.altKey && (e.key === 'e' || e.key === 'E')) {
-        e.preventDefault();
-        setShowExchangeModal(prev => !prev);
-        return;
-      }
-
       // Global logout via Alt+L
       if (e.altKey && (e.key === 'l' || e.key === 'L')) {
         e.preventDefault();
         handleLogout();
+        return;
+      }
+
+      // Global credentials update via Alt+C
+      if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        openCredentialsModal();
         return;
       }
 
@@ -1226,21 +1268,6 @@ export default function POS() {
           return;
         }
         return; // block other shortcuts while customer return modal open
-      }
-
-      // Handle keys inside Exchange Modal
-      if (showExchangeModal) {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          setShowExchangeModal(false);
-          return;
-        }
-        if (e.key === 'Enter' && e.altKey) {
-          e.preventDefault();
-          processExchange();
-          return;
-        }
-        return; // block other shortcuts while exchange modal open
       }
 
       // Handle keys inside Today's Total Sales Modal
@@ -2148,261 +2175,6 @@ export default function POS() {
     }
   };
 
-  // Exchange Functions
-  const openExchangeModal = () => {
-    setExchangeData({
-      originalTransactionId: '',
-      originalTransaction: null,
-      selectedItems: [],
-      newItems: [],
-      priceDifference: 0,
-      requiresManagerApproval: false
-    });
-    setExchangeQuantities({});
-    setExchangeNewItemQuantities({});
-    setManagerApproval(false);
-    setManagerUsername('');
-    setShowExchangeModal(true);
-  };
-
-  const searchTransactionForExchange = async (transactionId) => {
-    if (!transactionId.trim()) return;
-    
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_exchange_api.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'get_transaction_for_exchange',
-          transaction_id: transactionId
-        })
-      });
-      
-      const result = await response.json();
-      if (result.success) {
-        setExchangeData(prev => ({
-          ...prev,
-          originalTransaction: result.transaction,
-          selectedItems: result.transaction.items || []
-        }));
-        
-        // Initialize exchange quantities to 0
-        const initialQuantities = {};
-        result.transaction.items.forEach(item => {
-          initialQuantities[item.product_id] = 0;
-        });
-        setExchangeQuantities(initialQuantities);
-      } else {
-        alert(`Transaction not found: ${result.message}`);
-        setExchangeData(prev => ({ ...prev, originalTransaction: null, selectedItems: [] }));
-      }
-    } catch (error) {
-      console.error('Error searching transaction:', error);
-      alert('Error searching transaction. Please try again.');
-    }
-  };
-
-  const addNewItemToExchange = (product) => {
-    const quantity = exchangeNewItemQuantities[product.id] || 1;
-    const existingItemIndex = exchangeData.newItems.findIndex(item => item.id === product.id);
-    
-    if (existingItemIndex >= 0) {
-      // Update existing item quantity
-      const updatedItems = [...exchangeData.newItems];
-      updatedItems[existingItemIndex] = {
-        ...updatedItems[existingItemIndex],
-        quantity: updatedItems[existingItemIndex].quantity + quantity,
-        total: (updatedItems[existingItemIndex].quantity + quantity) * product.selling_price
-      };
-      setExchangeData(prev => ({ ...prev, newItems: updatedItems }));
-    } else {
-      // Add new item
-      const newItem = {
-        id: product.id,
-        product_id: product.id,
-        name: product.product_name,
-        product_name: product.product_name,
-        price: product.selling_price,
-        quantity: quantity,
-        total: quantity * product.selling_price,
-        barcode: product.barcode
-      };
-      setExchangeData(prev => ({ ...prev, newItems: [...prev.newItems, newItem] }));
-    }
-    
-    // Reset quantity input
-    setExchangeNewItemQuantities(prev => ({ ...prev, [product.id]: 1 }));
-    calculateExchangePriceDifference();
-  };
-
-  const removeNewItemFromExchange = (productId) => {
-    setExchangeData(prev => ({
-      ...prev,
-      newItems: prev.newItems.filter(item => item.id !== productId)
-    }));
-    calculateExchangePriceDifference();
-  };
-
-  const updateNewItemQuantity = (productId, newQuantity) => {
-    const quantity = Math.max(1, newQuantity);
-    setExchangeData(prev => ({
-      ...prev,
-      newItems: prev.newItems.map(item =>
-        item.id === productId
-          ? { ...item, quantity, total: quantity * item.price }
-          : item
-      )
-    }));
-    calculateExchangePriceDifference();
-  };
-
-  const calculateExchangePriceDifference = () => {
-    const totalOriginalValue = exchangeData.selectedItems.reduce((sum, item) => {
-      const exchangeQty = exchangeQuantities[item.product_id] || 0;
-      return sum + (item.price * exchangeQty);
-    }, 0);
-    
-    const totalNewValue = exchangeData.newItems.reduce((sum, item) => sum + item.total, 0);
-    const priceDifference = totalNewValue - totalOriginalValue;
-    const requiresManagerApproval = priceDifference > 0;
-    
-    setExchangeData(prev => ({
-      ...prev,
-      priceDifference,
-      requiresManagerApproval
-    }));
-  };
-
-  const processExchange = async () => {
-    if (!exchangeData.originalTransactionId || !exchangeData.originalTransaction) {
-      alert('Please enter and search for a valid transaction ID.');
-      return;
-    }
-    
-    // Check if any items are selected for exchange
-    const hasSelectedItems = exchangeData.selectedItems.some(item => {
-      const exchangeQty = exchangeQuantities[item.product_id] || 0;
-      return exchangeQty > 0;
-    });
-    
-    if (!hasSelectedItems) {
-      alert('Please select items to exchange.');
-      return;
-    }
-    
-    if (exchangeData.newItems.length === 0) {
-      alert('Please add items to exchange for.');
-      return;
-    }
-    
-    // Check if manager approval is required
-    if (exchangeData.requiresManagerApproval && !managerApproval) {
-      alert('Manager approval is required for higher price exchange. Please get manager approval first.');
-      return;
-    }
-    
-    setShowExchangeConfirmModal(true);
-  };
-
-  const confirmProcessExchange = async () => {
-    try {
-      setIsExchangeProcessing(true);
-      
-      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-      
-      // Prepare exchange items (items being returned)
-      const exchangeItems = exchangeData.selectedItems
-        .filter(item => (exchangeQuantities[item.product_id] || 0) > 0)
-        .map(item => ({
-          product_id: item.product_id,
-          quantity: exchangeQuantities[item.product_id],
-          price: item.price,
-          total: item.price * exchangeQuantities[item.product_id]
-        }));
-      
-      // Prepare new items (items being exchanged for)
-      const newItems = exchangeData.newItems.map(item => ({
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price: item.price,
-        total: item.total
-      }));
-      
-      const exchangeDataPayload = {
-        action: 'process_exchange',
-        original_transaction_id: exchangeData.originalTransactionId,
-        exchange_items: exchangeItems,
-        new_items: newItems,
-        location_name: locationName,
-        terminal_name: terminalName,
-        processed_by: userData.username || 'Admin',
-        manager_approval: managerApproval,
-        manager_username: managerUsername
-      };
-      
-      console.log('Processing exchange with data:', exchangeDataPayload);
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_exchange_api.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(exchangeDataPayload)
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        const message = result.price_difference > 0 
-          ? `Exchange completed successfully!\nExchange Number: ${result.exchange_number}\nPrice Difference: +₱${result.price_difference.toFixed(2)} (Customer pays extra)`
-          : result.price_difference < 0
-          ? `Exchange completed successfully!\nExchange Number: ${result.exchange_number}\nPrice Difference: -₱${Math.abs(result.price_difference).toFixed(2)} (No refund given)`
-          : `Exchange completed successfully!\nExchange Number: ${result.exchange_number}\nPrice Difference: ₱0.00 (Equal exchange)`;
-        
-        alert(message);
-        
-        // Close modals and reset state
-        setShowExchangeModal(false);
-        setShowExchangeConfirmModal(false);
-        setExchangeData({
-          originalTransactionId: '',
-          originalTransaction: null,
-          selectedItems: [],
-          newItems: [],
-          priceDifference: 0,
-          requiresManagerApproval: false
-        });
-        setExchangeQuantities({});
-        setExchangeNewItemQuantities({});
-        setManagerApproval(false);
-        setManagerUsername('');
-        
-        // Refresh product stock
-        await loadAllProducts();
-        
-        // Trigger notification event
-        window.dispatchEvent(new CustomEvent('exchangeCreated', {
-          detail: {
-            type: 'new_exchange',
-            exchangeNumber: result.exchange_number,
-            priceDifference: result.price_difference,
-            location: locationName
-          }
-        }));
-        
-      } else {
-        if (result.requires_manager_approval) {
-          alert(`Manager approval required for higher price exchange.\nPrice difference: +₱${result.price_difference.toFixed(2)}\nPlease get manager approval and try again.`);
-        } else {
-          alert(`Failed to process exchange: ${result.message || 'Unknown error'}`);
-        }
-      }
-      
-    } catch (error) {
-      console.error('Error processing exchange:', error);
-      alert('Error processing exchange. Please try again.');
-    } finally {
-      setIsExchangeProcessing(false);
-    }
-  };
 
   // Fetch today's total sales for current cashier
   const fetchTodaySales = async () => {
@@ -2522,6 +2294,160 @@ export default function POS() {
 
   const cancelLogout = () => {
     setShowLogoutConfirm(false);
+  };
+
+  // ============= CREDENTIALS UPDATE FUNCTIONS =============
+  
+  const openCredentialsModal = async () => {
+    try {
+      // Fetch current user data
+      const response = await apiHandler.getCurrentUser();
+      console.log('API Response:', response); // Debug log
+      
+      if (response.success && response.data) {
+        setCredentialsData({
+          fullName: response.data.fullName || '',
+          email: response.data.email || '',
+          username: response.data.username || '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+        console.log('Set credentials data from API:', response.data); // Debug log
+      } else {
+        // If API fails, use fallback data
+        setCredentialsData({
+          fullName: 'Junel Cajoles',
+          email: 'baternajunel089@gmail.com',
+          username: 'jepox',
+          newPassword: '',
+          confirmPassword: ''
+        });
+        console.log('Set fallback credentials data'); // Debug log
+      }
+      setShowCredentialsModal(true);
+      setCredentialsFocusIndex(0);
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      // Set real cashier data as fallback placeholder
+      setCredentialsData({
+        fullName: 'Junel Cajoles',
+        email: 'baternajunel089@gmail.com',
+        username: 'jepox',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setShowCredentialsModal(true);
+      setCredentialsFocusIndex(0);
+    }
+  };
+
+  const closeCredentialsModal = () => {
+    setShowCredentialsModal(false);
+    setCredentialsData({
+      fullName: '',
+      email: '',
+      username: '',
+      newPassword: '',
+      confirmPassword: ''
+    });
+    setCredentialsFocusIndex(0);
+    setIsUpdatingCredentials(false);
+  };
+
+  const updateCredentialsField = (field, value) => {
+    setCredentialsData(prev => {
+      const newData = {
+        ...prev,
+        [field]: value
+      };
+      console.log('Updated credentials data:', newData); // Debug log
+      return newData;
+    });
+  };
+
+  const validateCredentialsForm = () => {
+    const { fullName, email, username, newPassword, confirmPassword } = credentialsData;
+    
+    if (!fullName.trim()) {
+      return 'Full name is required';
+    }
+    
+    if (!email.trim()) {
+      return 'Email is required';
+    }
+    
+    if (!email.includes('@')) {
+      return 'Please enter a valid email address';
+    }
+    
+    if (!username.trim()) {
+      return 'Username is required';
+    }
+    
+    if (username.length < 3 || username.length > 20) {
+      return 'Username must be 3-20 characters long';
+    }
+    
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return 'Username can only contain letters, numbers, and underscores';
+    }
+    
+    if (newPassword && newPassword.length < 6) {
+      return 'Password must be at least 6 characters long';
+    }
+    
+    if (newPassword && newPassword !== confirmPassword) {
+      return 'Passwords do not match';
+    }
+    
+    return null;
+  };
+
+  const saveCredentials = async () => {
+    const validationError = validateCredentialsForm();
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+    
+    setIsUpdatingCredentials(true);
+    
+    try {
+      // Update current user's info (name, email, username)
+      const userData = {
+        fullName: credentialsData.fullName.trim(),
+        email: credentialsData.email.trim(),
+        username: credentialsData.username.trim()
+      };
+      
+      const userResponse = await apiHandler.updateCurrentUserInfo(userData);
+      
+      if (!userResponse.success) {
+        throw new Error(userResponse.message || 'Failed to update your information');
+      }
+      
+      // Update password if provided
+      if (credentialsData.newPassword.trim()) {
+        const passwordData = {
+          newPassword: credentialsData.newPassword.trim()
+        };
+        
+        const passwordResponse = await apiHandler.changeCurrentUserPassword(passwordData);
+        
+        if (!passwordResponse.success) {
+          throw new Error(passwordResponse.message || 'Failed to update password');
+        }
+      }
+      
+      alert('Your credentials updated successfully!');
+      closeCredentialsModal();
+      
+    } catch (error) {
+      console.error('Error updating credentials:', error);
+      alert('Error updating credentials: ' + error.message);
+    } finally {
+      setIsUpdatingCredentials(false);
+    }
   };
 
   const handleCheckout = async () => {
@@ -3339,17 +3265,17 @@ export default function POS() {
             </button>
             <button
               type="button"
+              className="px-5 py-3 rounded bg-green-600 text-white hover:bg-green-700 text-base"
+              onClick={openCredentialsModal}
+            >
+              Update My Credentials (Alt+C)
+            </button>
+            <button
+              type="button"
               className="px-5 py-3 rounded bg-blue-600 text-white hover:bg-blue-700 text-base"
               onClick={openCustomerReturnModal}
             >
               Customer Return (Alt+R)
-            </button>
-            <button
-              type="button"
-              className="px-5 py-3 rounded bg-purple-600 text-white hover:bg-purple-700 text-base"
-              onClick={openExchangeModal}
-            >
-              Exchange Only (Alt+E)
             </button>
             <button
               type="button"
@@ -4390,332 +4316,6 @@ export default function POS() {
         </div>
       )}
 
-      {/* Exchange Modal */}
-      {showExchangeModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-[80] p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[95vh] flex flex-col border-2 border-gray-300">
-            <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50 flex-shrink-0">
-              <h3 className="text-xl font-bold text-gray-900">Exchange Only - No Refund Policy</h3>
-              <div className="text-sm text-gray-500">Alt+E to close</div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Transaction ID Search */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Original Receipt Number:
-                </label>
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    placeholder="Enter original transaction ID (e.g., TXN123456)"
-                    value={exchangeData.originalTransactionId}
-                    onChange={(e) => setExchangeData(prev => ({ ...prev, originalTransactionId: e.target.value }))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (exchangeData.originalTransactionId.trim()) {
-                          searchTransactionForExchange(exchangeData.originalTransactionId.trim());
-                        }
-                      }
-                    }}
-                    className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  />
-                  <button
-                    onClick={() => searchTransactionForExchange(exchangeData.originalTransactionId)}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-base font-bold"
-                  >
-                    🔍 Search
-                  </button>
-                </div>
-              </div>
-
-              {/* Original Transaction Details */}
-              {exchangeData.originalTransaction && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                  <h4 className="text-lg font-bold text-blue-900 mb-3">Original Transaction Details</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div><strong>Date:</strong> {exchangeData.originalTransaction.date}</div>
-                    <div><strong>Time:</strong> {exchangeData.originalTransaction.time}</div>
-                    <div><strong>Reference:</strong> {exchangeData.originalTransaction.reference_number}</div>
-                    <div><strong>Total:</strong> ₱{exchangeData.originalTransaction.total_amount}</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Two Column Layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left Column - Items to Exchange */}
-                <div className="space-y-4">
-                  <h4 className="text-lg font-bold text-gray-900">Items to Exchange (Return)</h4>
-                  {exchangeData.selectedItems.length > 0 ? (
-                    <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {exchangeData.selectedItems.map((item, index) => (
-                        <div key={item.product_id} className="bg-gray-50 border rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
-                              <div className="font-semibold text-gray-900">{item.product_name}</div>
-                              <div className="text-sm text-gray-600">₱{item.price} each</div>
-                              <div className="text-sm text-gray-600">Available: {item.quantity}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-gray-700">Qty to exchange:</label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={item.quantity}
-                              value={exchangeQuantities[item.product_id] || 0}
-                              onChange={(e) => {
-                                const qty = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantity));
-                                setExchangeQuantities(prev => ({ ...prev, [item.product_id]: qty }));
-                                calculateExchangePriceDifference();
-                              }}
-                              className="w-20 px-2 py-1 border rounded text-sm"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-gray-500 text-center py-8">
-                      Search for a transaction to see items
-                    </div>
-                  )}
-                </div>
-
-                {/* Right Column - New Items */}
-                <div className="space-y-4">
-                  <h4 className="text-lg font-bold text-gray-900">New Items (Exchange For)</h4>
-                  
-                  {/* Product Search */}
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Search products..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg text-sm"
-                    />
-                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                      {products
-                        .filter(product => 
-                          product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          product.barcode.includes(searchTerm)
-                        )
-                        .slice(0, 10)
-                        .map(product => (
-                          <div key={product.id} className="bg-white border rounded p-2 text-xs">
-                            <div className="font-semibold truncate">{product.product_name}</div>
-                            <div className="text-gray-600">₱{product.selling_price}</div>
-                            <div className="flex items-center gap-1 mt-1">
-                              <input
-                                type="number"
-                                min="1"
-                                value={exchangeNewItemQuantities[product.id] || 1}
-                                onChange={(e) => setExchangeNewItemQuantities(prev => ({ 
-                                  ...prev, 
-                                  [product.id]: Math.max(1, parseInt(e.target.value) || 1) 
-                                }))}
-                                className="w-12 px-1 py-0.5 border rounded text-xs"
-                              />
-                              <button
-                                onClick={() => addNewItemToExchange(product)}
-                                className="px-2 py-0.5 bg-green-600 text-white rounded text-xs hover:bg-green-700"
-                              >
-                                Add
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-
-                  {/* Selected New Items */}
-                  {exchangeData.newItems.length > 0 ? (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {exchangeData.newItems.map((item, index) => (
-                        <div key={item.id} className="bg-green-50 border border-green-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
-                              <div className="font-semibold text-gray-900">{item.product_name}</div>
-                              <div className="text-sm text-gray-600">₱{item.price} each</div>
-                            </div>
-                            <button
-                              onClick={() => removeNewItemFromExchange(item.id)}
-                              className="text-red-600 hover:text-red-800 text-sm"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label className="text-sm font-medium text-gray-700">Quantity:</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) => updateNewItemQuantity(item.id, parseInt(e.target.value) || 1)}
-                              className="w-20 px-2 py-1 border rounded text-sm"
-                            />
-                            <span className="text-sm font-semibold text-green-600">
-                              Total: ₱{item.total.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-gray-500 text-center py-8">
-                      Add items to exchange for
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Price Difference Summary */}
-              {exchangeData.selectedItems.length > 0 && exchangeData.newItems.length > 0 && (
-                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
-                  <h4 className="text-lg font-bold text-yellow-900 mb-3">Exchange Summary</h4>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <div className="font-semibold text-gray-700">Original Value:</div>
-                      <div className="text-lg font-bold text-blue-600">
-                        ₱{exchangeData.selectedItems.reduce((sum, item) => {
-                          const qty = exchangeQuantities[item.product_id] || 0;
-                          return sum + (item.price * qty);
-                        }, 0).toFixed(2)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-700">New Value:</div>
-                      <div className="text-lg font-bold text-green-600">
-                        ₱{exchangeData.newItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-700">Price Difference:</div>
-                      <div className={`text-lg font-bold ${
-                        exchangeData.priceDifference > 0 ? 'text-red-600' : 
-                        exchangeData.priceDifference < 0 ? 'text-orange-600' : 'text-gray-600'
-                      }`}>
-                        {exchangeData.priceDifference > 0 ? '+' : ''}₱{exchangeData.priceDifference.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {exchangeData.priceDifference > 0 ? 'Customer pays extra' : 
-                         exchangeData.priceDifference < 0 ? 'No refund given' : 'Equal exchange'}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {exchangeData.requiresManagerApproval && (
-                    <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded-lg">
-                      <div className="flex items-center gap-2 text-red-800">
-                        <span className="text-lg">⚠️</span>
-                        <span className="font-semibold">Manager Approval Required</span>
-                      </div>
-                      <div className="text-sm text-red-700 mt-1">
-                        Higher price exchange requires manager approval
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Manager username"
-                          value={managerUsername}
-                          onChange={(e) => setManagerUsername(e.target.value)}
-                          className="w-full px-3 py-2 border rounded text-sm"
-                        />
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={managerApproval}
-                            onChange={(e) => setManagerApproval(e.target.checked)}
-                            className="rounded"
-                          />
-                          Manager approval confirmed
-                        </label>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 justify-end">
-                <button
-                  onClick={() => setShowExchangeModal(false)}
-                  className="px-6 py-3 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 font-bold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={processExchange}
-                  disabled={!exchangeData.originalTransaction || exchangeData.newItems.length === 0}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Process Exchange
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Exchange Confirmation Modal */}
-      {showExchangeConfirmModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border-4 border-purple-500">
-            <div className="text-center">
-              <div className="text-4xl mb-4">🔄</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">
-                Confirm Exchange Processing
-              </h3>
-              
-              <div className="text-left mb-6 space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-700">Original Transaction:</span>
-                  <span className="text-gray-900">{exchangeData.originalTransactionId}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-700">Items to exchange:</span>
-                  <span className="text-gray-900">
-                    {exchangeData.selectedItems.filter(item => (exchangeQuantities[item.product_id] || 0) > 0).length}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-700">New items:</span>
-                  <span className="text-gray-900">{exchangeData.newItems.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-semibold text-gray-700">Price difference:</span>
-                  <span className={`font-bold ${
-                    exchangeData.priceDifference > 0 ? 'text-red-600' : 
-                    exchangeData.priceDifference < 0 ? 'text-orange-600' : 'text-gray-600'
-                  }`}>
-                    {exchangeData.priceDifference > 0 ? '+' : ''}₱{exchangeData.priceDifference.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => setShowExchangeConfirmModal(false)}
-                  className="px-6 py-3 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 font-bold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmProcessExchange}
-                  disabled={isExchangeProcessing}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold transition-colors disabled:opacity-50"
-                >
-                  {isExchangeProcessing ? 'Processing...' : 'Confirm Exchange'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -4777,6 +4377,166 @@ export default function POS() {
             <button
               onClick={cancelLogout}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all duration-200"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Credentials Update Modal */}
+      {showCredentialsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/60 max-w-lg w-full mx-4 transform transition-all duration-300 scale-100 animate-fade-in-up">
+            {/* Header */}
+            <div className="relative p-6 border-b border-slate-200/60 bg-gradient-to-r from-green-50 to-blue-50 rounded-t-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/25">
+                  <svg className="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+              </div>
+              
+              <h3 className="text-2xl font-bold text-center text-slate-800 mb-2">
+                Update Your Credentials
+              </h3>
+              
+              <p className="text-slate-600 text-center font-medium">
+                Update your account information and password
+              </p>
+            </div>
+
+            {/* Form */}
+            <div className="p-6 space-y-4">
+              {/* Full Name */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Full Name
+                </label>
+                <input
+                  ref={el => credentialsRefs.current[0] = el}
+                  type="text"
+                  value={credentialsData.fullName}
+                  onChange={(e) => updateCredentialsField('fullName', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-all duration-200 ${
+                    credentialsFocusIndex === 0 
+                      ? 'border-green-500 focus:ring-green-500 bg-green-50' 
+                      : 'border-slate-300 focus:ring-slate-500 hover:border-slate-400'
+                  }`}
+                  placeholder="Enter your full name"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Email Address
+                </label>
+                <input
+                  ref={el => credentialsRefs.current[1] = el}
+                  type="email"
+                  value={credentialsData.email}
+                  onChange={(e) => updateCredentialsField('email', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-all duration-200 ${
+                    credentialsFocusIndex === 1 
+                      ? 'border-green-500 focus:ring-green-500 bg-green-50' 
+                      : 'border-slate-300 focus:ring-slate-500 hover:border-slate-400'
+                  }`}
+                  placeholder="Enter your email address"
+                />
+              </div>
+
+              {/* Username */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Username
+                </label>
+                <input
+                  ref={el => credentialsRefs.current[2] = el}
+                  type="text"
+                  value={credentialsData.username}
+                  onChange={(e) => updateCredentialsField('username', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-all duration-200 ${
+                    credentialsFocusIndex === 2 
+                      ? 'border-green-500 focus:ring-green-500 bg-green-50' 
+                      : 'border-slate-300 focus:ring-slate-500 hover:border-slate-400'
+                  }`}
+                  placeholder="Enter your username"
+                />
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  New Password (Optional)
+                </label>
+                <input
+                  ref={el => credentialsRefs.current[3] = el}
+                  type="password"
+                  value={credentialsData.newPassword}
+                  onChange={(e) => updateCredentialsField('newPassword', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-all duration-200 ${
+                    credentialsFocusIndex === 3 
+                      ? 'border-green-500 focus:ring-green-500 bg-green-50' 
+                      : 'border-slate-300 focus:ring-slate-500 hover:border-slate-400'
+                  }`}
+                  placeholder="Enter new password (leave blank to keep current)"
+                />
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Confirm Password
+                </label>
+                <input
+                  ref={el => credentialsRefs.current[4] = el}
+                  type="password"
+                  value={credentialsData.confirmPassword}
+                  onChange={(e) => updateCredentialsField('confirmPassword', e.target.value)}
+                  className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 transition-all duration-200 ${
+                    credentialsFocusIndex === 4 
+                      ? 'border-green-500 focus:ring-green-500 bg-green-50' 
+                      : 'border-slate-300 focus:ring-slate-500 hover:border-slate-400'
+                  }`}
+                  placeholder="Confirm new password"
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="p-6 pt-0 space-y-3">
+              <button
+                ref={el => credentialsRefs.current[5] = el}
+                onClick={saveCredentials}
+                disabled={isUpdatingCredentials}
+                className={`w-full px-6 py-3 font-semibold rounded-xl shadow-lg transform hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                  isUpdatingCredentials
+                    ? 'bg-slate-400 text-slate-200 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white hover:shadow-xl hover:shadow-green-500/30 focus:ring-green-500'
+                }`}
+              >
+                {isUpdatingCredentials ? 'Updating...' : 'Save Changes'}
+              </button>
+              
+              <button
+                ref={el => credentialsRefs.current[6] = el}
+                onClick={closeCredentialsModal}
+                disabled={isUpdatingCredentials}
+                className="w-full px-6 py-3 bg-white border-2 border-slate-300 hover:border-slate-400 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transform hover:scale-[1.02] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={closeCredentialsModal}
+              disabled={isUpdatingCredentials}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
