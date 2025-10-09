@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { useAPI } from "../hooks/useAPI";
 import { 
   FaPlus, 
   FaTrash, 
@@ -30,9 +29,12 @@ import {
   Building,
 } from "lucide-react";
 
+// Define API base URLs at the top of the file
+const API_BASE_SIMPLE = "http://localhost/Enguio_Project/Api/purchase_order_api_simple.php";
+const API_BASE = "http://localhost/Enguio_Project/Api/purchase_order_api.php";
+const CREATE_PO_API = "http://localhost/Enguio_Project/Api/create_purchase_order_api.php";
+
 function CreatePurchaseOrder() {
-  const { api, loading: apiLoading, error: apiError } = useAPI();
-  
   // Tab stateasy
   const [activeTab, setActiveTab] = useState('create');
   
@@ -66,15 +68,12 @@ function CreatePurchaseOrder() {
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState({ emp_id: 21 }); // Mock user ID
 
-  // State to track actual status for each PO
-  const [actualStatuses, setActualStatuses] = useState({});
-  const [poFilter, setPoFilter] = useState('delivered');
-  
   // Purchase Order List states
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [poLoading, setPoLoading] = useState(true);
   const [selectedPO, setSelectedPO] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [poFilter, setPoFilter] = useState('delivered');
   // Removed 3-dots status menu; using inline dynamic action instead
 
   // Compute the next actionable step for a PO based on its current status
@@ -89,8 +88,8 @@ function CreatePurchaseOrder() {
         onClick: () => updatePOStatus(poId, 'approved')
       };
     }
-    // partial -> update delivery when missing items arrive
-    if (po.status === 'partial') {
+    // partial_delivery -> update delivery when missing items arrive
+    if (po.status === 'partial_delivery') {
       return {
         label: 'Update Delivery',
         onClick: () => handleUpdatePartialDelivery(poId)
@@ -154,9 +153,13 @@ function CreatePurchaseOrder() {
   // Create Purchase Order functions
   const fetchSuppliers = async () => {
     try {
-      const response = await api.callGenericAPI('create_purchase_order_api.php', 'suppliers', {}, 'GET');
-      if (response.success) {
-        setSuppliers(response.data || []);
+      const response = await fetch(`${CREATE_PO_API}?action=suppliers`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (data.success) {
+        setSuppliers(data.data || []);
       } else {
         console.warn('No suppliers found or error loading suppliers');
         setSuppliers([]);
@@ -256,33 +259,28 @@ function CreatePurchaseOrder() {
 
     try {
                    const purchaseOrderData = {
-        supplier_id: parseInt(formData.supplier),
-        expected_delivery_date: formData.expectedDelivery,
-        created_by: currentUser.emp_id,
-        status: 'delivered', // Set status to delivered directly
-        products: selectedProducts.map(product => ({
-          searchTerm: product.searchTerm,
-          quantity: parseInt(product.quantity),
-          unit_type: product.unitType
-        }))
-      };
+         supplier_id: parseInt(formData.supplier),
+         expected_delivery_date: formData.expectedDelivery,
+         created_by: currentUser.emp_id,
+         products: selectedProducts.map(product => ({
+           searchTerm: product.searchTerm,
+           quantity: parseInt(product.quantity),
+           unit_type: product.unitType
+         }))
+       };
 
-      const result = await api.callGenericAPI('create_purchase_order_api.php', 'create_purchase_order', purchaseOrderData, 'POST');
+      const response = await fetch(`${CREATE_PO_API}?action=create_purchase_order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(purchaseOrderData)
+      });
+
+      const result = await response.json();
       
       if (result.success) {
-        // Immediately mark the new PO as delivered in the UI
-        if (result.po_id) {
-          setActualStatuses(prev => ({
-            ...prev,
-            [result.po_id]: 'delivered'
-          }));
-          console.log('Marked new PO as delivered:', result.po_id);
-        }
-        
-        // Refresh purchase orders list FIRST to ensure data is loaded
-        console.log('Refreshing purchase orders after creation...');
-        await fetchAllPurchaseOrders();
-        await fetchPurchaseOrders('delivered');
+        toast.success(`Purchase Order ${result.po_number} created successfully!`);
         
         // Reset form
         setFormData({
@@ -292,18 +290,6 @@ function CreatePurchaseOrder() {
           notes: ""
         });
         setSelectedProducts([]);
-        
-        // Set filter to delivered BEFORE switching tabs
-        setPoFilter('delivered');
-        
-        // Show success message
-        toast.success(`Purchase Order ${result.po_number} created successfully!`);
-        
-        // Switch to Purchase Orders tab to show the new PO
-        // Use setTimeout to ensure state updates are processed
-        setTimeout(() => {
-          setActiveTab('list');
-        }, 100);
       } else {
         toast.error(result.error || "Error creating purchase order");
       }
@@ -319,62 +305,24 @@ function CreatePurchaseOrder() {
   // Purchase Order List functions
   const fetchPurchaseOrders = async (status = null) => {
     try {
-      // Always fetch all purchase orders, then filter by actual status on frontend
-      const response = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_orders', {}, 'GET');
+      let url = `${API_BASE_SIMPLE}?action=purchase_orders`;
+      if (status) {
+        url += `&status=${status}`;
+      }
       
-      if (response.success) {
-        console.log('=== fetchPurchaseOrders DEBUG ===');
-        console.log('API Response:', response);
-        console.log('Requested filter status:', status);
-        console.log('Data count:', response.data.length);
-        console.log('Sample POs:', response.data.slice(0, 3).map(po => ({ 
-          id: po.purchase_header_id, 
-          status: po.status, 
-          po_number: po.po_number,
-          fullObject: po
-        })));
-        
-        // Check if our newly created PO is in the response
-        const newPOs = response.data.filter(po => po.status === 'delivered' || po.status === 'new' || po.status === 'pending');
-        console.log('New/delivered POs found:', newPOs.map(po => ({ id: po.purchase_header_id, status: po.status, po_number: po.po_number })));
-        
-        // Store all purchase orders first
-        setPurchaseOrders(response.data);
-        
-        // Calculate actual statuses for each PO
-        const statusPromises = response.data.map(async (po) => {
-          const actualStatus = await getActualStatus(po);
-          return { poId: po.purchase_header_id, status: actualStatus };
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        console.log('Fetched Purchase Orders:', {
+          status: status,
+          count: data.data.length,
+          sampleData: data.data.slice(0, 3).map(po => ({ 
+            id: po.purchase_header_id, 
+            status: po.status, 
+            po_number: po.po_number 
+          }))
         });
-        
-        const statusResults = await Promise.all(statusPromises);
-        const statusMap = {};
-        statusResults.forEach(({ poId, status }) => {
-          statusMap[poId] = status;
-        });
-        
-        console.log('=== Status Calculation Results ===');
-        console.log('Status results:', statusResults);
-        console.log('Status map:', statusMap);
-        console.log('Original PO statuses:', response.data.map(po => ({ id: po.purchase_header_id, status: po.status })));
-        setActualStatuses(statusMap);
-        
-        // Filter purchase orders by actual status if a filter is specified
-        if (status) {
-          const filteredOrders = response.data.filter(po => {
-            let actualStatus = statusMap[po.purchase_header_id] || po.status || 'delivered';
-            // Handle 'new' and 'pending' status as 'delivered' for filtering
-            if (actualStatus === 'new' || actualStatus === 'pending') {
-              actualStatus = 'delivered';
-            }
-            const matches = actualStatus === status;
-            console.log(`PO ${po.purchase_header_id} (${po.po_number}): status=${po.status}, actualStatus=${actualStatus}, matches=${matches}`);
-            return matches;
-          });
-          console.log(`Filtered orders for status '${status}':`, filteredOrders.length);
-          console.log('Filtered POs:', filteredOrders.map(po => ({ id: po.purchase_header_id, status: po.status, po_number: po.po_number })));
-          setPurchaseOrders(filteredOrders);
-        }
+        setPurchaseOrders(data.data);
       } else {
         toast.error('Failed to load purchase orders');
       }
@@ -386,97 +334,11 @@ function CreatePurchaseOrder() {
     }
   };
 
-  // Function to determine the actual status based on received quantities
-  const getActualStatus = async (po) => {
-    try {
-      console.log('=== getActualStatus DEBUG ===');
-      console.log('PO Object:', po);
-      console.log('PO ID:', po.purchase_header_id);
-      console.log('Database status:', po.status);
-      console.log('Status type:', typeof po.status);
-      console.log('Status === "pending":', po.status === 'pending');
-      console.log('!po.status:', !po.status);
-      
-      // For new purchase orders, if database status is 'new' or 'pending', return 'delivered' immediately
-      // This prevents unnecessary API calls for clearly new orders
-      if (po.status === 'new' || po.status === 'pending' || !po.status || po.status === null || po.status === undefined) {
-        console.log('New PO detected, returning delivered status immediately');
-        return 'delivered';
-      }
-      
-      // Get PO details to check received quantities
-      const response = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: po.purchase_header_id }, 'GET');
-      
-      console.log('PO details response:', response);
-      
-      if (response.success && response.data && response.data.length > 0) {
-        const details = response.data;
-        let totalOrdered = 0;
-        let totalReceived = 0;
-        let hasReceivedItems = false;
-        
-        details.forEach(item => {
-          const ordered = parseInt(item.quantity) || 0;
-          // Handle different possible field names for received quantity
-          const received = parseInt(item.received_qty || item.received_quantity || item.qty_received || 0) || 0;
-          totalOrdered += ordered;
-          totalReceived += received;
-          if (received > 0) hasReceivedItems = true;
-        });
-        
-        console.log('Status calculation:', { totalOrdered, totalReceived, hasReceivedItems });
-        
-        // Determine status based on quantities
-        if (totalReceived === 0) {
-          console.log('Status determined as: delivered');
-          return 'delivered';
-        } else if (totalReceived < totalOrdered) {
-          console.log('Status determined as: partial');
-          return 'partial';
-        } else if (totalReceived === totalOrdered) {
-          console.log('Status determined as: complete');
-          return 'complete';
-        }
-      } else {
-        // If API call fails or returns no data, check if this is a new PO
-        console.log('API call failed or no data returned, checking database status');
-        if (po.status === 'new' || po.status === 'pending' || !po.status || po.status === null || po.status === undefined) {
-          console.log('Database status is new/pending, returning delivered');
-          return 'delivered';
-        }
-        
-        // If API failed but database shows 'delivered', check if this might be a new PO
-        // by looking at creation date or other indicators
-        if (po.status === 'delivered') {
-          console.log('Database shows delivered but API failed - checking if this is a new PO');
-          // If the PO was created recently (within last hour), treat as pending
-          const createdAt = new Date(po.created_at || po.date);
-          const now = new Date();
-          const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
-          
-          if (hoursDiff < 1) {
-            console.log('PO created within last hour, treating as delivered');
-            return 'delivered';
-          }
-        }
-      }
-      
-      // Fallback to database status if we can't determine from quantities
-      console.log('Using fallback status:', po.status || 'delivered');
-      return po.status || 'delivered';
-    } catch (error) {
-      console.error('Error determining actual status:', error);
-      // For new POs, default to delivered instead of database status
-      return po.status === 'new' || po.status === 'pending' || !po.status ? 'delivered' : (po.status || 'delivered');
-    }
-  };
-
   const getStatusBadge = (status) => {
     const statusConfig = {
       // New partial delivery status system
       delivered: { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Delivered' },
-      partial: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' },
-      partial_delivery: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' }, // Keep for backward compatibility
+      partial_delivery: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' },
       complete: { bgColor: 'var(--inventory-accent)', textColor: 'white', text: 'Complete' },
       return: { bgColor: 'var(--inventory-danger)', textColor: 'white', text: 'Return' },
     };
@@ -518,14 +380,15 @@ function CreatePurchaseOrder() {
   // Fetch all purchase orders for counting (without status filter)
   const fetchAllPurchaseOrders = async () => {
     try {
-      const response = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_orders', {}, 'GET');
-      if (response.success) {
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_orders`);
+      const data = await response.json();
+      if (data.success) {
         console.log('Fetched All Purchase Orders:', {
-          count: response.data.length,
-          statuses: response.data.map(po => po.status),
-          uniqueStatuses: [...new Set(response.data.map(po => po.status))]
+          count: data.data.length,
+          statuses: data.data.map(po => po.status),
+          uniqueStatuses: [...new Set(data.data.map(po => po.status))]
         });
-        setAllPurchaseOrders(response.data);
+        setAllPurchaseOrders(data.data);
       }
     } catch (error) {
       console.error('Error fetching all purchase orders:', error);
@@ -551,7 +414,7 @@ function CreatePurchaseOrder() {
       rows.push({
         ...po,
         delivery_status: po.delivery_status || 'pending',
-        status: po.status || 'pending',
+        status: po.status || 'delivered',
       });
     }
     return rows;
@@ -567,7 +430,7 @@ function CreatePurchaseOrder() {
       rows.push({
         ...po,
         delivery_status: po.delivery_status || 'pending',
-        status: po.status || 'pending',
+        status: po.status || 'delivered',
       });
     }
     return rows;
@@ -575,38 +438,21 @@ function CreatePurchaseOrder() {
 
   const poCounts = useMemo(() => {
     const counts = {
-      delivered: normalizedOrders.filter((po) => {
-        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'delivered';
-        return actualStatus === 'delivered';
-      }).length,
-      partial: normalizedOrders.filter((po) => {
-        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'delivered';
-        return actualStatus === 'partial';
-      }).length,
-      complete: normalizedOrders.filter((po) => {
-        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'delivered';
-        return actualStatus === 'complete';
-      }).length,
-      return: normalizedOrders.filter((po) => {
-        const actualStatus = actualStatuses[po.purchase_header_id] || po.status || 'delivered';
-        return actualStatus === 'return';
-      }).length,
+      delivered: normalizedOrders.filter((po) => po.status === 'delivered').length,
+      partial_delivery: normalizedOrders.filter((po) => po.status === 'partial_delivery').length,
+      complete: normalizedOrders.filter((po) => po.status === 'complete').length,
+      return: normalizedOrders.filter((po) => po.status === 'return').length,
     };
     
     // Debug logging
     console.log('PO Counts Debug:', {
       totalOrders: normalizedOrders.length,
       counts,
-      actualStatuses,
-      sampleStatuses: normalizedOrders.slice(0, 5).map(po => ({ 
-        id: po.purchase_header_id, 
-        databaseStatus: po.status,
-        actualStatus: actualStatuses[po.purchase_header_id] || po.status || 'pending'
-      }))
+      sampleStatuses: normalizedOrders.slice(0, 5).map(po => ({ id: po.purchase_header_id, status: po.status }))
     });
     
     return counts;
-  }, [normalizedOrders, actualStatuses]);
+  }, [normalizedOrders]);
 
   // Removed activeMenuPO memo (no 3-dots menu)
 
@@ -614,7 +460,8 @@ function CreatePurchaseOrder() {
   const autoReceiveAllItems = async (poId, fromCompleteStatus = false) => {
     try {
       // Get PO details first
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: poId }, 'GET');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
       
       if (!data.success) {
         throw new Error('Failed to load purchase order details');
@@ -651,11 +498,21 @@ function CreatePurchaseOrder() {
       };
 
       // Send to receive_items API
+      const receiveResponse = await fetch(`${API_BASE}?action=receive_items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(receiveData)
+      });
+
+      // Try to parse JSON; if it fails, use fallback
       let result;
       try {
-        result = await api.callGenericAPI('purchase_order_api.php', 'receive_items', receiveData, 'POST');
+        result = await receiveResponse.clone().json();
       } catch (parseErr) {
-        console.warn('Primary receive_items failed. Using fallback.');
+        const raw = await receiveResponse.text();
+        console.warn('Non-JSON response from receive_items. Using fallback. Raw:', raw);
         
         // Fallback: use simplified endpoint
         const fallback = {
@@ -667,7 +524,18 @@ function CreatePurchaseOrder() {
           }))
         };
         
-        const fbJson = await api.callGenericAPI('purchase_order_api_simple.php', 'update_received_quantities', fallback, 'POST');
+        const fbRes = await fetch(`${API_BASE_SIMPLE}?action=update_received_quantities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fallback)
+        });
+        
+        let fbJson;
+        try {
+          fbJson = await fbRes.json();
+        } catch (e) {
+          fbJson = { success: false };
+        }
         
         if (!fbJson.success) {
           throw new Error('Fallback receive failed');
@@ -684,20 +552,28 @@ function CreatePurchaseOrder() {
       if (fromCompleteStatus) {
         // Coming from complete status - move to received
         try {
-          await api.callGenericAPI('purchase_order_api_simple.php', 'update_po_status', {
-            purchase_header_id: poId,
-            status: 'received'
-          }, 'POST');
+          await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              purchase_header_id: poId,
+              status: 'received'
+            })
+          });
         } catch (statusError) {
           console.warn('Could not update PO status to received:', statusError);
         }
       } else {
         // Coming from other statuses - move to complete first
         try {
-          await api.callGenericAPI('purchase_order_api_simple.php', 'update_po_status', {
-            purchase_header_id: poId,
-            status: 'complete'
-          }, 'POST');
+          await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              purchase_header_id: poId,
+              status: 'complete'
+            })
+          });
         } catch (statusError) {
           console.warn('Could not update PO status to complete:', statusError);
         }
@@ -714,16 +590,9 @@ function CreatePurchaseOrder() {
 
   const updatePOStatus = async (poId, nextStatus) => {
     try {
-      console.log('=== updatePOStatus DEBUG ===');
-      console.log('PO ID:', poId);
-      console.log('Next Status:', nextStatus);
-      
       // Get current PO details to check the current status
       const currentPO = purchaseOrders.find(po => po.purchase_header_id === poId);
       const currentStatus = currentPO ? currentPO.status : null;
-      
-      console.log('Current PO:', currentPO);
-      console.log('Current Status:', currentStatus);
       
       const requestBody = { 
         purchase_header_id: poId, 
@@ -736,18 +605,14 @@ function CreatePurchaseOrder() {
         requestBody.approval_notes = 'Purchase order approved via frontend';
       }
       
-      console.log('Request Body:', requestBody);
-      
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'update_po_status', requestBody, 'POST');
-      
-      console.log('API Response:', data);
-      
+      const response = await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+      const data = await response.json();
       if (data.success) {
         toast.success('Status updated successfully');
-        
-        // Refresh the purchase orders list
-        await fetchPurchaseOrders(poFilter);
-        await fetchAllPurchaseOrders();
         
         // If approved, automatically receive all items
         if (nextStatus === 'approved') {
@@ -789,12 +654,20 @@ function CreatePurchaseOrder() {
 
   const handleApprove = async (poId, action) => {
     try {
-      const result = await api.callGenericAPI('purchase_order_api_simple.php', 'approve_purchase_order', {
-        purchase_header_id: poId,
-        approved_by: currentUser.emp_id,
-        approval_status: action,
-        approval_notes: action === 'approved' ? 'Approved by admin' : 'Rejected by admin'
-      }, 'POST');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=approve_purchase_order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          purchase_header_id: poId,
+          approved_by: currentUser.emp_id,
+          approval_status: action,
+          approval_notes: action === 'approved' ? 'Approved by admin' : 'Rejected by admin'
+        })
+      });
+
+      const result = await response.json();
       
       if (result.success) {
         toast.success(`Purchase Order ${action === 'approved' ? 'approved' : 'rejected'} successfully!`);
@@ -810,11 +683,19 @@ function CreatePurchaseOrder() {
 
   const handleUpdateDelivery = async (poId, status) => {
     try {
-      const result = await api.callGenericAPI('purchase_order_api_simple.php', 'update_delivery_status', {
-        purchase_header_id: poId,
-        delivery_status: status,
-        actual_delivery_date: status === 'delivered' ? new Date().toISOString().split('T')[0] : null
-      }, 'POST');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=update_delivery_status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          purchase_header_id: poId,
+          delivery_status: status,
+          actual_delivery_date: status === 'delivered' ? new Date().toISOString().split('T')[0] : null
+        })
+      });
+
+      const result = await response.json();
       
       if (result.success) {
         toast.success(`Delivery status updated to ${status}!`);
@@ -830,16 +711,12 @@ function CreatePurchaseOrder() {
 
   const viewDetails = async (poId) => {
     try {
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: poId }, 'GET');
-      console.log('PO Details API Response:', data);
-      console.log('PO Details Count:', data.details?.length || 0);
-      console.log('PO Details Data:', data.details);
-      
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
       if (data.success) {
         setSelectedPO(data);
         setShowDetails(true);
       } else {
-        console.error('API Error:', data.error);
         toast.error('Failed to load purchase order details');
       }
     } catch (error) {
@@ -851,7 +728,8 @@ function CreatePurchaseOrder() {
   // Receive Items functions
   const fetchReceivingList = async () => {
     try {
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'receiving_list', {}, 'GET');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=receiving_list`);
+      const data = await response.json();
       if (data.success) {
         console.log('Receiving List Debug:', {
           count: data.data.length,
@@ -886,11 +764,13 @@ function CreatePurchaseOrder() {
 
     try {
       // Try the simple API first
-      let data = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: poId }, 'GET');
+      let response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      let data = await response.json();
 
       if (!data?.success) {
         // Fallback to full API if simple fails
-        data = await api.callGenericAPI('purchase_order_api.php', 'purchase_order_details', { po_id: poId }, 'GET');
+        response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
+        data = await response.json();
       }
 
       if (data?.success) {
@@ -963,12 +843,21 @@ function CreatePurchaseOrder() {
           }))
       };
 
-      // Try to receive items; if it fails, use fallback
+      const response = await fetch(`${API_BASE}?action=receive_items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(receiveData)
+      });
+
+      // Try to parse JSON; if it fails (even if content-type says JSON), fallback
       let result;
       try {
-        result = await api.callGenericAPI('purchase_order_api.php', 'receive_items', receiveData, 'POST');
+        result = await response.clone().json();
       } catch (parseErr) {
-        console.warn('Primary receive_items failed. Falling back.');
+        const raw = await response.text();
+        console.warn('Non-JSON response from receive_items. Falling back. Raw:', raw);
         // Fallback: use simplified endpoint to at least record quantities
         const fallback = {
           purchase_header_id: receiveData.purchase_header_id,
@@ -978,7 +867,17 @@ function CreatePurchaseOrder() {
             missing_qty: 0
           }))
         };
-        const fbJson = await api.callGenericAPI('purchase_order_api_simple.php', 'update_received_quantities', fallback, 'POST');
+        const fbRes = await fetch(`${API_BASE_SIMPLE}?action=update_received_quantities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fallback)
+        });
+        let fbJson;
+        try {
+          fbJson = await fbRes.json();
+        } catch (e) {
+          fbJson = { success: false };
+        }
         if (!fbJson.success) throw new Error('Fallback receive failed');
         result = { success: true, receiving_id: fbJson.receiving_id || 0 };
       }
@@ -1023,7 +922,8 @@ function CreatePurchaseOrder() {
   const handleCompleteItems = async (poId) => {
     try {
       // Get PO details for complete items
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: poId }, 'GET');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
       if (data.success) {
         setSelectedPOForReceive(data);
         
@@ -1047,7 +947,8 @@ function CreatePurchaseOrder() {
   const handleReceiveItems = async (poId) => {
     try {
       // Get PO details for receive items
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: poId }, 'GET');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
       if (data.success) {
         setSelectedPOForReceive(data);
         
@@ -1099,7 +1000,7 @@ function CreatePurchaseOrder() {
         newStatus = 'complete';
         toast.success('✅ Items marked as complete! Ready for final receiving.');
       } else if (hasPartial) {
-        newStatus = 'partial';
+        newStatus = 'partial_delivery';
         toast.warning('⚠️ Partial delivery! Some items received, some missing.');
       } else {
         toast.info('📦 No items received yet.');
@@ -1160,7 +1061,13 @@ function CreatePurchaseOrder() {
       // If coming from Delivered status, just update quantities locally and change status
       if (currentStatus === 'complete') {
         // Final receiving - save to database
-        const result = await api.callGenericAPI('purchase_order_api_simple.php', 'update_received_quantities', receiveData, 'POST');
+        const response = await fetch(`${API_BASE_SIMPLE}?action=update_received_quantities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(receiveData)
+        });
+        
+        const result = await response.json();
         
         if (result.success) {
           // Update status to received for final receiving
@@ -1183,7 +1090,7 @@ function CreatePurchaseOrder() {
           newStatus = 'complete';
           toast.success('✅ Items marked as complete! Ready for final receiving.');
         } else if (hasPartial) {
-          newStatus = 'partial';
+          newStatus = 'partial_delivery';
           toast.warning('⚠️ Partial delivery! Some items received, some missing.');
         } else {
           toast.info('📦 No items received yet.');
@@ -1214,7 +1121,8 @@ function CreatePurchaseOrder() {
   const handleUpdatePartialDelivery = async (poId) => {
     try {
       // Get PO details for partial delivery update
-      const data = await api.callGenericAPI('purchase_order_api_simple.php', 'purchase_order_details', { po_id: poId }, 'GET');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
       if (data.success) {
         setSelectedPOForPartialDelivery(data);
         setPartialDeliveryFormData({
@@ -1267,7 +1175,15 @@ function CreatePurchaseOrder() {
         items: partialDeliveryFormData.items
       };
 
-      const result = await api.callGenericAPI('purchase_order_api_simple.php', 'update_partial_delivery', partialDeliveryData, 'POST');
+      const response = await fetch(`${API_BASE_SIMPLE}?action=update_partial_delivery`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(partialDeliveryData)
+      });
+
+      const result = await response.json();
       
       if (result.success) {
         toast.success(`Partial delivery updated successfully! New status: ${result.new_status}`);
@@ -1633,7 +1549,7 @@ function CreatePurchaseOrder() {
             <div className="flex overflow-x-auto no-scrollbar gap-6 px-2">
               {[
                 { key: 'delivered', label: 'Delivered' },
-                { key: 'partial', label: 'Partial Delivery' },
+                { key: 'partial_delivery', label: 'Partial Delivery' },
                 { key: 'complete', label: 'Complete' },
                 { key: 'return', label: 'Returns' },
               ].map((f) => (
@@ -1709,34 +1625,7 @@ function CreatePurchaseOrder() {
                       </td>
                                              {/* Total Amount display removed as requested */}
                                              <td className="px-6 py-4 whitespace-nowrap">
-                         {(() => {
-                           // Priority: actualStatuses > database status > 'delivered'
-                           let actualStatus = actualStatuses[po.purchase_header_id];
-                           
-                           // If no calculated status, use database status
-                           if (!actualStatus) {
-                             actualStatus = po.status;
-                           }
-                           
-                           // Handle 'new' status as 'delivered'
-                           if (actualStatus === 'new' || actualStatus === 'pending') {
-                             actualStatus = 'delivered';
-                           }
-                           
-                           // Final fallback to 'delivered'
-                           if (!actualStatus) {
-                             actualStatus = 'delivered';
-                           }
-                           
-                           console.log('Rendering status for PO', po.purchase_header_id, ':', { 
-                             actualStatus, 
-                             databaseStatus: po.status, 
-                             actualStatuses: actualStatuses,
-                             finalStatus: actualStatus,
-                             receivedQty: po.received_qty
-                           });
-                           return getStatusBadge(actualStatus);
-                         })()}
+                         {getStatusBadge(po.status)}
                        </td>
                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         {/* Actions menu with multiple options */}
@@ -1790,7 +1679,7 @@ function CreatePurchaseOrder() {
                                     </button>
                                   </div>
                                 );
-                              } else if (po.status === 'partial') {
+                              } else if (po.status === 'partial_delivery') {
                                 return (
                                   <div className="flex gap-2">
                                     <button
