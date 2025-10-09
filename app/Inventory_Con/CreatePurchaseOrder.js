@@ -1805,9 +1805,29 @@ function CreatePurchaseOrder() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm max-w-xs group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <div className="truncate group-hover:!text-gray-900" title={item.received_items}>
-                          {item.received_items || 'Ready to receive items'}
-                        </div>
+                        <button
+                          onClick={async () => {
+                            // Fetch PO details to show products
+                            try {
+                              const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${item.purchase_header_id}`);
+                              const data = await response.json();
+                              if (data.success) {
+                                setSelectedPO(data);
+                                setShowDetails(true);
+                              } else {
+                                toast.error("Failed to fetch purchase order details");
+                              }
+                            } catch (error) {
+                              toast.error("Error loading purchase order details");
+                              console.error('Error:', error);
+                            }
+                          }}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors text-sm font-medium"
+                          title="View products in this purchase order"
+                        >
+                          <FaEye className="h-3.5 w-3.5" />
+                          View Details
+                        </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${

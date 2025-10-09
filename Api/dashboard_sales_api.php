@@ -201,44 +201,43 @@ function getPaymentMethods($conn, $data = []) {
         $days = $data['days'] ?? $_POST['days'] ?? 30; // Default to 30 days
         $days = max(1, min(365, (int)$days)); // Limit between 1-365 days - sanitized as integer
         
-        // Note: MySQL doesn't allow parameter binding in INTERVAL clause, so we use the sanitized integer directly
+        // Note: MySQL doesn't support parameter binding in INTERVAL, so we use the sanitized integer directly
         $sql = "
             SELECT 
                 pt.payment_type,
                 COUNT(DISTINCT pt.transaction_id) as transaction_count,
-                COALESCE(SUM(psh.total_amount), 0) as total_amount,
-                ROUND((COUNT(DISTINCT pt.transaction_id) * 100.0 / (
-                    SELECT COUNT(DISTINCT pt2.transaction_id) 
-                    FROM tbl_pos_transaction pt2
-                    JOIN tbl_pos_sales_header psh2 ON pt2.transaction_id = psh2.transaction_id
-                    WHERE DATE(pt2.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
-                )), 1) as percentage
+                COALESCE(SUM(psh.total_amount), 0) as total_amount
             FROM tbl_pos_transaction pt
             JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
-            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
+            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL " . $days . " DAY)
             GROUP BY pt.payment_type
             ORDER BY total_amount DESC
         ";
         
-        $stmt = $conn->prepare($sql);
-        $stmt->execute();
+        $stmt = $conn->query($sql); // Use query() instead of prepare() since no parameters
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Calculate total for percentage
+        $total = array_sum(array_column($results, 'transaction_count'));
+        $total = $total > 0 ? $total : 1; // Avoid division by zero
         
         // Format the data and assign colors
         $colors = [
             'cash' => '#3B82F6',
             'card' => '#10B981', 
-            'Gcash' => '#F59E0B'
+            'gcash' => '#F59E0B'
         ];
         
         $paymentMethods = [];
         foreach ($results as $row) {
             $paymentType = ucfirst(strtolower($row['payment_type']));
+            $percentage = round(($row['transaction_count'] / $total) * 100, 1);
+            
             $paymentMethods[] = [
                 'name' => $paymentType,
                 'count' => (int)$row['transaction_count'],
                 'amount' => (float)$row['total_amount'],
-                'percentage' => (float)$row['percentage'],
+                'percentage' => $percentage,
                 'color' => $colors[strtolower($row['payment_type'])] ?? '#6B7280'
             ];
         }
@@ -249,7 +248,17 @@ function getPaymentMethods($conn, $data = []) {
             'period_days' => $days
         ]);
         
+    } catch (PDOException $e) {
+        error_log("PDO Error in getPaymentMethods: " . $e->getMessage());
+        error_log("Error trace: " . $e->getTraceAsString());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error getting payment methods: ' . $e->getMessage(),
+            'error_code' => $e->getCode(),
+            'trace' => $e->getFile() . ':' . $e->getLine()
+        ]);
     } catch (Exception $e) {
+        error_log("General Error in getPaymentMethods: " . $e->getMessage());
         echo json_encode([
             'success' => false,
             'message' => 'Error getting payment methods: ' . $e->getMessage()
