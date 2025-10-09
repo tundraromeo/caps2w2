@@ -5904,11 +5904,13 @@ case 'get_products_oldest_batch_for_transfer':
             // Get top categories distribution
             $stmt = $conn->prepare("
                 SELECT 
-                    c.category_name_name,
+                    c.category_name,
                     COUNT(p.product_id) as product_count,
                     ROUND(COUNT(p.product_id) * 100.0 / (SELECT COUNT(*) FROM tbl_product WHERE (status IS NULL OR status <> 'archived')), 1) as percentage
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
+                AND c.category_name IS NOT NULL
                 GROUP BY c.category_name
                 ORDER BY product_count DESC
                 LIMIT 5
