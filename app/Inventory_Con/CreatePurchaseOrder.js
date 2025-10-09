@@ -28,11 +28,12 @@ import {
   User,
   Building,
 } from "lucide-react";
+import { getApiUrl } from "../lib/apiConfig";
 
-// Define API base URLs at the top of the file
-const API_BASE_SIMPLE = "http://localhost/caps2e2/Api/purchase_order_api_simple.php";
-const API_BASE = "http://localhost/caps2e2/Api/purchase_order_api.php";
-const CREATE_PO_API = "http://localhost/caps2e2/Api/create_purchase_order_api.php";
+// Define API URLs using centralized configuration
+const API_BASE_SIMPLE = getApiUrl("purchase_order_api_simple.php");
+const API_BASE = getApiUrl("purchase_order_api.php");
+const CREATE_PO_API = getApiUrl("create_purchase_order_api.php");
 
 function CreatePurchaseOrder() {
   // Tab stateasy

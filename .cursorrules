@@ -1,0 +1,278 @@
+# AI Coding Rules for Enguio Inventory System
+
+## 🚫 CRITICAL RULES - NEVER VIOLATE THESE
+
+### Rule 1: NO HARDCODED API BASE URLS
+**MUST:** All API base URLs MUST use environment variables
+**NEVER:** Hardcode URLs like `http://localhost/caps2e2/Api`
+
+✅ CORRECT:
+```javascript
+import { getApiUrl, API_BASE_URL } from '@/app/lib/apiConfig';
+const url = getApiUrl('backend.php');
+// OR
+const url = `${process.env.NEXT_PUBLIC_API_BASE_URL}/backend.php`;
+```
+
+❌ INCORRECT:
+```javascript
+const url = "http://localhost/caps2e2/Api/backend.php";
+const API_BASE = "http://localhost/caps2e2/Api";
+```
+
+**Enforcement:** Search for hardcoded URLs before committing:
+```bash
+grep -r "http://localhost/caps2e2/Api" app/ --include="*.js" | grep -v "NEXT_PUBLIC_API_BASE_URL"
+```
+
+### Rule 2: NO HARDCODED DATABASE CREDENTIALS
+**MUST:** All database credentials MUST use environment variables from .env file
+**NEVER:** Hardcode database credentials in PHP files
+
+✅ CORRECT (PHP):
+```php
+// Load .env file
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
+
+// Use environment variables
+$servername = $_ENV['DB_HOST'] ?? 'localhost';
+$dbname = $_ENV['DB_DATABASE'];
+$username = $_ENV['DB_USER'];
+$password = $_ENV['DB_PASS'] ?? '';
+```
+
+❌ INCORRECT (PHP):
+```php
+$servername = "localhost";
+$username = "root";
+$password = "";
+$dbname = "enguio2";
+```
+
+**Enforcement:** Search for hardcoded credentials:
+```bash
+grep -r "mysql:host=localhost" Api/ --include="*.php" | grep -v "\$_ENV"
+```
+
+---
+
+## 📋 MANDATORY PATTERNS
+
+### API Calls (JavaScript/React)
+
+**Pattern 1: Using apiConfig utility (RECOMMENDED)**
+```javascript
+import { getApiUrl, API_BASE_URL } from '@/app/lib/apiConfig';
+
+// For single endpoint
+const url = getApiUrl('backend.php');
+
+// For dynamic endpoints
+const url = `${API_BASE_URL}/${endpointName}`;
+```
+
+**Pattern 2: Using apiHandler (BEST PRACTICE)**
+```javascript
+import apiHandler from '@/app/lib/apiHandler';
+
+const response = await apiHandler.callAPI('backend.php', 'get_products', data);
+```
+
+**Pattern 3: Direct env var (ACCEPTABLE)**
+```javascript
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api';
+const url = `${API_BASE_URL}/backend.php`;
+```
+
+### Database Connection (PHP)
+
+**Pattern: Always use conn.php**
+```php
+// At the top of any PHP API file
+require_once __DIR__ . '/conn.php';
+
+// Then use the connection
+$conn = getDatabaseConnection(); // Returns PDO
+// OR
+$mysqli_conn = getMySQLiConnection(); // Returns MySQLi
+```
+
+**NEVER create new database connections with hardcoded credentials**
+
+---
+
+## 🔧 ENVIRONMENT VARIABLES
+
+### Required Frontend Variables (.env.local)
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost/caps2e2/Api
+```
+
+### Required Backend Variables (.env in project root)
+```env
+DB_HOST=localhost
+DB_DATABASE=enguio2
+DB_USER=root
+DB_PASS=
+DB_CHARSET=utf8mb4
+```
+
+---
+
+## ✅ PRE-COMMIT CHECKLIST
+
+Before any code changes:
+1. ✅ Check for hardcoded URLs: `grep -r "http://localhost" app/ --include="*.js" | grep -v "env"`
+2. ✅ Check for hardcoded DB credentials: `grep -r "mysql:host=" Api/ --include="*.php" | grep -v "\$_ENV"`
+3. ✅ Verify .env.local exists with NEXT_PUBLIC_API_BASE_URL
+4. ✅ Verify .env exists with DB credentials (for backend)
+5. ✅ Run verification: `./verify_env_implementation.sh`
+
+---
+
+## 🚨 AUTOMATIC FIXES
+
+If you find hardcoded URLs:
+1. Replace with environment variable
+2. Import from apiConfig.js if possible
+3. Use apiHandler for API calls
+4. Add fallback for safety: `process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'`
+
+If you find hardcoded DB credentials:
+1. Move to .env file in project root
+2. Use conn.php for connections
+3. Load environment with simple_dotenv.php
+4. Never expose credentials in code
+
+---
+
+## 📁 KEY FILES
+
+- `app/lib/apiConfig.js` - Centralized API configuration
+- `app/lib/apiHandler.js` - API handler with automatic routing
+- `Api/conn.php` - Database connection using env vars
+- `.env.local` - Frontend environment variables
+- `.env` (project root) - Backend environment variables
+- `.env.example` - Template for deployment
+
+---
+
+## 🎯 EXAMPLES OF COMMON VIOLATIONS
+
+### Violation 1: New API file with hardcoded URL
+```javascript
+// ❌ WRONG
+const API_URL = "http://localhost/caps2e2/Api/new_api.php";
+
+// ✅ CORRECT
+import { getApiUrl } from '@/app/lib/apiConfig';
+const API_URL = getApiUrl('new_api.php');
+```
+
+### Violation 2: New PHP file with hardcoded DB
+```php
+// ❌ WRONG
+$conn = new mysqli("localhost", "root", "", "enguio2");
+
+// ✅ CORRECT
+require_once __DIR__ . '/conn.php';
+$conn = getMySQLiConnection();
+```
+
+### Violation 3: Fetch call with full URL
+```javascript
+// ❌ WRONG
+fetch('http://localhost/caps2e2/Api/backend.php', {...})
+
+// ✅ CORRECT
+import { getApiUrl } from '@/app/lib/apiConfig';
+fetch(getApiUrl('backend.php'), {...})
+```
+
+---
+
+## 🔍 DETECTION PATTERNS
+
+AI agents should automatically scan for:
+
+1. **Hardcoded URLs:**
+   - Pattern: `http://localhost/caps2e2/Api`
+   - Pattern: `https?://[^"'\s]+/Api`
+   - Exclude: Lines containing `process.env.NEXT_PUBLIC_API_BASE_URL`
+   - Exclude: Lines in apiConfig.js (fallback values)
+
+2. **Hardcoded DB Credentials:**
+   - Pattern: `new mysqli("localhost"`
+   - Pattern: `new PDO("mysql:host=localhost`
+   - Pattern: `$servername = "localhost"` without `$_ENV`
+   - Exclude: Lines in conn.php (managed file)
+
+3. **Missing Environment Variables:**
+   - Check `.env.local` exists
+   - Check `NEXT_PUBLIC_API_BASE_URL` is defined
+   - Check `.env` exists in project root
+   - Check DB_* variables are defined
+
+---
+
+## 🤖 AI AGENT INSTRUCTIONS
+
+When working on this codebase:
+
+1. **Before creating new API calls:**
+   - Import apiConfig or apiHandler
+   - Never write full URLs
+   - Use environment variables
+
+2. **Before creating new PHP files:**
+   - Include conn.php for database
+   - Never hardcode credentials
+   - Use getDatabaseConnection() or getMySQLiConnection()
+
+3. **When modifying existing files:**
+   - Check for hardcoded values
+   - Suggest fixes if found
+   - Maintain environment variable patterns
+
+4. **When user asks to add features:**
+   - Automatically use proper patterns
+   - Don't ask permission to use env vars
+   - It's the standard practice for this project
+
+---
+
+## 📚 REFERENCE DOCUMENTATION
+
+- `API_ENV_SETUP.md` - Complete environment setup guide
+- `ENV_IMPLEMENTATION_STATUS.md` - Implementation details
+- `START_HERE_ENV_SETUP.md` - Quick start guide
+- `verify_env_implementation.sh` - Verification script
+
+---
+
+## ⚡ QUICK REFERENCE
+
+**Frontend API Call:**
+```javascript
+import { getApiUrl } from '@/app/lib/apiConfig';
+const response = await fetch(getApiUrl('backend.php'), {
+  method: 'POST',
+  body: JSON.stringify({ action: 'get_products' })
+});
+```
+
+**Backend DB Connection:**
+```php
+require_once __DIR__ . '/conn.php';
+$conn = getDatabaseConnection();
+```
+
+**That's it!** Follow these patterns consistently.
+
+---
+
+Last Updated: October 9, 2025
+Status: Enforced ✅
+

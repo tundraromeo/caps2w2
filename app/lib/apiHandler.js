@@ -3,11 +3,12 @@
  * Connects all PHP APIs to frontend components
  */
 
+// Import centralized API configuration
+import { API_BASE_URL, API_ENDPOINTS } from './apiConfig';
+
 // API Configuration
 const API_CONFIG = {
-  BASE_URL: (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL)
-    ? process.env.NEXT_PUBLIC_API_BASE_URL
-    : 'http://localhost/caps2e2/Api',
+  BASE_URL: API_BASE_URL,
   USE_PROXY: false, // Set to false to use direct calls
   ENDPOINTS: {
     // Main backend API
