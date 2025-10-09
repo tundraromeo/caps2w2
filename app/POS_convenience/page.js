@@ -1655,10 +1655,10 @@ export default function POS() {
     };
 
     try {
-      console.log('Sending receipt data:', receiptData);
+      console.log('📤 Sending receipt data:', receiptData);
       
-      // Call the PHP backend directly since Next.js API is broken
-              const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
+      // Server-side printing (for local XAMPP)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1666,25 +1666,27 @@ export default function POS() {
         body: JSON.stringify(receiptData)
       });
 
+      console.log('📥 Response status:', response.status, response.ok);
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('HTTP Error:', response.status, errorText);
-        throw new Error(`HTTP error! status: ${response.status}: ${errorText}`);
+        console.error('❌ HTTP Error:', response.status, errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const result = await response.json();
-      console.log('Print result:', result);
+      console.log('📋 Server print result:', result);
       
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to print receipt');
+      if (result.success) {
+        console.log('✅ Receipt printed successfully via server!');
+        return { success: true, message: 'Receipt printed successfully', transactionId, method: 'server-print' };
+      } else {
+        console.error('❌ Print failed:', result.message);
+        return { success: false, message: result.message, transactionId };
       }
       
-      // Show success message
-      console.log('Receipt printed successfully:', result.data?.transactionId || transactionId);
-      return { success: true, message: 'Receipt printed successfully', transactionId };
-      
     } catch (error) {
-      console.error('Print error:', error);
+      console.error('❌ Print error:', error);
       // Return error details for better debugging
       return { success: false, message: error.message, transactionId };
     }

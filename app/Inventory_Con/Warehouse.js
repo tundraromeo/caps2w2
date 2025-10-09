@@ -327,7 +327,7 @@ function Warehouse() {
 
     const [newProductForm, setNewProductForm] = useState({
       product_name: "",
-      category: "",
+      category_id: "",
       product_type: "", // Medicine or Non-Medicine
       configMode: "bulk", // Default to bulk mode
       barcode: "",
@@ -516,7 +516,7 @@ function Warehouse() {
     const [formData, setFormData] = useState({
       product_name: "",
       barcode: "",
-      category: "",
+      category_id: "",
       description: "",
       prescription: 0,
       bulk: 0,
@@ -532,7 +532,7 @@ function Warehouse() {
     const [editFormData, setEditFormData] = useState({})
     const [editProductFormData, setEditProductFormData] = useState({
       product_name: "",
-      category: "",
+      category_id: "",
       barcode: "",
       description: "",
       srp: "",
@@ -1062,7 +1062,7 @@ calculateLowStockAndExpiring(activeProducts);
           // Product doesn't exist - show new product modal
           setNewProductForm({
             product_name: productName, // Pre-fill with entered product name
-            category: "",
+            category_id: "",
             product_type: "",
             configMode: "bulk", // Default to bulk mode
             barcode: "", // Empty barcode for manual entry
@@ -1162,7 +1162,7 @@ calculateLowStockAndExpiring(activeProducts);
               // Product doesn't exist - show new product modal
               setNewProductForm({
                 product_name: "",
-                category: "",
+                category_id: "",
                 product_type: "",
                 configMode: "bulk", // Default to bulk mode
                 barcode: scanned, // Pre-fill with scanned barcode
@@ -1259,7 +1259,7 @@ calculateLowStockAndExpiring(activeProducts);
       setSelectedItem(product)
       setEditProductFormData({
         product_name: product.product_name || "",
-        category: product.category || "",
+        category_id: product.category_id || "",
         barcode: product.barcode || "",
         description: product.description || "",
         srp: product.srp || product.unit_price || "",
@@ -1284,7 +1284,7 @@ calculateLowStockAndExpiring(activeProducts);
       setSelectedItem(null)
       setEditProductFormData({
         product_name: "",
-        category: "",
+        category_id: "",
         barcode: "",
         description: "",
         srp: "",
@@ -1350,7 +1350,7 @@ calculateLowStockAndExpiring(activeProducts);
       setShowNewProductModal(false);
       setNewProductForm({
         product_name: "",
-        category: "",
+        category_id: "",
         product_type: "",
         configMode: "bulk", // Reset to default
         barcode: "",
@@ -2032,7 +2032,7 @@ console.log("API response for product quantities:", response);
       // "🔍 Brand search from form:", newProductForm.brand_search);
       
       // Basic required fields validation
-      if (!newProductForm.product_name || !newProductForm.category || !newProductForm.product_type || !newProductForm.srp) {
+      if (!newProductForm.product_name || !newProductForm.category_id || !newProductForm.product_type || !newProductForm.srp) {
         safeToast("error", "Please fill in all required fields (Product Name, Category, Product Type, SRP)");
         // "❌ Basic validation failed - missing required fields");
         return;
@@ -2086,7 +2086,7 @@ console.log("API response for product quantities:", response);
       // Reset form for next product (keep same batch number and config mode)
       setNewProductForm({
         product_name: "",
-        category: "",
+        category_id: "",
         product_type: "",
         configMode: newProductForm.configMode || "bulk", // Preserve configuration mode
         barcode: "", // No auto-generated barcode
@@ -2221,7 +2221,7 @@ console.log("API response for product quantities:", response);
             status: "active",
             products: newProducts.map(product => ({
               product_name: product.product_name,
-              category: product.category,
+              category_id: product.category_id,
               product_type: product.product_type,
               configMode: product.configMode || "bulk",
               barcode: product.barcode,
@@ -3953,8 +3953,8 @@ console.log("API response for product quantities:", response);
                     <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Category *</label>
                     <select
                       required
-                      value={editProductFormData.category || ""}
-                      onChange={(e) => handleEditProductInputChange("category", e.target.value)}
+                      value={editProductFormData.category_id || ""}
+                      onChange={(e) => handleEditProductInputChange("category_id", e.target.value)}
                       className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                       style={{ 
                         borderColor: theme.border.default,
@@ -3965,7 +3965,7 @@ console.log("API response for product quantities:", response);
                     >
                       <option value="">Select Category</option>
                       {categoriesData.map((category) => (
-                        <option key={category.category_id} value={category.category_name}>
+                        <option key={category.category_id} value={category.category_id}>
                           {category.category_name}
                         </option>
                       ))}
@@ -4913,9 +4913,9 @@ console.log("API response for product quantities:", response);
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Category *</label>
               <select
                 required
-                value={newProductForm.category || ""}
+                value={newProductForm.category_id || ""}
                 onChange={(e) => {
-                  handleNewProductInputChange("category", e.target.value);
+                  handleNewProductInputChange("category_id", e.target.value);
                 }}
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
@@ -4927,7 +4927,7 @@ console.log("API response for product quantities:", response);
               >
                 <option value="">Select Category</option>
                 {categoriesData.map((category) => (
-                  <option key={category.category_id} value={category.category_name}>
+                  <option key={category.category_id} value={category.category_id}>
                     {category.category_name}
                   </option>
                 ))}
@@ -5609,7 +5609,7 @@ console.log("API response for product quantities:", response);
                 type="submit"
                 disabled={loading || (() => {
                   // Basic required fields
-                  if (!newProductForm.product_name || !newProductForm.category || !newProductForm.product_type || !newProductForm.srp) {
+                  if (!newProductForm.product_name || !newProductForm.category_id || !newProductForm.product_type || !newProductForm.srp) {
                     return true;
                   }
                   
@@ -5633,7 +5633,7 @@ console.log("API response for product quantities:", response);
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50"
                 title={(() => {
                   if (!newProductForm.product_name) return "Please enter product name";
-                  if (!newProductForm.category) return "Please select category";
+                  if (!newProductForm.category_id) return "Please select category";
                   if (!newProductForm.product_type) return "Please select product type";
                   if (!newProductForm.srp) return "Please enter SRP";
                   

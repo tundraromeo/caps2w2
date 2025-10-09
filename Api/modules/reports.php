@@ -545,6 +545,7 @@ class ReportsModule {
                 COALESCE(e.username, 'Unknown') as cashier_username,
                 e.email,
                 e.contact_num,
+                r.role as employee_role,
                 COUNT(DISTINCT CASE WHEN pt.date BETWEEN ? AND ? THEN psh.sales_header_id END) as transactions_count,
                 COALESCE(SUM(CASE WHEN pt.date BETWEEN ? AND ? THEN psh.total_amount ELSE 0 END), 0) as total_sales,
                 COALESCE(AVG(CASE WHEN pt.date BETWEEN ? AND ? THEN psh.total_amount END), 0) as average_transaction,
@@ -552,11 +553,13 @@ class ReportsModule {
                 MIN(CASE WHEN pt.date BETWEEN ? AND ? THEN pt.date END) as first_sale_date,
                 MAX(CASE WHEN pt.date BETWEEN ? AND ? THEN pt.date END) as last_sale_date
             FROM tbl_employee e
+            LEFT JOIN tbl_role r ON e.role_id = r.role_id
             LEFT JOIN tbl_pos_transaction pt ON e.emp_id = pt.emp_id
             LEFT JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
             LEFT JOIN tbl_pos_sales_details psd ON psh.sales_header_id = psd.sales_header_id
-            WHERE e.role_id = 3 AND e.status = 'Active'
-            GROUP BY e.emp_id, e.Fname, e.Lname, e.username, e.email, e.contact_num
+            WHERE (e.role_id = 2 OR e.role_id = 3) AND e.status = 'Active'
+            GROUP BY e.emp_id, e.Fname, e.Lname, e.username, e.email, e.contact_num, r.role
+            HAVING transactions_count > 0
             ORDER BY total_sales DESC
         ");
         $stmt->execute([$startDate, $endDate, $startDate, $endDate, $startDate, $endDate, $startDate, $endDate, $startDate, $endDate, $startDate, $endDate]);
@@ -571,6 +574,7 @@ class ReportsModule {
                     COALESCE(e.username, 'Unknown') as cashier_username,
                     e.email,
                     e.contact_num,
+                    r.role as employee_role,
                     COUNT(DISTINCT psh.sales_header_id) as transactions_count,
                     COALESCE(SUM(psh.total_amount), 0) as total_sales,
                     COALESCE(AVG(psh.total_amount), 0) as average_transaction,
@@ -578,11 +582,13 @@ class ReportsModule {
                     MIN(pt.date) as first_sale_date,
                     MAX(pt.date) as last_sale_date
                 FROM tbl_employee e
+                LEFT JOIN tbl_role r ON e.role_id = r.role_id
                 LEFT JOIN tbl_pos_transaction pt ON e.emp_id = pt.emp_id
                 LEFT JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
                 LEFT JOIN tbl_pos_sales_details psd ON psh.sales_header_id = psd.sales_header_id
-                WHERE e.role_id = 3 AND e.status = 'Active'
-                GROUP BY e.emp_id, e.Fname, e.Lname, e.username, e.email, e.contact_num
+                WHERE (e.role_id = 2 OR e.role_id = 3) AND e.status = 'Active'
+                GROUP BY e.emp_id, e.Fname, e.Lname, e.username, e.email, e.contact_num, r.role
+                HAVING transactions_count > 0
                 ORDER BY total_sales DESC
                 LIMIT 10
             ");

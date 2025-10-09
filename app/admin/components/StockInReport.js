@@ -99,9 +99,40 @@ function StockInReport() {
         return itemDate >= startDate && itemDate <= endDate;
       });
       
-      setStockInData(filteredData);
+      // Deduplicate by reference_no - combine items with same reference number
+      const deduplicatedData = [];
+      const referenceMap = new Map();
+      
+      filteredData.forEach(item => {
+        const refNo = item.reference_no || 'N/A';
+        
+        if (!referenceMap.has(refNo)) {
+          // First occurrence - add to map and array
+          referenceMap.set(refNo, {
+            ...item,
+            product_count: 1,
+            total_quantity: parseInt(item.quantity) || 0
+          });
+          deduplicatedData.push(referenceMap.get(refNo));
+        } else {
+          // Duplicate reference - combine quantities and count products
+          const existing = referenceMap.get(refNo);
+          existing.total_quantity += parseInt(item.quantity) || 0;
+          existing.product_count += 1;
+          // Update quantity to show total
+          existing.quantity = existing.total_quantity;
+          // Update product name to show it's multiple products
+          if (existing.product_count === 2) {
+            existing.product_name = `${existing.product_name} + 1 more product`;
+          } else if (existing.product_count > 2) {
+            existing.product_name = existing.product_name.replace(/ \+ \d+ more products?$/, '') + ` + ${existing.product_count - 1} more products`;
+          }
+        }
+      });
+      
+      setStockInData(deduplicatedData);
       setError(null);
-      console.log('Stock-in data fetched successfully:', filteredData.length, 'records out of', result.data.length, 'total');
+      console.log('Stock-in data fetched successfully:', deduplicatedData.length, 'unique records (from', filteredData.length, 'total items) out of', result.data.length, 'API records');
       
     } catch (error) {
       console.error('Error fetching stock-in data:', error);

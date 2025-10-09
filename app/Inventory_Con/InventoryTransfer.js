@@ -42,7 +42,6 @@ function InventoryTransfer() {
   const [checkedProducts, setCheckedProducts] = useState([])
   const [showProductSelection, setShowProductSelection] = useState(false)
   const [productSearchTerm, setProductSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("All Product Category")
   const [selectedSupplier, setSelectedSupplier] = useState("All Suppliers")
   const [locations, setLocations] = useState([])
   const [staff, setStaff] = useState([])
@@ -1518,22 +1517,13 @@ function InventoryTransfer() {
       (product.barcode && String(product.barcode).includes(productSearchTerm)) ||
       (product.sku && product.sku.toLowerCase().includes(productSearchTerm.toLowerCase()))
 
-    const matchesCategory = selectedCategory === "All Product Category" || product.category === selectedCategory
+    // Category filtering removed - using category_id now
     const matchesSupplier = selectedSupplier === "All Suppliers" || product.supplier_name === selectedSupplier
 
-    return matchesSearch && matchesCategory && matchesSupplier
+    return matchesSearch && matchesSupplier
   })
 
-  // Get unique categories and suppliers from warehouse products
-  const categories = [...new Set(availableProducts.map((p) => {
-    // Handle both string and object category formats
-    if (typeof p.category === 'string') {
-      return p.category;
-    } else if (p.category && typeof p.category === 'object' && p.category.category_name) {
-      return p.category.category_name;
-    }
-    return null;
-  }).filter(Boolean))]
+  // Get unique suppliers from warehouse products (category removed - using category_id now)
   const suppliers = [...new Set(availableProducts.map((p) => p.supplier_name).filter(Boolean))]
 
   // Main Transfer List View
@@ -2353,9 +2343,6 @@ function InventoryTransfer() {
                             Product
                           </th>
                           <th className={`border px-2 py-1 text-left text-xs font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
-                            Category
-                          </th>
-                          <th className={`border px-2 py-1 text-left text-xs font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
                             Brand
                           </th>
                           <th className={`border px-2 py-1 text-left text-xs font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
@@ -2524,7 +2511,6 @@ function InventoryTransfer() {
                                 <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{product.product_name}</span>
                               </div>
                             </td>
-                            <td className={`border px-2 py-1 text-sm ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.category}</td>
                             <td className={`border px-2 py-1 text-sm ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.brand || "-"}</td>
                             <td className={`border px-2 py-1 text-sm font-mono ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.barcode}</td>
                             <td className={`border px-2 py-1 text-sm text-center font-semibold ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>
@@ -2652,18 +2638,6 @@ function InventoryTransfer() {
                   />
                 </div>
                 <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className={`px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'border-slate-500 bg-slate-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                >
-                  <option value="All Product Category">All Product Category</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {typeof category === 'string' ? category : (category?.category_name || 'Unknown')}
-                    </option>
-                  ))}
-                </select>
-                <select
                   value={selectedSupplier}
                   onChange={(e) => setSelectedSupplier(e.target.value)}
                   className={`px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'border-slate-500 bg-slate-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
@@ -2699,9 +2673,6 @@ function InventoryTransfer() {
                       </th>
                       <th className={`border px-4 py-2 text-left text-sm font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
                         Product
-                      </th>
-                      <th className={`border px-4 py-2 text-left text-sm font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
-                        Category
                       </th>
                       <th className={`border px-4 py-2 text-left text-sm font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
                         Brand
@@ -2767,7 +2738,6 @@ function InventoryTransfer() {
                             <td className={`border px-4 py-2 ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`}>
                               <span className={`text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{product.product_name}</span>
                             </td>
-                            <td className={`border px-4 py-2 text-sm ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.category}</td>
                             <td className={`border px-4 py-2 text-sm ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.brand || "-"}</td>
                             <td className={`border px-4 py-2 text-sm ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.supplier_name || "-"}</td>
                             <td className={`border px-4 py-2 text-sm font-mono ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.barcode}</td>
@@ -2918,9 +2888,6 @@ function InventoryTransfer() {
                       Product
                     </th>
                     <th className={`border px-3 py-2 text-left text-xs font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
-                      Category
-                    </th>
-                    <th className={`border px-3 py-2 text-left text-xs font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
                       Batch Reference
                     </th>
                     <th className={`border px-3 py-2 text-center text-xs font-medium ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`} style={{ color: 'var(--inventory-text-primary)' }}>
@@ -2954,7 +2921,6 @@ function InventoryTransfer() {
                           <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>ID: {product.product_id}</span>
                         </div>
                       </td>
-                      <td className={`border px-3 py-2 text-sm ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>{product.category}</td>
                       <td className={`border px-3 py-2 text-sm font-mono ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>
                         {product.oldest_batch_reference || 'N/A'}
                       </td>

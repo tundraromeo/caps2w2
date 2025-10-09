@@ -195,21 +195,6 @@ function UserManagement() {
       }}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center space-x-6 mb-4">
-              <span className="border-b-2 pb-1 font-semibold" style={{ 
-                color: '#ffffff', 
-                borderColor: '#ffffff',
-                textShadow: '0 1px 2px rgba(0,0,0,0.1)'
-              }}>User Management</span>
-              <span className="font-medium" style={{ 
-                color: 'rgba(255,255,255,0.9)',
-                textShadow: '0 1px 2px rgba(0,0,0,0.1)'
-              }}>System Users</span>
-              <span className="font-medium" style={{ 
-                color: 'rgba(255,255,255,0.9)',
-                textShadow: '0 1px 2px rgba(0,0,0,0.1)'
-              }}>Access Control</span>
-            </div>
             <h1 className="text-3xl font-bold text-white" style={{ 
               textShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}>User Management</h1>

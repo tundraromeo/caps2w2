@@ -1,55 +1,79 @@
-🧰 I want you to fully refactor and clean my entire backend.php (about 2000+ lines). Follow these exact steps carefully:
+Online POS Auto Receipt Printing (QZ Tray)
 
-Analyze the entire backend code line by line and understand the logic of every case, function, or switch statement.
+I want to build or enhance an online POS system that supports automatic receipt printing even when hosted on the internet (e.g., Namecheap or other web hosting). The system should print receipts directly to a local thermal receipt printer during checkout.
 
-Identify the purpose of each block (e.g., product entry, update product, add stock, inventory transfer, stock adjustment, user management, reports, etc.).
+Goal
 
-Group the code into separate PHP files based on purpose. For example:
+When a POS transaction is completed online, the system should automatically print a receipt to a receipt printer connected to the cashier’s local computer.
 
-product_functions.php – product entry, update, add stock, delete product
+Requirements
 
-inventory_functions.php – transfer, stock adjustment, batch tracking
+Backend must be in PHP + MySQL.
 
-user_functions.php – user creation, roles, login, access
+POS is hosted online but still prints locally.
 
-report_functions.php – reports, history, logs
+Automatic printing on checkout.
 
-Database connection:
+Support thermal printers using ESC/POS format.
 
-Make sure there is only ONE conn.php file in the project.
+Works on Chrome or Edge browser.
 
-Remove any other database connections inside the PHP files.
+Fallback option: If printing fails, send receipt via email.
 
-All PHP files must use the same include 'conn.php'; and no direct mysqli_connect or PDO calls should exist inside any other file.
+Receipt layout includes:
 
-Clean the code:
+Store name and address
 
-Remove all duplicate functions.
+Order number and date
 
-If two functions are similar, keep only the one used by the frontend and working correctly.
+List of items
 
-Delete unused or dead code, commented-out logic, or old connection code.
+Quantity, price, and subtotal
 
-Simplify and refactor:
+Total, VAT, and change
 
-Make function names consistent and readable (e.g., addProduct(), updateStock()).
+Footer message
 
-Keep the original logic and return values so the frontend does not break.
+Technical Instructions
 
-Ensure all include paths are correct and relative.
+Use QZ Tray to connect web browser to local printer.
 
-Verify that all functionality remains the same after splitting and refactoring. Nothing should break on the frontend.
+The system should communicate with QZ Tray using JavaScript.
 
-(Optional but recommended) Create a short README.md describing each new PHP file and what functions are inside.
+The backend (PHP) generates receipt data (JSON or HTML).
 
-✅ Final Goal:
+Trigger auto-print immediately after checkout/payment confirmation.
 
-Clean, modular PHP backend (organized by feature).
+Must support thermal printers like Epson, XPrinter, POS58, Sunmi, etc.
 
-Only one conn.php file used globally.
+Use HTTPS to enable secure communication with QZ Tray.
 
-No duplicate functions or unnecessary code.
+Include manual “Print Receipt” button for testing.
 
-Frontend remains 100% functional after refactor.
+Deliverables
 
-Easy to maintain and scale in the future.
+I need:
+
+PHP code that prepares the receipt data.
+
+JavaScript code that sends the print request to QZ Tray.
+
+A sample receipt template.
+
+Installation steps for QZ Tray.
+
+Example thermal printer ESC/POS commands.
+
+Code for email receipt fallback (optional).
+
+Example Flow
+
+User clicks Checkout on POS.
+
+Backend saves order to database.
+
+JavaScript automatically triggers print via QZ Tray.
+
+Receipt prints instantly on the cash register printer.
+
+If printer is offline, send receipt to customer email instead.

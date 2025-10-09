@@ -452,7 +452,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'supplier':
         return ['Supplier Name', 'Contact', 'Email', 'Products Supplied', 'Total Stock', 'Total Value', 'Deliveries Count'];
       case 'cashier_performance':
-        return ['Cashier Name', 'Transactions Count', 'Total Sales', 'Average Transaction', 'Unique Products Sold'];
+        return ['Employee Name', 'Role', 'Transactions Count', 'Total Sales', 'Average Transaction', 'Unique Products Sold'];
       case 'login_logs':
         return ['Date', 'Time', 'Employee Name', 'Username', 'Role', 'Action', 'Login Status', 'Location', 'Terminal', 'Session Duration', 'Description'];
       case 'activity_logs':
@@ -483,6 +483,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         return paymentType || '💳 Not Specified';
       case 'cashier':
       case 'cashier_name':
+      case 'employee_name':
         if (reportType === 'cashier_performance' && row['emp_id']) {
           return (
             <button
@@ -667,11 +668,26 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'employee_name':
         return row[columnKey] || '👤 Unknown Employee';
       case 'role':
-        const role = row[columnKey];
+      case 'employee_role':
+        // Try multiple possible column names for role data
+        const role = row[columnKey] || row['employee_role'] || row['role'];
+        
+        // Debug logging for cashier performance reports
+        if (reportType === 'cashier_performance') {
+          console.log('Role formatting debug:', {
+            columnKey,
+            column,
+            role,
+            rowKeys: Object.keys(row),
+            rowData: row
+          });
+        }
+        
         if (role === 'admin') return '👑 Administrator';
         if (role === 'manager') return '👔 Manager';
         if (role === 'supervisor') return '👨‍💼 Supervisor';
         if (role === 'cashier') return '💰 Cashier';
+        if (role === 'pharmacist') return '💊 Pharmacist';
         if (role === 'inventory') return '📦 Inventory Staff';
         return role ? `👤 ${role.charAt(0).toUpperCase() + role.slice(1)}` : '👤 Staff';
       case 'action':

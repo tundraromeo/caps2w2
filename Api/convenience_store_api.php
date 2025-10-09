@@ -781,21 +781,63 @@ try {
                         $current_quantity = $currentQtyStmt->fetchColumn();
                         error_log("Current product quantity after sale: $current_quantity");
                         
-                        // Log stock movement
-                        $movementStmt = $conn->prepare("
-                            INSERT INTO tbl_stock_movements (
-                                product_id, movement_type, quantity, remaining_quantity,
-                                reference_no, notes, created_by
-                            ) VALUES (?, 'OUT', ?, ?, ?, ?, ?)
-                        ");
-                        $movementStmt->execute([
-                            $product_id,
-                            $quantity,
-                            $current_quantity, // Current stock after sale
-                            $transaction_id,
-                            "POS Sale - FIFO Consumption: " . json_encode($consumed_batches),
-                            'POS System'
-                        ]);
+                        // Log stock movement for each consumed batch
+                        if (!empty($consumed_batches)) {
+                            $movementStmt = $conn->prepare("
+                                INSERT INTO tbl_stock_movements (
+                                    product_id, batch_id, movement_type, quantity, remaining_quantity,
+                                    reference_no, notes, created_by
+                                ) VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?)
+                            ");
+                            foreach ($consumed_batches as $consumed) {
+                                $movementStmt->execute([
+                                    $product_id,
+                                    $consumed['batch_id'],
+                                    $consumed['quantity_consumed'],
+                                    $current_quantity, // Current stock after sale
+                                    $transaction_id,
+                                    "POS Sale - FIFO: {$consumed['batch_reference']} ({$consumed['quantity_consumed']} units)",
+                                    'POS System'
+                                ]);
+                            }
+                        } else {
+                            // Fallback: If no batches consumed, try to find a valid batch_id or create one
+                            error_log("Warning: No FIFO batches consumed for product $product_id, attempting fallback");
+                            
+                            // Try to get any batch_id associated with this product
+                            $batchStmt = $conn->prepare("
+                                SELECT batch_id FROM tbl_batch 
+                                WHERE batch_id IN (
+                                    SELECT DISTINCT batch_id FROM tbl_fifo_stock WHERE product_id = ?
+                                    UNION
+                                    SELECT DISTINCT batch_id FROM tbl_stock_summary WHERE product_id = ?
+                                )
+                                LIMIT 1
+                            ");
+                            $batchStmt->execute([$product_id, $product_id]);
+                            $fallback_batch_id = $batchStmt->fetchColumn();
+                            
+                            if ($fallback_batch_id) {
+                                $movementStmt = $conn->prepare("
+                                    INSERT INTO tbl_stock_movements (
+                                        product_id, batch_id, movement_type, quantity, remaining_quantity,
+                                        reference_no, notes, created_by
+                                    ) VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?)
+                                ");
+                                $movementStmt->execute([
+                                    $product_id,
+                                    $fallback_batch_id,
+                                    $quantity,
+                                    $current_quantity,
+                                    $transaction_id,
+                                    "POS Sale - Non-FIFO (Fallback)",
+                                    'POS System'
+                                ]);
+                            } else {
+                                error_log("Error: No valid batch_id found for product $product_id");
+                                throw new Exception("No valid batch found for product $product_id");
+                            }
+                        }
                     }
                 }
                 

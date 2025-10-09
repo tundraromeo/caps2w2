@@ -2667,7 +2667,7 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 // Get the original product details from source location
                 $productStmt = $conn->prepare("
-                    SELECT product_name, category, barcode, description, prescription, bulk,
+                    SELECT product_name, category_id, barcode, description, prescription, bulk,
                            expiration, brand_id, supplier_id, batch_id
                     FROM tbl_product 
                     WHERE product_id = ? AND location_id = ?
@@ -2824,9 +2824,9 @@ case 'get_products_oldest_batch_for_transfer':
                     $checkNameCategoryStmt = $conn->prepare("
                         SELECT product_id, quantity 
                         FROM tbl_product 
-                        WHERE product_name = ? AND category = ? AND location_id = ?
+                        WHERE product_name = ? AND category_id = ? AND location_id = ?
                     ");
-                    $checkNameCategoryStmt->execute([$productDetails['product_name'], $productDetails['category'], $destination_location_id]);
+                    $checkNameCategoryStmt->execute([$productDetails['product_name'], $productDetails['category_id'], $destination_location_id]);
                     $existingNameCategoryProduct = $checkNameCategoryStmt->fetch(PDO::FETCH_ASSOC);
                     
                     // TRANSFER SYSTEM: Create or update product in destination location
@@ -2857,7 +2857,7 @@ case 'get_products_oldest_batch_for_transfer':
                         // Create new product entry in destination location
                         $insertDestStmt = $conn->prepare("
                             INSERT INTO tbl_product (
-                                product_name, category, barcode, description, prescription, bulk,
+                                product_name, category_id, barcode, description, prescription, bulk,
                                 expiration, quantity, srp, brand_id, supplier_id,
                                 location_id, batch_id, status, stock_status
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
@@ -2865,7 +2865,7 @@ case 'get_products_oldest_batch_for_transfer':
                         $stock_status = $transfer_qty <= 0 ? 'out of stock' : ($transfer_qty <= 10 ? 'low stock' : 'in stock');
                         $insertDestStmt->execute([
                             $productDetails['product_name'],
-                            $productDetails['category'],
+                            $productDetails['category_id'],
                             $productDetails['barcode'],
                             $productDetails['description'],
                             $productDetails['prescription'],
@@ -2891,8 +2891,8 @@ case 'get_products_oldest_batch_for_transfer':
                     if (!empty($consumed_batches)) {
                         $batchDetailsStmt = $conn->prepare("
                             INSERT INTO tbl_transfer_batch_details 
-                            (product_id, batch_id, batch_reference, quantity, srp, expiration_date) 
-                            VALUES (?, ?, ?, ?, ?, ?)
+                            (product_id, batch_id, batch_reference, quantity, srp, expiration_date, location_id) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
                         ");
                         
                         foreach ($consumed_batches as $batch) {
@@ -2913,7 +2913,8 @@ case 'get_products_oldest_batch_for_transfer':
                                     $batch['batch_reference'],
                                     $batch['quantity'],
                                     $batchInfo['srp'],
-                                    $batchInfo['expiration_date']
+                                    $batchInfo['expiration_date'],
+                                    $destination_location_id  // Add destination location ID
                                 ]);
                             }
                         }
@@ -3245,7 +3246,7 @@ case 'get_products_oldest_batch_for_transfer':
                     
                     // Get the original product details
                     $productStmt = $conn->prepare("
-                        SELECT product_name, category, barcode, description, prescription, bulk,
+                        SELECT product_name, category_id, barcode, description, prescription, bulk,
                                expiration, brand_id, supplier_id, batch_id, status,
                         FROM tbl_product 
                         WHERE product_id = ?
@@ -3281,14 +3282,14 @@ case 'get_products_oldest_batch_for_transfer':
                             // Create new product entry in destination location
                             $insertStmt = $conn->prepare("
                                 INSERT INTO tbl_product (
-                                    product_name, category, barcode, description, prescription, bulk,
+                                    product_name, category_id, barcode, description, prescription, bulk,
                                     expiration, quantity, brand_id, supplier_id,
                                     location_id, batch_id, status, stock_status
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ");
                             $insertStmt->execute([
                                 $productDetails['product_name'],
-                                $productDetails['category'],
+                                $productDetails['category_id'],
                                 $productDetails['barcode'],
                                 $productDetails['description'],
                                 $productDetails['prescription'],
@@ -3841,7 +3842,7 @@ case 'get_products_oldest_batch_for_transfer':
             
             // Get current product details including current quantity
             $productStmt = $conn->prepare("
-                SELECT product_name, category, barcode, description, prescription, bulk,
+                SELECT product_name, category_id, barcode, description, prescription, bulk,
                        expiration, brand_id, supplier_id, location_id, status, quantity
                 FROM tbl_product 
                 WHERE product_id = ?
@@ -4081,7 +4082,7 @@ case 'get_products_oldest_batch_for_transfer':
             
             // If not transferred, check if it's a regular product in this location
             $productStmt = $conn->prepare("
-                SELECT product_name, category, barcode, description, prescription, bulk,
+                SELECT product_name, category_id, barcode, description, prescription, bulk,
                        expiration, srp, brand_id, supplier_id, location_id, status, quantity,
                        batch_id
                 FROM tbl_product 
@@ -6204,7 +6205,7 @@ case 'get_products_oldest_batch_for_transfer':
             
             // Get the original product details
             $productStmt = $conn->prepare("
-                SELECT product_name, category, barcode, description, prescription, bulk,
+                SELECT product_name, category_id, barcode, description, prescription, bulk,
                        srp, brand_id, supplier_id, status, stock_status
                 FROM tbl_product 
                 WHERE product_id = ?
@@ -6280,7 +6281,7 @@ case 'get_products_oldest_batch_for_transfer':
                 // Insert new product entry
                 $insertStmt = $conn->prepare("
                     INSERT INTO tbl_product (
-                        product_name, category, barcode, description, prescription, bulk,
+                        product_name, category_id, barcode, description, prescription, bulk,
                         expiration, quantity, srp, brand_id, supplier_id,
                         location_id, batch_id, status, stock_status, date_added
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -6290,7 +6291,7 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 $insertStmt->execute([
                     $productDetails['product_name'],
-                    $productDetails['category'],
+                    $productDetails['category_id'],
                     $productDetails['barcode'],
                     $productDetails['description'],
                     $productDetails['prescription'],
@@ -7679,11 +7680,11 @@ case 'get_products_oldest_batch_for_transfer':
         try {
             // Find products with duplicate name+category combinations
             $stmt = $conn->prepare("
-                SELECT product_name, category, location_id, COUNT(*) as count
+                SELECT product_name, category_id, location_id, COUNT(*) as count
                 FROM tbl_product 
-                GROUP BY product_name, category, location_id 
+                GROUP BY product_name, category_id, location_id 
                 HAVING COUNT(*) > 1
-                ORDER BY product_name, category
+                ORDER BY product_name, category_id
             ");
             $stmt->execute();
             $duplicates = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -7732,9 +7733,9 @@ case 'get_products_oldest_batch_for_transfer':
     case 'view_all_products':
         try {
             $stmt = $conn->prepare("
-                SELECT product_id, product_name, category, location_id, quantity, barcode, status
+                SELECT product_id, product_name, category_id, location_id, quantity, barcode, status
                 FROM tbl_product 
-                ORDER BY product_name, category, location_id
+                ORDER BY product_name, category_id, location_id
                 LIMIT 100
             ");
             $stmt->execute();
@@ -7761,9 +7762,9 @@ case 'get_products_oldest_batch_for_transfer':
                 
                 // Test the logic that checks for existing products
                 $checkStmt = $conn->prepare("
-                    SELECT product_id, quantity, product_name, category, location_id
+                    SELECT product_id, quantity, product_name, category_id, location_id
                     FROM tbl_product 
-                    WHERE product_name = ? AND category = ? AND location_id = ?
+                    WHERE product_name = ? AND category_id = ? AND location_id = ?
                 ");
                 $checkStmt->execute([$product_name, $category, $location_id]);
                 $existingProduct = $checkStmt->fetch(PDO::FETCH_ASSOC);
@@ -7844,10 +7845,10 @@ case 'get_products_oldest_batch_for_transfer':
                     break 2; // Break out of both loops
                 }
                 
-                if (empty($product['category'])) {
+                if (empty($product['category_id'])) {
                     echo json_encode([
                         "success" => false,
-                        "message" => "Category is required for product '{$product['product_name']}'"
+                        "message" => "Category ID is required for product '{$product['product_name']}'"
                     ]);
                     break 2;
                 }
@@ -7930,7 +7931,7 @@ case 'get_products_oldest_batch_for_transfer':
                 // 2. Insert all products with the same batch_id - SIMPLIFIED VERSION
                 $productStmt = $conn->prepare("
                     INSERT INTO tbl_product (
-                        product_name, category, barcode, description, quantity, srp, 
+                        product_name, category_id, barcode, description, quantity, srp, 
                         brand_id, supplier_id, location_id, batch_id, status, date_added
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -7941,8 +7942,8 @@ case 'get_products_oldest_batch_for_transfer':
                 foreach ($products as $product) {
                     try {
                         // Validate required fields
-                        if (empty($product['product_name']) || empty($product['category']) || empty($product['barcode'])) {
-                            throw new Exception("Missing required product fields: product_name, category, or barcode");
+                        if (empty($product['product_name']) || empty($product['category_id']) || empty($product['barcode'])) {
+                            throw new Exception("Missing required product fields: product_name, category_id, or barcode");
                         }
                         
                         if (!isset($product['quantity']) || $product['quantity'] <= 0) {
@@ -7980,7 +7981,7 @@ case 'get_products_oldest_batch_for_transfer':
                         // Debug: Log the parameters being used - SIMPLIFIED VERSION
                         $productParams = [
                             $product['product_name'],
-                            $product['category'],
+                            $product['category_id'],
                             $product['barcode'],
                             $product['description'] ?? '',
                             $product['quantity'],

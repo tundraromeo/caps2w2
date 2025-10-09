@@ -533,7 +533,8 @@ function handle_get_products($conn, $data) {
                 SELECT
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    p.category_id,
+                    c.category_name,
                     p.barcode,
                     p.description,
 
@@ -587,7 +588,7 @@ function handle_get_products($conn, $data) {
                 INNER JOIN tbl_batch b ON ss.batch_id = b.batch_id
                 WHERE ss.available_quantity > 0
                 $whereClause
-                GROUP BY p.product_id, p.product_name, c.category_name as category, p.barcode, p.description,
+                GROUP BY p.product_id, p.product_name, p.category_id, c.category_name, p.barcode, p.description,
                          p.brand_id, p.supplier_id, p.location_id, p.srp, p.stock_status,
                          s.supplier_name, b.brand, l.location_name, ss.batch_id, ss.batch_reference,
                          b.entry_date, b.entry_by, ss.available_quantity
@@ -599,7 +600,8 @@ function handle_get_products($conn, $data) {
                 SELECT
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    p.category_id,
+                    c.category_name,
                     p.barcode,
                     p.description,
                     p.prescription,
@@ -767,26 +769,50 @@ function handle_get_products_oldest_batch_for_transfer($conn, $data) {
             $params[] = $location_id;
         }
 
-        // Simple query to get products directly from tbl_product
+        // Enhanced query to get products with proper SRP from FIFO stock if available
         $stmt = $conn->prepare("
             SELECT
                 p.product_id,
                 p.product_name,
-                c.category_name as category,
+                p.category_id,
+                c.category_name,
                 p.barcode,
                 p.description,
-
                 COALESCE(b.brand, '') as brand,
                 COALESCE(s.supplier_name, '') as supplier_name,
-                p.srp as srp,
+                -- Use FIFO stock SRP if available, otherwise fallback to product SRP
+                COALESCE(
+                    (SELECT fs.srp FROM tbl_fifo_stock fs 
+                     WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 
+                     ORDER BY fs.expiration_date ASC, fs.entry_date ASC LIMIT 1),
+                    p.srp,
+                    0
+                ) as srp,
                 p.location_id,
                 l.location_name,
                 p.quantity as total_quantity,
                 p.quantity as oldest_batch_quantity,
-                p.srp as srp,
-                'N/A' as batch_reference,
-                'N/A' as entry_date,
-                'N/A' as expiration_date,
+                -- Get oldest batch reference from FIFO stock if available
+                COALESCE(
+                    (SELECT fs.batch_reference FROM tbl_fifo_stock fs 
+                     WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 
+                     ORDER BY fs.expiration_date ASC, fs.entry_date ASC LIMIT 1),
+                    'N/A'
+                ) as batch_reference,
+                -- Get entry date from FIFO stock if available
+                COALESCE(
+                    (SELECT fs.entry_date FROM tbl_fifo_stock fs 
+                     WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 
+                     ORDER BY fs.expiration_date ASC, fs.entry_date ASC LIMIT 1),
+                    'N/A'
+                ) as entry_date,
+                -- Get expiration date from FIFO stock if available
+                COALESCE(
+                    (SELECT fs.expiration_date FROM tbl_fifo_stock fs 
+                     WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 
+                     ORDER BY fs.expiration_date ASC, fs.entry_date ASC LIMIT 1),
+                    'N/A'
+                ) as expiration_date,
                 1 as total_batches
             FROM tbl_product p
             LEFT JOIN tbl_category c ON p.category_id = c.category_id
@@ -832,7 +858,8 @@ function handle_get_products_oldest_batch($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                c.category_name as category,
+                p.category_id,
+                c.category_name,
                 p.barcode,
                 p.description,
                 COALESCE(b.brand, '') as brand,
@@ -1330,7 +1357,8 @@ function handle_get_products_by_location_name($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                c.category_name as category,
+                p.category_id,
+                c.category_name,
                 p.barcode,
                 p.description,
                 p.prescription,
@@ -1398,7 +1426,8 @@ function handle_get_location_products($conn, $data) {
             SELECT
                 p.product_id,
                 p.product_name,
-                c.category_name as category,
+                p.category_id,
+                c.category_name,
                 p.barcode,
                 p.description,
                 p.prescription,

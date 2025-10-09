@@ -271,16 +271,40 @@ function update_product_stock($conn, $data) {
         $updateStmt = $conn->prepare("UPDATE tbl_product SET quantity = ? WHERE product_id = ?");
         $updateStmt->execute([$new_quantity, $product_id]);
         
+        // Get or create a batch_id for this product
+        $batchStmt = $conn->prepare("
+            SELECT batch_id FROM tbl_batch 
+            WHERE batch_id IN (
+                SELECT DISTINCT batch_id FROM tbl_fifo_stock WHERE product_id = ?
+                UNION
+                SELECT DISTINCT batch_id FROM tbl_stock_summary WHERE product_id = ?
+            )
+            LIMIT 1
+        ");
+        $batchStmt->execute([$product_id, $product_id]);
+        $batch_id_for_movement = $batchStmt->fetchColumn();
+        
+        if (!$batch_id_for_movement) {
+            // Create a generic batch for manual adjustments if none exists
+            $createBatchStmt = $conn->prepare("
+                INSERT INTO tbl_batch (batch, expiration_date, location_id, date_added)
+                VALUES (?, ?, (SELECT location_id FROM tbl_product WHERE product_id = ? LIMIT 1), NOW())
+            ");
+            $createBatchStmt->execute([$batch_reference ?: "MANUAL-ADJ-" . time(), $expiration_date, $product_id]);
+            $batch_id_for_movement = $conn->lastInsertId();
+        }
+        
         // Log stock movement
         $movement_type = $quantity_change > 0 ? 'IN' : 'OUT';
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
             (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
              expiration_date, reference_no, notes, created_by)
-            VALUES (?, 0, ?, ?, ?, 0.00, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 0.00, ?, ?, ?, ?)
         ");
         $logStmt->execute([
             $product_id,
+            $batch_id_for_movement,
             $movement_type,
             abs($quantity_change),
             $new_quantity,
@@ -575,15 +599,39 @@ function add_quantity_to_product($conn, $data) {
         $updateStmt = $conn->prepare("UPDATE tbl_product SET quantity = ? WHERE product_id = ?");
         $updateStmt->execute([$new_quantity, $product_id]);
         
+        // Get or create a batch_id for this product
+        $batchStmt = $conn->prepare("
+            SELECT batch_id FROM tbl_batch 
+            WHERE batch_id IN (
+                SELECT DISTINCT batch_id FROM tbl_fifo_stock WHERE product_id = ?
+                UNION
+                SELECT DISTINCT batch_id FROM tbl_stock_summary WHERE product_id = ?
+            )
+            LIMIT 1
+        ");
+        $batchStmt->execute([$product_id, $product_id]);
+        $batch_id_for_add = $batchStmt->fetchColumn();
+        
+        if (!$batch_id_for_add) {
+            // Create a generic batch for stock additions if none exists
+            $createBatchStmt = $conn->prepare("
+                INSERT INTO tbl_batch (batch, expiration_date, location_id, date_added)
+                VALUES (?, ?, (SELECT location_id FROM tbl_product WHERE product_id = ? LIMIT 1), NOW())
+            ");
+            $createBatchStmt->execute([$batch_reference ?: "STOCK-ADD-" . time(), $expiration, $product_id]);
+            $batch_id_for_add = $conn->lastInsertId();
+        }
+        
         // Log stock movement
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
             (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
              expiration_date, reference_no, notes, created_by)
-            VALUES (?, 0, 'IN', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?, ?)
         ");
         $logStmt->execute([
             $product_id,
+            $batch_id_for_add,
             $quantity,
             $new_quantity,
             $srp,

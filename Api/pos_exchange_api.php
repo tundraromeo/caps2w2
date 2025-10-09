@@ -224,19 +224,37 @@ switch ($action) {
                 ");
                 $stmt->execute([$item['quantity'], $item['product_id'], $location_id]);
                 
-                // Log stock movement for return
-                $stmt = $conn->prepare("
-                    INSERT INTO tbl_stock_movements 
-                    (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
-                    VALUES (?, 'IN', ?, ?, NOW(), ?, ?)
+                // Get a batch_id for this product
+                $batchStmt = $conn->prepare("
+                    SELECT batch_id FROM tbl_batch 
+                    WHERE batch_id IN (
+                        SELECT DISTINCT batch_id FROM tbl_fifo_stock WHERE product_id = ?
+                        UNION
+                        SELECT DISTINCT batch_id FROM tbl_stock_summary WHERE product_id = ?
+                    )
+                    LIMIT 1
                 ");
-                $stmt->execute([
-                    $item['product_id'],
-                    $item['quantity'],
-                    $exchange_number,
-                    $empDetails['emp_id'],
-                    "Exchange return - stock restored for exchange {$exchange_number}"
-                ]);
+                $batchStmt->execute([$item['product_id'], $item['product_id']]);
+                $batch_id_return = $batchStmt->fetchColumn();
+                
+                if ($batch_id_return) {
+                    // Log stock movement for return
+                    $stmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements 
+                        (product_id, batch_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
+                        VALUES (?, ?, 'IN', ?, ?, NOW(), ?, ?)
+                    ");
+                    $stmt->execute([
+                        $item['product_id'],
+                        $batch_id_return,
+                        $item['quantity'],
+                        $exchange_number,
+                        $empDetails['emp_id'],
+                        "Exchange return - stock restored for exchange {$exchange_number}"
+                    ]);
+                } else {
+                    error_log("Warning: No batch_id found for returned product {$item['product_id']} in exchange {$exchange_number}");
+                }
             }
             
             // Process new items (mark as sold)
@@ -263,19 +281,37 @@ switch ($action) {
                 ");
                 $stmt->execute([$item['quantity'], $item['product_id'], $location_id]);
                 
-                // Log stock movement for sale
-                $stmt = $conn->prepare("
-                    INSERT INTO tbl_stock_movements 
-                    (product_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
-                    VALUES (?, 'OUT', ?, ?, NOW(), ?, ?)
+                // Get a batch_id for this product
+                $batchStmt = $conn->prepare("
+                    SELECT batch_id FROM tbl_batch 
+                    WHERE batch_id IN (
+                        SELECT DISTINCT batch_id FROM tbl_fifo_stock WHERE product_id = ?
+                        UNION
+                        SELECT DISTINCT batch_id FROM tbl_stock_summary WHERE product_id = ?
+                    )
+                    LIMIT 1
                 ");
-                $stmt->execute([
-                    $item['product_id'],
-                    $item['quantity'],
-                    $exchange_number,
-                    $empDetails['emp_id'],
-                    "Exchange sale - stock deducted for exchange {$exchange_number}"
-                ]);
+                $batchStmt->execute([$item['product_id'], $item['product_id']]);
+                $batch_id_sale = $batchStmt->fetchColumn();
+                
+                if ($batch_id_sale) {
+                    // Log stock movement for sale
+                    $stmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements 
+                        (product_id, batch_id, movement_type, quantity, reference_no, movement_date, created_by, notes)
+                        VALUES (?, ?, 'OUT', ?, ?, NOW(), ?, ?)
+                    ");
+                    $stmt->execute([
+                        $item['product_id'],
+                        $batch_id_sale,
+                        $item['quantity'],
+                        $exchange_number,
+                        $empDetails['emp_id'],
+                        "Exchange sale - stock deducted for exchange {$exchange_number}"
+                    ]);
+                } else {
+                    error_log("Warning: No batch_id found for exchanged product {$item['product_id']} in exchange {$exchange_number}");
+                }
             }
             
             // Create new transaction record for the exchange

@@ -30,9 +30,9 @@ import {
 } from "lucide-react";
 
 // Define API base URLs at the top of the file
-const API_BASE_SIMPLE = "http://localhost/Enguio_Project/Api/purchase_order_api_simple.php";
-const API_BASE = "http://localhost/Enguio_Project/Api/purchase_order_api.php";
-const CREATE_PO_API = "http://localhost/Enguio_Project/Api/create_purchase_order_api.php";
+const API_BASE_SIMPLE = "http://localhost/caps2e2/Api/purchase_order_api_simple.php";
+const API_BASE = "http://localhost/caps2e2/Api/purchase_order_api.php";
+const CREATE_PO_API = "http://localhost/caps2e2/Api/create_purchase_order_api.php";
 
 function CreatePurchaseOrder() {
   // Tab stateasy
@@ -1512,7 +1512,7 @@ function CreatePurchaseOrder() {
                 });
                 setSelectedProducts([]);
               }}
-              className="flex items-center gap-2 px-6 py-2 border style={{borderColor: 'var(--inventory-border)'}} style={{color: 'var(--inventory-text-primary)'}} rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500"
+              className="flex items-center gap-2 px-6 py-2 border rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500" style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
               onMouseEnter={(e) => handleMouseEnter(e, "Clear all form data and start over")}
               onMouseLeave={handleMouseLeave}
             >
@@ -2026,8 +2026,8 @@ function CreatePurchaseOrder() {
                       <tbody className="bg-white divide-y divide-gray-200">
                         {receiveFormData.items.map((item, index) => (
                           <tr key={index}>
-                            <td className="px-4 py-2 text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.product_name}</td>
-                            <td className="px-4 py-2 text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.ordered_qty}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.ordered_qty}</td>
                             <td className="px-4 py-2">
                               <input
                                 type="number"
@@ -2035,7 +2035,7 @@ function CreatePurchaseOrder() {
                                 max={item.ordered_qty}
                                 value={item.received_qty}
                                 onChange={(e) => handleItemChange(index, 'received_qty', parseInt(e.target.value))}
-                                className="w-20 px-2 py-1 border style={{borderColor: 'var(--inventory-border)'}} rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                className="w-20 px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" style={{borderColor: 'var(--inventory-border)'}}
                               />
                             </td>
                             {/* Unit Price display removed as requested */}
@@ -2108,21 +2108,21 @@ function CreatePurchaseOrder() {
                     <div key={item.purchase_dtl_id} className="border rounded-lg p-4" style={{borderColor: 'var(--inventory-border)', backgroundColor: 'var(--inventory-bg-secondary)'}}>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
                         <div>
-                          <label className="block text-sm font-medium style={{color: 'var(--inventory-text-primary)'}} mb-1">
+                          <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
                             Product
                           </label>
-                          <p className="text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.product_name}</p>
+                          <p className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</p>
                         </div>
                         
                         <div>
-                          <label className="block text-sm font-medium style={{color: 'var(--inventory-text-primary)'}} mb-1">
+                          <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
                             Ordered Qty
                           </label>
-                          <p className="text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.quantity} {item.unit_type}</p>
+                          <p className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.quantity} {item.unit_type}</p>
                         </div>
                         
                         <div>
-                          <label className="block text-sm font-medium style={{color: 'var(--inventory-text-primary)'}} mb-1">
+                          <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
                             Received Qty *
                           </label>
                           <input
@@ -2134,13 +2134,13 @@ function CreatePurchaseOrder() {
                               ...receiveItemsFormData,
                               [item.purchase_dtl_id]: parseInt(e.target.value) || 0
                             })}
-                            className="w-full px-3 py-2 border style={{borderColor: 'var(--inventory-border)'}} rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" style={{borderColor: 'var(--inventory-border)'}}
                             required
                           />
                         </div>
                         
                         <div>
-                          <label className="block text-sm font-medium style={{color: 'var(--inventory-text-primary)'}} mb-1">
+                          <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
                             Status
                           </label>
                           <div className="text-sm">
@@ -2168,7 +2168,7 @@ function CreatePurchaseOrder() {
                   <button
                     type="button"
                     onClick={() => setShowReceiveItemsForm(false)}
-                    className="flex items-center gap-2 px-4 py-2 border style={{borderColor: 'var(--inventory-border)'}} style={{color: 'var(--inventory-text-primary)'}} rounded-md hover:bg-gray-50"
+                    className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-gray-50" style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
                   >
                     <FaTimes className="h-4 w-4" />
                     Cancel
@@ -2223,8 +2223,8 @@ function CreatePurchaseOrder() {
                       <tbody className="bg-white divide-y divide-gray-200">
                         {partialDeliveryFormData.items.map((item, index) => (
                           <tr key={index}>
-                            <td className="px-4 py-2 text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.product_name}</td>
-                            <td className="px-4 py-2 text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.ordered_qty}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.ordered_qty}</td>
                             <td className="px-4 py-2">
                               <input
                                 type="number"
@@ -2232,10 +2232,10 @@ function CreatePurchaseOrder() {
                                 max={item.ordered_qty}
                                 value={item.received_qty}
                                 onChange={(e) => handlePartialDeliveryInputChange(index, 'received_qty', parseInt(e.target.value))}
-                                className="w-20 px-2 py-1 border style={{borderColor: 'var(--inventory-border)'}} rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                className="w-20 px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" style={{borderColor: 'var(--inventory-border)'}}
                               />
                             </td>
-                            <td className="px-4 py-2 text-sm style={{color: 'var(--inventory-text-primary)'}}">{item.missing_qty}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.missing_qty}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2246,7 +2246,7 @@ function CreatePurchaseOrder() {
                   <button
                     type="button"
                     onClick={() => setShowPartialDeliveryForm(false)}
-                    className="flex items-center gap-2 px-4 py-2 border style={{borderColor: 'var(--inventory-border)'}} style={{color: 'var(--inventory-text-primary)'}} rounded-md hover:bg-gray-50"
+                    className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-gray-50" style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
                   >
                     <FaTimes className="h-4 w-4" />
                     Cancel

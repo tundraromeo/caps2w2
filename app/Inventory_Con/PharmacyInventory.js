@@ -679,7 +679,7 @@ const PharmacyInventory = () => {
             <div className="ml-4">
               <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
               <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                ₱{inventory.reduce((sum, p) => sum + Number(p.first_batch_srp || 0), 0).toFixed(2)}
+                ₱{inventory.reduce((sum, p) => sum + Number(p.first_batch_srp || p.srp || 0), 0).toFixed(2)}
               </p>
             </div>
           </div>
@@ -809,7 +809,7 @@ const PharmacyInventory = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                        ₱{Number.parseFloat(item.first_batch_srp || 0).toFixed(2)}
+                        ₱{Number.parseFloat(item.first_batch_srp || item.srp || 0).toFixed(2)}
                       </td>
                       <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                         {item.supplier_name || "N/A"}

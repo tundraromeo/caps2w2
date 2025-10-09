@@ -80,7 +80,7 @@ function StockOutReport() {
       console.log('Date range:', dateRange);
       
       // Filter by date range on the frontend since the API doesn't support date filtering
-      const filteredData = result.data.filter(item => {
+      let filteredData = result.data.filter(item => {
         const itemDate = new Date(item.date);
         const startDate = new Date(dateRange.startDate);
         const endDate = new Date(dateRange.endDate);
@@ -91,6 +91,18 @@ function StockOutReport() {
         console.log('Is within range:', itemDate >= startDate && itemDate <= endDate);
         
         return itemDate >= startDate && itemDate <= endDate;
+      });
+
+      // CRITICAL: Remove duplicates based on reference_no to prevent same transaction showing multiple times
+      const seenReferences = new Set();
+      filteredData = filteredData.filter(item => {
+        const referenceNo = item.reference_no;
+        if (seenReferences.has(referenceNo)) {
+          console.log('Removing duplicate entry with reference:', referenceNo);
+          return false; // Skip this duplicate entry
+        }
+        seenReferences.add(referenceNo);
+        return true;
       });
       
       setStockOutData(filteredData);
