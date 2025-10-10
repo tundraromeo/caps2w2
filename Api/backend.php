@@ -304,6 +304,7 @@ try {
                         ELSE 'In Stock'
                     END as alert_type
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
                 AND (p.quantity = 0 OR p.quantity <= 10 OR p.stock_status = 'out of stock')
@@ -1931,6 +1932,7 @@ case 'get_products_oldest_batch_for_transfer':
                     ROUND(COUNT(CASE WHEN p.stock_status = 'in stock' THEN 1 END) * 100.0 / COUNT(*), 1) as sellRate,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as outOfStock
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
             ");
@@ -1973,6 +1975,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(CASE WHEN p.stock_status = 'low stock' THEN p.quantity ELSE 0 END) as softReserved,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as returned
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY l.location_name
@@ -2016,6 +2019,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     ROUND(COUNT(CASE WHEN p.stock_status = 'out of stock' THEN 1 END) * 100.0 / COUNT(*), 1) as returnRate
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY p.product_name
@@ -2060,6 +2064,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     -p.quantity as stockout
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 AND p.stock_status = 'out of stock'
@@ -2097,7 +2102,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    c.category_name,
                     p.barcode,
                     p.description,
                 
@@ -2145,13 +2150,13 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
-                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 INNER JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 INNER JOIN tbl_batch b ON ss.batch_id = b.batch_id
                 WHERE ss.available_quantity > 0
                 $whereClause
-                GROUP BY p.product_id, p.product_name, c.category_name as category, p.barcode, p.description,
+                GROUP BY p.product_id, p.product_name, c.category_name, p.barcode, p.description,
                          p.brand_id, p.supplier_id, p.location_id, p.stock_status, 
                          s.supplier_name, b.brand, l.location_name, ss.batch_id, ss.batch_reference, 
                          b.entry_date, b.entry_by, ss.available_quantity
@@ -2163,7 +2168,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    c.category_name,
                     p.barcode,
                     p.description,
                     p.prescription,
@@ -2191,6 +2196,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id 
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
                 $whereClause
@@ -2345,12 +2351,13 @@ case 'get_products_oldest_batch_for_transfer':
             foreach ($transfers as &$transfer) {
                 $stmt2 = $conn->prepare("
                     SELECT 
-                        p.product_name, c.category_name as category, p.barcode,
+                        p.product_name, c.category_name, p.barcode,
                          p.description, p.brand_id,
                         b.brand,
                         td.qty as qty
                     FROM tbl_transfer_dtl td
                     JOIN tbl_product p ON td.product_id = p.product_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     WHERE td.transfer_header_id = ?
                 ");
@@ -3482,6 +3489,7 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p 
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
@@ -3519,11 +3527,12 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    c.category_name,
                     p.quantity,
                     p.srp,
                     l.location_name
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 WHERE $where
                 ORDER BY p.product_name ASC
@@ -3562,7 +3571,8 @@ case 'get_products_oldest_batch_for_transfer':
                 "SELECT p.*, l.location_name AS base_location_name,
                         c.category_name, b.brand
                  FROM tbl_product p
-                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                  LEFT JOIN tbl_category c ON p.category_id = c.category_id
                  LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                  WHERE p.product_name = ?
@@ -3679,7 +3689,8 @@ case 'get_products_oldest_batch_for_transfer':
                 "SELECT p.*, l.location_name AS base_location_name,
                         c.category_name, b.brand
                  FROM tbl_product p
-                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                  LEFT JOIN tbl_category c ON p.category_id = c.category_id
                  LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                  WHERE p.barcode = ?
@@ -3818,6 +3829,7 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p
                 LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
                 LEFT JOIN tbl_supplier s ON b.supplier_id = s.supplier_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 WHERE p.product_id = ?
                 AND (p.status IS NULL OR p.status <> 'archived')
@@ -4366,7 +4378,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    c.category_name,
                     p.barcode,
                     p.description,
                     COALESCE(SUM(tbd.quantity), 0) as quantity,
@@ -4398,7 +4410,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id
                 WHERE p.status = 'active' AND (tbd.location_id = ? OR tbd.location_id IS NULL)
-                GROUP BY p.product_id, p.product_name, c.category_name as category, p.barcode, p.description, p.status, b.brand, s.supplier_name
+                GROUP BY p.product_id, p.product_name, c.category_name, p.barcode, p.description, p.status, b.brand, s.supplier_name
                 HAVING COALESCE(SUM(tbd.quantity), 0) > 0
                 ORDER BY p.product_name ASC
             ");
@@ -4411,7 +4423,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    c.category_name,
                     p.barcode,
                     p.description,
                     td.qty as quantity,
@@ -4615,7 +4627,7 @@ case 'get_products_oldest_batch_for_transfer':
                     END as status,
                     NULL as notes,
                     CONCAT('TR-', th.transfer_header_id) as reference,
-                    c.category_name as category,
+                    c.category_name,
                     p.description,
                     b.brand
                 FROM tbl_transfer_header th
@@ -4696,6 +4708,70 @@ case 'get_products_oldest_batch_for_transfer':
             echo json_encode([
                 "success" => true,
                 "data" => $fifoData
+            ]);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage(),
+                "data" => []
+            ]);
+        }
+        break;
+
+    case 'get_all_batches':
+        try {
+            $location_id = $data['location_id'] ?? 2;
+            
+            // Query to get all FIFO stock data across all products with batch dates
+            $stmt = $conn->prepare("
+                SELECT 
+                    fs.fifo_id as summary_id,
+                    fs.product_id,
+                    p.product_name,
+                    p.barcode,
+                    fs.batch_id,
+                    fs.batch_id as batch_number,
+                    fs.batch_reference,
+                    fs.available_quantity,
+                    fs.srp,
+                    fs.srp as fifo_srp,
+                    COALESCE(fs.srp, p.srp, 0) AS srp,
+                    fs.expiration_date,
+                    fs.quantity as total_quantity,
+                    fs.entry_date as fifo_entry_date,
+                    b.entry_date as batch_date,
+                    b.entry_time as batch_time,
+                    b.entry_by,
+                    CASE 
+                        WHEN fs.expiration_date IS NULL THEN NULL
+                        ELSE DATEDIFF(fs.expiration_date, CURDATE())
+                    END as days_until_expiry,
+                    c.category_name,
+                    s.supplier_name
+                FROM tbl_fifo_stock fs
+                JOIN tbl_batch b ON fs.batch_id = b.batch_id
+                JOIN tbl_product p ON fs.product_id = p.product_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_supplier s ON b.supplier_id = s.supplier_id
+                WHERE fs.available_quantity > 0
+                AND p.location_id = ?
+                ORDER BY 
+                    p.product_name ASC,
+                    CASE 
+                        WHEN fs.expiration_date IS NULL THEN 1 
+                        ELSE 0 
+                    END,
+                    fs.expiration_date ASC, 
+                    b.entry_date ASC, 
+                    fs.fifo_id ASC
+            ");
+            
+            $stmt->execute([$location_id]);
+            $allBatches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $allBatches
             ]);
         } catch (Exception $e) {
             echo json_encode([
@@ -4950,7 +5026,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     p.quantity,
                     b.brand,
                     s.supplier_name,
@@ -5015,6 +5091,7 @@ case 'get_products_oldest_batch_for_transfer':
                     ROUND(COUNT(CASE WHEN p.stock_status = 'in stock' THEN 1 END) * 100.0 / COUNT(*), 2) as sellRate,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as outOfStock
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
             ");
@@ -5057,6 +5134,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(CASE WHEN p.stock_status = 'low stock' THEN p.quantity ELSE 0 END) as softReserved,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as returned
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY p.product_name
@@ -5102,6 +5180,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(CASE WHEN p.stock_status = 'low stock' THEN p.quantity ELSE 0 END) as softReserved,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as returned
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY l.location_name
@@ -5144,6 +5223,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     ROUND(COUNT(CASE WHEN p.stock_status = 'out of stock' THEN 1 END) * 100.0 / COUNT(*), 1) as returnRate
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY p.product_name
@@ -5187,6 +5267,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     -p.quantity as stockout
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 AND p.stock_status = 'out of stock'
@@ -5237,6 +5318,7 @@ case 'get_products_oldest_batch_for_transfer':
                     ROUND(COUNT(CASE WHEN p.stock_status = 'in stock' THEN 1 END) * 100.0 / COUNT(*), 1) as sellRate,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as outOfStock
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY p.product_name
@@ -5294,6 +5376,7 @@ case 'get_products_oldest_batch_for_transfer':
                     COUNT(DISTINCT b.batch_id) as totalBatches,
                     COUNT(CASE WHEN t.status = 'pending' THEN 1 END) as activeTransfers
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
@@ -5347,6 +5430,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(CASE WHEN p.stock_status = 'low stock' THEN p.quantity ELSE 0 END) as softReserved,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as returned
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY p.product_name
@@ -5396,6 +5480,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(CASE WHEN p.stock_status = 'low stock' THEN p.quantity ELSE 0 END) as softReserved,
                     SUM(CASE WHEN p.stock_status = 'out of stock' THEN p.quantity ELSE 0 END) as returned
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY l.location_name
@@ -5443,6 +5528,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     -p.quantity as stockout
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 AND p.stock_status = 'out of stock'
@@ -5493,6 +5579,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.status,
                     p.onhandInventory
                 FROM tbl_product p
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
@@ -5538,8 +5625,8 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     p.quantity
                 FROM tbl_product p
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 ORDER BY p.quantity DESC
                 LIMIT 10
@@ -5581,11 +5668,11 @@ case 'get_products_oldest_batch_for_transfer':
             
             $stmt = $conn->prepare("
                 SELECT 
-                    c.category_name as category,
+                    c.category_name,
                     SUM(p.quantity) as quantity
                 FROM tbl_product p
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY c.category_name
                 ORDER BY quantity DESC
@@ -5636,8 +5723,8 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     p.quantity
                 FROM tbl_product p
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 ORDER BY p.quantity DESC
                 LIMIT 3
@@ -5692,8 +5779,8 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name as product,
                     p.quantity
                 FROM tbl_product p
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 AND p.quantity <= 10
                 ORDER BY p.quantity ASC
@@ -5737,11 +5824,11 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt = $conn->prepare("
                 SELECT 
                     l.location_name as location,
-                    c.category_name as category,
+                    c.category_name,
                     SUM(p.quantity) as quantity
                 FROM tbl_product p
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 GROUP BY l.location_name, c.category_name
                 ORDER BY l.location_name, quantity DESC
@@ -5779,7 +5866,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     p.description,
                     p.prescription,
                     p.bulk,
@@ -5808,7 +5895,7 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
                 AND l.location_name = ?
-                GROUP BY p.product_name, p.barcode, c.category_name as category, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, s.supplier_name, b.brand, l.location_name, batch.batch, batch.entry_date, batch.entry_by
+                GROUP BY p.product_name, p.barcode, c.category_name, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, s.supplier_name, b.brand, l.location_name, batch.batch, batch.entry_date, batch.entry_by
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute([$location_name]);
@@ -5863,7 +5950,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     p.description,
                     p.prescription,
                     p.bulk,
@@ -5892,11 +5979,12 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 $where_clause
                 AND p.status = 'active'
-                GROUP BY p.product_name, p.barcode, c.category_name as category, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
+                GROUP BY p.product_name, p.barcode, c.category_name, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
                 ORDER BY p.product_name ASC
             ");
             
@@ -5935,7 +6023,7 @@ case 'get_products_oldest_batch_for_transfer':
                 SELECT 
                     p.product_id,
                     p.product_name,
-                    c.category_name as category,
+                    c.category_name,
                     p.barcode,
                     p.description,
                     p.prescription,
@@ -5970,13 +6058,14 @@ case 'get_products_oldest_batch_for_transfer':
                 JOIN tbl_product p ON td.product_id = p.product_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_batch batch ON p.batch_id = batch.batch_id
                 LEFT JOIN tbl_location sl ON th.source_location_id = sl.location_id
                 LEFT JOIN tbl_employee e ON th.employee_id = e.emp_id
                 $transferWhereClause
                 AND th.status = 'approved'
-                GROUP BY p.product_name, c.category_name as category, p.barcode, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
+                GROUP BY p.product_name, c.category_name, p.barcode, p.description, p.prescription, p.bulk, p.expiration, p.srp, p.brand_id, p.supplier_id, p.location_id, p.batch_id, p.status, p.stock_status, p.date_added, b.brand, s.supplier_name, l.location_name, batch.batch_reference, batch.entry_date
                 ORDER BY p.product_name ASC
             ");
             
@@ -6187,6 +6276,7 @@ case 'get_products_oldest_batch_for_transfer':
                     (p.quantity * p.srp) as total_value
                 FROM tbl_product p
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 $whereClause
@@ -6216,7 +6306,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_name,
                     p.barcode,
                     p.quantity,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     l.location_name,
                     s.supplier_name,
@@ -6226,6 +6316,7 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
@@ -6258,13 +6349,14 @@ case 'get_products_oldest_batch_for_transfer':
                     p.quantity,
                     p.expiration,
                     DATEDIFF(p.expiration, CURDATE()) as days_until_expiry,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     l.location_name,
                     (p.quantity * p.srp) as total_value
                 FROM tbl_product p
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 WHERE (p.status IS NULL OR p.status <> 'archived')
                 AND p.expiration IS NOT NULL
@@ -6318,6 +6410,7 @@ case 'get_products_oldest_batch_for_transfer':
                     (sm.quantity * COALESCE(p.srp, 0)) as total_cost
                 FROM tbl_stock_movements sm
                 JOIN tbl_product p ON sm.product_id = p.product_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 ORDER BY sm.movement_date DESC
@@ -7602,7 +7695,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     p.quantity as product_quantity,
                     p.srp,
                     p.brand_id,
@@ -7624,6 +7717,7 @@ case 'get_products_oldest_batch_for_transfer':
                 FROM tbl_product p 
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id 
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 ORDER BY p.product_name ASC

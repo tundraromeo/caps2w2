@@ -103,11 +103,6 @@ export default function POS() {
     }
   }, [showCredentialsModal, credentialsFocusIndex]);
 
-  // Debug log for credentials data changes
-  useEffect(() => {
-    console.log('Credentials data changed:', credentialsData);
-  }, [credentialsData]);
-
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [showRecentTransactions, setShowRecentTransactions] = useState(false);
   const [showTotalSalesModal, setShowTotalSalesModal] = useState(false);
@@ -2304,7 +2299,6 @@ export default function POS() {
     try {
       // Fetch current user data
       const response = await apiHandler.getCurrentUser();
-      console.log('API Response:', response); // Debug log
       
       if (response.success && response.data) {
         setCredentialsData({
@@ -2314,7 +2308,6 @@ export default function POS() {
           newPassword: '',
           confirmPassword: ''
         });
-        console.log('Set credentials data from API:', response.data); // Debug log
       } else {
         // If API fails, use fallback data
         setCredentialsData({
@@ -2324,7 +2317,6 @@ export default function POS() {
           newPassword: '',
           confirmPassword: ''
         });
-        console.log('Set fallback credentials data'); // Debug log
       }
       setShowCredentialsModal(true);
       setCredentialsFocusIndex(0);
@@ -2357,14 +2349,10 @@ export default function POS() {
   };
 
   const updateCredentialsField = (field, value) => {
-    setCredentialsData(prev => {
-      const newData = {
-        ...prev,
-        [field]: value
-      };
-      console.log('Updated credentials data:', newData); // Debug log
-      return newData;
-    });
+    setCredentialsData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   const validateCredentialsForm = () => {

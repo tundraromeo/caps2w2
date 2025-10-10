@@ -937,7 +937,7 @@ function getPharmacyProducts($conn, $data) {
                 p.product_id,
                 p.product_name,
                 p.barcode,
-                c.category_name as category,
+                c.category_name,
                 b.brand,
                 p.unit_price,
                 p.srp,
@@ -1039,7 +1039,7 @@ function getLocationProducts($conn, $data) {
                 p.product_id,
                 p.product_name,
                 p.barcode,
-                c.category_name as category,
+                c.category_name,
                 b.brand,
                 p.unit_price,
                 p.srp,
@@ -1056,7 +1056,7 @@ function getLocationProducts($conn, $data) {
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id
             WHERE $where
-            GROUP BY p.product_id, p.product_name, p.barcode, c.category_name as category, b.brand, p.unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
+            GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.unit_price, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
             ORDER BY p.product_name ASC
         ");
         $stmt->execute($params);

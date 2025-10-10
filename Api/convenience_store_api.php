@@ -104,7 +104,7 @@ try {
                     MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -201,7 +201,7 @@ try {
                     MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -276,7 +276,7 @@ try {
                     MIN(p.product_id) as product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -395,7 +395,7 @@ try {
                     p.product_name,
                     p.barcode,
                     br.brand,
-                    c.category_name as category,
+                    c.category_name,
                     COALESCE(l.location_name, 'Warehouse') as source_location_name,
                     'System' as employee_name
                 FROM tbl_transfer_batch_details btd
@@ -431,7 +431,7 @@ try {
                         p.product_name,
                         p.barcode,
                         b.brand,
-                        c.category_name as category,
+                        c.category_name,
                         'Warehouse' as source_location_name,
                         fs.entry_by as employee_name
                     FROM tbl_fifo_stock fs
@@ -461,7 +461,7 @@ try {
                         p.product_name,
                         p.barcode,
                         br.brand,
-                        c.category_name as category,
+                        c.category_name,
                         sl.location_name as source_location_name,
                         e.Fname as employee_name
                     FROM tbl_transfer_dtl td
@@ -624,7 +624,7 @@ try {
                     btd.expiration_date,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     s.supplier_name,
                     l.location_name as source_location_name,
@@ -903,7 +903,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -994,7 +994,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -1065,7 +1065,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,

@@ -193,7 +193,7 @@ function handleAvailableProducts() {
         SELECT 
             p.barcode,
             p.product_name,
-            c.category_name as category,
+            c.category_name,
             SUM(p.quantity) as total_quantity,
             COUNT(DISTINCT p.batch_id) as batch_count,
             MIN(b.entry_date) as oldest_batch_date,
@@ -206,7 +206,7 @@ function handleAvailableProducts() {
             AND p.status = 'active'
             AND p.quantity > 0
             {$search_condition}
-        GROUP BY p.barcode, p.product_name, c.category_name as category, p.unit_price
+        GROUP BY p.barcode, p.product_name, c.category_name, p.unit_price
         HAVING total_quantity > 0
         ORDER BY p.product_name ASC
     ");

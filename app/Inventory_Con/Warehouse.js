@@ -306,6 +306,7 @@ function Warehouse() {
     });
     const [alertCount, setAlertCount] = useState(0);
     const [fifoStockData, setFifoStockData] = useState([]);
+    const [allBatchesData, setAllBatchesData] = useState([]);
     
     // Expiring batch modal states
     const [showExpiringBatchModal, setShowExpiringBatchModal] = useState(false);
@@ -1515,6 +1516,21 @@ calculateLowStockAndExpiring(activeProducts);
       }
     }
 
+    // New function to get all batches across all products
+    async function getAllBatches() {
+      try {
+        console.log("🔍 Calling get_all_batches API");
+        const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
+        const response = await handleApiCall("get_all_batches", { location_id: locationId });
+        console.log("📊 get_all_batches API response:", response);
+        return response;
+      } catch (error) {
+        console.error("❌ Error getting all batches:", error);
+        safeToast("error", "Error getting all batches:", error);
+        return { success: false, error: error.message };
+      }
+    }
+
     // New function to load products with their oldest batch information
     async function loadProductsWithOldestBatch() {
       try {
@@ -1824,13 +1840,14 @@ console.log("API response for product quantities:", response);
     function openFifoModal(product) {
       setSelectedProductForFifo(product);
       setShowFifoModal(true);
-      loadFifoStock(product.product_id);
+      loadAllBatches(); // Load all batches instead of just selected product
     }
 
     function closeFifoModal() {
       setShowFifoModal(false);
       setSelectedProductForFifo(null);
       setFifoStockData([]);
+      setAllBatchesData([]);
     }
 
       // Functions for expiring batch modal
@@ -1961,6 +1978,39 @@ console.log("API response for product quantities:", response);
         safeToast("error", "FIFO stock error:", response.message);
         safeToast("error", "Failed to load FIFO stock data: " + (response.message || "Unknown error"));
         setFifoStockData([]);
+      }
+    }
+
+    // New function to load all batches across all products
+    async function loadAllBatches() {
+      console.log("🔄 Loading all batches across all products");
+      const response = await getAllBatches();
+      console.log("📊 All batches response:", response);
+      if (response.success && Array.isArray(response.data)) {
+        console.log("✅ All batches loaded successfully:", response.data.length, "total batches");
+        console.log("🔍 All batches:", response.data);
+        
+        // Debug: Log each batch details
+        response.data.forEach((batch, index) => {
+          console.log(`🔍 Batch ${index + 1}:`, {
+            product_name: batch.product_name,
+            batch_id: batch.batch_id,
+            batch_reference: batch.batch_reference,
+            available_quantity: batch.available_quantity,
+            total_quantity: batch.total_quantity,
+            expiration_date: batch.expiration_date,
+            entry_date: batch.fifo_entry_date,
+            batch_date: batch.batch_date
+          });
+        });
+        
+        setAllBatchesData(response.data);
+      } else {
+        console.warn("⚠️ All batches error:", response.message);
+        console.warn("⚠️ Response data:", response.data);
+        safeToast("error", "All batches error:", response.message);
+        safeToast("error", "Failed to load all batches data: " + (response.message || "Unknown error"));
+        setAllBatchesData([]);
       }
     }
 
@@ -4285,23 +4335,6 @@ console.log("API response for product quantities:", response);
 
         <div className="overflow-y-auto max-h-[calc(95vh-80px)]">
           <div className="p-6">
-            {/* Quick Start Guide */}
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h4 className="text-sm font-medium text-blue-800">Quick Start Guide</h4>
-                  <p className="text-xs text-blue-700 mt-1">
-                    <strong>For quick stock updates:</strong> Switch to "Pieces Mode" and enter the total quantity directly. 
-                    <strong>For detailed tracking:</strong> Use "Bulk Mode" to specify boxes and pieces per box.
-                  </p>
-                </div>
-              </div>
-            </div>
             
             {/* Product Details Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4526,7 +4559,7 @@ console.log("API response for product quantities:", response);
               </div>
               
               <div className="flex items-center space-x-6 mb-4">
-                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "bulk" ? "bg-blue-100 border border-blue-300" : "hover:bg-gray-50"}`}>
+                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "bulk" ? "bg-gray-100 border border-gray-300" : "hover:bg-gray-50"}`}>
                   <input
                     type="radio"
                     id="bulkMode"
@@ -4534,13 +4567,13 @@ console.log("API response for product quantities:", response);
                     value="bulk"
                     checked={stockUpdateConfigMode === "bulk"}
                     onChange={(e) => setStockUpdateConfigMode("bulk")}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300"
                   />
                   <label htmlFor="bulkMode" className="text-sm font-medium text-gray-700 cursor-pointer">
                     📦 Bulk Mode (Boxes × Pieces)
                   </label>
                 </div>
-                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "pieces" ? "bg-blue-100 border border-blue-300" : "hover:bg-gray-50"}`}>
+                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "pieces" ? "bg-gray-100 border border-gray-300" : "hover:bg-gray-50"}`}>
                   <input
                     type="radio"
                     id="piecesMode"
@@ -4548,7 +4581,7 @@ console.log("API response for product quantities:", response);
                     value="pieces"
                     checked={stockUpdateConfigMode === "pieces"}
                     onChange={(e) => setStockUpdateConfigMode("pieces")}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                    className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300"
                   />
                   <label htmlFor="piecesMode" className="text-sm font-medium text-gray-700 cursor-pointer">
                     🔢 Pieces Mode (Direct Total) - <span className="text-green-600 font-semibold">Recommended</span>
@@ -4638,8 +4671,8 @@ console.log("API response for product quantities:", response);
                   } else {
                     // Medicine with Pieces Mode (Direct Total Input)
                     return (
-                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
                           💊 Medicine Configuration (Pieces Mode)
                         </h4>
                                                  <div>
@@ -4726,8 +4759,8 @@ console.log("API response for product quantities:", response);
                   } else {
                     // Non-Medicine with Pieces Mode (Direct Total Input)
                     return (
-                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
                           📦 Non-Medicine Configuration (Pieces Mode)
                         </h4>
                         <div>
@@ -4812,8 +4845,8 @@ console.log("API response for product quantities:", response);
                     );
                   } else {
                     return (
-                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
+                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
                           📦 Product Configuration (Pieces Mode)
                         </h4>
                         <div>
@@ -4931,23 +4964,6 @@ console.log("API response for product quantities:", response);
 
         <div className="overflow-y-auto max-h-[calc(95vh-80px)]">
           <form onSubmit={handleAddNewProduct} className="p-6">
-            {/* Helpful message for users */}
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h4 className="text-sm font-medium text-blue-800">Required Fields Guide</h4>
-                  <p className="text-xs text-blue-700 mt-1">
-                    <strong>Basic fields:</strong> Product Name, Category, Product Type, and SRP are always required. 
-                    <strong>Product-specific fields:</strong> Fill in the bulk configuration fields based on your product type and configuration mode.
-                  </p>
-                </div>
-              </div>
-            </div>
             
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -5627,21 +5643,21 @@ console.log("API response for product quantities:", response);
 
           {/* Summary Section */}
           {newProductForm.product_type && (
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h4 className="text-sm font-semibold text-blue-900 mb-3">Product Summary</h4>
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-900 mb-3">Product Summary</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white p-3 rounded border border-blue-200">
-                  <h5 className="text-xs font-medium text-blue-800 mb-2">Bulk Units (for Reports & Inventory)</h5>
-                  <p className="text-sm text-blue-700">
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  <h5 className="text-xs font-medium text-gray-800 mb-2">Bulk Units (for Reports & Inventory)</h5>
+                  <p className="text-sm text-gray-700">
                     {newProductForm.product_type === "Medicine" 
                       ? `${newProductForm.boxes || 0} boxes`
                       : `${newProductForm.boxes || 0} boxes`
                     }
                   </p>
                 </div>
-                <div className="bg-white p-3 rounded border border-blue-200">
-                  <h5 className="text-xs font-medium text-blue-800 mb-2">Total Pieces (for Internal & POS)</h5>
-                  <p className="text-sm text-blue-700">
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  <h5 className="text-xs font-medium text-gray-800 mb-2">Total Pieces (for Internal & POS)</h5>
+                  <p className="text-sm text-gray-700">
                     {newProductForm.product_type === "Medicine" 
                       ? `${newProductForm.total_tablets || 0} tablets`
                       : `${newProductForm.total_pieces || 0} pieces`
@@ -5649,7 +5665,7 @@ console.log("API response for product quantities:", response);
                   </p>
                 </div>
               </div>
-              <div className="mt-3 text-xs text-blue-600">
+              <div className="mt-3 text-xs text-gray-600">
                 <strong>Note:</strong> Reports and inventory display bulk units. Total pieces are used for internal calculations and POS operations.
               </div>
             </div>
@@ -5751,21 +5767,30 @@ console.log("API response for product quantities:", response);
             <div className="rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
               <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: theme.border.default }}>
                 <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                  FIFO Stock Details - {selectedProductForFifo.product_name}
+                  All Batches Details
                 </h3>
-                <button onClick={closeFifoModal} className="text-gray-400 hover:text-gray-600">
-                  <X className="h-6 w-6" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={loadAllBatches} 
+                    className="text-gray-400 hover:text-gray-600 p-1 rounded"
+                    title="Refresh batches"
+                  >
+                    <RefreshCw className="h-5 w-5" />
+                  </button>
+                  <button onClick={closeFifoModal} className="text-gray-400 hover:text-gray-600">
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
               </div>
 
               <div className="p-6">
                 <div className="mb-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.info + '20', borderColor: theme.colors.info + '40', border: '1px solid' }}>
-                      <h4 className="font-semibold mb-2" style={{ color: theme.colors.info }}>Product Info</h4>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Barcode: {selectedProductForFifo.barcode}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Category: {selectedProductForFifo.category}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Stock: {selectedProductForFifo.quantity}</p>
+                      <h4 className="font-semibold mb-2" style={{ color: theme.colors.info }}>Warehouse Overview</h4>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Products: {new Set(allBatchesData.map(b => b.product_id)).size}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Batches: {allBatchesData.length}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Stock Value: ₱{allBatchesData.reduce((sum, batch) => sum + (Number.parseFloat(batch.srp || 0) * Number.parseFloat(batch.available_quantity || 0)), 0).toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.success + '20', borderColor: theme.colors.success + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.success }}>Stock Status</h4>
@@ -5773,12 +5798,12 @@ console.log("API response for product quantities:", response);
                       <p className="text-sm" style={{ color: theme.text.secondary }}>SRP: ₱{Number.parseFloat(selectedProductForFifo.srp || 0).toFixed(2)}</p>
                     </div>
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.warning + '20', borderColor: theme.colors.warning + '40', border: '1px solid' }}>
-                      <h4 className="font-semibold mb-2" style={{ color: theme.colors.warning }}>FIFO Summary</h4>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Batches: {fifoStockData.length}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Available: {fifoStockData.reduce((sum, batch) => sum + parseInt(batch.available_quantity || 0), 0)}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Value: ₱{fifoStockData.reduce((sum, batch) => sum + (Number.parseFloat(batch.unit_cost || 0) * Number.parseFloat(batch.available_quantity || 0)), 0).toFixed(2)}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Oldest Batch: {fifoStockData.length > 0 ? new Date(fifoStockData[0].batch_date || fifoStockData[0].entry_date).toLocaleDateString() : 'N/A'}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Newest Batch: {fifoStockData.length > 0 ? new Date(fifoStockData[fifoStockData.length - 1].batch_date || fifoStockData[fifoStockData.length - 1].entry_date).toLocaleDateString() : 'N/A'}</p>
+                      <h4 className="font-semibold mb-2" style={{ color: theme.colors.warning }}>All Batches Summary</h4>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Batches: {allBatchesData.length}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Available: {allBatchesData.reduce((sum, batch) => sum + parseInt(batch.available_quantity || 0), 0)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Value: ₱{allBatchesData.reduce((sum, batch) => sum + (Number.parseFloat(batch.srp || 0) * Number.parseFloat(batch.available_quantity || 0)), 0).toFixed(2)}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Oldest Batch: {allBatchesData.length > 0 ? new Date(allBatchesData[0].batch_date || allBatchesData[0].entry_date).toLocaleDateString() : 'N/A'}</p>
+                      <p className="text-sm" style={{ color: theme.text.secondary }}>Newest Batch: {allBatchesData.length > 0 ? new Date(allBatchesData[allBatchesData.length - 1].batch_date || allBatchesData[allBatchesData.length - 1].entry_date).toLocaleDateString() : 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -5787,24 +5812,25 @@ console.log("API response for product quantities:", response);
                   <table className="w-full border-collapse" style={{ color: theme.text.primary, borderColor: theme.border.default, border: `1px solid` }}>
                     <thead>
                       <tr style={{ backgroundColor: theme.bg.secondary }}>
-                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>FIFO Order</th>
+                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Product Name</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Batch Number</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Batch Reference</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Available Qty</th>
-                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Unit Cost</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>SRP</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Total Value</th>
+                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Category</th>
+                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Supplier</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Expiration Date</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Days Until Expiry</th>
                         <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Date Added</th>
-                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Time Added</th>
+                        <th className="px-3 py-2 text-left text-sm font-semibold" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.secondary }}>Entry By</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {fifoStockData.map((batch, index) => (
+                      {allBatchesData.map((batch, index) => (
                         <tr key={batch.summary_id} style={{ backgroundColor: theme.bg.card }} onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover} onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.card}>
-                          <td className="px-3 py-2 text-center font-medium" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
-                            #{index + 1}
+                          <td className="px-3 py-2 font-medium" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
+                            {batch.product_name || 'N/A'}
                           </td>
                           <td className="px-3 py-2 font-mono text-sm" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
                             {batch.batch_number || batch.batch_id}
@@ -5825,13 +5851,16 @@ console.log("API response for product quantities:", response);
                             </span>
                           </td>
                           <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
-                            ₱{Number.parseFloat(batch.unit_cost || 0).toFixed(2)}
-                          </td>
-                          <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
                             {batch.srp && batch.srp > 0 ? `₱${Number.parseFloat(batch.srp).toFixed(2)}` : 'N/A'}
                           </td>
                           <td className="px-3 py-2 font-medium" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
-                            ₱{(Number.parseFloat(batch.unit_cost || 0) * Number.parseFloat(batch.available_quantity || 0)).toFixed(2)}
+                            ₱{(Number.parseFloat(batch.srp || 0) * Number.parseFloat(batch.available_quantity || 0)).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
+                            {batch.category_name || 'N/A'}
+                          </td>
+                          <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
+                            {batch.supplier_name || 'N/A'}
                           </td>
                           <td className="px-3 py-2 text-center" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
                             {batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}
@@ -5871,7 +5900,7 @@ console.log("API response for product quantities:", response);
                             {batch.batch_date ? new Date(batch.batch_date).toLocaleDateString() : 'N/A'}
                           </td>
                           <td className="px-3 py-2 text-center text-sm" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
-                            {batch.batch_time ? batch.batch_time : 'N/A'}
+                            {batch.entry_by || 'N/A'}
                           </td>
                         </tr>
                       ))}
@@ -5879,10 +5908,10 @@ console.log("API response for product quantities:", response);
                   </table>
                 </div>
 
-                {fifoStockData.length === 0 && (
+                {allBatchesData.length === 0 && (
                   <div className="text-center py-8">
                     <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">No FIFO stock data available for this product.</p>
+                    <p className="text-gray-500">No batch data available.</p>
                     <p className="text-sm text-gray-400 mt-2">This product may not have batch tracking enabled.</p>
                   </div>
                 )}

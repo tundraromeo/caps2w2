@@ -17,14 +17,11 @@ function Dashboard() {
     warehouseValue: 0,
     lowStockItems: 0,
     expiringSoon: 0,
-    totalBatches: 0,
-    activeTransfers: 0
+    totalBatches: 0
   });
   const [supplyByProduct, setSupplyByProduct] = useState([]);
   const [supplyByLocation, setSupplyByLocation] = useState([]);
   const [returnRateByProduct, setReturnRateByProduct] = useState([]);
-  const [stockoutItems, setStockoutItems] = useState([]);
-  const [productKPIs, setProductKPIs] = useState([]);
   const [warehouseStats, setWarehouseStats] = useState({
     totalProducts: 0,
     totalSuppliers: 0,
@@ -42,7 +39,6 @@ function Dashboard() {
   const [stockDistributionByCategory, setStockDistributionByCategory] = useState([]);
   const [fastMovingItemsTrend, setFastMovingItemsTrend] = useState([]);
   const [criticalStockAlerts, setCriticalStockAlerts] = useState([]);
-  const [inventoryByBranchCategory, setInventoryByBranchCategory] = useState([]);
 
   // Add new state for other modules' KPIs
   const [convenienceKPIs, setConvenienceKPIs] = useState({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
@@ -56,11 +52,55 @@ function Dashboard() {
     fetchAllData();
   };
 
+  // Add fallback data for testing/demo purposes
+  const getFallbackData = () => {
+    return {
+      warehouseData: {
+        totalProducts: 156,
+        totalSuppliers: 12,
+        storageCapacity: 75,
+        warehouseValue: 125000,
+        lowStockItems: 8,
+        expiringSoon: 3,
+        totalBatches: 45
+      },
+      convenienceKPIs: {
+        totalProducts: 89,
+        lowStock: 5,
+        expiringSoon: 2
+      },
+      pharmacyKPIs: {
+        totalProducts: 67,
+        lowStock: 3,
+        expiringSoon: 1
+      },
+      transferKPIs: {
+        totalTransfers: 15,
+        activeTransfers: 2
+      },
+      fastMovingItemsTrend: [
+        { month: 'Jan', product: 'Mang Tomas', quantity: 103 },
+        { month: 'Feb', product: 'Mang Tomas', quantity: 89 },
+        { month: 'Mar', product: 'Mang Tomas', quantity: 125 },
+        { month: 'Apr', product: 'Mang Tomas', quantity: 142 },
+        { month: 'May', product: 'Mang Tomas', quantity: 189 },
+        { month: 'Jun', product: 'Mang Tomas', quantity: 195 }
+      ],
+      criticalStockAlerts: [
+        { product: 'Lava Cake', quantity: 0 },
+        { product: 'Hot&Spicicy Ketchup', quantity: 8 },
+        { product: 'Pinoy Spicy', quantity: 10 }
+      ]
+    };
+  };
+
   // Fetch all data function
   const fetchAllData = async () => {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('🚀 Starting dashboard data fetch...');
       
       await Promise.all([
         fetchCategoriesAndLocations(),
@@ -70,9 +110,19 @@ function Dashboard() {
         fetchPharmacyKPIs(),
         fetchTransferKPIs()
       ]);
+      
+      console.log('✅ All dashboard data fetched successfully');
     } catch (error) {
-      console.error('Error fetching all data:', error);
+      console.error('❌ Error fetching all data:', error);
       setError('Failed to load dashboard data. Please check your connection and try again.');
+      
+      // Set fallback data for demo purposes
+      console.log('🔄 Setting fallback data for demo...');
+      const fallback = getFallbackData();
+      setWarehouseData(fallback.warehouseData);
+      setConvenienceKPIs(fallback.convenienceKPIs);
+      setPharmacyKPIs(fallback.pharmacyKPIs);
+      setTransferKPIs(fallback.transferKPIs);
     } finally {
       setLoading(false);
     }
@@ -85,16 +135,23 @@ function Dashboard() {
 
   const fetchCategoriesAndLocations = async () => {
     try {
+      console.log('📋 Fetching categories and locations...');
+      
       // Use centralized API handler instead of direct fetch
       const [categoriesResponse, locationsResponse] = await Promise.all([
         apiHandler.callAPI('backend.php', 'get_categories'),
         apiHandler.callAPI('backend.php', 'get_locations')
       ]);
       
+      console.log('📂 Categories response:', categoriesResponse);
+      console.log('📍 Locations response:', locationsResponse);
+      
       if (categoriesResponse) {
         // Handle both direct response format and wrapped response format
         const data = categoriesResponse.success ? categoriesResponse.data : categoriesResponse;
-        setCategories(Array.isArray(data) ? data : []);
+        const categories = Array.isArray(data) ? data : [];
+        console.log('📊 Categories count:', categories.length);
+        setCategories(categories);
       } else {
         console.warn("⚠️ Unexpected categories response format:", categoriesResponse);
         setCategories([]);
@@ -103,13 +160,15 @@ function Dashboard() {
       if (locationsResponse) {
         // Handle both direct response format and wrapped response format
         const data = locationsResponse.success ? locationsResponse.data : locationsResponse;
-        setLocations(Array.isArray(data) ? data : []);
+        const locations = Array.isArray(data) ? data : [];
+        console.log('📊 Locations count:', locations.length);
+        setLocations(locations);
       } else {
         console.warn("⚠️ Unexpected locations response format:", locationsResponse);
         setLocations([]);
       }
     } catch (error) {
-      console.error('Error fetching categories and locations:', error);
+      console.error('❌ Error fetching categories and locations:', error);
       setCategories([]);
       setLocations([]);
     }
@@ -118,6 +177,7 @@ function Dashboard() {
   const fetchWarehouseData = async () => {
     try {
       setLoading(true);
+      console.log('🏭 Fetching warehouse data...');
       
       // Use centralized API handler instead of direct fetch
       const warehouseResponse = await apiHandler.getWarehouseKPIs({
@@ -125,9 +185,13 @@ function Dashboard() {
         location: selectedLocation
       });
       
+      console.log('📊 Warehouse KPIs response:', warehouseResponse);
+      
       if (warehouseResponse) {
         // Handle both direct response format and wrapped response format
         const data = warehouseResponse.success ? warehouseResponse.data : warehouseResponse;
+        
+        console.log('📈 Warehouse KPIs data:', data);
         
         // Set warehouse data with fallback values
         setWarehouseData({
@@ -137,11 +201,10 @@ function Dashboard() {
           warehouseValue: data.warehouseValue || 0,
           lowStockItems: data.lowStockItems || 0,
           expiringSoon: data.expiringSoon || 0,
-          totalBatches: data.totalBatches || 0,
-          activeTransfers: data.activeTransfers || 0
+          totalBatches: data.totalBatches || 0
         });
       } else {
-        console.warn("No warehouse response received");
+        console.warn("⚠️ No warehouse response received");
       }
 
       // Fetch supply by product for warehouse
@@ -178,42 +241,6 @@ function Dashboard() {
       } catch (error) {
         console.error('Error fetching supply by location:', error);
         setSupplyByLocation([]);
-      }
-
-      // Fetch warehouse stockout items
-      try {
-        const stockoutResponse = await apiHandler.getWarehouseStockoutItems({
-          product: selectedProduct,
-          location: selectedLocation
-        });
-        if (stockoutResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = stockoutResponse.success ? stockoutResponse.data : stockoutResponse;
-          setStockoutItems(Array.isArray(data) ? data : []);
-        } else {
-          setStockoutItems([]);
-        }
-      } catch (error) {
-        console.error('Error fetching stockout items:', error);
-        setStockoutItems([]);
-      }
-
-      // Fetch warehouse product KPIs
-      try {
-        const productKPIsResponse = await apiHandler.getWarehouseProductKPIs({
-          product: selectedProduct,
-          location: selectedLocation
-        });
-        if (productKPIsResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = productKPIsResponse.success ? productKPIsResponse.data : productKPIsResponse;
-          setProductKPIs(Array.isArray(data) ? data : []);
-        } else {
-          setProductKPIs([]);
-        }
-      } catch (error) {
-        console.error('Error fetching product KPIs:', error);
-        setProductKPIs([]);
       }
 
     } catch (error) {
@@ -301,24 +328,6 @@ function Dashboard() {
         setCriticalStockAlerts([]);
       }
 
-      // Fetch inventory by branch and category
-      try {
-        const branchCategoryResponse = await apiHandler.getInventoryByBranchCategory({
-          product: selectedProduct,
-          location: selectedLocation
-        });
-        if (branchCategoryResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = branchCategoryResponse.success ? branchCategoryResponse.data : branchCategoryResponse;
-          setInventoryByBranchCategory(Array.isArray(data) ? data : []);
-        } else {
-          setInventoryByBranchCategory([]);
-        }
-      } catch (error) {
-        console.error('Error fetching branch category data:', error);
-        setInventoryByBranchCategory([]);
-      }
-
     } catch (error) {
       console.error('Error in fetchChartData:', error);
     }
@@ -327,47 +336,83 @@ function Dashboard() {
   // Fetch Convenience Store KPIs
   const fetchConvenienceKPIs = async () => {
     try {
-      // Get location ID for convenience store
+      console.log('🛒 Fetching convenience store KPIs...');
+      
+      // Get locations first to find the correct location name
       const locRes = await apiHandler.callAPI('backend.php', 'get_locations');
       
       if (!locRes) {
+        console.warn('⚠️ No locations response received');
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
       
       // Handle both direct response format and wrapped response format
       const locData = locRes.success ? locRes.data : locRes;
-      let locationId = null;
+      let convenienceLocationName = null;
+      
       if (locData && Array.isArray(locData)) {
-        const loc = locData.find(l => l.location_name.toLowerCase().includes("convenience"));
-        if (loc) locationId = loc.location_id;
+        console.log('📍 Available locations:', locData.map(l => l.location_name));
+        
+        // Try different variations of convenience store names
+        const convenienceVariations = ['convenience', 'convenience store', 'convenience_store'];
+        const loc = locData.find(l => 
+          convenienceVariations.some(variation => 
+            l.location_name.toLowerCase().includes(variation)
+          ) || l.location_name === 'Convenience Store'
+        );
+        
+        if (loc) {
+          convenienceLocationName = loc.location_name;
+          console.log('✅ Found convenience location:', convenienceLocationName);
+        } else {
+          console.warn('⚠️ No convenience store location found');
+        }
       }
-      if (!locationId) {
+      
+      if (!convenienceLocationName) {
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
       
-      // Fetch products for convenience store
-      const prodRes = await apiHandler.getProductsByLocationName({ location_name: "convenience" });
+      // Fetch products for convenience store using the exact location name
+      const prodRes = await apiHandler.callAPI('backend.php', 'get_products_by_location_name', { 
+        location_name: convenienceLocationName 
+      });
       
-      if (prodRes) {
-        // Handle both direct response format and wrapped response format
-        const prodData = prodRes.success ? prodRes.data : prodRes;
-        if (Array.isArray(prodData)) {
-          const products = prodData;
-          setConvenienceKPIs({
-            totalProducts: products.length,
-            lowStock: products.filter(p => p.stock_status === 'low stock').length,
-            expiringSoon: products.filter(p => p.expiry_status === 'expiring soon').length
-          });
-        } else {
-          setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
-        }
+      console.log('📦 Convenience products response:', prodRes);
+      
+      if (prodRes && prodRes.success) {
+        const products = prodRes.data || [];
+        console.log('📊 Convenience products count:', products.length);
+        
+        // Calculate KPIs with better error handling
+        const totalProducts = products.length;
+        const lowStock = products.filter(p => 
+          p.stock_status === 'low stock' || 
+          (p.quantity !== undefined && p.quantity <= 10 && p.quantity > 0)
+        ).length;
+        const expiringSoon = products.filter(p => {
+          if (!p.expiration) return false;
+          const expiryDate = new Date(p.expiration);
+          const thirtyDaysFromNow = new Date();
+          thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+          return expiryDate <= thirtyDaysFromNow;
+        }).length;
+        
+        console.log('📈 Convenience KPIs:', { totalProducts, lowStock, expiringSoon });
+        
+        setConvenienceKPIs({
+          totalProducts,
+          lowStock,
+          expiringSoon
+        });
       } else {
+        console.warn('⚠️ No convenience products data received:', prodRes?.message || 'Unknown error');
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
       }
     } catch (e) { 
-      console.error('Error fetching convenience KPIs:', e);
+      console.error('❌ Error fetching convenience KPIs:', e);
       setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 }); 
     }
   };
@@ -375,47 +420,83 @@ function Dashboard() {
   // Fetch Pharmacy KPIs
   const fetchPharmacyKPIs = async () => {
     try {
-      // Get location ID for pharmacy
+      console.log('💊 Fetching pharmacy KPIs...');
+      
+      // Get locations first to find the correct location name
       const locRes = await apiHandler.callAPI('backend.php', 'get_locations');
       
       if (!locRes) {
+        console.warn('⚠️ No locations response received');
         setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
       
       // Handle both direct response format and wrapped response format
       const locData = locRes.success ? locRes.data : locRes;
-      let locationId = null;
+      let pharmacyLocationName = null;
+      
       if (locData && Array.isArray(locData)) {
-        const loc = locData.find(l => l.location_name.toLowerCase().includes("pharmacy"));
-        if (loc) locationId = loc.location_id;
+        console.log('📍 Available locations:', locData.map(l => l.location_name));
+        
+        // Try different variations of pharmacy names
+        const pharmacyVariations = ['pharmacy', 'pharmacy store', 'pharmacy_store'];
+        const loc = locData.find(l => 
+          pharmacyVariations.some(variation => 
+            l.location_name.toLowerCase().includes(variation)
+          ) || l.location_name === 'Pharmacy Store'
+        );
+        
+        if (loc) {
+          pharmacyLocationName = loc.location_name;
+          console.log('✅ Found pharmacy location:', pharmacyLocationName);
+        } else {
+          console.warn('⚠️ No pharmacy location found');
+        }
       }
-      if (!locationId) {
+      
+      if (!pharmacyLocationName) {
         setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
       
-      // Fetch products for pharmacy
-      const prodRes = await apiHandler.getProductsByLocationName({ location_name: "pharmacy" });
+      // Fetch products for pharmacy using the exact location name
+      const prodRes = await apiHandler.callAPI('backend.php', 'get_products_by_location_name', { 
+        location_name: pharmacyLocationName 
+      });
       
-      if (prodRes) {
-        // Handle both direct response format and wrapped response format
-        const prodData = prodRes.success ? prodRes.data : prodRes;
-        if (Array.isArray(prodData)) {
-          const products = prodData;
-          setPharmacyKPIs({
-            totalProducts: products.length,
-            lowStock: products.filter(p => p.stock_status === 'low stock').length,
-            expiringSoon: products.filter(p => p.expiry_status === 'expiring soon').length
-          });
-        } else {
-          setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
-        }
+      console.log('💊 Pharmacy products response:', prodRes);
+      
+      if (prodRes && prodRes.success) {
+        const products = prodRes.data || [];
+        console.log('📊 Pharmacy products count:', products.length);
+        
+        // Calculate KPIs with better error handling
+        const totalProducts = products.length;
+        const lowStock = products.filter(p => 
+          p.stock_status === 'low stock' || 
+          (p.quantity !== undefined && p.quantity <= 10 && p.quantity > 0)
+        ).length;
+        const expiringSoon = products.filter(p => {
+          if (!p.expiration) return false;
+          const expiryDate = new Date(p.expiration);
+          const thirtyDaysFromNow = new Date();
+          thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+          return expiryDate <= thirtyDaysFromNow;
+        }).length;
+        
+        console.log('📈 Pharmacy KPIs:', { totalProducts, lowStock, expiringSoon });
+        
+        setPharmacyKPIs({
+          totalProducts,
+          lowStock,
+          expiringSoon
+        });
       } else {
+        console.warn('⚠️ No pharmacy products data received:', prodRes?.message || 'Unknown error');
         setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
       }
     } catch (e) { 
-      console.error('Error fetching pharmacy KPIs:', e);
+      console.error('❌ Error fetching pharmacy KPIs:', e);
       setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 }); 
     }
   };
@@ -423,24 +504,39 @@ function Dashboard() {
   // Fetch Transfer KPIs
   const fetchTransferKPIs = async () => {
     try {
+      console.log('🚚 Fetching transfer KPIs...');
+      
       const res = await apiHandler.getTransfers();
+      
+      console.log('📦 Transfer response:', res);
       
       if (res) {
         // Handle both direct response format and wrapped response format
         const data = res.success ? res.data : res;
         if (Array.isArray(data)) {
+          const totalTransfers = data.length;
+          const activeTransfers = data.filter(t => 
+            t.status === 'pending' || 
+            t.status === 'in_progress' ||
+            (t.status === '' || t.status === null) // Some transfers might have empty status
+          ).length;
+          
+          console.log('📈 Transfer KPIs:', { totalTransfers, activeTransfers });
+          
           setTransferKPIs({
-            totalTransfers: data.length,
-            activeTransfers: data.filter(t => t.status === 'pending').length
+            totalTransfers,
+            activeTransfers
           });
         } else {
+          console.warn('⚠️ Transfer data is not an array:', data);
           setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 });
         }
       } else {
+        console.warn('⚠️ No transfer data received');
         setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 });
       }
     } catch (e) { 
-      console.error('Error fetching transfer KPIs:', e);
+      console.error('❌ Error fetching transfer KPIs:', e);
       setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 }); 
     }
   };
@@ -453,15 +549,14 @@ function Dashboard() {
       warehouseValue: 0,
       lowStockItems: 0,
       expiringSoon: 0,
-      totalBatches: 0,
-      activeTransfers: 0
+      totalBatches: 0
     });
 
     setSupplyByProduct([]);
     setSupplyByLocation([]);
     setReturnRateByProduct([]);
-    setStockoutItems([]);
-    setProductKPIs([]);
+    setFastMovingItemsTrend([]);
+    setCriticalStockAlerts([]);
   }; 
 
   const formatNumber = (num) => {
@@ -473,11 +568,13 @@ function Dashboard() {
     return num.toLocaleString();
   };
 
-  const formatCurrency = (num) => {
+   const formatCurrency = (num) => {
     if (num === undefined || num === null || isNaN(num)) {
-      return '₱0';
+      return '₱0.00';
     }
-    return '₱' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    // Ensure it's a number and add thousand separators
+    const number = typeof num === 'string' ? parseFloat(num) : num;
+    return '₱' + number.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   const formatPercentage = (num) => {
@@ -573,37 +670,141 @@ function Dashboard() {
   const renderLineChart = (data, title) => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
     
+    // Process data to get values for each month
+    const monthValues = months.map(month => {
+      const monthData = data.find(item => item.month === month);
+      return monthData ? monthData.quantity : 0;
+    });
+    
+    const maxValue = Math.max(...monthValues, 1); // Avoid division by zero
+    const minValue = Math.min(...monthValues);
+    const range = maxValue - minValue || 1;
+    
+    // Calculate SVG path for the line
+    const width = 300;
+    const height = 200;
+    const padding = 20;
+    const chartWidth = width - (padding * 2);
+    const chartHeight = height - (padding * 2);
+    
+    const points = monthValues.map((value, index) => {
+      const x = padding + (index * (chartWidth / (months.length - 1)));
+      const y = padding + chartHeight - ((value - minValue) / range) * chartHeight;
+      return `${x},${y}`;
+    });
+    
+    const pathData = `M ${points.join(' L ')}`;
+    
     return (
       <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
         <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="h-48 sm:h-64 flex items-end justify-between space-x-1">
-          {months.map((month, index) => {
-            const monthData = data.find(item => item.month === month) || { quantity: 0 };
-            const maxValue = Math.max(...data.map(item => item.quantity || 0));
-            const height = maxValue > 0 ? (monthData.quantity / maxValue) * 100 : 0;
+        
+        {/* SVG Line Chart */}
+        <div className="h-48 sm:h-64 flex items-center justify-center">
+          <svg width="300" height="200" className="w-full h-full">
+            {/* Grid lines */}
+            {[0, 0.25, 0.5, 0.75, 1].map((ratio, index) => (
+              <g key={index}>
+                <line
+                  x1={padding}
+                  y1={padding + ratio * chartHeight}
+                  x2={width - padding}
+                  y2={padding + ratio * chartHeight}
+                  stroke={theme.border.light}
+                  strokeWidth="1"
+                  opacity="0.3"
+                />
+                <text
+                  x={padding - 5}
+                  y={padding + ratio * chartHeight + 4}
+                  fontSize="10"
+                  fill={theme.text.muted}
+                  textAnchor="end"
+                >
+                  {Math.round(maxValue - (ratio * range))}
+                </text>
+              </g>
+            ))}
             
-            return (
-              <div key={index} className="flex flex-col items-center space-y-2">
-                <div 
-                  className="w-6 sm:w-8 rounded-t"
-                  style={{ 
-                    height: `${height}%`,
-                    backgroundColor: theme.colors.accent
-                  }}
-                ></div>
-                <span className="text-xs" style={{ color: theme.text.muted }}>{month}</span>
-              </div>
-            );
-          })}
+            {/* Data line */}
+            <path
+              d={pathData}
+              fill="none"
+              stroke={theme.colors.accent}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            
+            {/* Data points */}
+            {points.map((point, index) => {
+              const [x, y] = point.split(',').map(Number);
+              return (
+                <g key={index}>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r="4"
+                    fill={theme.colors.accent}
+                    stroke={theme.bg.card}
+                    strokeWidth="2"
+                  />
+                  <text
+                    x={x}
+                    y={height - 5}
+                    fontSize="10"
+                    fill={theme.text.muted}
+                    textAnchor="middle"
+                  >
+                    {months[index]}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
         </div>
-        <div className="mt-4 space-y-1">
-          {data.slice(0, 3).map((item, index) => (
-            <div key={index} className="flex items-center space-x-2">
-              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: theme.colors.accent }}></div>
-              <span className="text-xs truncate" style={{ color: theme.text.secondary }}>{item.product}</span>
-              <span className="text-xs ml-auto flex-shrink-0" style={{ color: theme.text.muted }}>{formatNumber(item.quantity)}</span>
+        
+        {/* Legend */}
+        <div className="mt-4 space-y-2">
+          {data.length > 0 ? (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: theme.colors.accent }}></div>
+                  <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
+                    {data[0].product}
+                  </span>
+                </div>
+                <span className="text-xs" style={{ color: theme.text.muted }}>
+                  {data.length} months trend
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="text-center">
+                  <div style={{ color: theme.text.muted }}>Peak</div>
+                  <div className="font-semibold" style={{ color: theme.colors.accent }}>
+                    {formatNumber(Math.max(...data.map(item => item.quantity)))}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div style={{ color: theme.text.muted }}>Low</div>
+                  <div className="font-semibold" style={{ color: theme.text.secondary }}>
+                    {formatNumber(Math.min(...data.map(item => item.quantity)))}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div style={{ color: theme.text.muted }}>Avg</div>
+                  <div className="font-semibold" style={{ color: theme.text.secondary }}>
+                    {formatNumber(Math.round(data.reduce((sum, item) => sum + item.quantity, 0) / data.length))}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-center" style={{ color: theme.text.muted }}>
+              No trend data available
             </div>
-          ))}
+          )}
         </div>
       </div>
     );
@@ -615,33 +816,48 @@ function Dashboard() {
     const percentage = Math.min((criticalLevel / maxCritical) * 100, 100);
     
     return (
-      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="flex items-center justify-center">
-          <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 min-h-[400px] flex flex-col" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-6" style={{ color: theme.text.primary }}>{title}</h3>
+        
+        {/* Improved Gauge */}
+        <div className="flex flex-col items-center justify-center mb-6 flex-shrink-0">
+          <div className="relative w-24 h-24 sm:w-28 sm:h-28 mb-2">
+            {/* Background circle */}
             <div className="absolute inset-0 rounded-full" style={{ backgroundColor: theme.border.light }}></div>
+            {/* Progress circle */}
             <div 
-              className="absolute inset-0 rounded-full"
+              className="absolute inset-0 rounded-full transition-all duration-500"
               style={{
-                clipPath: `polygon(50% 50%, 50% 0%, ${50 + (percentage * 0.8)}% 0%, ${50 + (percentage * 0.8)}% 100%, 50% 100%)`,
-                backgroundColor: percentage > 80 ? theme.colors.danger : percentage > 50 ? theme.colors.warning : theme.colors.success
+                background: `conic-gradient(from 0deg, ${percentage > 80 ? theme.colors.danger : percentage > 50 ? theme.colors.warning : theme.colors.success} 0deg, ${percentage > 80 ? theme.colors.danger : percentage > 50 ? theme.colors.warning : theme.colors.success} ${percentage * 3.6}deg, ${theme.border.light} ${percentage * 3.6}deg)`
               }}
             ></div>
-            <div className="absolute inset-3 sm:inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
+            {/* Inner circle */}
+            <div className="absolute inset-2 sm:inset-3 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
               <div className="text-center">
-                <div className="text-lg sm:text-2xl font-bold" style={{ color: theme.text.primary }}>{criticalLevel}</div>
+                <div className="text-xl sm:text-2xl font-bold" style={{ color: theme.colors.danger }}>{criticalLevel}</div>
                 <div className="text-xs" style={{ color: theme.text.muted }}>Critical</div>
               </div>
             </div>
           </div>
         </div>
-        <div className="mt-4 space-y-1">
-          {data.slice(0, 5).map((item, index) => (
-            <div key={index} className="flex items-center justify-between text-xs">
-              <span className="truncate min-w-0 flex-1" style={{ color: theme.text.secondary }}>{item.product}</span>
-              <span className="font-medium flex-shrink-0 ml-2" style={{ color: theme.colors.danger }}>{item.quantity}</span>
+        
+        {/* Improved List */}
+        <div className="space-y-2 flex-1 overflow-hidden">
+          {data.length > 0 ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {data.slice(0, 5).map((item, index) => (
+                <div key={index} className="flex items-center justify-between p-2 rounded-md min-h-[40px]" style={{ backgroundColor: theme.colors.danger + '20', borderColor: theme.colors.danger + '40', border: '1px solid' }}>
+                  <span className="text-sm font-medium truncate flex-1 pr-2" style={{ color: theme.colors.danger }}>{item.product}</span>
+                  <span className="text-sm font-bold flex-shrink-0" style={{ color: theme.colors.danger }}>{item.quantity}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : (
+            <div className="text-center py-4">
+              <div className="text-sm font-medium" style={{ color: theme.colors.success }}>No critical alerts</div>
+              <div className="text-xs" style={{ color: theme.text.muted }}>All items are well stocked</div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -749,13 +965,11 @@ function Dashboard() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
-      <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
+      <div className="p-6" style={{ backgroundColor: theme.bg.secondary }}>
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center space-x-6 mb-4">
-              <span className="border-b-2 pb-1" style={{ color: theme.text.primary, borderColor: theme.text.primary }}>Warehouse Overview</span>
-              <span style={{ color: theme.text.secondary }}>Inventory Analytics</span>
-              <span style={{ color: theme.text.secondary }}>Stock Reports</span>
+              
             </div>
             <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Warehouse Management</h1>
           </div>
@@ -801,65 +1015,71 @@ function Dashboard() {
       {/* Warehouse KPIs Section */}
       <div className="p-6 space-y-6">
         {/* Main Warehouse KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Products</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-center items-center min-h-[140px]" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.info }}>Total Products</p>
+            <p className="text-3xl font-bold" style={{ color: theme.colors.info }}>
               {formatNumber(warehouseData.totalProducts)}
             </p>
           </div>
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Suppliers</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.totalSuppliers)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-center items-center min-h-[140px]" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.success }}>Total Suppliers</p>
+            <p className="text-3xl font-bold" style={{ color: theme.colors.success }}>{formatNumber(warehouseData.totalSuppliers)}</p>
           </div>
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Warehouse Value</p>
-            <p className="text-sm sm:text-base lg:text-lg xl:text-2xl font-bold break-words" style={{ color: theme.text.primary }}>{formatCurrency(warehouseData.warehouseValue)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-center items-center min-h-[140px]" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.accent }}>Warehouse Value</p>
+            <p className="text-2xl font-bold" style={{ color: theme.colors.accent }}>{formatCurrency(warehouseData.warehouseValue)}</p>
           </div>
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock Items</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.lowStockItems)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-center items-center min-h-[140px]" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.warning }}>Low Stock Items</p>
+            <p className="text-3xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(warehouseData.lowStockItems)}</p>
           </div>
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.expiringSoon)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-center items-center min-h-[140px]" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.danger }}>Expiring Soon</p>
+            <p className="text-3xl font-bold" style={{ color: theme.colors.danger }}>{formatNumber(warehouseData.expiringSoon)}</p>
           </div>
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Batches</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.totalBatches)}</p>
-          </div>
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Active Transfers</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.activeTransfers)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-center items-center min-h-[140px]" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.info }}>Total Batches</p>
+            <p className="text-3xl font-bold" style={{ color: theme.colors.info }}>{formatNumber(warehouseData.totalBatches)}</p>
           </div>
         </div>
 
         {/* Module KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Convenience Store KPIs */}
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Convenience Store - Total Products</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(convenienceKPIs.totalProducts)}</p>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock</p>
-            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.lowStock)}</p>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
-            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.expiringSoon)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.success }}>Convenience Store - Total Products</p>
+            <p className="text-3xl font-bold mb-3" style={{ color: theme.colors.success }}>{formatNumber(convenienceKPIs.totalProducts)}</p>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs" style={{ color: theme.text.secondary }}>Low Stock</span>
+                <span className="text-lg font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.lowStock)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs" style={{ color: theme.text.secondary }}>Expiring Soon</span>
+                <span className="text-lg font-bold" style={{ color: theme.colors.danger }}>{formatNumber(convenienceKPIs.expiringSoon)}</span>
+              </div>
+            </div>
           </div>
           {/* Pharmacy KPIs */}
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Pharmacy - Total Products</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(pharmacyKPIs.totalProducts)}</p>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock</p>
-            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.lowStock)}</p>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
-            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.expiringSoon)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.accent }}>Pharmacy - Total Products</p>
+            <p className="text-3xl font-bold mb-3" style={{ color: theme.colors.accent }}>{formatNumber(pharmacyKPIs.totalProducts)}</p>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs" style={{ color: theme.text.secondary }}>Low Stock</span>
+                <span className="text-lg font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.lowStock)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs" style={{ color: theme.text.secondary }}>Expiring Soon</span>
+                <span className="text-lg font-bold" style={{ color: theme.colors.danger }}>{formatNumber(pharmacyKPIs.expiringSoon)}</span>
+              </div>
+            </div>
           </div>
           {/* Transfer KPIs */}
-          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 sm:col-span-2 lg:col-span-1" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Transfers</p>
-            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(transferKPIs.totalTransfers)}</p>
-            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Active Transfers</p>
-            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.accent }}>{formatNumber(transferKPIs.activeTransfers)}</p>
+          <div className="p-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: '1px solid' }}>
+            <p className="text-sm font-medium mb-2" style={{ color: theme.colors.info }}>Total Transfers</p>
+            <p className="text-3xl font-bold" style={{ color: theme.colors.info }}>{formatNumber(transferKPIs.totalTransfers)}</p>
           </div>
         </div>
 
@@ -873,74 +1093,12 @@ function Dashboard() {
         </div>
 
         {/* Charts Section - Second Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
           {/* Line Chart - Stock trend of fast-moving items */}
           {renderLineChart(fastMovingItemsTrend, "Fast-Moving Items Trend")}
           
           {/* Gauge - Critical stock alerts */}
           {renderGauge(criticalStockAlerts, "Critical Stock Alerts")}
-          
-          {/* Stacked Column - Inventory by branch and category */}
-          <div className="sm:col-span-2 lg:col-span-1">
-            {renderStackedColumn(inventoryByBranchCategory, "Inventory by Branch & Category")}
-          </div>
-        </div>
-
-        {/* Bottom Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          {/* Warehouse Stockout Items */}
-          <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Warehouse Stockout Items</h3>
-            <div className="h-64 sm:h-80 flex items-end justify-between space-x-1">
-              {Array.isArray(stockoutItems) && stockoutItems.map((item, index) => (
-                <div key={index} className="flex flex-col items-center space-y-2">
-                  <div 
-                    className="w-6 sm:w-8 rounded-t"
-                    style={{ 
-                      height: `${Math.abs(item.stockout || 0) / 20}px`,
-                      backgroundColor: theme.colors.danger
-                    }}
-                  ></div>
-                  <span className="text-xs rotate-45 transform origin-left" style={{ color: theme.text.muted }}>
-                    {item.product && item.product.length > 12 ? item.product.substring(0, 12) + '...' : (item.product || 'Unknown')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Warehouse Products KPIs Table */}
-          <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Warehouse Products KPIs</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs sm:text-sm">
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border.default}` }}>
-                    <th className="text-left py-2" style={{ color: theme.text.primary }}>Product name</th>
-                    <th className="text-right py-2" style={{ color: theme.text.primary }}>Quantity</th>
-                    <th className="text-right py-2" style={{ color: theme.text.primary }}>Unit Price</th>
-                    <th className="text-right py-2" style={{ color: theme.text.primary }}>Total Value</th>
-                    <th className="text-right py-2" style={{ color: theme.text.primary }}>Supplier</th>
-                    <th className="text-right py-2" style={{ color: theme.text.primary }}>Batch</th>
-                    <th className="text-right py-2" style={{ color: theme.text.primary }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.isArray(productKPIs) && productKPIs.map((item, index) => (
-                    <tr key={index} style={{ borderBottom: `1px solid ${theme.border.light}` }}>
-                      <td className="py-2 truncate max-w-20 sm:max-w-none" style={{ color: theme.text.primary }}>{item.product || 'Unknown Product'}</td>
-                      <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{item.quantity || 0}</td>
-                      <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{formatCurrency(item.unitPrice || 0)}</td>
-                      <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}</td>
-                      <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{item.supplier || 'N/A'}</td>
-                      <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{item.batch || 'N/A'}</td>
-                      <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{item.status || 'Active'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       </div>
     </div>

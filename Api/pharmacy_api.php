@@ -95,7 +95,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -132,7 +132,7 @@ try {
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name as category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -170,7 +170,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     -- Use stock summary SRP if available, then transfer batch details SRP, then product SRP
                     COALESCE(ss.srp, tbd.srp, p.srp) as unit_price,
@@ -207,7 +207,7 @@ try {
                 LEFT JOIN tbl_stock_summary ss ON p.product_id = ss.product_id
                 LEFT JOIN tbl_transfer_batch_details tbd ON p.product_id = tbd.product_id AND tbd.location_id = p.location_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name as category, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, p.status, s.supplier_name, p.expiration, l.location_name, tbd.srp, tbd.expiration_date
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -245,7 +245,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     p.srp as unit_price,
                     p.srp,
@@ -262,7 +262,7 @@ try {
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id
                 WHERE $where
-                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name as category, b.brand, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
+                GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.srp, p.quantity, p.status, s.supplier_name, p.expiration, l.location_name
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute($params);
@@ -299,7 +299,7 @@ try {
                     p.product_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    c.category_name,
                     b.brand,
                     p.srp as unit_price,
                     p.srp,
@@ -357,7 +357,7 @@ try {
                     p.product_name,
                     p.barcode,
                     b.brand,
-                    c.category_name as category,
+                    c.category_name,
                     'Warehouse' as source_location_name,
                     'System' as employee_name
                 FROM tbl_transfer_batch_details tbd
@@ -386,7 +386,7 @@ try {
                         p.product_name,
                         p.barcode,
                         br.brand,
-                        c.category_name as category,
+                        c.category_name,
                         sl.location_name as source_location_name,
                         e.Fname as employee_name
                     FROM tbl_transfer_dtl td

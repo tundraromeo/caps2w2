@@ -19,8 +19,6 @@ export default function LoginForm() {
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [captchaInput, setCaptchaInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
-  const [debugInfo, setDebugInfo] = useState("");
   const router = useRouter();
 
   // Auto-show captcha once both username and password are filled
@@ -44,10 +42,6 @@ export default function LoginForm() {
         setCaptchaQuestion(response.data.question);
         setCaptchaAnswer(response.data.answer.toString());
         console.log('Captcha set:', response.data.question, 'Answer:', response.data.answer);
-        
-        if (debugMode) {
-          setDebugInfo(`Generated: ${response.data.question} | Answer: ${response.data.answer} | Type: ${typeof response.data.answer}`);
-        }
       } else {
         console.error('Captcha API failed:', response.data);
         // Use fallback if API returns success: false
@@ -66,41 +60,7 @@ export default function LoginForm() {
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);
       setCaptchaAnswer((num1 + num2).toString());
       console.log('Using fallback captcha due to error:', `${num1} + ${num2} = ${num1 + num2}`);
-      
-      if (debugMode) {
-        setDebugInfo(`Fallback: ${num1} + ${num2} = ${num1 + num2}`);
-      }
     }
-  };
-
-  const testCaptchaAPI = async () => {
-    try {
-      const response = await axios.post(API_BASE_URL, {
-        action: "generate_captcha"
-      });
-      
-      setDebugInfo(`
-        API Test Results:
-        Status: Success
-        Question: ${response.data.question}
-        Answer: ${response.data.answer} (Type: ${typeof response.data.answer})
-        Full Response: ${JSON.stringify(response.data, null, 2)}
-      `);
-    } catch (error) {
-      setDebugInfo(`API Error: ${error.message}`);
-    }
-  };
-
-  const testCaptchaComparison = () => {
-    const result = captchaInput.toString() === captchaAnswer.toString();
-    setDebugInfo(`
-      Captcha Comparison Test:
-      Question: ${captchaQuestion}
-      Expected Answer: ${captchaAnswer} (Type: ${typeof captchaAnswer})
-      User Input: ${captchaInput} (Type: ${typeof captchaInput})
-      String Comparison: "${captchaInput.toString()}" === "${captchaAnswer.toString()}"
-      Result: ${result ? '✅ PASS' : '❌ FAIL'}
-    `);
   };
 
   const handleSubmit = async (e) => {
@@ -261,51 +221,9 @@ export default function LoginForm() {
             <p className="text-gray-800">Please sign in to your account</p>
           </div>
 
-          {/* Debug toggle for troubleshooting */}
-          <div className="text-center mb-4">
-            <button
-              type="button"
-              onClick={() => setDebugMode(!debugMode)}
-              className="px-3 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
-            >
-              {debugMode ? 'Hide Debug' : 'Show Debug'}
-            </button>
-          </div>
-
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <p className="text-red-600 text-center text-sm">{error}</p>
-            </div>
-          )}
-
-          {/* Debug Information */}
-          {debugMode && debugInfo && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <h4 className="font-semibold text-yellow-800 mb-2">Debug Info:</h4>
-              <pre className="text-xs text-yellow-700 whitespace-pre-wrap">{debugInfo}</pre>
-              <div className="mt-2 space-x-2">
-                <button
-                  type="button"
-                  onClick={testCaptchaAPI}
-                  className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Test API
-                </button>
-                <button
-                  type="button"
-                  onClick={testCaptchaComparison}
-                  className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
-                >
-                  Test Comparison
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDebugInfo("")}
-                  className="px-3 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
-                >
-                  Clear
-                </button>
-              </div>
             </div>
           )}
 
@@ -404,11 +322,6 @@ export default function LoginForm() {
                 <p className="text-center text-lg font-medium text-gray-800">
                   {captchaQuestion || 'Loading security question...'}
                 </p>
-                {debugMode && (
-                  <p className="text-center text-xs text-blue-500 mt-1">
-                    Debug: Answer is "{captchaAnswer}" (Type: {typeof captchaAnswer})
-                  </p>
-                )}
               </div>
               
               <input
