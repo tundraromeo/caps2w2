@@ -3050,6 +3050,24 @@ console.log("API response for product quantities:", response);
               ) : (
                 inventoryData
                   .filter(product => {
+                    // Filter by search term
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const matchesSearch = 
+                        product.product_name?.toLowerCase().includes(searchLower) ||
+                        product.barcode?.toLowerCase().includes(searchLower) ||
+                        product.category?.toLowerCase().includes(searchLower) ||
+                        product.brand?.toLowerCase().includes(searchLower) ||
+                        product.supplier_name?.toLowerCase().includes(searchLower);
+                      if (!matchesSearch) return false;
+                    }
+                    
+                    // Filter by category
+                    if (filterOptions.category) {
+                      if (product.category !== filterOptions.category) return false;
+                    }
+                    
+                    // Filter by stock status
                     if (filterOptions.stockStatus === 'all') return true;
                     if (filterOptions.stockStatus === 'low') {
                       const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;

@@ -325,9 +325,9 @@ const PharmacyStore = () => {
 
     if (searchTerm) {
       filtered = filtered.filter(item =>
-        item.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.barcode.toLowerCase().includes(searchTerm.toLowerCase())
+        item.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 

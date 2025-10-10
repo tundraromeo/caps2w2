@@ -61,6 +61,7 @@ function resetErrorToast() {
 
 import { getApiEndpointForAction } from '../lib/apiHandler';
 import apiHandler from '../lib/apiHandler';
+import { getApiUrl } from '../lib/apiConfig';
 
 // API function - Updated to use centralized API handler
 async function handleApiCall(action, data = {}) {
@@ -171,7 +172,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
     if (response.success) {
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
+        await fetch(getApiUrl('backend.php'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -199,7 +200,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
     
     // Log the error
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`, {
+      await fetch(getApiUrl('backend.php'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -448,6 +449,16 @@ function Warehouse() {
   
     const handleKeyDown = (e) => {
       if (!scannerActive) return;
+  
+      // Skip navigation keys and form controls to avoid interfering with normal form usage
+      const navigationKeys = ['Tab', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+      const isNavigationKey = navigationKeys.includes(e.key);
+      const isFormElement = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
+      
+      // Don't interfere with navigation or form elements
+      if (isNavigationKey || isFormElement) {
+        return;
+      }
   
       // "Key pressed:", e.key, "KeyCode:", e.keyCode, "Scanner active:", scannerActive);
   
@@ -1339,6 +1350,10 @@ calculateLowStockAndExpiring(activeProducts);
     }
 
     function openUpdateStockModal(product) {
+      console.log("🔍 Opening Update Stock Modal with product data:", product);
+      console.log("🔍 Product brand:", product.brand);
+      console.log("🔍 Product category:", product.category);
+      console.log("🔍 Product category_name:", product.category_name);
       setExistingProduct(product);
       setNewStockQuantity("");
       setNewStockBoxes("");
@@ -1834,6 +1849,7 @@ console.log("API response for product quantities:", response);
 
     function openQuantityHistoryModal(product) {
       console.log("🔄 Opening quantity history modal for product:", product.product_name, "ID:", product.product_id);
+      console.log("🔍 Product data when opening modal:", product);
       setSelectedProductForHistory(product);
       setShowQuantityHistoryModal(true);
       setShowCurrentFifoData(true); // Always start with FIFO view
@@ -1854,6 +1870,25 @@ console.log("API response for product quantities:", response);
         
         if (response && response.success) {
           console.log("✅ Quantity history loaded successfully:", response.data?.length || 0, "entries");
+          
+          // Debug: Log each movement entry
+          if (response.data && response.data.length > 0) {
+            response.data.forEach((movement, index) => {
+              console.log(`🔍 Movement ${index + 1}:`, {
+                movement_id: movement.movement_id,
+                movement_type: movement.movement_type,
+                quantity_change: movement.quantity_change,
+                remaining_quantity: movement.remaining_quantity,
+                movement_date: movement.movement_date,
+                reference_no: movement.reference_no,
+                batch_reference: movement.batch_reference,
+                created_by: movement.created_by
+              });
+            });
+          } else {
+            console.log("🔍 No movement history found for this product");
+          }
+          
           setQuantityHistoryData(response.data || []);
         } else {
           console.warn("⚠️ Quantity history failed:", response?.message);
@@ -1872,21 +1907,25 @@ console.log("API response for product quantities:", response);
       console.log("🔄 Refreshing product data for ID:", productId);
       try {
         // Refresh quantity history (non-critical)
+        console.log("🔄 Loading quantity history...");
         await loadQuantityHistory(productId);
         
         // Refresh FIFO stock data (critical)
+        console.log("🔄 Loading FIFO stock data...");
         await loadFifoStock(productId);
         
         // Also refresh the main product list to update quantities
+        console.log("🔄 Refreshing main product data...");
         await loadData("products");
         
         // Toggle to show current FIFO data instead of history
         setShowCurrentFifoData(true);
         
         console.log("✅ Product data refreshed successfully - Now showing current FIFO batches");
+        safeToast("success", "Batch data refreshed successfully!");
       } catch (error) {
         console.error("❌ Error refreshing product data:", error);
-        // Don't show error toast - let individual functions handle their own errors
+        safeToast("error", "Failed to refresh batch data: " + error.message);
       }
     }
 
@@ -1901,6 +1940,20 @@ console.log("API response for product quantities:", response);
       if (response.success && Array.isArray(response.data)) {
         console.log("✅ FIFO data loaded successfully:", response.data.length, "batches");
         console.log("🔍 FIFO batches:", response.data);
+        
+        // Debug: Log each batch details
+        response.data.forEach((batch, index) => {
+          console.log(`🔍 Batch ${index + 1}:`, {
+            batch_id: batch.batch_id,
+            batch_reference: batch.batch_reference,
+            available_quantity: batch.available_quantity,
+            total_quantity: batch.total_quantity,
+            expiration_date: batch.expiration_date,
+            entry_date: batch.fifo_entry_date,
+            batch_date: batch.batch_date
+          });
+        });
+        
         setFifoStockData(response.data);
       } else {
         console.warn("⚠️ FIFO stock error:", response.message);
@@ -2573,13 +2626,15 @@ console.log("API response for product quantities:", response);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
     }, [settings.barcodeScanning]);
 
-    // Update form batch number when currentBatchNumber changes
+    // Update form batch number when currentBatchNumber changes (only if form is open)
     useEffect(() => {
-      setNewProductForm(prev => ({
-        ...prev,
-        batch: currentBatchNumber
-      }));
-    }, [currentBatchNumber]);
+      if (showNewProductModal) {
+        setNewProductForm(prev => ({
+          ...prev,
+          batch: currentBatchNumber
+        }));
+      }
+    }, [currentBatchNumber, showNewProductModal]);
   
     // Debug useEffect to track categoriesData changes
     useEffect(() => {
@@ -2978,15 +3033,6 @@ console.log("API response for product quantities:", response);
                 <div className="text-sm max-w-md" style={{ color: theme.text.secondary }}>
                   {productNameStatusMessage}
                 </div>
-
-                <button
-                  onClick={openSupplierModal}
-                  className="px-3 py-1 rounded flex items-center"
-                  style={{ backgroundColor: theme.colors.accent, color: 'white' }}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Supplier
-                </button>
               </div>
             </div>
           </div>
@@ -3212,6 +3258,19 @@ console.log("API response for product quantities:", response);
               ) : (
                 inventoryData
                   .filter(product => {
+                    // Filter by search term
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const matchesSearch = 
+                        product.product_name?.toLowerCase().includes(searchLower) ||
+                        product.barcode?.toLowerCase().includes(searchLower) ||
+                        product.category?.toLowerCase().includes(searchLower) ||
+                        product.brand?.toLowerCase().includes(searchLower) ||
+                        product.supplier_name?.toLowerCase().includes(searchLower);
+                      if (!matchesSearch) return false;
+                    }
+                    
+                    // Filter by stock status
                     if (filterOptions.stockStatus === 'all') return true;
                     if (filterOptions.stockStatus === 'low') {
                       const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
@@ -4268,7 +4327,7 @@ console.log("API response for product quantities:", response);
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                 <input
                   type="text"
-                  value={existingProduct.category || ""}
+                  value={existingProduct.category_name || existingProduct.category || ""}
                   readOnly
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
@@ -4894,6 +4953,7 @@ console.log("API response for product quantities:", response);
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Product Name *</label>
               <input
+                key="product_name_input"
                 type="text"
                 required
                 value={newProductForm.product_name || ""}
@@ -4910,6 +4970,7 @@ console.log("API response for product quantities:", response);
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Barcode</label>
               <input
+                key="barcode_input"
                 type="text"
                 value={newProductForm.barcode || ""}
                 onChange={(e) => handleNewProductInputChange("barcode", e.target.value)}
@@ -4986,6 +5047,7 @@ console.log("API response for product quantities:", response);
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Suggested Retail Price (SRP) *</label>
               <input
+                key="srp_input"
                 type="number"
                 step="0.01"
                 required
@@ -5842,6 +5904,23 @@ console.log("API response for product quantities:", response);
                   Batch Details - {selectedProductForHistory.product_name}
                 </h3>
                 <div className="flex items-center gap-2">
+                  <button onClick={() => refreshProductData(selectedProductForHistory.product_id)} 
+                          className="flex items-center gap-1 px-3 py-1 text-sm rounded-md"
+                          style={{ 
+                            backgroundColor: theme.colors.accent + '20',
+                            color: theme.colors.accent,
+                            border: `1px solid ${theme.colors.accent + '40'}`
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = theme.colors.accent + '30';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = theme.colors.accent + '20';
+                          }}
+                          title="Refresh batch data">
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </button>
                   <button onClick={closeQuantityHistoryModal} 
                           style={{ color: theme.text.muted }}
                           onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
@@ -6297,9 +6376,16 @@ console.log("API response for product quantities:", response);
                               if (p.is_stock_update) {
                                 return sum + parseInt(p.quantity_to_add || 0);
                               }
-                              const totalPieces = p.product_type === "Medicine" 
-                                ? parseInt(p.total_tablets || 0)
-                                : parseInt(p.total_pieces || 0);
+                              // Calculate quantity based on product type and configuration
+                              let totalPieces = 0;
+                              if (p.product_type === "Medicine") {
+                                totalPieces = parseInt(p.total_tablets || p.quantity || 0);
+                              } else if (p.product_type === "Non-Medicine") {
+                                totalPieces = parseInt(p.total_pieces || p.quantity || 0);
+                              } else {
+                                // Fallback to any available quantity field
+                                totalPieces = parseInt(p.quantity || p.total_tablets || p.total_pieces || 0);
+                              }
                               return sum + totalPieces;
                             }, 0)}
                           </div>
@@ -6311,9 +6397,16 @@ console.log("API response for product quantities:", response);
                               if (p.is_stock_update) {
                                 return sum + ((parseFloat(p.new_srp || p.srp || 0)) * parseInt(p.quantity_to_add || 0));
                               }
-                              const totalPieces = p.product_type === "Medicine" 
-                                ? parseInt(p.total_tablets || 0)
-                                : parseInt(p.total_pieces || 0);
+                              // Calculate quantity based on product type and configuration
+                              let totalPieces = 0;
+                              if (p.product_type === "Medicine") {
+                                totalPieces = parseInt(p.total_tablets || p.quantity || 0);
+                              } else if (p.product_type === "Non-Medicine") {
+                                totalPieces = parseInt(p.total_pieces || p.quantity || 0);
+                              } else {
+                                // Fallback to any available quantity field
+                                totalPieces = parseInt(p.quantity || p.total_tablets || p.total_pieces || 0);
+                              }
                               return sum + ((parseFloat(p.srp || 0) * totalPieces));
                             }, 0).toFixed(2)}
                           </div>
@@ -6354,7 +6447,15 @@ console.log("API response for product quantities:", response);
                               </td>
                               <td className="border border-gray-300 px-3 py-2">
                                 <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                                  {product.category}
+                                  {(() => {
+                                    // Get category name from category_id
+                                    if (product.category_id && categoriesData.length > 0) {
+                                      const category = categoriesData.find(cat => cat.category_id == product.category_id);
+                                      return category ? category.category_name : `Category ID: ${product.category_id}`;
+                                    }
+                                    // Fallback to product.category if available
+                                    return product.category || "No Category";
+                                  })()}
                                 </span>
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-gray-900">
@@ -6367,14 +6468,42 @@ console.log("API response for product quantities:", response);
                                     <div className="text-xs text-gray-500">(Adding to existing stock)</div>
                                   </div>
                                 ) : (
-                                  product.quantity
+                                  (() => {
+                                    // Calculate quantity based on product type and configuration
+                                    if (product.product_type === "Medicine") {
+                                      return product.total_tablets || product.quantity || 0;
+                                    } else if (product.product_type === "Non-Medicine") {
+                                      return product.total_pieces || product.quantity || 0;
+                                    } else {
+                                      // Fallback to quantity field or calculate from available data
+                                      return product.quantity || 
+                                             (product.total_tablets || 0) || 
+                                             (product.total_pieces || 0) || 0;
+                                    }
+                                  })()
                                 )}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
                                 ₱{parseFloat(product.new_srp || product.srp || 0).toFixed(2)}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center text-gray-900">
-                                ₱{((parseFloat(product.new_srp || product.srp || 0)) * (parseInt(product.is_stock_update ? product.quantity_to_add : product.quantity || 0))).toFixed(2)}
+                                ₱{((parseFloat(product.new_srp || product.srp || 0)) * (parseInt(
+                                  product.is_stock_update ? product.quantity_to_add : (
+                                    (() => {
+                                      // Calculate quantity based on product type and configuration
+                                      if (product.product_type === "Medicine") {
+                                        return product.total_tablets || product.quantity || 0;
+                                      } else if (product.product_type === "Non-Medicine") {
+                                        return product.total_pieces || product.quantity || 0;
+                                      } else {
+                                        // Fallback to quantity field or calculate from available data
+                                        return product.quantity || 
+                                               (product.total_tablets || 0) || 
+                                               (product.total_pieces || 0) || 0;
+                                      }
+                                    })()
+                                  )
+                                ))).toFixed(2)}
                               </td>
                               <td className="border border-gray-300 px-3 py-2 text-center" 
                                   style={{ 

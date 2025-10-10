@@ -230,13 +230,17 @@ function receiveItems($conn) {
                 if ($row) { $orderedQty = intval($row['quantity']); }
             }
 
+            // Get product name for the detail record
+            $productName = $item['product_name'] ?? 'Unknown Product';
+            
             // Insert using the original table columns; pass neutral values for removed fields
-            $detailQuery = "INSERT INTO tbl_purchase_receiving_dtl (receiving_id, product_id, ordered_qty, received_qty, unit_price, batch_number, expiration_date) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)";
+            $detailQuery = "INSERT INTO tbl_purchase_receiving_dtl (receiving_id, product_id, product_name, ordered_qty, received_qty, unit_price, batch_number, expiration_date) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             $detailStmt = $conn->prepare($detailQuery);
             $detailStmt->execute([
                 $receivingId,
                 $productId,
+                $productName,  // product_name
                 $orderedQty,
                 $receivedQty,
                 0,            // unit_price (deprecated)

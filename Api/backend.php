@@ -3054,24 +3054,18 @@ case 'get_products_oldest_batch_for_transfer':
             $primary_email = $data['primary_email'] ?? '';
             $contact_person = $data['contact_person'] ?? '';
             $contact_title = $data['contact_title'] ?? '';
-            $payment_terms = $data['payment_terms'] ?? '';
-            $lead_time_days = $data['lead_time_days'] ?? '';
-            $order_level = $data['order_level'] ?? '';
-            $credit_rating = $data['credit_rating'] ?? '';
             $notes = $data['notes'] ?? '';
             
             $stmt = $conn->prepare("
                 INSERT INTO tbl_supplier (
                     supplier_name, supplier_address, supplier_contact, supplier_email,
-                    primary_phone, primary_email, contact_person, contact_title,
-                    payment_terms, lead_time_days, order_level, credit_rating, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    primary_phone, primary_email, contact_person, contact_title, notes, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
             ");
             
             $stmt->execute([
                 $supplier_name, $supplier_address, $supplier_contact, $supplier_email,
-                $primary_phone, $primary_email, $contact_person, $contact_title,
-                $payment_terms, $lead_time_days, $order_level, $credit_rating, $notes
+                $primary_phone, $primary_email, $contact_person, $contact_title, $notes
             ]);
             
             echo json_encode(["success" => true, "message" => "Supplier added successfully"]);
@@ -3549,6 +3543,123 @@ case 'get_products_oldest_batch_for_transfer':
             ]);
         }
         break;
+    case 'check_product_name':
+        try {
+            $product_name = $data['product_name'] ?? '';
+            $location_name = $data['location_name'] ?? null;
+            $location_id = $data['location_id'] ?? null;
+            
+            if (empty($product_name)) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Product name is required"
+                ]);
+                break;
+            }
+            
+            // Find product by name first
+            $stmt = $conn->prepare(
+                "SELECT p.*, l.location_name AS base_location_name,
+                        c.category_name, b.brand
+                 FROM tbl_product p
+                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                 WHERE p.product_name = ?
+                 AND (p.status IS NULL OR p.status <> 'archived')
+                 LIMIT 1"
+            );
+            $stmt->execute([$product_name]);
+            $product = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($product) {
+                $product_id = (int)$product['product_id'];
+                
+                // Resolve effective location from the latest approved transfer (destination)
+                $tx = $conn->prepare(
+                    "SELECT th.destination_location_id AS dest_id, dl.location_name AS dest_name
+                     FROM tbl_transfer_dtl td
+                     JOIN tbl_transfer_header th ON th.transfer_header_id = td.transfer_header_id AND th.status = 'approved'
+                     LEFT JOIN tbl_location dl ON dl.location_id = th.destination_location_id
+                     WHERE td.product_id = ?
+                     ORDER BY th.transfer_header_id DESC
+                     LIMIT 1"
+                );
+                $tx->execute([$product_id]);
+                $latestTransfer = $tx->fetch(PDO::FETCH_ASSOC);
+                
+                $effective_location_id = $product['location_id'];
+                $effective_location_name = $product['base_location_name'];
+                if ($latestTransfer && !empty($latestTransfer['dest_id'])) {
+                    $effective_location_id = (int)$latestTransfer['dest_id'];
+                    $effective_location_name = $latestTransfer['dest_name'];
+                }
+                
+                // Validate against requested location, if any
+                $matchesTarget = true;
+                if (!empty($location_id)) {
+                    $matchesTarget = ((int)$location_id === (int)$effective_location_id);
+                } else if (!empty($location_name)) {
+                    $matchesTarget = (mb_strtolower(trim($location_name)) === mb_strtolower(trim((string)$effective_location_name)));
+                }
+                
+                if ($matchesTarget) {
+                    $product['location_id'] = $effective_location_id;
+                    $product['location_name'] = $effective_location_name;
+                    $product['category'] = $product['category_name'];
+                    $product['brand'] = $product['brand'] ?: 'N/A';
+
+                    // Compute an approximate on-hand for resolved location using transfers in/out
+                    // Transfers IN to this location
+                    $inStmt = $conn->prepare(
+                        "SELECT COALESCE(SUM(td.qty), 0) as total_in
+                         FROM tbl_transfer_dtl td
+                         JOIN tbl_transfer_header th ON th.transfer_header_id = td.transfer_header_id 
+                         WHERE td.product_id = ? AND th.destination_location_id = ? AND th.status = 'approved'"
+                    );
+                    $inStmt->execute([$product_id, $effective_location_id]);
+                    $totalIn = $inStmt->fetch(PDO::FETCH_ASSOC)['total_in'];
+
+                    // Transfers OUT from this location
+                    $outStmt = $conn->prepare(
+                        "SELECT COALESCE(SUM(td.qty), 0) as total_out
+                         FROM tbl_transfer_dtl td
+                         JOIN tbl_transfer_header th ON th.transfer_header_id = td.transfer_header_id 
+                         WHERE td.product_id = ? AND th.source_location_id = ? AND th.status = 'approved'"
+                    );
+                    $outStmt->execute([$product_id, $effective_location_id]);
+                    $totalOut = $outStmt->fetch(PDO::FETCH_ASSOC)['total_out'];
+
+                    // Approximate quantity = base quantity + transfers in - transfers out
+                    $approximateQuantity = max(0, $product['quantity'] + $totalIn - $totalOut);
+                    $product['quantity'] = $approximateQuantity;
+
+                    echo json_encode([
+                        "success" => true,
+                        "message" => "Product found by name",
+                        "product" => $product
+                    ]);
+                } else {
+                    echo json_encode([
+                        "success" => false,
+                        "message" => "Product found but not in requested location. Product is in: " . $effective_location_name
+                    ]);
+                }
+            } else {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Product not found with name: " . $product_name
+                ]);
+            }
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage(),
+                "data" => []
+            ]);
+        }
+        break;
+
     case 'check_barcode':
         try {
             $barcode = $data['barcode'] ?? '';
@@ -3565,9 +3676,12 @@ case 'get_products_oldest_batch_for_transfer':
             
             // Find product by barcode first
             $stmt = $conn->prepare(
-                "SELECT p.*, l.location_name AS base_location_name
+                "SELECT p.*, l.location_name AS base_location_name,
+                        c.category_name, b.brand
                  FROM tbl_product p
                  LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                  WHERE p.barcode = ?
                  AND (p.status IS NULL OR p.status <> 'archived')
                  LIMIT 1"
@@ -3609,6 +3723,8 @@ case 'get_products_oldest_batch_for_transfer':
                 if ($matchesTarget) {
                     $product['location_id'] = $effective_location_id;
                     $product['location_name'] = $effective_location_name;
+                    $product['category'] = $product['category_name'];
+                    $product['brand'] = $product['brand'] ?: 'N/A';
 
                     // Compute an approximate on-hand for resolved location using transfers in/out
                     // Transfers IN to this location

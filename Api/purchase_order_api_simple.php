@@ -567,11 +567,11 @@ function getReceivedItemsDetails($conn) {
                 $fallbackQuery = "SELECT 
                                     pod.product_name,
                                     pod.quantity as ordered_qty,
-                                    pod.received_qty,
+                                    COALESCE(pod.received_qty, pod.quantity) as received_qty,
                                     0 as unit_price
                                   FROM tbl_purchase_order_dtl pod
                                   JOIN tbl_purchase_receiving_header prh ON pod.purchase_header_id = prh.purchase_header_id
-                                  WHERE prh.receiving_id = ? AND pod.received_qty > 0";
+                                  WHERE prh.receiving_id = ?";
                 $fallbackStmt = $conn->prepare($fallbackQuery);
                 $fallbackStmt->execute([$receivingId]);
                 $details = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);

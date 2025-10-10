@@ -631,11 +631,42 @@ function ConvenienceStore() {
   // --- Pagination State ---
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20; // Increased from 10 to show more products
-  const paginatedProducts = products.slice(
+  
+  // Filter products by search term and category
+  const filteredProducts = products.filter(product => {
+    // Filter by search term
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        product.product_name?.toLowerCase().includes(searchLower) ||
+        product.barcode?.toLowerCase().includes(searchLower) ||
+        product.category?.toLowerCase().includes(searchLower) ||
+        product.brand?.toLowerCase().includes(searchLower) ||
+        product.supplier_name?.toLowerCase().includes(searchLower);
+      if (!matchesSearch) return false;
+    }
+    
+    // Filter by category
+    if (selectedCategory !== 'all') {
+      const categoryMatch = typeof product.category === 'string' 
+        ? product.category === selectedCategory 
+        : product.category?.category_name === selectedCategory;
+      if (!categoryMatch) return false;
+    }
+    
+    // Filter by product type
+    if (selectedProductType !== 'all') {
+      if (product.product_type !== selectedProductType) return false;
+    }
+    
+    return true;
+  });
+  
+  const paginatedProducts = filteredProducts.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
-  const totalPages = Math.ceil(products.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
 
   return (
     <div className="min-h-screen w-full" style={{ backgroundColor: theme.bg.primary }}>
@@ -915,7 +946,7 @@ function ConvenienceStore() {
               <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Store Products</h3>
               <div className="flex items-center gap-4">
                 <div className="text-sm" style={{ color: theme.text.secondary }}>
-                  {products.length} products found
+                  {filteredProducts.length} products found
                 </div>
                 {products.length > 0 && (
                   <div className="flex items-center gap-3 text-xs">

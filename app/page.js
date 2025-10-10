@@ -1,11 +1,13 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { toast } from 'react-toastify';
+import { getApiUrl } from './lib/apiConfig';
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`;
+const API_BASE_URL = getApiUrl('login.php');
 
 export default function LoginForm() {
   const [username, setUsername] = useState("");
@@ -21,16 +23,9 @@ export default function LoginForm() {
   const [debugInfo, setDebugInfo] = useState("");
   const router = useRouter();
 
-  // Generate captcha when component mounts
-  useEffect(() => {
-    generateCaptcha();
-  }, []);
-
   // Auto-show captcha once both username and password are filled
   useEffect(() => {
-    
     if (username.trim() && password.trim() && !showCaptcha) {
-      
       setShowCaptcha(true);
       generateCaptcha();
     }
@@ -38,28 +33,39 @@ export default function LoginForm() {
 
   const generateCaptcha = async () => {
     try {
-      
+      console.log('Generating captcha...');
       const response = await axios.post(API_BASE_URL, {
         action: "generate_captcha"
       });
       
-      
+      console.log('Captcha API response:', response.data);
       
       if (response.data.success) {
         setCaptchaQuestion(response.data.question);
         setCaptchaAnswer(response.data.answer.toString());
+        console.log('Captcha set:', response.data.question, 'Answer:', response.data.answer);
         
         if (debugMode) {
           setDebugInfo(`Generated: ${response.data.question} | Answer: ${response.data.answer} | Type: ${typeof response.data.answer}`);
         }
+      } else {
+        console.error('Captcha API failed:', response.data);
+        // Use fallback if API returns success: false
+        const num1 = Math.floor(Math.random() * 10) + 1;
+        const num2 = Math.floor(Math.random() * 10) + 1;
+        setCaptchaQuestion(`What is ${num1} + ${num2}?`);
+        setCaptchaAnswer((num1 + num2).toString());
+        console.log('Using fallback captcha:', `${num1} + ${num2} = ${num1 + num2}`);
       }
     } catch (err) {
+      console.error('Captcha generation error:', err);
       
       // Fallback captcha if API fails
       const num1 = Math.floor(Math.random() * 10) + 1;
       const num2 = Math.floor(Math.random() * 10) + 1;
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);
       setCaptchaAnswer((num1 + num2).toString());
+      console.log('Using fallback captcha due to error:', `${num1} + ${num2} = ${num1 + num2}`);
       
       if (debugMode) {
         setDebugInfo(`Fallback: ${num1} + ${num2} = ${num1 + num2}`);
@@ -255,7 +261,16 @@ export default function LoginForm() {
             <p className="text-gray-800">Please sign in to your account</p>
           </div>
 
-          {/* Debug toggle removed as requested */}
+          {/* Debug toggle for troubleshooting */}
+          <div className="text-center mb-4">
+            <button
+              type="button"
+              onClick={() => setDebugMode(!debugMode)}
+              className="px-3 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              {debugMode ? 'Hide Debug' : 'Show Debug'}
+            </button>
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -359,6 +374,19 @@ export default function LoginForm() {
             </div>
           )}
 
+          {/* Force captcha generation button for debugging */}
+          {showCaptcha && (
+            <div className="text-center mb-2">
+              <button
+                type="button"
+                onClick={generateCaptcha}
+                className="px-3 py-1 text-xs bg-orange-500 text-white rounded hover:bg-orange-600"
+              >
+                Regenerate Captcha
+              </button>
+            </div>
+          )}
+
           {showCaptcha && (
             <div
               className={`${(captchaInput.trim() && captchaInput.toString() === captchaAnswer.toString())
@@ -373,7 +401,9 @@ export default function LoginForm() {
               </div>
               
               <div className="bg-white p-3 rounded-lg border border-blue-300 mb-3">
-                <p className="text-center text-lg font-medium text-gray-800">{captchaQuestion}</p>
+                <p className="text-center text-lg font-medium text-gray-800">
+                  {captchaQuestion || 'Loading security question...'}
+                </p>
                 {debugMode && (
                   <p className="text-center text-xs text-blue-500 mt-1">
                     Debug: Answer is "{captchaAnswer}" (Type: {typeof captchaAnswer})

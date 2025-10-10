@@ -30,6 +30,9 @@ try {
         case 'suppliers':
             getSuppliers($conn);
             break;
+        case 'add_supplier':
+            addSupplier($conn);
+            break;
         default:
             echo json_encode(['success' => false, 'error' => 'Invalid action: ' . $action]);
             break;
@@ -126,6 +129,81 @@ function createPurchaseOrder($conn) {
         // Rollback transaction on error
         $conn->rollBack();
         echo json_encode(['success' => false, 'error' => 'Error creating purchase order: ' . $e->getMessage()]);
+    }
+}
+
+function addSupplier($conn) {
+    try {
+        // Get JSON input
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        if (!$input) {
+            echo json_encode(['success' => false, 'error' => 'Invalid input data']);
+            return;
+        }
+        
+        // Extract only the fields that are used in the frontend
+        $supplier_name = $input['supplier_name'] ?? '';
+        $supplier_address = $input['supplier_address'] ?? '';
+        $supplier_contact = $input['supplier_contact'] ?? '';
+        $supplier_email = $input['supplier_email'] ?? '';
+        $primary_phone = $input['primary_phone'] ?? '';
+        $primary_email = $input['primary_email'] ?? '';
+        $contact_person = $input['contact_person'] ?? '';
+        $contact_title = $input['contact_title'] ?? '';
+        $notes = $input['notes'] ?? '';
+        
+        // Validate required fields
+        if (empty($supplier_name) || empty($supplier_contact) || empty($supplier_email)) {
+            echo json_encode([
+                'success' => false, 
+                'error' => 'Supplier name, contact number, and email are required'
+            ]);
+            return;
+        }
+        
+        // Check for duplicate supplier name
+        $checkStmt = $conn->prepare("SELECT supplier_id FROM tbl_supplier WHERE supplier_name = ? AND status = 'active' LIMIT 1");
+        $checkStmt->execute([$supplier_name]);
+        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing) {
+            echo json_encode([
+                'success' => false, 
+                'error' => 'Supplier name already exists'
+            ]);
+            return;
+        }
+        
+        // Insert supplier with only the fields from frontend
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_supplier (
+                supplier_name, supplier_address, supplier_contact, supplier_email,
+                primary_phone, primary_email, contact_person, contact_title, notes, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+        ");
+        
+        $stmt->execute([
+            $supplier_name, $supplier_address, $supplier_contact, $supplier_email,
+            $primary_phone, $primary_email, $contact_person, $contact_title, $notes
+        ]);
+        
+        $supplier_id = $conn->lastInsertId();
+        
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Supplier added successfully',
+            'data' => [
+                'supplier_id' => $supplier_id,
+                'supplier_name' => $supplier_name
+            ]
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false, 
+            'error' => 'Database error: ' . $e->getMessage()
+        ]);
     }
 }
 

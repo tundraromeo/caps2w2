@@ -69,6 +69,20 @@ function CreatePurchaseOrder() {
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState({ emp_id: null, full_name: '' });
 
+  // Supplier Modal states
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [supplierFormData, setSupplierFormData] = useState({
+    supplier_name: "",
+    supplier_address: "",
+    supplier_contact: "",
+    supplier_email: "",
+    primary_phone: "",
+    primary_email: "",
+    contact_person: "",
+    contact_title: "",
+    notes: "",
+  });
+
   // Purchase Order List states
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [poLoading, setPoLoading] = useState(true);
@@ -209,6 +223,81 @@ function CreatePurchaseOrder() {
       ...prev,
       [name]: value
     }));
+  };
+
+  // Supplier form handlers
+  const handleSupplierInputChange = (field, value) => {
+    setSupplierFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const clearSupplierForm = () => {
+    setSupplierFormData({
+      supplier_name: "",
+      supplier_address: "",
+      supplier_contact: "",
+      supplier_email: "",
+      primary_phone: "",
+      primary_email: "",
+      contact_person: "",
+      contact_title: "",
+      notes: "",
+    });
+  };
+
+  const openSupplierModal = () => {
+    clearSupplierForm();
+    setShowSupplierModal(true);
+  };
+
+  const closeSupplierModal = () => {
+    setShowSupplierModal(false);
+    clearSupplierForm();
+  };
+
+  const handleAddSupplier = async (e) => {
+    e.preventDefault();
+    
+    if (
+      !supplierFormData.supplier_name ||
+      !supplierFormData.supplier_contact ||
+      !supplierFormData.supplier_email
+    ) {
+      toast.error("Supplier name, contact, and email are required");
+      return;
+    }
+
+    const supplierData = { ...supplierFormData };
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${CREATE_PO_API}?action=add_supplier`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(supplierData)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(result.message || "Supplier added successfully");
+        setShowSupplierModal(false);
+        clearSupplierForm();
+        fetchSuppliers(); // Refresh supplier list
+      } else {
+        toast.error(result.message || result.error || "Failed to add supplier");
+      }
+    } catch (error) {
+      toast.error("Failed to add supplier: " + (error?.response?.data?.message || error.message));
+      console.error("Error adding supplier:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
      const addProduct = () => {
@@ -1371,20 +1460,31 @@ function CreatePurchaseOrder() {
                 <label className="block text-sm font-medium inventory-muted mb-2">
                   Supplier *
                 </label>
-                <select
-                  name="supplier"
-                  value={formData.supplier}
-                  onChange={handleInputChange}
-                  className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-select"
-                  required
-                >
-                  <option value="">Select a supplier</option>
-                  {suppliers.map(supplier => (
-                    <option key={supplier.supplier_id} value={supplier.supplier_id}>
-                      {supplier.supplier_name} - {supplier.supplier_contact}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select
+                    name="supplier"
+                    value={formData.supplier}
+                    onChange={handleInputChange}
+                    className="flex-1 px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-select"
+                    required
+                  >
+                    <option value="">Select a supplier</option>
+                    {suppliers.map(supplier => (
+                      <option key={supplier.supplier_id} value={supplier.supplier_id}>
+                        {supplier.supplier_name} - {supplier.supplier_contact}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={openSupplierModal}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onMouseEnter={(e) => handleMouseEnter(e, "Add new supplier")}
+                    onMouseLeave={handleMouseLeave}
+                  >
+                    <FaPlus className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -2544,6 +2644,203 @@ function CreatePurchaseOrder() {
               borderTopColor: 'rgba(0, 0, 0, 0.9)'
             }}
           />
+        </div>
+      )}
+
+      {/* Add Supplier Modal */}
+      {showSupplierModal && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="backdrop-blur-md rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border" style={{ backgroundColor: 'white', borderColor: 'var(--inventory-border)' }}>
+            <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ borderColor: 'var(--inventory-border)', backgroundColor: 'white' }}>
+              <h3 className="text-lg font-semibold" style={{ color: 'var(--inventory-text-primary)' }}>Add New Supplier</h3>
+              <button onClick={closeSupplierModal} className="inventory-muted hover:text-red-500">
+                <FaTimes className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+              <form onSubmit={handleAddSupplier} className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Supplier Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={supplierFormData.supplier_name || ""}
+                      onChange={(e) => handleSupplierInputChange("supplier_name", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Contact Number * (11 digits)</label>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={11}
+                      pattern="[0-9]{11}"
+                      value={supplierFormData.supplier_contact || ""}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                        handleSupplierInputChange("supplier_contact", value);
+                      }}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                      placeholder="09123456789"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Email *</label>
+                    <input
+                      type="email"
+                      required
+                      value={supplierFormData.supplier_email || ""}
+                      onChange={(e) => handleSupplierInputChange("supplier_email", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Primary Phone (11 digits)</label>
+                    <input
+                      type="tel"
+                      maxLength={11}
+                      pattern="[0-9]{11}"
+                      value={supplierFormData.primary_phone || ""}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+                        handleSupplierInputChange("primary_phone", value);
+                      }}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                      placeholder="09123456789"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Primary Email</label>
+                    <input
+                      type="email"
+                      value={supplierFormData.primary_email || ""}
+                      onChange={(e) => handleSupplierInputChange("primary_email", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Contact Person</label>
+                    <input
+                      type="text"
+                      value={supplierFormData.contact_person || ""}
+                      onChange={(e) => handleSupplierInputChange("contact_person", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Contact Title</label>
+                    <input
+                      type="text"
+                      value={supplierFormData.contact_title || ""}
+                      onChange={(e) => handleSupplierInputChange("contact_title", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+
+
+                  <div className="md:col-span-3">
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Address</label>
+                    <textarea
+                      rows={3}
+                      value={supplierFormData.supplier_address}
+                      onChange={(e) => handleSupplierInputChange("supplier_address", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-textarea"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Notes</label>
+                    <textarea
+                      rows={3}
+                      value={supplierFormData.notes}
+                      onChange={(e) => handleSupplierInputChange("notes", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-textarea"
+                      style={{ 
+                        borderColor: 'var(--inventory-border)', 
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-4 mt-6">
+                  <button
+                    type="button"
+                    onClick={closeSupplierModal}
+                    className="px-4 py-2 border rounded-md hover:opacity-70"
+                    style={{ 
+                      borderColor: 'var(--inventory-border)', 
+                      backgroundColor: 'var(--inventory-bg-secondary)',
+                      color: 'var(--inventory-text-primary)'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-2 rounded-md disabled:opacity-50"
+                    style={{ 
+                      backgroundColor: 'var(--inventory-accent)',
+                      color: '#ffffff'
+                    }}
+                  >
+                    {loading ? "Adding..." : "Add Supplier"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
 
