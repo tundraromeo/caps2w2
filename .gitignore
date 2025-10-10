@@ -55,6 +55,9 @@ build/
 vendor/
 composer.phar
 
+# API files - exclude from version control
+Api/
+
 # Logs
 logs/
 *.log
