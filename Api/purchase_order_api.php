@@ -200,14 +200,21 @@ function receiveItems($conn) {
     
     try {
         // Create receiving header with completed status
+        // Truncate fields to prevent truncation errors
+        $deliveryReceiptNo = isset($input['delivery_receipt_no']) ? 
+            substr(trim($input['delivery_receipt_no']), 0, 100) : '';
+        $notes = isset($input['notes']) ? 
+            substr(trim($input['notes']), 0, 500) : '';
+        
         $receivingQuery = "INSERT INTO tbl_purchase_receiving_header (purchase_header_id, received_by, delivery_receipt_no, notes, receiving_date, receiving_time, status) 
-                          VALUES (?, ?, ?, ?, CURDATE(), CURTIME(), 'completed')";
+                          VALUES (?, ?, ?, ?, CURDATE(), CURTIME(), ?)";
         $stmt = $conn->prepare($receivingQuery);
         $stmt->execute([
             $input['purchase_header_id'], 
             21, // Default employee ID
-            $input['delivery_receipt_no'] ?? '', 
-            $input['notes'] ?? ''
+            $deliveryReceiptNo, 
+            $notes,
+            'completed' // Explicitly pass as parameter to avoid any string issues
         ]);
         
         $receivingId = $conn->lastInsertId();
@@ -230,8 +237,9 @@ function receiveItems($conn) {
                 if ($row) { $orderedQty = intval($row['quantity']); }
             }
 
-            // Get product name for the detail record
+            // Get product name for the detail record and truncate to prevent errors
             $productName = $item['product_name'] ?? 'Unknown Product';
+            $productName = substr($productName, 0, 255); // Truncate to 255 chars to prevent truncation errors
             
             // Insert using the original table columns; pass neutral values for removed fields
             $detailQuery = "INSERT INTO tbl_purchase_receiving_dtl (receiving_id, product_id, product_name, ordered_qty, received_qty, unit_price, batch_number, expiration_date) 
@@ -240,7 +248,7 @@ function receiveItems($conn) {
             $detailStmt->execute([
                 $receivingId,
                 $productId,
-                $productName,  // product_name
+                $productName,  // product_name (truncated)
                 $orderedQty,
                 $receivedQty,
                 0,            // unit_price (deprecated)

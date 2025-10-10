@@ -771,13 +771,13 @@ function get_fifo_stock($conn, $data) {
 function get_products_oldest_batch($conn, $data) {
     try {
         $location_id = $data['location_id'] ?? 0;
-        
+
         $sql = "
-            SELECT 
+            SELECT
                 p.product_id,
                 p.product_name,
                 c.category_name as category,
-                p.quantity,
+                COALESCE(SUM(fs.available_quantity), 0) as total_quantity,
                 p.barcode,
                 p.srp,
                 p.srp as unit_price,
@@ -796,7 +796,7 @@ function get_products_oldest_batch($conn, $data) {
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN (
-                SELECT 
+                SELECT
                     fs2.product_id,
                     fs2.srp as first_batch_srp,
                     ROW_NUMBER() OVER (PARTITION BY fs2.product_id ORDER BY fs2.entry_date ASC, fs2.fifo_id ASC) as rn
@@ -805,26 +805,26 @@ function get_products_oldest_batch($conn, $data) {
             ) first_batch ON p.product_id = first_batch.product_id AND first_batch.rn = 1
             WHERE p.status = 'active'
         ";
-        
+
         $params = [];
-        
+
         if ($location_id > 0) {
             $sql .= " AND p.location_id = ?";
             $params[] = $location_id;
         }
-        
-        $sql .= " GROUP BY p.product_id, p.product_name, c.category_name, p.quantity, p.barcode, p.srp, p.location_id, l.location_name, b.brand, s.supplier_name ORDER BY earliest_expiry ASC";
-        
+
+        $sql .= " GROUP BY p.product_id, p.product_name, c.category_name, p.barcode, p.srp, p.location_id, l.location_name, b.brand, s.supplier_name ORDER BY earliest_expiry ASC";
+
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
         $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+
         echo json_encode([
             "success" => true,
             "data" => $products,
             "count" => count($products)
         ]);
-        
+
     } catch (Exception $e) {
         echo json_encode([
             "success" => false,

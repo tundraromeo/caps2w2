@@ -972,11 +972,11 @@ calculateLowStockAndExpiring(activeProducts);
   
     function calculateWarehouseValue(products) {
   const totalValue = products.reduce((sum, product) => {
-    return sum + (Number.parseFloat(product.srp) || 0) * (Number.parseFloat(product.product_quantity || product.quantity || 0))
+    return sum + (Number.parseFloat(product.srp) || 0) * (Number.parseFloat(product.total_quantity || product.product_quantity || product.quantity || 0))
   }, 0)
-  
+
   // Calculate total quantity from product quantity
-  const totalProductQuantity = products.reduce((sum, product) => sum + (Number(product.product_quantity || product.quantity || 0)), 0);
+  const totalProductQuantity = products.reduce((sum, product) => sum + (Number(product.total_quantity || product.product_quantity || product.quantity || 0)), 0);
   
   setStats((prev) => ({
     ...prev,

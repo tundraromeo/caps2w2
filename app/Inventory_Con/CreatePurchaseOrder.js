@@ -358,6 +358,21 @@ function CreatePurchaseOrder() {
       return;
     }
 
+    // Validate expected delivery date is required
+    if (!formData.expectedDelivery) {
+      toast.error("Please enter an expected delivery date");
+      return;
+    }
+
+    // Validate expected delivery date is not earlier than order date
+    const orderDate = new Date(formData.orderDate);
+    const expectedDeliveryDate = new Date(formData.expectedDelivery);
+    
+    if (expectedDeliveryDate < orderDate) {
+      toast.error("Expected delivery date cannot be earlier than the order date");
+      return;
+    }
+
     if (selectedProducts.length === 0) {
       toast.error("Please add at least one product");
       return;
@@ -370,6 +385,13 @@ function CreatePurchaseOrder() {
          toast.error(`Product ${i + 1}: Please enter a product name`);
          return;
        }
+
+       // Validate product name length (prevent truncation)
+       if (product.searchTerm.length > 255) {
+         toast.error(`Product ${i + 1}: Product name is too long (maximum 255 characters)`);
+         return;
+       }
+
        if (!product.quantity || product.quantity <= 0) {
          toast.error(`Product ${i + 1}: Please enter a valid quantity`);
          return;
@@ -993,6 +1015,18 @@ function CreatePurchaseOrder() {
       return;
     }
 
+    // Validate delivery receipt number length (prevent truncation)
+    if (receiveFormData.delivery_receipt_no.length > 100) {
+      toast.error("Delivery receipt number is too long (maximum 100 characters)");
+      return;
+    }
+
+    // Validate notes length (prevent truncation)
+    if (receiveFormData.notes && receiveFormData.notes.length > 500) {
+      toast.error("Notes are too long (maximum 500 characters)");
+      return;
+    }
+
     const hasItems = receiveFormData.items.some(item => item.received_qty > 0);
     if (!hasItems) {
       toast.error("Please enter received quantities for at least one item");
@@ -1507,13 +1541,15 @@ function CreatePurchaseOrder() {
 
               <div>
                 <label className="block text-sm font-medium inventory-muted mb-2">
-                  Expected Delivery
+                  Expected Delivery <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="date"
                   name="expectedDelivery"
                   value={formData.expectedDelivery}
                   onChange={handleInputChange}
+                  min={formData.orderDate}
+                  required
                   className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-input"
                   style={{
                     backgroundColor: 'var(--inventory-bg-secondary)',

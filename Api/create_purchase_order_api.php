@@ -69,6 +69,24 @@ function createPurchaseOrder($conn) {
         return;
     }
     
+    // Validate expected delivery date is required
+    if (!isset($input['expected_delivery_date']) || empty($input['expected_delivery_date'])) {
+        echo json_encode(['success' => false, 'error' => 'Expected delivery date is required']);
+        return;
+    }
+    
+    // Validate expected delivery date (must not be earlier than order date)
+    $orderDate = date('Y-m-d'); // Current date
+    $expectedDeliveryDate = $input['expected_delivery_date'];
+    
+    if (strtotime($expectedDeliveryDate) < strtotime($orderDate)) {
+        echo json_encode([
+            'success' => false, 
+            'error' => 'Expected delivery date cannot be earlier than the order date'
+        ]);
+        return;
+    }
+    
     // Start transaction
     $conn->beginTransaction();
     
@@ -100,13 +118,18 @@ function createPurchaseOrder($conn) {
             $quantity = intval($product['quantity'] ?? 1);
             $unitType = $product['unit_type'] ?? 'pieces';
             $searchTerm = $product['searchTerm'] ?? '';
-            
+
+            // Validate product name length (prevent truncation errors)
+            if (strlen($searchTerm) > 255) {
+                throw new Exception("Product name is too long (maximum 255 characters): " . substr($searchTerm, 0, 50) . "...");
+            }
+
             // Calculate missing quantity (initially same as ordered quantity)
             $missingQty = $quantity;
-            
+
             $detailStmt->execute([
-                $purchaseHeaderId, 
-                $quantity, 
+                $purchaseHeaderId,
+                $quantity,
                 $unitType,
                 $searchTerm,
                 0, // received_qty starts at 0

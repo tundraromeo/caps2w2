@@ -761,18 +761,18 @@ function Warehouse() {
       return new Date(p.earliest_expiration) < new Date();
     });
     const lowStock = productsWithEarliestExpiry.filter(p => {
-      const qty = parseInt(p.quantity || p.product_quantity || 0);
+      const qty = parseInt(p.total_quantity || p.quantity || p.product_quantity || 0);
       return qty > 0 && qty <= (settings.lowStockThreshold || 10);
     });
     const outOfStock = productsWithEarliestExpiry.filter(p => {
-      const qty = parseInt(p.quantity || p.product_quantity || 0);
+      const qty = parseInt(p.total_quantity || p.quantity || p.product_quantity || 0);
       return qty <= 0;
     });
 
     setNotifications({
       expiring: expiringWithBatchInfo.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
       expired: expired.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
-      lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
+      lowStock: lowStock.sort((a, b) => parseInt(a.total_quantity || a.quantity || 0) - parseInt(b.total_quantity || b.quantity || 0)),
       outOfStock: outOfStock
     });
     }
@@ -942,11 +942,11 @@ calculateLowStockAndExpiring(activeProducts);
   
     function calculateWarehouseValue(products) {
   const totalValue = products.reduce((sum, product) => {
-    return sum + (Number.parseFloat(product.srp) || 0) * (Number.parseFloat(product.product_quantity || product.quantity || 0))
+    return sum + (Number.parseFloat(product.srp) || 0) * (Number.parseFloat(product.total_quantity || product.product_quantity || product.quantity || 0))
   }, 0)
-  
+
   // Calculate total quantity from product quantity
-  const totalProductQuantity = products.reduce((sum, product) => sum + (Number(product.product_quantity || product.quantity || 0)), 0);
+  const totalProductQuantity = products.reduce((sum, product) => sum + (Number(product.total_quantity || product.product_quantity || product.quantity || 0)), 0);
   
   setStats((prev) => ({
     ...prev,
@@ -3070,18 +3070,18 @@ console.log("API response for product quantities:", response);
                     // Filter by stock status
                     if (filterOptions.stockStatus === 'all') return true;
                     if (filterOptions.stockStatus === 'low') {
-                      const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
+                      const qty = product.total_quantity || product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
                       return qty > 0 && qty <= 10;
                     }
                     if (filterOptions.stockStatus === 'out') {
-                      const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
+                      const qty = product.total_quantity || product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
                       return qty <= 0;
                     }
                     return true;
                   })
                   .map((product) => {
                     // Check for alert conditions
-                    const quantity = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
+                    const quantity = product.total_quantity || product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
                     const isLowStock = settings.lowStockAlerts && isStockLow(quantity);
                     const isOutOfStock = quantity <= 0;
                     const isExpiringSoon = product.earliest_expiration && settings.expiryAlerts && isProductExpiringSoon(product.earliest_expiration);
@@ -3133,14 +3133,14 @@ console.log("API response for product quantities:", response);
                       })()}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <div className="font-semibold" style={{ 
-                        color: (product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 0 
-                          ? theme.colors.danger 
-                          : (product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 10 
-                            ? theme.colors.warning 
+                      <div className="font-semibold" style={{
+                        color: (product.total_quantity || product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 0
+                          ? theme.colors.danger
+                          : (product.total_quantity || product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 10
+                            ? theme.colors.warning
                             : theme.text.primary
                       }}>
-                        {product.oldest_batch_quantity || product.product_quantity || product.quantity || 0}
+                        {product.total_quantity || product.oldest_batch_quantity || product.product_quantity || product.quantity || 0}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-sm" style={{ color: theme.text.primary }}>
@@ -3179,14 +3179,14 @@ console.log("API response for product quantities:", response);
                     </td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full" style={{
-                        backgroundColor: getStockStatus(product.quantity) === 'out of stock' ? theme.colors.danger + '20' : 
-                                       getStockStatus(product.quantity) === 'low stock' ? theme.colors.warning + '20' : 
+                        backgroundColor: getStockStatus(product.total_quantity || product.quantity) === 'out of stock' ? theme.colors.danger + '20' :
+                                       getStockStatus(product.total_quantity || product.quantity) === 'low stock' ? theme.colors.warning + '20' :
                                        theme.colors.success + '20',
-                        color: getStockStatus(product.quantity) === 'out of stock' ? theme.colors.danger : 
-                               getStockStatus(product.quantity) === 'low stock' ? theme.colors.warning : 
+                        color: getStockStatus(product.total_quantity || product.quantity) === 'out of stock' ? theme.colors.danger :
+                               getStockStatus(product.total_quantity || product.quantity) === 'low stock' ? theme.colors.warning :
                                theme.colors.success
                       }}>
-                        {getStockStatus(product.quantity)}
+                        {getStockStatus(product.total_quantity || product.quantity)}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-center">

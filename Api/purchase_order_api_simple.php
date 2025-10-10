@@ -96,6 +96,24 @@ function createPurchaseOrder($conn) {
         return;
     }
     
+    // Validate expected delivery date is required
+    if (!isset($input['expected_delivery_date']) || empty($input['expected_delivery_date'])) {
+        echo json_encode(['success' => false, 'error' => 'Expected delivery date is required']);
+        return;
+    }
+    
+    // Validate expected delivery date (must not be earlier than order date)
+    $orderDate = date('Y-m-d'); // Current date
+    $expectedDeliveryDate = $input['expected_delivery_date'];
+    
+    if (strtotime($expectedDeliveryDate) < strtotime($orderDate)) {
+        echo json_encode([
+            'success' => false, 
+            'error' => 'Expected delivery date cannot be earlier than the order date'
+        ]);
+        return;
+    }
+    
     // Start transaction
     $conn->beginTransaction();
     
@@ -269,55 +287,74 @@ function updatePOStatus($conn) {
 
 function updateReceivedQuantities($conn) {
     $input = json_decode(file_get_contents('php://input'), true);
-    
+
     if (!$input || !isset($input['purchase_header_id']) || !isset($input['items'])) {
         echo json_encode(['success' => false, 'error' => 'Purchase header ID and items are required']);
         return;
     }
-    
+
     try {
         $conn->beginTransaction();
-        
+
+        // Validate and sanitize input data
+        $purchaseHeaderId = intval($input['purchase_header_id']);
+
         // Update each item's received quantity
         foreach ($input['items'] as $item) {
             $receivedQty = intval($item['received_qty'] ?? 0);
             $missingQty = intval($item['missing_qty'] ?? 0);
             $purchaseDtlId = intval($item['purchase_dtl_id'] ?? 0);
-            
-            $query = "UPDATE tbl_purchase_order_dtl 
-                     SET received_qty = ?, missing_qty = ? 
+
+            if ($purchaseDtlId <= 0) {
+                throw new Exception("Invalid purchase detail ID: $purchaseDtlId");
+            }
+
+            $query = "UPDATE tbl_purchase_order_dtl
+                     SET received_qty = ?, missing_qty = ?
                      WHERE purchase_dtl_id = ?";
             $stmt = $conn->prepare($query);
             $stmt->execute([$receivedQty, $missingQty, $purchaseDtlId]);
         }
-        
+
         // Create receiving record with completed status
-        $receivingQuery = "INSERT INTO tbl_purchase_receiving_header (purchase_header_id, received_by, delivery_receipt_no, notes, receiving_date, receiving_time, status) 
-                          VALUES (?, ?, ?, ?, CURDATE(), CURTIME(), 'completed')";
+        $deliveryReceiptNo = isset($input['delivery_receipt_no']) ?
+            substr(trim($input['delivery_receipt_no']), 0, 100) : // Truncate to 100 chars if too long
+            'AUTO-' . date('YmdHis');
+
+        $notes = isset($input['notes']) ?
+            substr(trim($input['notes']), 0, 500) : // Truncate to 500 chars if too long
+            'Auto-received via API';
+
+        $receivingQuery = "INSERT INTO tbl_purchase_receiving_header (purchase_header_id, received_by, delivery_receipt_no, notes, receiving_date, receiving_time, status)
+                          VALUES (?, ?, ?, ?, CURDATE(), CURTIME(), ?)";
         $stmt = $conn->prepare($receivingQuery);
         $stmt->execute([
-            $input['purchase_header_id'], 
+            $purchaseHeaderId,
             21, // Default employee ID
-            'AUTO-' . date('YmdHis'), 
-            'Auto-received via API'
+            $deliveryReceiptNo,
+            $notes,
+            'completed' // Explicitly pass as parameter
         ]);
-        
+
         $receivingId = $conn->lastInsertId();
-        
+
         // Create receiving details
         foreach ($input['items'] as $item) {
             $receivedQty = intval($item['received_qty'] ?? 0);
             $purchaseDtlId = intval($item['purchase_dtl_id'] ?? 0);
-            
-            if ($receivedQty > 0) {
-                // Get product name from purchase order detail
+
+            if ($receivedQty > 0 && $purchaseDtlId > 0) {
+                // Get product name from purchase order detail with length check
                 $productQuery = "SELECT product_name FROM tbl_purchase_order_dtl WHERE purchase_dtl_id = ?";
                 $productStmt = $conn->prepare($productQuery);
                 $productStmt->execute([$purchaseDtlId]);
                 $productData = $productStmt->fetch(PDO::FETCH_ASSOC);
                 $productName = $productData['product_name'] ?? 'Unknown Product';
-                
-                $detailQuery = "INSERT INTO tbl_purchase_receiving_dtl (receiving_id, product_name, ordered_qty, received_qty, unit_price) 
+
+                // Truncate product name if it's too long (common cause of truncation errors)
+                $productName = substr($productName, 0, 255);
+
+                $detailQuery = "INSERT INTO tbl_purchase_receiving_dtl (receiving_id, product_name, ordered_qty, received_qty, unit_price)
                                VALUES (?, ?, ?, ?, ?)";
                 $detailStmt = $conn->prepare($detailQuery);
                 $detailStmt->execute([
@@ -329,15 +366,15 @@ function updateReceivedQuantities($conn) {
                 ]);
             }
         }
-        
+
         $conn->commit();
-        
+
         echo json_encode([
-            'success' => true, 
+            'success' => true,
             'message' => 'Received quantities updated successfully',
             'receiving_id' => $receivingId
         ]);
-        
+
     } catch (Exception $e) {
         $conn->rollBack();
         echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
@@ -361,9 +398,13 @@ function updatePartialDelivery($conn) {
             $orderedQty = intval($item['ordered_qty'] ?? 0);
             $missingQty = max(0, $orderedQty - $receivedQty);
             $purchaseDtlId = intval($item['purchase_dtl_id'] ?? 0);
-            
-            $query = "UPDATE tbl_purchase_order_dtl 
-                     SET received_qty = ?, missing_qty = ? 
+
+            if ($purchaseDtlId <= 0) {
+                throw new Exception("Invalid purchase detail ID: $purchaseDtlId");
+            }
+
+            $query = "UPDATE tbl_purchase_order_dtl
+                     SET received_qty = ?, missing_qty = ?
                      WHERE purchase_dtl_id = ?";
             $stmt = $conn->prepare($query);
             $stmt->execute([$receivedQty, $missingQty, $purchaseDtlId]);
@@ -390,7 +431,7 @@ function updatePartialDelivery($conn) {
         // Update PO status
         $statusQuery = "UPDATE tbl_purchase_order_header SET status = ? WHERE purchase_header_id = ?";
         $statusStmt = $conn->prepare($statusQuery);
-        $statusStmt->execute([$newStatus, $input['purchase_header_id']]);
+        $statusStmt->execute([$newStatus, $purchaseHeaderId]);
         
         $conn->commit();
         
