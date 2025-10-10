@@ -48,6 +48,12 @@ try {
         case 'receiving_list':
             getReceivingList($conn);
             break;
+        case 'received_items_details':
+            getReceivedItemsDetails($conn);
+            break;
+        case 'update_receiving_status':
+            updateReceivingStatus($conn);
+            break;
         case 'approve_purchase_order':
             approvePurchaseOrder($conn);
             break;
@@ -285,9 +291,9 @@ function updateReceivedQuantities($conn) {
             $stmt->execute([$receivedQty, $missingQty, $purchaseDtlId]);
         }
         
-        // Create receiving record
-        $receivingQuery = "INSERT INTO tbl_purchase_receiving_header (purchase_header_id, received_by, delivery_receipt_no, notes, receiving_date, receiving_time) 
-                          VALUES (?, ?, ?, ?, CURDATE(), CURTIME())";
+        // Create receiving record with completed status
+        $receivingQuery = "INSERT INTO tbl_purchase_receiving_header (purchase_header_id, received_by, delivery_receipt_no, notes, receiving_date, receiving_time, status) 
+                          VALUES (?, ?, ?, ?, CURDATE(), CURTIME(), 'completed')";
         $stmt = $conn->prepare($receivingQuery);
         $stmt->execute([
             $input['purchase_header_id'], 
@@ -492,6 +498,142 @@ function updateDeliveryStatus($conn) {
         } else {
             echo json_encode(['success' => false, 'error' => 'No rows updated']);
         }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+    }
+}
+
+function getReceivedItemsDetails($conn) {
+    $receivingId = $_GET['receiving_id'] ?? null;
+    
+    if (!$receivingId) {
+        echo json_encode(['success' => false, 'error' => 'Receiving ID is required']);
+        return;
+    }
+    
+    // Debug: Log the receiving ID being searched
+    error_log("🔍 Searching for receiving ID: " . $receivingId);
+    
+    try {
+        $query = "SELECT 
+                    prh.receiving_id,
+                    prh.purchase_header_id,
+                    po.po_number,
+                    s.supplier_name,
+                    prh.receiving_date,
+                    prh.receiving_time,
+                    prh.delivery_receipt_no,
+                    prh.notes,
+                    GROUP_CONCAT(CONCAT(prd.product_name, ' (', prd.received_qty, ')') SEPARATOR ', ') as received_items,
+                    CASE 
+                        WHEN po.status = 'received' THEN 'Complete'
+                        WHEN po.status = 'partial_delivery' THEN 'Partial'
+                        ELSE 'Ready'
+                    END as display_status
+                  FROM tbl_purchase_receiving_header prh
+                  JOIN tbl_purchase_order_header po ON prh.purchase_header_id = po.purchase_header_id
+                  JOIN tbl_supplier s ON po.supplier_id = s.supplier_id
+                  LEFT JOIN tbl_purchase_receiving_dtl prd ON prh.receiving_id = prd.receiving_id
+                  WHERE prh.receiving_id = ?
+                  GROUP BY prh.receiving_id";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->execute([$receivingId]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result) {
+            // Debug: Log what we found
+            error_log("✅ Found receiving record: " . print_r($result, true));
+            
+            // Also get detailed items - product_name is stored directly in receiving_dtl
+            $detailQuery = "SELECT 
+                              prd.receiving_dtl_id as product_id,
+                              prd.product_name,
+                              prd.ordered_qty,
+                              prd.received_qty,
+                              prd.unit_price,
+                              prd.batch_number,
+                              prd.expiration_date
+                            FROM tbl_purchase_receiving_dtl prd
+                            WHERE prd.receiving_id = ?";
+            $detailStmt = $conn->prepare($detailQuery);
+            $detailStmt->execute([$receivingId]);
+            $details = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            error_log("📦 Receiving details found: " . count($details) . " items");
+            
+            // If no details found in receiving_dtl, try to get from purchase_order_dtl
+            if (empty($details)) {
+                $fallbackQuery = "SELECT 
+                                    pod.product_name,
+                                    pod.quantity as ordered_qty,
+                                    pod.received_qty,
+                                    0 as unit_price
+                                  FROM tbl_purchase_order_dtl pod
+                                  JOIN tbl_purchase_receiving_header prh ON pod.purchase_header_id = prh.purchase_header_id
+                                  WHERE prh.receiving_id = ? AND pod.received_qty > 0";
+                $fallbackStmt = $conn->prepare($fallbackQuery);
+                $fallbackStmt->execute([$receivingId]);
+                $details = $fallbackStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                error_log("📦 Fallback details found: " . count($details) . " items");
+            }
+            
+            // If still no details, create a placeholder entry
+            if (empty($details)) {
+                $details = [[
+                    'product_name' => 'Items received (details not available)',
+                    'ordered_qty' => '-',
+                    'received_qty' => 'Received',
+                    'unit_price' => 0
+                ]];
+                error_log("📦 Created placeholder details");
+            }
+            
+            $result['details'] = $details;
+            
+            echo json_encode(['success' => true, 'data' => $result]);
+        } else {
+            error_log("❌ No receiving record found for ID: " . $receivingId);
+            
+            // Let's check if the receiving_id exists at all
+            $checkQuery = "SELECT receiving_id FROM tbl_purchase_receiving_header WHERE receiving_id = ?";
+            $checkStmt = $conn->prepare($checkQuery);
+            $checkStmt->execute([$receivingId]);
+            $exists = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($exists) {
+                echo json_encode(['success' => false, 'error' => 'Receiving record exists but missing related data']);
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Receiving record not found for ID: ' . $receivingId]);
+            }
+        }
+        
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
+    }
+}
+
+function updateReceivingStatus($conn) {
+    $receivingId = $_GET['receiving_id'] ?? null;
+    $newStatus = $_GET['status'] ?? 'completed';
+    
+    if (!$receivingId) {
+        echo json_encode(['success' => false, 'error' => 'Receiving ID is required']);
+        return;
+    }
+    
+    try {
+        $query = "UPDATE tbl_purchase_receiving_header SET status = ? WHERE receiving_id = ?";
+        $stmt = $conn->prepare($query);
+        $result = $stmt->execute([$newStatus, $receivingId]);
+        
+        if ($result && $stmt->rowCount() > 0) {
+            echo json_encode(['success' => true, 'message' => 'Status updated successfully']);
+        } else {
+            echo json_encode(['success' => false, 'error' => 'No rows updated']);
+        }
+        
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
     }

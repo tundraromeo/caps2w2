@@ -67,7 +67,7 @@ function CreatePurchaseOrder() {
      const [selectedProducts, setSelectedProducts] = useState([]);
    const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState({ emp_id: 21 }); // Mock user ID
+  const [currentUser, setCurrentUser] = useState({ emp_id: null, full_name: '' });
 
   // Purchase Order List states
   const [purchaseOrders, setPurchaseOrders] = useState([]);
@@ -118,6 +118,8 @@ function CreatePurchaseOrder() {
     notes: "",
     items: []
   });
+  const [showReceivedItemsModal, setShowReceivedItemsModal] = useState(false);
+  const [selectedReceivedItems, setSelectedReceivedItems] = useState(null);
 
 
 
@@ -133,16 +135,41 @@ function CreatePurchaseOrder() {
     items: []
   });
 
+  // Load current user from session on component mount
+  useEffect(() => {
+    const userSession = sessionStorage.getItem('user_data');
+    if (userSession) {
+      try {
+        const userData = JSON.parse(userSession);
+        setCurrentUser({
+          emp_id: userData.user_id || 1, // Fallback to 1 if not found
+          full_name: userData.full_name || userData.username || 'Unknown User'
+        });
+        console.log('✅ Current user loaded:', userData.full_name, 'ID:', userData.user_id);
+      } catch (error) {
+        console.error('❌ Error parsing user session:', error);
+        // Set default fallback user
+        setCurrentUser({ emp_id: 1, full_name: 'Default User' });
+        toast.warning('Could not load user session. Using default user.');
+      }
+    } else {
+      // No session found - use fallback
+      console.warn('⚠️ No user session found. Using default user.');
+      setCurrentUser({ emp_id: 1, full_name: 'Default User' });
+      toast.warning('No active session found. Please login again.');
+    }
+  }, []);
+
      useEffect(() => {
-     if (activeTab === 'create') {
-       fetchSuppliers();
-     } else if (activeTab === 'list') {
-       fetchPurchaseOrders(poFilter);
-       fetchAllPurchaseOrders(); // Refresh counts when switching to list tab
-     } else if (activeTab === 'receive') {
-       fetchReceivingList();
-     }
-   }, [activeTab, poFilter]);
+    if (activeTab === 'create') {
+      fetchSuppliers();
+    } else if (activeTab === 'list') {
+      fetchPurchaseOrders(poFilter);
+      fetchAllPurchaseOrders(); // Refresh counts when switching to list tab
+    } else if (activeTab === 'receive') {
+      fetchReceivingList();
+    }
+  }, [activeTab, poFilter]);
 
      // No dropdown functionality needed
 
@@ -231,6 +258,12 @@ function CreatePurchaseOrder() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Validate user is logged in
+    if (!currentUser.emp_id) {
+      toast.error("No active user session. Please login again.");
+      return;
+    }
+
     if (!formData.supplier) {
       toast.error("Please select a supplier");
       return;
@@ -602,8 +635,8 @@ function CreatePurchaseOrder() {
       
       // Add approval details if status is 'approved'
       if (nextStatus === 'approved') {
-        requestBody.approved_by = 21; // Default user ID - you can get this from user context
-        requestBody.approval_notes = 'Purchase order approved via frontend';
+        requestBody.approved_by = currentUser.emp_id || 1; // Use current user's emp_id
+        requestBody.approval_notes = `Purchase order approved by ${currentUser.full_name}`;
       }
       
       const response = await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
@@ -741,6 +774,30 @@ function CreatePurchaseOrder() {
             received_items: item.received_items
           }))
         });
+        
+        // Auto-update pending statuses to completed for items that have been received
+        const pendingItems = data.data.filter(item => 
+          item.display_status === 'Ready' || item.status === 'pending'
+        );
+        
+        for (const item of pendingItems) {
+          try {
+            await fetch(`${API_BASE_SIMPLE}?action=update_receiving_status&receiving_id=${item.receiving_id}&status=completed`);
+          } catch (error) {
+            console.warn(`Failed to update status for receiving ID ${item.receiving_id}:`, error);
+          }
+        }
+        
+        // Refresh the list after status updates
+        if (pendingItems.length > 0) {
+          const refreshResponse = await fetch(`${API_BASE_SIMPLE}?action=receiving_list`);
+          const refreshData = await refreshResponse.json();
+          if (refreshData.success) {
+            setReceivingList(refreshData.data);
+            return;
+          }
+        }
+        
         setReceivingList(data.data);
       } else {
         toast.error('Failed to load receiving list');
@@ -750,6 +807,30 @@ function CreatePurchaseOrder() {
       toast.error('Error loading receiving list');
     } finally {
       setReceiveLoading(false);
+    }
+  };
+
+  const fetchReceivedItemsDetails = async (receivingId) => {
+    try {
+      const response = await fetch(`${API_BASE_SIMPLE}?action=received_items_details&receiving_id=${receivingId}`);
+      const data = await response.json();
+      console.log('📦 Received Items Details API Response:', {
+        success: data.success,
+        receivingId,
+        data: data.data,
+        details: data.data?.details,
+        received_items: data.data?.received_items
+      });
+      
+      if (data.success) {
+        setSelectedReceivedItems(data.data);
+        setShowReceivedItemsModal(true);
+      } else {
+        toast.error('Failed to load received items details');
+      }
+    } catch (error) {
+      console.error('Error fetching received items details:', error);
+      toast.error('Error loading received items details');
     }
   };
 
@@ -1806,24 +1887,30 @@ function CreatePurchaseOrder() {
                       </td>
                       <td className="px-6 py-4 text-sm max-w-xs group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
                         <button
-                          onClick={async () => {
-                            // Fetch PO details to show products
-                            try {
-                              const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${item.purchase_header_id}`);
-                              const data = await response.json();
-                              if (data.success) {
-                                setSelectedPO(data);
-                                setShowDetails(true);
-                              } else {
-                                toast.error("Failed to fetch purchase order details");
-                              }
-                            } catch (error) {
-                              toast.error("Error loading purchase order details");
-                              console.error('Error:', error);
+                          onClick={() => {
+                            if (item.receiving_id) {
+                              // Show received items details for items that have been received
+                              fetchReceivedItemsDetails(item.receiving_id);
+                            } else {
+                              // Fallback to PO details for items without receiving_id
+                              fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${item.purchase_header_id}`)
+                                .then(response => response.json())
+                                .then(data => {
+                                  if (data.success) {
+                                    setSelectedPO(data);
+                                    setShowDetails(true);
+                                  } else {
+                                    toast.error("Failed to fetch purchase order details");
+                                  }
+                                })
+                                .catch(error => {
+                                  toast.error("Error loading purchase order details");
+                                  console.error('Error:', error);
+                                });
                             }
                           }}
                           className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors text-sm font-medium"
-                          title="View products in this purchase order"
+                          title="View received items details"
                         >
                           <FaEye className="h-3.5 w-3.5" />
                           View Details
@@ -2281,6 +2368,151 @@ function CreatePurchaseOrder() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Received Items Details Modal */}
+      {showReceivedItemsModal && selectedReceivedItems && (
+        <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
+                  Received Items Details - {selectedReceivedItems.receiving_id ? `RCV-${selectedReceivedItems.receiving_id.toString().padStart(6, '0')}` : 'N/A'}
+                </h3>
+                <button
+                  onClick={() => setShowReceivedItemsModal(false)}
+                  className="inventory-muted hover:text-red-500"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <p className="text-sm inventory-muted">Receiving ID</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReceivedItems.receiving_id ? `RCV-${selectedReceivedItems.receiving_id.toString().padStart(6, '0')}` : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">PO Number</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReceivedItems.po_number || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Supplier</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReceivedItems.supplier_name || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Received Date</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReceivedItems.receiving_date ? 
+                      new Date(selectedReceivedItems.receiving_date).toLocaleDateString() : 'N/A'}
+                    {selectedReceivedItems.receiving_time && (
+                      <span className="text-xs inventory-muted ml-2">
+                        {selectedReceivedItems.receiving_time}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Delivery Receipt No.</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReceivedItems.delivery_receipt_no || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Status</p>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    selectedReceivedItems.display_status === 'Complete' ? 'bg-green-100 text-green-800' :
+                    selectedReceivedItems.display_status === 'Partial' ? 'bg-orange-100 text-orange-800' :
+                    selectedReceivedItems.display_status === 'Ready' ? 'bg-blue-100 text-blue-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {selectedReceivedItems.display_status || 'Received'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h4 className="text-md font-medium mb-3" style={{color: 'var(--inventory-text-primary)'}}>Received Items</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Product</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Ordered Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Received Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {selectedReceivedItems.details && selectedReceivedItems.details.length > 0 ? (
+                        // If we have detailed items array (preferred)
+                        selectedReceivedItems.details.map((item, index) => (
+                          <tr key={index}>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.ordered_qty || '-'}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.received_qty}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
+                                ✅ Received
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : selectedReceivedItems.received_items ? (
+                        // If received_items is a string, split it (fallback)
+                        selectedReceivedItems.received_items.split(', ').map((item, index) => {
+                          const match = item.match(/^(.+?) \((\d+)\)$/);
+                          if (match) {
+                            const [, productName, receivedQty] = match;
+                            return (
+                              <tr key={index}>
+                                <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{productName}</td>
+                                <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>-</td>
+                                <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{receivedQty}</td>
+                                <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                                  <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
+                                    ✅ Received
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return null;
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan="4" className="px-4 py-8 text-center inventory-muted">
+                            No received items details available
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={() => setShowReceivedItemsModal(false)}
+                className="px-4 py-2 border rounded-md hover:bg-gray-50 inventory-button-primary"
+                style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

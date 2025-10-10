@@ -1,6 +1,21 @@
 <?php
 // CORS headers must be set first, before any output
-header("Access-Control-Allow-Origin: http://localhost:3000");
+// Load environment variables for CORS configuration
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
+
+// Get allowed origins from environment variable (comma-separated)
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000,http://localhost:3001';
+$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    // Fallback to first allowed origin for development
+    header("Access-Control-Allow-Origin: " . $allowed_origins[0]);
+}
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
 header("Access-Control-Allow-Credentials: true");
@@ -332,9 +347,12 @@ try {
         // Prepare request data
         $requestData = array_merge(['action' => $action], $params);
         
+        // Get API base URL from environment variable
+        $apiBaseUrl = $_ENV['API_BASE_URL'] ?? 'http://localhost/caps2e2/Api';
+        
         // Make API call
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'http://localhost/caps2e2/Api/' . $apiFile);
+        curl_setopt($ch, CURLOPT_URL, $apiBaseUrl . '/' . $apiFile);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($requestData));
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
@@ -5170,7 +5188,10 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt->execute($params);
             $warehouseKPIs = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            echo json_encode($warehouseKPIs);
+            echo json_encode([
+                "success" => true,
+                "data" => $warehouseKPIs
+            ]);
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,
@@ -5402,6 +5423,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 $whereClause
                 ORDER BY p.quantity DESC
                 LIMIT 10
@@ -5409,7 +5431,10 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt->execute($params);
             $topProducts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            echo json_encode($topProducts);
+            echo json_encode([
+                "success" => true,
+                "data" => $topProducts
+            ]);
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,
@@ -5444,6 +5469,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(p.quantity) as quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 $whereClause
                 GROUP BY c.category_name
                 ORDER BY quantity DESC
@@ -5452,7 +5478,10 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt->execute($params);
             $categoryDistribution = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            echo json_encode($categoryDistribution);
+            echo json_encode([
+                "success" => true,
+                "data" => $categoryDistribution
+            ]);
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,
@@ -5492,6 +5521,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 $whereClause
                 ORDER BY p.quantity DESC
                 LIMIT 3
@@ -5509,7 +5539,10 @@ case 'get_products_oldest_batch_for_transfer':
                 }
             }
             
-            echo json_encode($trendData);
+            echo json_encode([
+                "success" => true,
+                "data" => $trendData
+            ]);
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,
@@ -5544,6 +5577,7 @@ case 'get_products_oldest_batch_for_transfer':
                     p.quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 $whereClause
                 AND p.quantity <= 10
                 ORDER BY p.quantity ASC
@@ -5552,7 +5586,10 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt->execute($params);
             $criticalAlerts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            echo json_encode($criticalAlerts);
+            echo json_encode([
+                "success" => true,
+                "data" => $criticalAlerts
+            ]);
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,
@@ -5588,6 +5625,7 @@ case 'get_products_oldest_batch_for_transfer':
                     SUM(p.quantity) as quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 $whereClause
                 GROUP BY l.location_name, c.category_name
                 ORDER BY l.location_name, quantity DESC
@@ -5596,7 +5634,10 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt->execute($params);
             $branchCategoryData = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            echo json_encode($branchCategoryData);
+            echo json_encode([
+                "success" => true,
+                "data" => $branchCategoryData
+            ]);
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,

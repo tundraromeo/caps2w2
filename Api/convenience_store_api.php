@@ -5,7 +5,22 @@
  */
 
 // CORS headers must be set first, before any output
-header("Access-Control-Allow-Origin: http://localhost:3000");
+// Load environment variables for CORS configuration
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
+
+// Get allowed origins from environment variable (comma-separated)
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000,http://localhost:3001';
+$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    // Fallback to first allowed origin for development
+    header("Access-Control-Allow-Origin: " . $allowed_origins[0]);
+}
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
 header("Access-Control-Allow-Credentials: true");
@@ -386,6 +401,7 @@ try {
                 FROM tbl_transfer_batch_details btd
                 LEFT JOIN tbl_product p ON btd.product_id = p.product_id
                 LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON btd.location_id = l.location_id
                 WHERE btd.product_id IN ($placeholders)
                 ORDER BY btd.expiration_date ASC, btd.id ASC
@@ -421,6 +437,7 @@ try {
                     FROM tbl_fifo_stock fs
                     LEFT JOIN tbl_product p ON fs.product_id = p.product_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
                     WHERE fs.product_id IN ($placeholders)
                     ORDER BY fs.expiration_date ASC, fs.fifo_id ASC
                 ");
@@ -451,6 +468,7 @@ try {
                     JOIN tbl_transfer_header th ON td.transfer_header_id = th.transfer_header_id
                     JOIN tbl_product p ON td.product_id = p.product_id
                     LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
                     LEFT JOIN tbl_location sl ON th.source_location_id = sl.location_id
                     LEFT JOIN tbl_employee e ON th.employee_id = e.emp_id
                     LEFT JOIN tbl_fifo_stock fs ON td.product_id = fs.product_id

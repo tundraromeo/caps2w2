@@ -155,6 +155,155 @@ grep -r "new mysqli(\"localhost\"" Api/ --include="*.php"
 grep -r "mysql:host=localhost" Api/ --include="*.php" | grep -v "\$_ENV" | grep -v "conn.php"
 ```
 
+### ⚠️ Rule #3: TEST FILES MUST BE DELETED AFTER TESTING
+
+**Rule:** All temporary test files created during development/debugging MUST be deleted after testing is complete.  
+**Status:** ✅ Must be enforced by all AI agents  
+**Scope:** All test files, debug files, temporary scripts
+
+#### ✅ CORRECT PATTERNS:
+
+**During Development:**
+```bash
+# Create test file for debugging
+echo "Testing API..." > test_api.php
+# Run test
+php test_api.php
+# DELETE immediately after testing
+rm test_api.php
+```
+
+**File Naming Convention for Temporary Files:**
+- `test_*.php` - PHP test files
+- `test_*.html` - HTML test files  
+- `debug_*.php` - Debug scripts
+- `temp_*.js` - Temporary JavaScript files
+
+#### ❌ INCORRECT PATTERNS (DO NOT LEAVE):
+
+```bash
+# ❌ WRONG - Leaving test files in repository
+test_api.php
+debug_connection.php
+temp_dashboard.html
+verify_endpoints.php
+```
+
+#### 🔍 Detection Command:
+```bash
+# Find test files that should be deleted
+find . -name "test_*.php" -o -name "debug_*.php" -o -name "temp_*.html" -o -name "verify_*.php"
+```
+
+### ⚠️ Rule #4: CONSOLE LOGGING MUST BE ELIMINATED AFTER TESTING
+
+**Rule:** All console.log, console.warn, console.error statements added for debugging MUST be removed after testing is complete.  
+**Status:** ✅ Must be enforced by all AI agents  
+**Scope:** JavaScript, TypeScript, PHP error_log statements added for debugging
+
+#### ✅ CORRECT PATTERNS:
+
+**During Development:**
+```javascript
+// Add debugging temporarily
+console.log("Debug: API response", response);
+console.warn("Debug: Processing data", data);
+// Test and verify
+// DELETE all console statements after testing
+```
+
+**Final Code (No Console Logs):**
+```javascript
+// Clean production code without console statements
+const data = response.data;
+setWarehouseData(data);
+```
+
+#### ❌ INCORRECT PATTERNS (DO NOT LEAVE):
+
+```javascript
+// ❌ WRONG - Leaving debug console logs in production code
+console.log("🚀 Starting to fetch all dashboard data...");
+console.log("🏪 Warehouse Response:", warehouseResponse);
+console.log("📊 Warehouse Data:", data);
+console.error('❌ Error fetching all data:', error);
+```
+
+#### 🔍 Detection Command:
+```bash
+# Find console statements that should be removed
+grep -r "console\." app/ --include="*.js" --include="*.ts" | grep -v "// Production"
+grep -r "console\." app/ --include="*.jsx" --include="*.tsx" | grep -v "// Production"
+```
+
+---
+
+### ⚠️ Rule #5: CORS ALLOWED ORIGINS MUST USE ENVIRONMENT VARIABLES
+
+**Rule:** CORS allowed origins MUST be configured through the `CORS_ALLOWED_ORIGINS` environment variable.  
+**Status:** ✅ Must be enforced by all AI agents  
+**Scope:** All PHP API files with CORS headers
+
+#### ✅ CORRECT PATTERN (PHP):
+
+```php
+<?php
+// CORS headers must be set first, before any output
+// Load environment variables for CORS configuration
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
+
+// Get allowed origins from environment variable (comma-separated)
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000,http://localhost:3001';
+$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    // Fallback to first allowed origin for development
+    header("Access-Control-Allow-Origin: " . $allowed_origins[0]);
+}
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
+```
+
+#### ❌ INCORRECT PATTERNS (DO NOT USE):
+
+```php
+// ❌ WRONG - Hardcoded single origin
+header("Access-Control-Allow-Origin: http://localhost:3000");
+
+// ❌ WRONG - Hardcoded array without environment variable
+$allowed_origins = ['http://localhost:3000', 'http://localhost:3001'];
+
+// ⚠️ DISCOURAGED - Allow all origins (security risk in production)
+header("Access-Control-Allow-Origin: *");
+```
+
+#### 📝 Environment Variable Format:
+
+In `.env` file:
+```env
+# CORS Configuration - comma-separated list of allowed origins
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
+```
+
+For production:
+```env
+# CORS Configuration - production domains
+CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+```
+
+#### 🔍 Detection Command:
+```bash
+# Find hardcoded CORS origins (should use environment variable instead)
+grep -r "Access-Control-Allow-Origin.*localhost" Api/ --include="*.php" | grep -v "\$_ENV\['CORS_ALLOWED_ORIGINS'\]"
+```
+
 ---
 
 ## 📋 ENVIRONMENT VARIABLES
@@ -192,6 +341,9 @@ DB_CHARSET=utf8mb4
 
 # Optional: Application Environment
 APP_ENV=development
+
+# CORS Configuration - comma-separated list of allowed origins
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
 ```
 
 **Notes:**

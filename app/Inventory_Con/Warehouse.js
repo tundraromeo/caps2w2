@@ -113,6 +113,20 @@ async function checkProductNameExists(productName) {
   }
 }
 
+// New function to check if barcode exists
+async function checkBarcodeExists(barcode) {
+  try {
+    console.log("🔍 Calling checkBarcodeExists with barcode:", barcode);
+    const response = await handleApiCall("check_barcode", { barcode: barcode });
+    console.log("🔍 checkBarcodeExists response:", response);
+    return response;
+  } catch (error) {
+    console.error("❌ Error in checkBarcodeExists:", error);
+    safeToast("error", "Error checking barcode:", error);
+    return { success: false, error: error.message };
+  }
+}
+
 // New function to update product stock with FIFO tracking
 async function updateProductStock(productId, newQuantity, batchReference = "", expirationDate = null, unitCost = 0, newSrp = null, entryBy = "admin") {
   try {

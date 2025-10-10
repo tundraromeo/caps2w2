@@ -84,10 +84,8 @@ class APIHandler {
     
     try {
       const result = JSON.parse(text);
-      
       return result;
     } catch (jsonError) {
-      
       throw new Error('Server returned invalid JSON');
     }
   }

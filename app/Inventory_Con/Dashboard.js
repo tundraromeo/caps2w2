@@ -127,7 +127,7 @@ function Dashboard() {
       
       if (warehouseResponse) {
         // Handle both direct response format and wrapped response format
-        const data = warehouseResponse.success ? warehouseResponse : warehouseResponse;
+        const data = warehouseResponse.success ? warehouseResponse.data : warehouseResponse;
         
         // Set warehouse data with fallback values
         setWarehouseData({
@@ -141,7 +141,7 @@ function Dashboard() {
           activeTransfers: data.activeTransfers || 0
         });
       } else {
-        console.warn("⚠️ No warehouse response received");
+        console.warn("No warehouse response received");
       }
 
       // Fetch supply by product for warehouse
@@ -496,15 +496,15 @@ function Dashboard() {
     const maxValue = Math.max(...data.map(item => item.quantity || 0));
     
     return (
-      <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="space-y-3">
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+        <div className="space-y-2 sm:space-y-3">
           {data.slice(0, 10).map((item, index) => (
-            <div key={index} className="flex items-center space-x-3">
-              <div className="flex-1">
-                <p className="text-sm truncate" style={{ color: theme.text.secondary }}>{item.product || 'Unknown Product'}</p>
+            <div key={index} className="flex items-center space-x-2 sm:space-x-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs sm:text-sm truncate" style={{ color: theme.text.secondary }}>{item.product || 'Unknown Product'}</p>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="w-full rounded-full h-2" style={{ backgroundColor: theme.border.light }}>
                   <div 
                     className="h-2 rounded-full"
@@ -515,7 +515,7 @@ function Dashboard() {
                   ></div>
                 </div>
               </div>
-              <div className="text-xs w-16 text-right" style={{ color: theme.text.muted }}>
+              <div className="text-xs w-12 sm:w-16 text-right flex-shrink-0" style={{ color: theme.text.muted }}>
                 {formatNumber(item.quantity || 0)}
               </div>
             </div>
@@ -529,11 +529,11 @@ function Dashboard() {
     const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
     
     return (
-      <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="grid grid-cols-2 gap-4">
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex items-center justify-center">
-            <div className="relative w-32 h-32">
+            <div className="relative w-24 h-24 sm:w-32 sm:h-32">
               {data.map((item, index) => {
                 const percentage = (item.quantity / data.reduce((sum, d) => sum + d.quantity, 0)) * 100;
                 const rotation = data.slice(0, index).reduce((sum, d) => sum + (d.quantity / data.reduce((total, dt) => total + dt.quantity, 0)) * 360, 0);
@@ -548,8 +548,8 @@ function Dashboard() {
                   ></div>
                 );
               })}
-              <div className="absolute inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
-                <span className="text-sm font-semibold" style={{ color: theme.text.secondary }}>Total</span>
+              <div className="absolute inset-3 sm:inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
+                <span className="text-xs sm:text-sm font-semibold" style={{ color: theme.text.secondary }}>Total</span>
               </div>
             </div>
           </div>
@@ -557,11 +557,11 @@ function Dashboard() {
             {data.map((item, index) => (
               <div key={index} className="flex items-center space-x-2">
                 <div 
-                  className="w-3 h-3 rounded-full"
+                  className="w-3 h-3 rounded-full flex-shrink-0"
                   style={{ backgroundColor: colors[index % colors.length] }}
                 ></div>
-                <span className="text-sm" style={{ color: theme.text.secondary }}>{item.category}</span>
-                <span className="text-xs ml-auto" style={{ color: theme.text.muted }}>{formatNumber(item.quantity)}</span>
+                <span className="text-xs sm:text-sm truncate" style={{ color: theme.text.secondary }}>{item.category}</span>
+                <span className="text-xs ml-auto flex-shrink-0" style={{ color: theme.text.muted }}>{formatNumber(item.quantity)}</span>
               </div>
             ))}
           </div>
@@ -574,9 +574,9 @@ function Dashboard() {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
     
     return (
-      <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="h-64 flex items-end justify-between space-x-1">
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+        <div className="h-48 sm:h-64 flex items-end justify-between space-x-1">
           {months.map((month, index) => {
             const monthData = data.find(item => item.month === month) || { quantity: 0 };
             const maxValue = Math.max(...data.map(item => item.quantity || 0));
@@ -585,7 +585,7 @@ function Dashboard() {
             return (
               <div key={index} className="flex flex-col items-center space-y-2">
                 <div 
-                  className="w-8 rounded-t"
+                  className="w-6 sm:w-8 rounded-t"
                   style={{ 
                     height: `${height}%`,
                     backgroundColor: theme.colors.accent
@@ -599,9 +599,9 @@ function Dashboard() {
         <div className="mt-4 space-y-1">
           {data.slice(0, 3).map((item, index) => (
             <div key={index} className="flex items-center space-x-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.colors.accent }}></div>
-              <span className="text-xs" style={{ color: theme.text.secondary }}>{item.product}</span>
-              <span className="text-xs ml-auto" style={{ color: theme.text.muted }}>{formatNumber(item.quantity)}</span>
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: theme.colors.accent }}></div>
+              <span className="text-xs truncate" style={{ color: theme.text.secondary }}>{item.product}</span>
+              <span className="text-xs ml-auto flex-shrink-0" style={{ color: theme.text.muted }}>{formatNumber(item.quantity)}</span>
             </div>
           ))}
         </div>
@@ -615,10 +615,10 @@ function Dashboard() {
     const percentage = Math.min((criticalLevel / maxCritical) * 100, 100);
     
     return (
-      <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
         <div className="flex items-center justify-center">
-          <div className="relative w-32 h-32">
+          <div className="relative w-24 h-24 sm:w-32 sm:h-32">
             <div className="absolute inset-0 rounded-full" style={{ backgroundColor: theme.border.light }}></div>
             <div 
               className="absolute inset-0 rounded-full"
@@ -627,9 +627,9 @@ function Dashboard() {
                 backgroundColor: percentage > 80 ? theme.colors.danger : percentage > 50 ? theme.colors.warning : theme.colors.success
               }}
             ></div>
-            <div className="absolute inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
+            <div className="absolute inset-3 sm:inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
               <div className="text-center">
-                <div className="text-2xl font-bold" style={{ color: theme.text.primary }}>{criticalLevel}</div>
+                <div className="text-lg sm:text-2xl font-bold" style={{ color: theme.text.primary }}>{criticalLevel}</div>
                 <div className="text-xs" style={{ color: theme.text.muted }}>Critical</div>
               </div>
             </div>
@@ -638,8 +638,8 @@ function Dashboard() {
         <div className="mt-4 space-y-1">
           {data.slice(0, 5).map((item, index) => (
             <div key={index} className="flex items-center justify-between text-xs">
-              <span className="truncate" style={{ color: theme.text.secondary }}>{item.product}</span>
-              <span className="font-medium" style={{ color: theme.colors.danger }}>{item.quantity}</span>
+              <span className="truncate min-w-0 flex-1" style={{ color: theme.text.secondary }}>{item.product}</span>
+              <span className="font-medium flex-shrink-0 ml-2" style={{ color: theme.colors.danger }}>{item.quantity}</span>
             </div>
           ))}
         </div>
@@ -661,13 +661,13 @@ function Dashboard() {
     const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
     
     return (
-      <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="space-y-4">
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+        <div className="space-y-3 sm:space-y-4">
           {locations.map((location, locIndex) => (
             <div key={locIndex} className="space-y-2">
-              <div className="text-sm font-medium" style={{ color: theme.text.secondary }}>{location}</div>
-              <div className="flex items-end space-x-1 h-20">
+              <div className="text-xs sm:text-sm font-medium" style={{ color: theme.text.secondary }}>{location}</div>
+              <div className="flex items-end space-x-1 h-16 sm:h-20">
                 {categories.map((category, catIndex) => {
                   const item = data.find(d => d.location === location && d.category === category);
                   const quantity = item ? item.quantity : 0;
@@ -691,14 +691,14 @@ function Dashboard() {
             </div>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-1 sm:gap-2">
           {categories.map((category, index) => (
             <div key={index} className="flex items-center space-x-1">
               <div 
-                className="w-3 h-3 rounded"
+                className="w-3 h-3 rounded flex-shrink-0"
                 style={{ backgroundColor: colors[index % colors.length] }}
               ></div>
-              <span className="text-xs" style={{ color: theme.text.secondary }}>{typeof category === 'string' ? category : (category?.category_name || 'Unknown')}</span>
+              <span className="text-xs truncate" style={{ color: theme.text.secondary }}>{typeof category === 'string' ? category : (category?.category_name || 'Unknown')}</span>
             </div>
           ))}
         </div>
@@ -801,70 +801,70 @@ function Dashboard() {
       {/* Warehouse KPIs Section */}
       <div className="p-6 space-y-6">
         {/* Main Warehouse KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Total Products</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Products</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>
               {formatNumber(warehouseData.totalProducts)}
             </p>
           </div>
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Total Suppliers</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.totalSuppliers)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Suppliers</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.totalSuppliers)}</p>
           </div>
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Warehouse Value</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatCurrency(warehouseData.warehouseValue)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Warehouse Value</p>
+            <p className="text-sm sm:text-base lg:text-lg xl:text-2xl font-bold break-words" style={{ color: theme.text.primary }}>{formatCurrency(warehouseData.warehouseValue)}</p>
           </div>
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock Items</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.lowStockItems)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock Items</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.lowStockItems)}</p>
           </div>
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.expiringSoon)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.expiringSoon)}</p>
           </div>
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Total Batches</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.totalBatches)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Batches</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.totalBatches)}</p>
           </div>
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Active Transfers</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.activeTransfers)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between min-h-[120px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Active Transfers</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(warehouseData.activeTransfers)}</p>
           </div>
         </div>
 
         {/* Module KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Convenience Store KPIs */}
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Convenience Store - Total Products</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(convenienceKPIs.totalProducts)}</p>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock</p>
-            <p className="text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.lowStock)}</p>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
-            <p className="text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.expiringSoon)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Convenience Store - Total Products</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(convenienceKPIs.totalProducts)}</p>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock</p>
+            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.lowStock)}</p>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
+            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(convenienceKPIs.expiringSoon)}</p>
           </div>
           {/* Pharmacy KPIs */}
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Pharmacy - Total Products</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(pharmacyKPIs.totalProducts)}</p>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock</p>
-            <p className="text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.lowStock)}</p>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
-            <p className="text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.expiringSoon)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Pharmacy - Total Products</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(pharmacyKPIs.totalProducts)}</p>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Low Stock</p>
+            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.lowStock)}</p>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Expiring Soon</p>
+            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.warning }}>{formatNumber(pharmacyKPIs.expiringSoon)}</p>
           </div>
           {/* Transfer KPIs */}
-          <div className="p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Total Transfers</p>
-            <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(transferKPIs.totalTransfers)}</p>
-            <p className="text-sm mb-1" style={{ color: theme.text.secondary }}>Active Transfers</p>
-            <p className="text-xl font-bold" style={{ color: theme.colors.accent }}>{formatNumber(transferKPIs.activeTransfers)}</p>
+          <div className="p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 sm:col-span-2 lg:col-span-1" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Total Transfers</p>
+            <p className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: theme.text.primary }}>{formatNumber(transferKPIs.totalTransfers)}</p>
+            <p className="text-xs sm:text-sm mb-1" style={{ color: theme.text.secondary }}>Active Transfers</p>
+            <p className="text-base sm:text-lg lg:text-xl font-bold" style={{ color: theme.colors.accent }}>{formatNumber(transferKPIs.activeTransfers)}</p>
           </div>
         </div>
 
         {/* Charts Section - First Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
           {/* Bar Chart - Top 10 products by quantity */}
           {renderBarChart(topProductsByQuantity, "Top 10 Products by Quantity")}
           
@@ -873,7 +873,7 @@ function Dashboard() {
         </div>
 
         {/* Charts Section - Second Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Line Chart - Stock trend of fast-moving items */}
           {renderLineChart(fastMovingItemsTrend, "Fast-Moving Items Trend")}
           
@@ -881,19 +881,21 @@ function Dashboard() {
           {renderGauge(criticalStockAlerts, "Critical Stock Alerts")}
           
           {/* Stacked Column - Inventory by branch and category */}
-          {renderStackedColumn(inventoryByBranchCategory, "Inventory by Branch & Category")}
+          <div className="sm:col-span-2 lg:col-span-1">
+            {renderStackedColumn(inventoryByBranchCategory, "Inventory by Branch & Category")}
+          </div>
         </div>
 
         {/* Bottom Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
           {/* Warehouse Stockout Items */}
-          <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Warehouse Stockout Items</h3>
-            <div className="h-80 flex items-end justify-between space-x-1">
+          <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Warehouse Stockout Items</h3>
+            <div className="h-64 sm:h-80 flex items-end justify-between space-x-1">
               {Array.isArray(stockoutItems) && stockoutItems.map((item, index) => (
                 <div key={index} className="flex flex-col items-center space-y-2">
                   <div 
-                    className="w-8 rounded-t"
+                    className="w-6 sm:w-8 rounded-t"
                     style={{ 
                       height: `${Math.abs(item.stockout || 0) / 20}px`,
                       backgroundColor: theme.colors.danger
@@ -908,10 +910,10 @@ function Dashboard() {
           </div>
 
           {/* Warehouse Products KPIs Table */}
-          <div className="p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Warehouse Products KPIs</h3>
+          <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Warehouse Products KPIs</h3>
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
+              <table className="min-w-full text-xs sm:text-sm">
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${theme.border.default}` }}>
                     <th className="text-left py-2" style={{ color: theme.text.primary }}>Product name</th>
@@ -926,7 +928,7 @@ function Dashboard() {
                 <tbody>
                   {Array.isArray(productKPIs) && productKPIs.map((item, index) => (
                     <tr key={index} style={{ borderBottom: `1px solid ${theme.border.light}` }}>
-                      <td className="py-2" style={{ color: theme.text.primary }}>{item.product || 'Unknown Product'}</td>
+                      <td className="py-2 truncate max-w-20 sm:max-w-none" style={{ color: theme.text.primary }}>{item.product || 'Unknown Product'}</td>
                       <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{item.quantity || 0}</td>
                       <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{formatCurrency(item.unitPrice || 0)}</td>
                       <td className="py-2 text-right" style={{ color: theme.text.secondary }}>{formatCurrency((item.quantity || 0) * (item.unitPrice || 0))}</td>

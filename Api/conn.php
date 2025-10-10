@@ -2,35 +2,19 @@
 /**
  * Unified Database Connection
  * Single source of truth for all database connections
- * Based on conn_simple.php structure with .env support
+ * Uses environment variables from .env file
  */
 
-// Load simple .env loader
-require_once __DIR__ . '/../simple_dotenv.php';
-
 // Load environment variables
-try {
-    $dotenv = new SimpleDotEnv(__DIR__ . '/..');
-    $dotenv->load();
-    
-    // Validate required environment variables
-    $dotenv->required(['DB_HOST', 'DB_DATABASE', 'DB_USERNAME'])->notEmpty();
-    $dotenv->required('DB_CHARSET')->notEmpty();
-    
-} catch (Exception $e) {
-    header("Content-Type: application/json");
-    echo json_encode([
-        "success" => false,
-        "message" => "Environment configuration error: " . $e->getMessage()
-    ]);
-    exit;
-}
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
 
-// Get database credentials from environment
+// Get database credentials from environment variables
 $servername = $_ENV['DB_HOST'] ?? 'localhost';
 $port = $_ENV['DB_PORT'] ?? '3306';
-$dbname = $_ENV['DB_DATABASE'];
-$username = $_ENV['DB_USERNAME'];
+$dbname = $_ENV['DB_DATABASE'] ?? 'enguio2';
+$username = $_ENV['DB_USERNAME'] ?? 'root';
 $password = $_ENV['DB_PASSWORD'] ?? '';
 $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
 

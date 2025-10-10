@@ -816,38 +816,40 @@ function ConvenienceInventory() {
 
       {/* Dashboard Cards */}
       <div className="w-full px-6 pb-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           {/* Store Products */}
-          <div className="rounded-xl shadow-md p-6 flex justify-between items-center min-h-[110px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <div>
+          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="flex-1 min-w-0">
               <div className="text-xs font-medium mb-1" style={{ color: theme.text.muted }}>STORE PRODUCTS</div>
-              <div className="text-4xl font-bold" style={{ color: theme.text.primary }}>{products.length}</div>
+              <div className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ color: theme.text.primary }}>{products.length}</div>
               <div className="text-xs mt-2" style={{ color: theme.text.secondary }}>+{percentChangeProducts}% from last month</div>
             </div>
-            <div>
-              <Package className="h-10 w-10" style={{ color: theme.colors.accent }} />
+            <div className="ml-4 flex-shrink-0">
+              <Package className="h-8 w-8 sm:h-10 sm:w-10" style={{ color: theme.colors.accent }} />
             </div>
           </div>
           {/* Low Stock Items */}
-          <div className="rounded-xl shadow-md p-6 flex justify-between items-center min-h-[110px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <div>
+          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="flex-1 min-w-0">
               <div className="text-xs font-medium mb-1" style={{ color: theme.text.muted }}>LOW STOCK ITEMS</div>
-              <div className="text-4xl font-bold" style={{ color: theme.text.primary }}>{lowStockCount}</div>
+              <div className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ color: theme.text.primary }}>{lowStockCount}</div>
               <div className="text-xs mt-2" style={{ color: theme.text.secondary }}>items below threshold</div>
             </div>
-            <div>
-              <AlertCircle className="h-10 w-10" style={{ color: theme.colors.danger }} />
+            <div className="ml-4 flex-shrink-0">
+              <AlertCircle className="h-8 w-8 sm:h-10 sm:w-10" style={{ color: theme.colors.danger }} />
             </div>
           </div>
           {/* Store Value */}
-          <div className="rounded-xl shadow-md p-6 flex justify-between items-center min-h-[110px]" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-            <div>
+          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full sm:col-span-2 lg:col-span-1" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="flex-1 min-w-0">
               <div className="text-xs font-medium mb-1" style={{ color: theme.text.muted }}>STORE VALUE</div>
-              <div className="text-4xl font-bold" style={{ color: theme.text.primary }}>₱{totalStoreValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2})}</div>
+              <div className="text-lg sm:text-2xl lg:text-3xl xl:text-4xl font-bold break-words" style={{ color: theme.text.primary }}>
+                ₱{totalStoreValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2})}
+              </div>
               <div className="text-xs mt-2" style={{ color: theme.text.secondary }}>+{percentChangeValue}% from last month</div>
             </div>
-            <div>
-              <Package className="h-10 w-10" style={{ color: theme.colors.warning }} />
+            <div className="ml-4 flex-shrink-0">
+              <Package className="h-8 w-8 sm:h-10 sm:w-10" style={{ color: theme.colors.warning }} />
             </div>
           </div>
         </div>

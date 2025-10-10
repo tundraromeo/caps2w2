@@ -109,6 +109,8 @@ if ($pmLower === 'cash') {
     if (!empty($input['gcashRef'])) {
         $receipt .= 'GCASH REF: ' . $input['gcashRef'] . "\n";
     }
+    $receipt .= formatPriceLine('AMOUNT PAID:', $input['amountPaid'] ?? 0, $receiptWidth) . "\n";
+    $receipt .= formatPriceLine('CHANGE:', $input['change'] ?? 0, $receiptWidth) . "\n";
 }
 
 $receipt .= str_repeat('=', $receiptWidth) . "\n";

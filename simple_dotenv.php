@@ -42,6 +42,7 @@ class SimpleDotEnv {
                 // Set environment variable
                 $_ENV[$key] = $value;
                 $_SERVER[$key] = $value;
+                putenv("$key=$value");
                 $this->variables[$key] = $value;
             }
         }
@@ -54,7 +55,7 @@ class SimpleDotEnv {
             $variables = [$variables];
         }
         foreach ($variables as $variable) {
-            if (!isset($_ENV[$variable]) || empty($_ENV[$variable])) {
+            if (!isset($_ENV[$variable]) || $_ENV[$variable] === '') {
                 throw new Exception("Environment variable {$variable} is required but not set");
             }
         }
