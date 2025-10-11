@@ -135,9 +135,11 @@ async function checkBarcodeExists(barcode) {
 }
 
 // New function to update product stock with FIFO tracking
+// NOTE: tbl_product no longer stores quantity or srp - these are ONLY in tbl_fifo_stock
+// This function creates a NEW FIFO batch entry with the quantity and SRP
 async function updateProductStock(productId, newQuantity, batchReference = "", expirationDate = null, unitCost = 0, newSrp = null, entryBy = "admin") {
   try {
-    console.log("🔄 Updating product stock:", {
+    console.log("🔄 Creating new FIFO batch for product:", {
       productId,
       newQuantity,
       batchReference,
@@ -158,21 +160,33 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
       return { success: false, message: "Invalid quantity" };
     }
     
+    // Validate SRP - REQUIRED for FIFO tracking
+    if (!newSrp || newSrp <= 0) {
+      console.error("❌ Invalid SRP:", newSrp);
+      return { success: false, message: "SRP is required for FIFO stock tracking" };
+    }
+    
+    // Validate expiration date - REQUIRED for FIFO tracking
+    if (!expirationDate) {
+      console.error("❌ Missing expiration date");
+      return { success: false, message: "Expiration date is required for FIFO stock tracking" };
+    }
+    
     const apiData = { 
       product_id: productId, 
       new_quantity: newQuantity,
       batch_reference: batchReference,
       expiration_date: expirationDate,
-      unit_cost: unitCost,
-      new_srp: newSrp,
+      unit_cost: unitCost || newSrp, // Use newSrp as fallback for unit_cost
+      new_srp: newSrp, // This is the SRP for the FIFO batch
       entry_by: entryBy
     };
     
-    console.log("📤 Sending API data:", apiData);
+    console.log("📤 Sending API data for FIFO batch creation:", apiData);
     
     const response = await handleApiCall("update_product_stock", apiData);
     
-    console.log("📊 Update product stock response:", response);
+    console.log("📊 FIFO batch creation response:", response);
     
     // Log the stock update activity with user context
     if (response.success) {
@@ -183,9 +197,9 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'log_activity',
-            activity_type: 'WAREHOUSE_STOCK_UPDATED',
-            description: `Warehouse stock updated: Product ID ${productId}, Quantity: ${newQuantity}, Batch: ${batchReference || 'N/A'}`,
-            table_name: 'tbl_products',
+            activity_type: 'WAREHOUSE_FIFO_BATCH_CREATED',
+            description: `New FIFO batch created: Product ID ${productId}, Quantity: ${newQuantity}, Batch: ${batchReference || 'N/A'}, SRP: ₱${newSrp}`,
+            table_name: 'tbl_fifo_stock',
             record_id: productId,
             user_id: userData.user_id || userData.emp_id,
             username: userData.username,
@@ -197,12 +211,12 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
         console.warn("⚠️ Failed to log activity:", error);
       }
     } else {
-      console.error("❌ Stock update failed:", response.message);
+      console.error("❌ FIFO batch creation failed:", response.message);
     }
     
     return response;
   } catch (error) {
-    console.error("❌ Error updating product stock:", error);
+    console.error("❌ Error creating FIFO batch:", error);
     
     // Log the error
     try {
@@ -211,9 +225,9 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'log_activity',
-          activity_type: 'WAREHOUSE_STOCK_UPDATE_ERROR',
-          description: `Failed to update warehouse stock for Product ID ${productId}: ${error.message}`,
-          table_name: 'tbl_products',
+          activity_type: 'WAREHOUSE_FIFO_BATCH_ERROR',
+          description: `Failed to create FIFO batch for Product ID ${productId}: ${error.message}`,
+          table_name: 'tbl_fifo_stock',
           record_id: productId,
         }),
       });
@@ -221,7 +235,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
       console.warn("⚠️ Failed to log error:", sessionError);
     }
     
-    safeToast("error", "Error updating product stock:", error);
+    safeToast("error", "Error creating FIFO batch:", error);
     return { success: false, error: error.message };
   }
 }
@@ -2149,7 +2163,22 @@ console.log("API response for product quantities:", response);
     }
 
     // Handle update stock submission - CHANGED: Now adds to batch instead of immediate save
+    // NOTE: This creates a NEW FIFO batch entry - tbl_product no longer stores quantity/srp
     async function handleAddStockToBatch() {
+      // Validate SRP - REQUIRED for FIFO tracking
+      const srpToUse = editSrpEnabled && newSrp ? parseFloat(newSrp) : parseFloat(existingProduct.srp || existingProduct.unit_price || 0);
+      
+      if (!srpToUse || srpToUse <= 0) {
+        safeToast("error", "SRP is required for FIFO stock tracking. Please enable 'Edit SRP' and enter a valid price.");
+        return;
+      }
+      
+      // Validate expiration date - REQUIRED for FIFO tracking
+      if (!newStockExpiration) {
+        safeToast("error", "Expiration date is required for FIFO stock tracking.");
+        return;
+      }
+      
       // Calculate quantity based on configuration mode
       let quantityToAdd = 0;
       
@@ -2246,6 +2275,7 @@ console.log("API response for product quantities:", response);
       }
 
       // Add to temporary batch instead of saving to database
+      // NOTE: This will create a NEW FIFO batch entry when saved
       const tempStockUpdate = {
         ...existingProduct,
         temp_id: Date.now(), // Unique temporary ID
@@ -2256,8 +2286,9 @@ console.log("API response for product quantities:", response);
         new_stock_tablets_per_strip: newStockTabletsPerStrip || null,
         new_stock_pieces_per_pack: newStockPiecesPerPack || null,
         stock_update_config_mode: stockUpdateConfigMode,
-        expiration: newStockExpiration || existingProduct.expiration,
-        new_srp: editSrpEnabled && newSrp ? parseFloat(newSrp) : null,
+        expiration: newStockExpiration, // REQUIRED for FIFO
+        new_srp: srpToUse, // REQUIRED for FIFO - this will be the SRP for this batch
+        srp: srpToUse, // Also set main SRP field for consistency
         batch: currentBatchNumber, // Use the same batch number
         status: "pending_stock_update",
         created_at: new Date().toISOString(),
@@ -2274,6 +2305,7 @@ console.log("API response for product quantities:", response);
     }
 
     // Handle new product submission - Now adds to temporary storage
+    // NOTE: tbl_product no longer stores quantity/srp - these will be stored in tbl_fifo_stock
     async function handleAddNewProduct(e) {
       e.preventDefault();
       
@@ -2286,6 +2318,18 @@ console.log("API response for product quantities:", response);
       if (!newProductForm.product_name || !newProductForm.category_id || !newProductForm.product_type || !newProductForm.srp) {
         safeToast("error", "Please fill in all required fields (Product Name, Category, Product Type, SRP)");
         // "❌ Basic validation failed - missing required fields");
+        return;
+      }
+      
+      // Validate SRP - REQUIRED for FIFO tracking
+      if (!newProductForm.srp || parseFloat(newProductForm.srp) <= 0) {
+        safeToast("error", "Valid SRP is required for FIFO stock tracking");
+        return;
+      }
+      
+      // Validate expiration date - REQUIRED for FIFO tracking
+      if (!newProductForm.expiration) {
+        safeToast("error", "Expiration date is required for FIFO stock tracking");
         return;
       }
 
@@ -2390,19 +2434,23 @@ console.log("API response for product quantities:", response);
         console.log("📊 Stock updates:", stockUpdates.length);
         console.log("📋 All temporary products:", temporaryProducts);
         
-        // Process stock updates first
+        // Process stock updates first - creates NEW FIFO batch entries
         let stockUpdateSuccess = true;
         let failedUpdates = [];
         
         for (const stockUpdate of stockUpdates) {
           console.log("🔄 Processing stock update for:", stockUpdate.product_name);
-          console.log("📋 Stock update data:", {
+          
+          // Get the SRP for this FIFO batch
+          const batchSrp = stockUpdate.new_srp || stockUpdate.srp || stockUpdate.unit_price || 0;
+          
+          console.log("📋 FIFO batch data:", {
             product_id: stockUpdate.product_id,
             quantity_to_add: stockUpdate.quantity_to_add,
             batch_reference: currentBatchNumber,
             expiration: stockUpdate.expiration,
-            unit_cost: stockUpdate.srp || stockUpdate.unit_price || 0,
-            new_srp: stockUpdate.new_srp,
+            unit_cost: batchSrp,
+            new_srp: batchSrp, // SRP for this specific FIFO batch
             entry_by: currentUser
           });
           
@@ -2423,30 +2471,50 @@ console.log("API response for product quantities:", response);
             continue;
           }
           
+          // Validate SRP - REQUIRED for FIFO
+          if (!batchSrp || batchSrp <= 0) {
+            console.error("❌ Invalid SRP in stock update:", batchSrp);
+            safeToast("error", `Invalid SRP for ${stockUpdate.product_name}. SRP is required for FIFO tracking.`);
+            failedUpdates.push(stockUpdate.product_name);
+            stockUpdateSuccess = false;
+            continue;
+          }
+          
+          // Validate expiration date - REQUIRED for FIFO
+          if (!stockUpdate.expiration) {
+            console.error("❌ Missing expiration date in stock update");
+            safeToast("error", `Missing expiration date for ${stockUpdate.product_name}. Expiration is required for FIFO tracking.`);
+            failedUpdates.push(stockUpdate.product_name);
+            stockUpdateSuccess = false;
+            continue;
+          }
+          
+          // Create new FIFO batch entry
           const response = await updateProductStock(
             stockUpdate.product_id,
             stockUpdate.quantity_to_add,
             currentBatchNumber,
             stockUpdate.expiration,
-            stockUpdate.srp || stockUpdate.unit_price || 0,
-            stockUpdate.new_srp,
+            batchSrp, // unit_cost
+            batchSrp, // new_srp - this is the SRP for this FIFO batch
             currentUser
           );
           
-          console.log("📊 Stock update response for", stockUpdate.product_name, ":", response);
+          console.log("📊 FIFO batch creation response for", stockUpdate.product_name, ":", response);
           
           if (!response.success) {
-            console.error("❌ Failed to update stock for:", stockUpdate.product_name);
+            console.error("❌ Failed to create FIFO batch for:", stockUpdate.product_name);
             console.error("❌ Error details:", response.message);
-            safeToast("error", `Failed to update stock for ${stockUpdate.product_name}: ${response.message}`);
+            safeToast("error", `Failed to create FIFO batch for ${stockUpdate.product_name}: ${response.message}`);
             failedUpdates.push(stockUpdate.product_name);
             stockUpdateSuccess = false;
           } else {
-            console.log("✅ Stock updated successfully for:", stockUpdate.product_name);
+            console.log("✅ FIFO batch created successfully for:", stockUpdate.product_name);
           }
         }
         
         // Process new products if any
+        // NOTE: quantity and SRP are sent but will be stored in tbl_fifo_stock, NOT tbl_product
         if (newProducts.length > 0) {
           const batchData = {
             batch_reference: currentBatchNumber,
@@ -2477,11 +2545,12 @@ console.log("API response for product quantities:", response);
               configMode: product.configMode || "bulk",
               barcode: product.barcode,
               description: product.description,
-              unit_price: parseFloat(product.srp),
-              srp: parseFloat(product.srp || 0),
+              unit_price: parseFloat(product.srp), // For FIFO batch entry
+              srp: parseFloat(product.srp || 0), // For FIFO batch entry - NOT stored in tbl_product
               brand_id: product.brand_id || null, // Don't default to 1, let backend handle it
               brand_name: product.brand_search || null, // Pass brand name for new brand creation
               quantity: (() => {
+                // For FIFO batch entry - NOT stored in tbl_product
                 const qty = product.product_type === "Medicine" 
                   ? parseInt(product.total_tablets || 0)
                   : parseInt(product.total_pieces || 0);
@@ -2489,7 +2558,7 @@ console.log("API response for product quantities:", response);
                 return isNaN(qty) || qty <= 0 ? 1 : qty;
               })(),
               supplier_id: product.supplier_id || 1,
-              expiration: product.expiration || null,
+              expiration: product.expiration || null, // REQUIRED for FIFO batch entry
               prescription: product.prescription,
               bulk: product.bulk,
               boxes: product.boxes || null,
@@ -4594,7 +4663,12 @@ console.log("API response for product quantities:", response);
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-medium text-gray-700">SRP</label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    SRP *
+                    <span className="ml-2 text-xs font-normal px-2 py-1 rounded" style={{ backgroundColor: theme.colors.danger + '20', color: theme.colors.danger }}>
+                      REQUIRED FOR FIFO
+                    </span>
+                  </label>
                   <div className="flex items-center">
                     <input
                       type="checkbox"
@@ -4611,38 +4685,49 @@ console.log("API response for product quantities:", response);
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <label htmlFor="editSrp" className="ml-2 text-sm text-gray-600">
-                      Edit SRP
+                      Edit SRP for this batch
                     </label>
                   </div>
                 </div>
                 {editSrpEnabled ? (
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={newSrp || ""}
-                    onChange={(e) => setNewSrp(e.target.value)}
-                    placeholder="Enter new SRP"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
-                    style={{ 
-                      borderColor: theme.border.default,
-                      backgroundColor: theme.bg.secondary,
-                      color: theme.text.primary,
-                      focusRingColor: theme.colors.accent
-                    }}
-                  />
+                  <div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={newSrp || ""}
+                      onChange={(e) => setNewSrp(e.target.value)}
+                      placeholder="Enter SRP for this batch"
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                      style={{ 
+                        borderColor: (newSrp && parseFloat(newSrp) > 0) ? theme.border.default : theme.colors.danger,
+                        backgroundColor: theme.bg.secondary,
+                        color: theme.text.primary,
+                        focusRingColor: theme.colors.accent
+                      }}
+                    />
+                    <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
+                      ⚠️ Enter the SRP for this specific FIFO batch
+                    </p>
+                  </div>
                 ) : (
-                  <input
-                    type="text"
-                    readOnly
-                    className="w-full px-3 py-2 border rounded-md text-sm"
-                    placeholder="SRP"
-                    value={`₱${Number.parseFloat(existingProduct.srp || 0).toFixed(2)}`}
-                    style={{ 
-                      borderColor: theme.border.default,
-                      backgroundColor: theme.bg.hover,
-                      color: theme.text.primary
-                    }}
-                  />
+                  <div>
+                    <input
+                      type="text"
+                      readOnly
+                      className="w-full px-3 py-2 border rounded-md text-sm"
+                      placeholder="SRP"
+                      value={`₱${Number.parseFloat(existingProduct.srp || 0).toFixed(2)}`}
+                      style={{ 
+                        borderColor: theme.border.default,
+                        backgroundColor: theme.bg.hover,
+                        color: theme.text.primary
+                      }}
+                    />
+                    <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
+                      ⚠️ Using existing product SRP. Check "Edit SRP" to set a different price for this batch.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -5079,7 +5164,12 @@ console.log("API response for product quantities:", response);
 
             {/* Expiration Date Section */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Expiration Date</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>
+                Expiration Date *
+                <span className="ml-2 text-xs font-normal px-2 py-1 rounded" style={{ backgroundColor: theme.colors.danger + '20', color: theme.colors.danger }}>
+                  REQUIRED FOR FIFO
+                </span>
+              </label>
               <input
                 type="date"
                 value={newStockExpiration || ""}
@@ -5093,20 +5183,21 @@ console.log("API response for product quantities:", response);
                   setNewStockExpiration(selectedDate);
                 }}
                 min={new Date().toISOString().split('T')[0]}
+                required
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
-                  borderColor: theme.border.default,
+                  borderColor: newStockExpiration ? theme.border.default : theme.colors.danger,
                   backgroundColor: theme.bg.secondary,
                   color: theme.text.primary,
                   focusRingColor: theme.colors.accent
                 }}
               />
               <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
-                Select the expiration date for this stock batch (required for proper FIFO tracking)
+                ⚠️ <strong>Required:</strong> Expiration date is mandatory for FIFO inventory tracking. Each batch must have an expiration date.
               </p>
               {newStockExpiration && (
                 <p className="text-xs mt-1" style={{ color: theme.colors.accent }}>
-                  Expires: {new Date(newStockExpiration).toLocaleDateString()}
+                  ✓ Expires: {new Date(newStockExpiration).toLocaleDateString()}
                 </p>
               )}
             </div>

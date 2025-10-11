@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Barcode API</title>
+</head>
+<body>
+    <h1>Test Barcode API Response</h1>
+    <button onclick="testBarcodeAPI()">Test Existing Barcode</button>
+    <div id="result"></div>
+
+    <script>
+        async function testBarcodeAPI() {
+            const barcode = "4801668100288"; // Existing barcode from your image
+            const url = "http://localhost/caps2e2/Api/backend_modular.php";
+            
+            try {
+                console.log("Testing barcode:", barcode);
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'check_barcode',
+                        barcode: barcode
+                    })
+                });
+                
+                console.log("Response status:", response.status);
+                const responseText = await response.text();
+                console.log("Raw response:", responseText);
+                
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                    console.log("Parsed data:", data);
+                } catch (e) {
+                    console.error("JSON Parse Error:", e);
+                    document.getElementById('result').innerHTML = `<pre>Raw Response: ${responseText}</pre>`;
+                    return;
+                }
+                
+                document.getElementById('result').innerHTML = `
+                    <h3>API Response:</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                    
+                    <h3>Analysis:</h3>
+                    <p><strong>Success:</strong> ${data.success}</p>
+                    <p><strong>Found:</strong> ${data.found}</p>
+                    <p><strong>Product exists:</strong> ${data.product ? 'YES' : 'NO'}</p>
+                    <p><strong>Product type:</strong> ${typeof data.product}</p>
+                    <p><strong>Product keys:</strong> ${data.product ? Object.keys(data.product).join(', ') : 'N/A'}</p>
+                `;
+                
+            } catch (error) {
+                console.error("Error:", error);
+                document.getElementById('result').innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

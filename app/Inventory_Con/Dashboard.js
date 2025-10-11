@@ -45,6 +45,19 @@ function Dashboard() {
   const [convenienceKPIs, setConvenienceKPIs] = useState({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
   const [pharmacyKPIs, setPharmacyKPIs] = useState({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
   const [transferKPIs, setTransferKPIs] = useState({ totalTransfers: 0, activeTransfers: 0 });
+  
+  // Debug state
+  const [debugInfo, setDebugInfo] = useState({
+    lastFetch: null,
+    apiErrors: [],
+    dataSources: {
+      warehouse: 'pending',
+      convenience: 'pending',
+      pharmacy: 'pending',
+      transfers: 'pending',
+      charts: 'pending'
+    }
+  });
 
   // Retry function
   const retryFetch = () => {
@@ -107,27 +120,55 @@ function Dashboard() {
       
       console.log('🚀 Starting dashboard data fetch...');
       
-      await Promise.all([
-        fetchCategoriesAndLocations(),
-        fetchWarehouseData(),
-        fetchChartData(),
-        fetchConvenienceKPIs(),
-        fetchPharmacyKPIs(),
-        fetchTransferKPIs()
-      ]);
+      // Update debug info
+      setDebugInfo(prev => ({
+        ...prev,
+        lastFetch: new Date().toLocaleTimeString(),
+        apiErrors: [],
+        dataSources: {
+          warehouse: 'loading',
+          convenience: 'loading',
+          pharmacy: 'loading',
+          transfers: 'loading',
+          charts: 'loading'
+        }
+      }));
+      
+      // Fetch data sequentially to avoid overwhelming the server
+      await fetchCategoriesAndLocations();
+      await fetchWarehouseData();
+      await fetchChartData();
+      await fetchConvenienceKPIs();
+      await fetchPharmacyKPIs();
+      await fetchTransferKPIs();
       
       console.log('✅ All dashboard data fetched successfully');
     } catch (error) {
       console.error('❌ Error fetching all data:', error);
       setError('Failed to load dashboard data. Please check your connection and try again.');
       
-      // Set fallback data for demo purposes
-      console.log('🔄 Setting fallback data for demo...');
-      const fallback = getFallbackData();
-      setWarehouseData(fallback.warehouseData);
-      setConvenienceKPIs(fallback.convenienceKPIs);
-      setPharmacyKPIs(fallback.pharmacyKPIs);
-      setTransferKPIs(fallback.transferKPIs);
+      // Update debug info with error
+      setDebugInfo(prev => ({
+        ...prev,
+        apiErrors: [...prev.apiErrors, error.message].slice(-5)
+      }));
+      
+      // Only set fallback data if no real data was fetched
+      const hasRealData = warehouseData.totalProducts > 0 || 
+                         convenienceKPIs.totalProducts > 0 || 
+                         pharmacyKPIs.totalProducts > 0 || 
+                         transferKPIs.totalTransfers > 0;
+      
+      if (!hasRealData) {
+        console.log('🔄 Setting fallback data for demo...');
+        const fallback = getFallbackData();
+        setWarehouseData(fallback.warehouseData);
+        setConvenienceKPIs(fallback.convenienceKPIs);
+        setPharmacyKPIs(fallback.pharmacyKPIs);
+        setTransferKPIs(fallback.transferKPIs);
+        setFastMovingItemsTrend(fallback.fastMovingItemsTrend);
+        setCriticalStockAlerts(fallback.criticalStockAlerts);
+      }
     } finally {
       setLoading(false);
     }
@@ -181,7 +222,6 @@ function Dashboard() {
 
   const fetchWarehouseData = async () => {
     try {
-      setLoading(true);
       console.log('🏭 Fetching warehouse data...');
       
       // Use centralized API handler instead of direct fetch
@@ -193,24 +233,54 @@ function Dashboard() {
       
       console.log('📊 Warehouse KPIs response:', warehouseResponse);
       
-      if (warehouseResponse) {
-        // Handle both direct response format and wrapped response format
-        const data = warehouseResponse.success ? warehouseResponse.data : warehouseResponse;
+      if (warehouseResponse && warehouseResponse.success) {
+        const data = warehouseResponse.data;
         
         console.log('📈 Warehouse KPIs data:', data);
         
         // Set warehouse data with fallback values
         setWarehouseData({
-          totalProducts: data.totalProducts || 0,
-          totalSuppliers: data.totalSuppliers || 0,
-          storageCapacity: data.storageCapacity || 75,
-          warehouseValue: data.warehouseValue || 0,
-          lowStockItems: data.lowStockItems || 0,
-          expiringSoon: data.expiringSoon || 0,
-          totalBatches: data.totalBatches || 0
+          totalProducts: parseInt(data.totalProducts) || 0,
+          totalSuppliers: parseInt(data.totalSuppliers) || 0,
+          storageCapacity: parseInt(data.storageCapacity) || 75,
+          warehouseValue: parseFloat(data.warehouseValue) || 0,
+          lowStockItems: parseInt(data.lowStockItems) || 0,
+          expiringSoon: parseInt(data.expiringSoon) || 0,
+          totalBatches: parseInt(data.totalBatches) || 0
         });
+        
+        console.log('✅ Warehouse data set successfully:', {
+          totalProducts: parseInt(data.totalProducts) || 0,
+          totalSuppliers: parseInt(data.totalSuppliers) || 0,
+          storageCapacity: parseInt(data.storageCapacity) || 75,
+          warehouseValue: parseFloat(data.warehouseValue) || 0,
+          lowStockItems: parseInt(data.lowStockItems) || 0,
+          expiringSoon: parseInt(data.expiringSoon) || 0,
+          totalBatches: parseInt(data.totalBatches) || 0
+        });
+        
+        // Update debug info
+        setDebugInfo(prev => ({
+          ...prev,
+          dataSources: { ...prev.dataSources, warehouse: 'success' }
+        }));
       } else {
-        console.warn("⚠️ No warehouse response received");
+        console.warn("⚠️ No warehouse response received or failed:", warehouseResponse?.message || 'Unknown error');
+        // Try to get basic product count as fallback
+        try {
+          const productsResponse = await apiHandler.callAPI('backend.php', 'get_products', { location: 'Warehouse' });
+          if (productsResponse && productsResponse.success) {
+            const products = productsResponse.data || [];
+            setWarehouseData(prev => ({
+              ...prev,
+              totalProducts: products.length,
+              totalSuppliers: new Set(products.map(p => p.supplier_id)).size,
+              totalBatches: new Set(products.map(p => p.batch_id)).size
+            }));
+          }
+        } catch (fallbackError) {
+          console.error('Fallback warehouse data fetch failed:', fallbackError);
+        }
       }
 
       // Fetch supply by product for warehouse
@@ -262,7 +332,7 @@ function Dashboard() {
 
   const fetchChartData = async () => {
     try {
-      // Use centralized API handler instead of direct fetch
+      console.log('📊 Fetching chart data...');
       
       // Fetch top 10 products by quantity
       try {
@@ -271,11 +341,12 @@ function Dashboard() {
           location: selectedLocation,
           timePeriod: selectedTimePeriod
         });
-        if (topProductsResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = topProductsResponse.success ? topProductsResponse.data : topProductsResponse;
+        if (topProductsResponse && topProductsResponse.success) {
+          const data = topProductsResponse.data || [];
+          console.log('📈 Top products data:', data);
           setTopProductsByQuantity(Array.isArray(data) ? data : []);
         } else {
+          console.warn('⚠️ No top products data received:', topProductsResponse?.message || 'Unknown error');
           setTopProductsByQuantity([]);
         }
       } catch (error) {
@@ -290,11 +361,12 @@ function Dashboard() {
           location: selectedLocation,
           timePeriod: selectedTimePeriod
         });
-        if (categoryDistributionResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = categoryDistributionResponse.success ? categoryDistributionResponse.data : categoryDistributionResponse;
+        if (categoryDistributionResponse && categoryDistributionResponse.success) {
+          const data = categoryDistributionResponse.data || [];
+          console.log('📊 Category distribution data:', data);
           setStockDistributionByCategory(Array.isArray(data) ? data : []);
         } else {
+          console.warn('⚠️ No category distribution data received:', categoryDistributionResponse?.message || 'Unknown error');
           setStockDistributionByCategory([]);
         }
       } catch (error) {
@@ -309,37 +381,27 @@ function Dashboard() {
           location: selectedLocation,
           timePeriod: selectedTimePeriod
         });
-        if (fastMovingResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = fastMovingResponse.success ? fastMovingResponse.data : fastMovingResponse;
+        if (fastMovingResponse && fastMovingResponse.success) {
+          const data = fastMovingResponse.data || [];
           
-          if (Array.isArray(data)) {
-            // Process data to remove duplicates and aggregate quantities by product
-            const productMap = new Map();
+          if (Array.isArray(data) && data.length > 0) {
+            // The API returns trend data with product, month, and quantity
+            // We need to transform this for the chart component
+            const processedData = data.map(item => ({
+              product: item.product || 'Unknown Product',
+              quantity: item.quantity || 0,
+              month: item.month || 'Unknown'
+            }));
             
-            data.forEach(item => {
-              const productName = item.product || item.product_name || 'Unknown Product';
-              const quantity = item.quantity || item.total_quantity || 0;
-              
-              if (productMap.has(productName)) {
-                // Aggregate quantities for duplicate products
-                productMap.set(productName, productMap.get(productName) + quantity);
-              } else {
-                productMap.set(productName, quantity);
-              }
-            });
-            
-            // Convert map back to array and sort by quantity (descending)
-            const uniqueProducts = Array.from(productMap.entries())
-              .map(([product, quantity]) => ({ product, quantity }))
-              .sort((a, b) => b.quantity - a.quantity)
-              .slice(0, 10); // Get top 10 products
-            
-            setFastMovingItemsTrend(uniqueProducts);
+            console.log('📈 Fast moving items trend data:', processedData);
+            console.log('📊 Metadata:', fastMovingResponse.metadata);
+            setFastMovingItemsTrend(processedData);
           } else {
+            console.warn('⚠️ Empty fast moving items data received');
             setFastMovingItemsTrend([]);
           }
         } else {
+          console.warn('⚠️ No fast moving items data received:', fastMovingResponse?.message || 'Unknown error');
           setFastMovingItemsTrend([]);
         }
       } catch (error) {
@@ -354,11 +416,12 @@ function Dashboard() {
           location: selectedLocation,
           timePeriod: selectedTimePeriod
         });
-        if (criticalStockResponse) {
-          // Handle both direct response format and wrapped response format
-          const data = criticalStockResponse.success ? criticalStockResponse.data : criticalStockResponse;
+        if (criticalStockResponse && criticalStockResponse.success) {
+          const data = criticalStockResponse.data || [];
+          console.log('⚠️ Critical stock alerts data:', data);
           setCriticalStockAlerts(Array.isArray(data) ? data : []);
         } else {
+          console.warn('⚠️ No critical stock alerts data received:', criticalStockResponse?.message || 'Unknown error');
           setCriticalStockAlerts([]);
         }
       } catch (error) {
@@ -379,17 +442,16 @@ function Dashboard() {
       // Get locations first to find the correct location name
       const locRes = await apiHandler.callAPI('backend.php', 'get_locations');
       
-      if (!locRes) {
+      if (!locRes || !locRes.success) {
         console.warn('⚠️ No locations response received');
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
       
-      // Handle both direct response format and wrapped response format
-      const locData = locRes.success ? locRes.data : locRes;
+      const locData = locRes.data || [];
       let convenienceLocationName = null;
       
-      if (locData && Array.isArray(locData)) {
+      if (Array.isArray(locData)) {
         console.log('📍 Available locations:', locData.map(l => l.location_name));
         
         // Try different variations of convenience store names
@@ -404,11 +466,21 @@ function Dashboard() {
           convenienceLocationName = loc.location_name;
           console.log('✅ Found convenience location:', convenienceLocationName);
         } else {
-          console.warn('⚠️ No convenience store location found');
+          console.warn('⚠️ No convenience store location found. Available locations:', locData.map(l => l.location_name));
+          // Try to use the first location that's not warehouse as fallback
+          const nonWarehouseLoc = locData.find(l => 
+            !l.location_name.toLowerCase().includes('warehouse') && 
+            !l.location_name.toLowerCase().includes('pharmacy')
+          );
+          if (nonWarehouseLoc) {
+            convenienceLocationName = nonWarehouseLoc.location_name;
+            console.log('🔄 Using fallback location for convenience:', convenienceLocationName);
+          }
         }
       }
       
       if (!convenienceLocationName) {
+        console.warn('⚠️ No suitable location found for convenience store');
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
@@ -445,6 +517,12 @@ function Dashboard() {
           lowStock,
           expiringSoon
         });
+        
+        // Update debug info
+        setDebugInfo(prev => ({
+          ...prev,
+          dataSources: { ...prev.dataSources, convenience: 'success' }
+        }));
       } else {
         console.warn('⚠️ No convenience products data received:', prodRes?.message || 'Unknown error');
         setConvenienceKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
@@ -463,17 +541,16 @@ function Dashboard() {
       // Get locations first to find the correct location name
       const locRes = await apiHandler.callAPI('backend.php', 'get_locations');
       
-      if (!locRes) {
+      if (!locRes || !locRes.success) {
         console.warn('⚠️ No locations response received');
         setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
       
-      // Handle both direct response format and wrapped response format
-      const locData = locRes.success ? locRes.data : locRes;
+      const locData = locRes.data || [];
       let pharmacyLocationName = null;
       
-      if (locData && Array.isArray(locData)) {
+      if (Array.isArray(locData)) {
         console.log('📍 Available locations:', locData.map(l => l.location_name));
         
         // Try different variations of pharmacy names
@@ -488,11 +565,20 @@ function Dashboard() {
           pharmacyLocationName = loc.location_name;
           console.log('✅ Found pharmacy location:', pharmacyLocationName);
         } else {
-          console.warn('⚠️ No pharmacy location found');
+          console.warn('⚠️ No pharmacy location found. Available locations:', locData.map(l => l.location_name));
+          // Try to use the first location that contains 'pharmacy' as fallback
+          const pharmacyLoc = locData.find(l => 
+            l.location_name.toLowerCase().includes('pharmacy')
+          );
+          if (pharmacyLoc) {
+            pharmacyLocationName = pharmacyLoc.location_name;
+            console.log('🔄 Using pharmacy location:', pharmacyLocationName);
+          }
         }
       }
       
       if (!pharmacyLocationName) {
+        console.warn('⚠️ No suitable location found for pharmacy');
         setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
         return;
       }
@@ -529,6 +615,12 @@ function Dashboard() {
           lowStock,
           expiringSoon
         });
+        
+        // Update debug info
+        setDebugInfo(prev => ({
+          ...prev,
+          dataSources: { ...prev.dataSources, pharmacy: 'success' }
+        }));
       } else {
         console.warn('⚠️ No pharmacy products data received:', prodRes?.message || 'Unknown error');
         setPharmacyKPIs({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
@@ -548,9 +640,8 @@ function Dashboard() {
       
       console.log('📦 Transfer response:', res);
       
-      if (res) {
-        // Handle both direct response format and wrapped response format
-        const data = res.success ? res.data : res;
+      if (res && res.success) {
+        const data = res.data || [];
         if (Array.isArray(data)) {
           const totalTransfers = data.length;
           const activeTransfers = data.filter(t => 
@@ -565,12 +656,18 @@ function Dashboard() {
             totalTransfers,
             activeTransfers
           });
+          
+          // Update debug info
+          setDebugInfo(prev => ({
+            ...prev,
+            dataSources: { ...prev.dataSources, transfers: 'success' }
+          }));
         } else {
           console.warn('⚠️ Transfer data is not an array:', data);
           setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 });
         }
       } else {
-        console.warn('⚠️ No transfer data received');
+        console.warn('⚠️ No transfer data received or failed:', res?.message || 'Unknown error');
         setTransferKPIs({ totalTransfers: 0, activeTransfers: 0 });
       }
     } catch (e) { 
@@ -627,35 +724,186 @@ function Dashboard() {
   };
 
   // Chart rendering functions
-  const renderBarChart = (data, title) => {
-    const maxValue = Math.max(...data.map(item => item.quantity || 0));
-    
+  const renderFastMovingTrendChart = (data, title) => {
+    if (!data || data.length === 0) {
+      return (
+        <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+          <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+          <div className="text-center py-8">
+            <div className="text-4xl mb-2">📈</div>
+            <p className="text-sm" style={{ color: theme.text.muted }}>
+              No fast-moving items data
+            </p>
+            <p className="text-xs" style={{ color: theme.text.muted }}>
+              Movement data will appear here
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Group data by product to show trends
+    const productGroups = {};
+    data.forEach(item => {
+      if (!productGroups[item.product]) {
+        productGroups[item.product] = [];
+      }
+      productGroups[item.product].push(item);
+    });
+
+    // Get top 5 products by total movement
+    const topProducts = Object.entries(productGroups)
+      .map(([product, items]) => ({
+        product,
+        totalMovement: items.reduce((sum, item) => sum + (item.quantity || 0), 0),
+        items: items.sort((a, b) => a.month.localeCompare(b.month))
+      }))
+      .sort((a, b) => b.totalMovement - a.totalMovement)
+      .slice(0, 5);
+
+    const maxMovement = Math.max(...topProducts.map(p => p.totalMovement));
+
     return (
       <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
         <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="space-y-2 sm:space-y-3">
-          {data.slice(0, 10).map((item, index) => (
-            <div key={index} className="flex items-center space-x-2 sm:space-x-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs sm:text-sm truncate" style={{ color: theme.text.secondary }}>{item.product || 'Unknown Product'}</p>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="w-full rounded-full h-2" style={{ backgroundColor: theme.border.light }}>
-                  <div 
-                    className="h-2 rounded-full"
-                    style={{ 
-                      width: `${((item.quantity || 0) / maxValue) * 100}%`,
-                      backgroundColor: theme.colors.accent
-                    }}
-                  ></div>
+        
+        <div className="space-y-4">
+          {topProducts.map((productData, index) => (
+            <div key={productData.product} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-semibold w-4 text-center" style={{ color: theme.text.muted }}>
+                    #{index + 1}
+                  </span>
+                  <p className="text-xs sm:text-sm font-medium truncate" style={{ color: theme.text.secondary }}>
+                    {productData.product}
+                  </p>
+                </div>
+                <div className="text-xs font-semibold" style={{ color: theme.text.primary }}>
+                  {formatNumber(productData.totalMovement)} total
                 </div>
               </div>
-              <div className="text-xs w-12 sm:w-16 text-right flex-shrink-0" style={{ color: theme.text.muted }}>
-                {formatNumber(item.quantity || 0)}
+              
+              {/* Trend line showing monthly movements */}
+              <div className="flex items-end space-x-1 h-8">
+                {productData.items.map((item, itemIndex) => {
+                  const barHeight = maxMovement > 0 ? ((item.quantity || 0) / maxMovement) * 100 : 0;
+                  return (
+                    <div key={itemIndex} className="flex-1 flex flex-col items-center">
+                      <div 
+                        className="w-full rounded-t transition-all duration-500 ease-out"
+                        style={{ 
+                          height: `${Math.max(barHeight, 2)}%`,
+                          backgroundColor: index < 3 ? theme.colors.success : theme.colors.accent
+                        }}
+                        title={`${item.month}: ${formatNumber(item.quantity)}`}
+                      ></div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Month labels */}
+              <div className="flex space-x-1 text-xs" style={{ color: theme.text.muted }}>
+                {productData.items.map((item, itemIndex) => (
+                  <div key={itemIndex} className="flex-1 text-center truncate" title={item.month}>
+                    {item.month}
+                  </div>
+                ))}
               </div>
             </div>
           ))}
         </div>
+        
+        <div className="mt-4 text-center">
+          <p className="text-xs" style={{ color: theme.text.muted }}>
+            Showing top {topProducts.length} fast-moving products by total movement
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBarChart = (data, title) => {
+    const maxValue = Math.max(...data.map(item => item.quantity || 0));
+    const totalQuantity = data.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    
+    // Determine if this is movement data or inventory data
+    const isMovementData = title.toLowerCase().includes('fast-moving') || title.toLowerCase().includes('movement');
+    
+    return (
+      <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
+        
+        {data.length > 0 ? (
+          <>
+            <div className="text-center mb-4">
+              <p className="text-sm" style={{ color: theme.text.secondary }}>
+                {isMovementData ? 'Total Movement' : 'Total Inventory'}: <span className="font-semibold" style={{ color: theme.text.primary }}>{formatNumber(totalQuantity)}</span> units
+              </p>
+              <p className="text-xs" style={{ color: theme.text.muted }}>
+                Showing top {Math.min(data.length, 10)} {data.length === 1 ? 'product' : 'products'}
+              </p>
+            </div>
+            
+            <div className="space-y-2 sm:space-y-3">
+              {data.slice(0, 10).map((item, index) => {
+                const percentage = ((item.quantity || 0) / totalQuantity) * 100;
+                const barPercentage = maxValue > 0 ? ((item.quantity || 0) / maxValue) * 100 : 0;
+                
+                return (
+                  <div key={index} className="flex items-center space-x-2 sm:space-x-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-semibold w-4 text-center" style={{ color: theme.text.muted }}>
+                          #{index + 1}
+                        </span>
+                        <p className="text-xs sm:text-sm truncate font-medium" style={{ color: theme.text.secondary }}>
+                          {item.product || 'Unknown Product'}
+                        </p>
+                      </div>
+                      <div className="text-xs ml-6" style={{ color: theme.text.muted }}>
+                        {percentage.toFixed(1)}% of {isMovementData ? 'total movement' : 'total inventory'}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="w-full rounded-full h-3 bg-opacity-20" style={{ backgroundColor: theme.border.light }}>
+                        <div 
+                          className="h-3 rounded-full transition-all duration-500 ease-out"
+                          style={{ 
+                            width: `${barPercentage}%`,
+                            backgroundColor: index < 3 ? theme.colors.success : theme.colors.accent
+                          }}
+                        ></div>
+                      </div>
+                    </div>
+                    <div className="text-xs w-12 sm:w-16 text-right flex-shrink-0 font-semibold" style={{ color: theme.text.primary }}>
+                      {formatNumber(item.quantity || 0)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {data.length > 10 && (
+              <div className="mt-3 text-center">
+                <p className="text-xs" style={{ color: theme.text.muted }}>
+                  ... and {data.length - 10} more products
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-8">
+            <div className="text-4xl mb-2">📈</div>
+            <p className="text-sm" style={{ color: theme.text.muted }}>
+              {isMovementData ? 'No fast-moving items data' : 'No product data available'}
+            </p>
+            <p className="text-xs" style={{ color: theme.text.muted }}>
+              {isMovementData ? 'Movement data will appear here' : 'Product data will appear here'}
+            </p>
+          </div>
+        )}
       </div>
     );
   };
@@ -663,44 +911,92 @@ function Dashboard() {
   const renderPieChart = (data, title) => {
     const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
     
+    // Calculate total for percentage calculations
+    const totalQuantity = data.reduce((sum, d) => sum + (d.quantity || 0), 0);
+    
     return (
       <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
         <h3 className="text-base sm:text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>{title}</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex items-center justify-center">
-            <div className="relative w-24 h-24 sm:w-32 sm:h-32">
-              {data.map((item, index) => {
-                const percentage = (item.quantity / data.reduce((sum, d) => sum + d.quantity, 0)) * 100;
-                const rotation = data.slice(0, index).reduce((sum, d) => sum + (d.quantity / data.reduce((total, dt) => total + dt.quantity, 0)) * 360, 0);
-                
-                return (
-                  <div
-                    key={index}
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      background: `conic-gradient(${colors[index % colors.length]} ${rotation}deg, ${colors[index % colors.length]} ${rotation + (percentage * 3.6)}deg, transparent ${rotation + (percentage * 3.6)}deg)`
-                    }}
-                  ></div>
-                );
-              })}
-              <div className="absolute inset-3 sm:inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
-                <span className="text-xs sm:text-sm font-semibold" style={{ color: theme.text.secondary }}>Total</span>
+        
+        {data.length > 0 ? (
+          <>
+            <div className="text-center mb-4">
+              <p className="text-sm" style={{ color: theme.text.secondary }}>
+                Total Stock: <span className="font-semibold" style={{ color: theme.text.primary }}>{formatNumber(totalQuantity)}</span> units
+              </p>
+              <p className="text-xs" style={{ color: theme.text.muted }}>
+                {data.length} {data.length === 1 ? 'category' : 'categories'} found
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-center justify-center">
+                <div className="relative w-24 h-24 sm:w-32 sm:h-32">
+                  {data.map((item, index) => {
+                    const percentage = ((item.quantity || 0) / totalQuantity) * 100;
+                    const rotation = data.slice(0, index).reduce((sum, d) => sum + ((d.quantity || 0) / totalQuantity) * 360, 0);
+                    
+                    return (
+                      <div
+                        key={index}
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          background: `conic-gradient(${colors[index % colors.length]} ${rotation}deg, ${colors[index % colors.length]} ${rotation + (percentage * 3.6)}deg, transparent ${rotation + (percentage * 3.6)}deg)`
+                        }}
+                      ></div>
+                    );
+                  })}
+                  <div className="absolute inset-3 sm:inset-4 rounded-full flex items-center justify-center" style={{ backgroundColor: theme.bg.card }}>
+                    <div className="text-center">
+                      <div className="text-xs sm:text-sm font-semibold" style={{ color: theme.text.primary }}>
+                        {formatNumber(totalQuantity)}
+                      </div>
+                      <div className="text-xs" style={{ color: theme.text.muted }}>
+                        Total
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                {data.map((item, index) => {
+                  const percentage = ((item.quantity || 0) / totalQuantity) * 100;
+                  const categoryName = item.category || item.product || 'Unknown';
+                  return (
+                    <div key={index} className="flex items-center justify-between space-x-2">
+                      <div className="flex items-center space-x-2 flex-1">
+                        <div 
+                          className="w-3 h-3 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: colors[index % colors.length] }}
+                        ></div>
+                        <span className="text-xs sm:text-sm truncate" style={{ color: theme.text.secondary }}>
+                          {categoryName}
+                        </span>
+                      </div>
+                      <div className="text-xs sm:text-sm font-semibold flex-shrink-0" style={{ color: theme.text.primary }}>
+                        {formatNumber(item.quantity || 0)}
+                      </div>
+                      <div className="text-xs flex-shrink-0" style={{ color: theme.text.muted }}>
+                        ({percentage.toFixed(1)}%)
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
+          </>
+        ) : (
+          <div className="text-center py-8">
+            <div className="text-4xl mb-2">📊</div>
+            <p className="text-sm" style={{ color: theme.text.muted }}>
+              No category data available
+            </p>
+            <p className="text-xs" style={{ color: theme.text.muted }}>
+              Check your inventory categories
+            </p>
           </div>
-          <div className="space-y-2">
-            {data.map((item, index) => (
-              <div key={index} className="flex items-center space-x-2">
-                <div 
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: colors[index % colors.length] }}
-                ></div>
-                <span className="text-xs sm:text-sm truncate" style={{ color: theme.text.secondary }}>{item.category}</span>
-                <span className="text-xs ml-auto flex-shrink-0" style={{ color: theme.text.muted }}>{formatNumber(item.quantity)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -1060,9 +1356,68 @@ function Dashboard() {
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
             </select>
+            <button 
+              onClick={fetchAllData}
+              className="px-4 py-2 rounded-lg font-medium transition-colors duration-200"
+              style={{ 
+                backgroundColor: theme.colors.accent, 
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+              onMouseOver={(e) => e.target.style.opacity = '0.9'}
+              onMouseOut={(e) => e.target.style.opacity = '1'}
+            >
+              🔄 Refresh Data
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Debug Info Panel */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="p-4 mx-6 mb-4 rounded-lg" style={{ backgroundColor: theme.bg.card, border: `1px solid ${theme.border.default}` }}>
+          <h3 className="text-sm font-semibold mb-2" style={{ color: theme.text.primary }}>Debug Information</h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+            <div>
+              <span style={{ color: theme.text.secondary }}>Last Fetch:</span>
+              <div style={{ color: theme.text.muted }}>{debugInfo.lastFetch || 'Never'}</div>
+            </div>
+            <div>
+              <span style={{ color: theme.text.secondary }}>Warehouse:</span>
+              <div style={{ color: debugInfo.dataSources.warehouse === 'success' ? theme.colors.success : theme.colors.warning }}>
+                {debugInfo.dataSources.warehouse}
+              </div>
+            </div>
+            <div>
+              <span style={{ color: theme.text.secondary }}>Convenience:</span>
+              <div style={{ color: debugInfo.dataSources.convenience === 'success' ? theme.colors.success : theme.colors.warning }}>
+                {debugInfo.dataSources.convenience}
+              </div>
+            </div>
+            <div>
+              <span style={{ color: theme.text.secondary }}>Pharmacy:</span>
+              <div style={{ color: debugInfo.dataSources.pharmacy === 'success' ? theme.colors.success : theme.colors.warning }}>
+                {debugInfo.dataSources.pharmacy}
+              </div>
+            </div>
+            <div>
+              <span style={{ color: theme.text.secondary }}>Transfers:</span>
+              <div style={{ color: debugInfo.dataSources.transfers === 'success' ? theme.colors.success : theme.colors.warning }}>
+                {debugInfo.dataSources.transfers}
+              </div>
+            </div>
+          </div>
+          {debugInfo.apiErrors.length > 0 && (
+            <div className="mt-2">
+              <span style={{ color: theme.text.secondary }}>API Errors:</span>
+              <div className="text-xs" style={{ color: theme.colors.danger }}>
+                {debugInfo.apiErrors.slice(-3).join(', ')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Warehouse KPIs Section */}
       <div className="p-6 space-y-6">
@@ -1137,8 +1492,8 @@ function Dashboard() {
 
         {/* Charts Section - First Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          {/* Bar Chart - Top 10 products by quantity */}
-          {renderBarChart(topProductsByQuantity, "Top 10 Products by Quantity")}
+          {/* Fast-moving items trend chart */}
+          {renderFastMovingTrendChart(fastMovingItemsTrend, "Fast-Moving Items Trend")}
           
           {/* Pie Chart - Stock distribution by category */}
           {renderPieChart(stockDistributionByCategory, "Stock Distribution by Category")}
@@ -1146,8 +1501,8 @@ function Dashboard() {
 
         {/* Charts Section - Second Row */}
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          {/* Bar Chart - Fast-moving items by product */}
-          {renderBarChart(fastMovingItemsTrend, "Fast-Moving Items Trend")}
+          {/* Bar Chart - Top 10 products by quantity */}
+          {renderBarChart(topProductsByQuantity, "Top 10 Products by Quantity")}
           
           {/* Gauge - Critical stock alerts */}
           {renderGauge(criticalStockAlerts, "Critical Stock Alerts")}

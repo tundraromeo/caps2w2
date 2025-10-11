@@ -114,7 +114,9 @@ class HeartbeatServiceClass {
       if (result.success) {
         console.log('💓 Heartbeat sent:', result.timestamp);
       } else {
-        console.warn('⚠️ Heartbeat failed:', result.message);
+        // Handle both 'message' and 'error' fields from API response
+        const errorMsg = result.message || result.error || 'Unknown error';
+        console.warn('⚠️ Heartbeat failed:', errorMsg);
         
         // If server says we should re-login, stop heartbeat
         if (result.should_relogin) {

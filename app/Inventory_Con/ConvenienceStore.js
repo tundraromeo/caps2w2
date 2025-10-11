@@ -104,12 +104,12 @@ function ConvenienceInventory() {
     });
     
     const lowStock = productList.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return isStockLow(quantity) && settings.lowStockAlerts;
     });
     
     const outOfStock = productList.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return quantity === 0;
     });
     
@@ -132,7 +132,7 @@ function ConvenienceInventory() {
     if (!settings.autoReorder) return;
     
     const lowStockProducts = products.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return isStockLow(quantity);
     });
     
@@ -641,16 +641,19 @@ function ConvenienceInventory() {
   }).filter(Boolean))];
 
   // --- Dashboard Statistics Calculation ---
-  // Calculate total store value
+  // Calculate total store value using total_quantity (aggregated by product)
   const totalStoreValue = products.reduce(
-    (sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.quantity || 0)),
+    (sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.total_quantity || p.quantity || 0)),
     0
   );
   // For demo, use static percentage changes
   const percentChangeProducts = 3; // +3% from last month
   const percentChangeValue = 1; // +1% from last month
-  // Low stock count
-  const lowStockCount = products.filter(p => p.stock_status === 'low stock').length;
+  // Low stock count - check based on total_quantity
+  const lowStockCount = products.filter(p => {
+    const totalQty = parseInt(p.total_quantity || p.quantity || 0);
+    return totalQty > 0 && totalQty <= (settings.lowStockThreshold || 5);
+  }).length;
 
   // --- Pagination State ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -1032,8 +1035,8 @@ function ConvenienceInventory() {
                 </tr>
               ) : paginatedProducts.length > 0 ? (
                 paginatedProducts.filter(product => product && typeof product === 'object').map((product, index) => {
-                  // Check for alert conditions
-                  const quantity = parseInt(product.quantity || 0);
+                  // Check for alert conditions - use total_quantity for aggregated quantity by product
+                  const quantity = parseInt(product.total_quantity || product.quantity || 0);
                   const isLowStock = settings.lowStockAlerts && isStockLow(quantity);
                   const isOutOfStock = quantity <= 0;
                   const isExpiringSoon = product.expiration && settings.expiryAlerts && isProductExpiringSoon(product.expiration);
@@ -1077,8 +1080,14 @@ function ConvenienceInventory() {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
-                        {product.quantity || 0} pieces
+                        {product.total_quantity || product.quantity || 0} pieces
                       </div>
+                      {/* Show breakdown if multiple batches */}
+                      {product.total_batches > 1 && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          ({product.total_batches} batches)
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                       ₱{(() => {
@@ -1235,7 +1244,7 @@ function ConvenienceInventory() {
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForBatch.quantity || 0} pieces</p>
+                      <p className="text-sm text-green-600">Quantity: {selectedProductForBatch.total_quantity || selectedProductForBatch.quantity || 0} pieces</p>
                       <p className="text-sm text-green-600">From: {selectedProductForBatch.source_location || 'Warehouse'}</p>
                       <p className="text-sm text-green-600">To: Convenience Store</p>
                     </div>
@@ -1363,7 +1372,7 @@ function ConvenienceInventory() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Used:</span>
@@ -1432,7 +1441,7 @@ function ConvenienceInventory() {
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.quantity || 0} pieces</p>
+                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</p>
                       <p className="text-sm text-green-600">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
                       <p className="text-sm text-green-600">To: Convenience Store</p>
                     </div>
@@ -1560,7 +1569,7 @@ function ConvenienceInventory() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Used:</span>

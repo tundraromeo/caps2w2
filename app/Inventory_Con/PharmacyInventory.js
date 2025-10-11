@@ -139,12 +139,12 @@ const PharmacyInventory = () => {
     });
     
     const lowStock = productList.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return isStockLow(quantity) && settings.lowStockAlerts;
     });
     
     const outOfStock = productList.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return quantity === 0;
     });
     
@@ -162,10 +162,10 @@ const PharmacyInventory = () => {
   function checkAutoReorder(products) {
     if (!settings.autoReorder) return;
     
-    const lowStockProducts = products.filter(product => 
-      parseInt(product.quantity || 0) <= settings.lowStockThreshold && 
-      parseInt(product.quantity || 0) > 0
-    );
+    const lowStockProducts = products.filter(product => {
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
+      return quantity <= settings.lowStockThreshold && quantity > 0;
+    });
     
     if (lowStockProducts.length > 0) {
       const productNames = lowStockProducts.map(p => p.product_name).join(', ');
@@ -679,7 +679,7 @@ const PharmacyInventory = () => {
             <div className="ml-4">
               <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
               <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                ₱{inventory.reduce((sum, p) => sum + Number(p.first_batch_srp || p.srp || 0), 0).toFixed(2)}
+                ₱{inventory.reduce((sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.total_quantity || p.quantity || 0)), 0).toFixed(2)}
               </p>
             </div>
           </div>
@@ -783,7 +783,7 @@ const PharmacyInventory = () => {
               ) : items.length > 0 ? (
                 // Remove duplicates by product_name
                 uniqueProducts.map((item, index) => {
-                  const quantity = parseInt(item.quantity || 0);
+                  const quantity = parseInt(item.total_quantity || item.quantity || 0);
                   
                   return (
                     <tr key={`${item.product_id}-${index}`} className="hover:bg-opacity-50" style={{ backgroundColor: 'transparent', hoverBackgroundColor: theme.bg.hover }}>
@@ -805,8 +805,14 @@ const PharmacyInventory = () => {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
-                          {quantity || 0}
+                          {item.total_quantity || item.quantity || 0}
                         </div>
+                        {/* Show breakdown if multiple batches */}
+                        {item.total_batches > 1 && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            ({item.total_batches} batches)
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                         ₱{(() => {
@@ -997,7 +1003,7 @@ const PharmacyInventory = () => {
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.quantity || 0} units</p>
+                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} units</p>
                       <p className="text-sm text-green-600">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
                       <p className="text-sm text-green-600">To: Pharmacy</p>
                     </div>
@@ -1163,7 +1169,7 @@ const PharmacyInventory = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForHistory.quantity || 0} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Transferred:</span>

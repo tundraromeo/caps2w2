@@ -1,9 +1,9 @@
+
 // pages/pos.js
 "use client";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
-import { HeartbeatService } from '../lib/HeartbeatService';
 
 export default function POS() {
   const router = useRouter();
@@ -48,8 +48,6 @@ export default function POS() {
   const [showReturnQtyModal, setShowReturnQtyModal] = useState(false);
   const [returnModal, setReturnModal] = useState({ transactionId: null, productId: null, max: 0 });
   const [returnQtyInput, setReturnQtyInput] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [showClearCartModal, setShowClearCartModal] = useState(false);
   const [showCustomerReturnModal, setShowCustomerReturnModal] = useState(false);
   const [showReturnConfirmModal, setShowReturnConfirmModal] = useState(false);
@@ -105,6 +103,11 @@ export default function POS() {
       });
     }
   }, [showCredentialsModal, credentialsFocusIndex]);
+
+  // Debug log for credentials data changes
+  useEffect(() => {
+    console.log('Credentials data changed:', credentialsData);
+  }, [credentialsData]);
 
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [showRecentTransactions, setShowRecentTransactions] = useState(false);
@@ -218,42 +221,6 @@ export default function POS() {
     }
     return 'Convenience Store'; // default
   };
-
-  // Start heartbeat service for real-time online/offline detection
-  useEffect(() => {
-    const userData = sessionStorage.getItem('user_data');
-    if (!userData) {
-      console.log('🚫 No user data found, redirecting to login');
-      router.push('/');
-      return;
-    }
-
-    try {
-      const user = JSON.parse(userData);
-      // Check if user has POS/cashier permissions
-      const role = user.role?.toLowerCase() || '';
-      if (!role.includes('cashier') && !role.includes('pos') && !role.includes('admin')) {
-        console.log('🚫 User does not have POS permissions, redirecting to login');
-        router.push('/');
-        return;
-      }
-
-      console.log('✅ User authenticated, starting heartbeat service for POS cashier');
-      HeartbeatService.start(user);
-      setIsAuthenticated(true);
-      setIsLoading(false);
-
-      // Cleanup: Stop heartbeat when component unmounts
-      return () => {
-        console.log('💔 Stopping heartbeat service (component unmount)');
-        HeartbeatService.stop();
-      };
-    } catch (e) {
-      console.error('❌ Failed to parse user data:', e);
-      router.push('/');
-      return;
-    }
-  }, [router]);
 
   // Fetch discount options from backend
   useEffect(() => {
@@ -384,8 +351,7 @@ export default function POS() {
     
     console.log('🔍 normalizeProducts input:', rows);
     
-    // Since the backend already filters by location, we don't need to combine duplicates
-    // Each product should be unique per location
+    // Process all products first
     const processedProducts = rows.map((d) => {
       const id = d.id ?? d.product_id ?? d.productId;
       const name = d.name ?? d.product_name ?? d.productName ?? '';
@@ -400,6 +366,9 @@ export default function POS() {
       const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
       const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
       
+      // Get expiration date - prioritize transfer_expiration (from tbl_fifo_stock), then expiration_date, then expiration
+      const expirationDate = d.transfer_expiration ?? d.expiration_date ?? d.expiration ?? null;
+      
       // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
       const requiresPrescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
       
@@ -412,12 +381,56 @@ export default function POS() {
         description: String(description),
         location_name: location ? String(location) : null,
         requires_prescription: requiresPrescription,
-        is_bulk: Boolean(isBulkProduct)
+        is_bulk: Boolean(isBulkProduct),
+        expiration_date: expirationDate // Add expiration date
       };
     });
+
+    // Deduplicate products by ID - keep the one with EARLIEST expiration (FIFO principle)
+    const uniqueProducts = [];
+    const productMap = new Map();
     
-    console.log('🔍 normalizeProducts output:', processedProducts);
-    return processedProducts.filter(p => p && p.id && p.name);
+    processedProducts.forEach(product => {
+      if (!product.id || !product.name) return; // Skip invalid products
+      
+      const existingProduct = productMap.get(product.id);
+      
+      if (!existingProduct) {
+        // First occurrence of this product ID
+        productMap.set(product.id, product);
+        uniqueProducts.push(product);
+      } else {
+        // Duplicate product ID found - keep the one with EARLIEST expiration date (FIFO)
+        const currentExpiry = product.expiration_date ? new Date(product.expiration_date) : new Date('9999-12-31');
+        const existingExpiry = existingProduct.expiration_date ? new Date(existingProduct.expiration_date) : new Date('9999-12-31');
+        
+        if (currentExpiry < existingExpiry) {
+          // Replace with earlier expiration version (FIFO principle - sell oldest stock first)
+          const index = uniqueProducts.findIndex(p => p.id === product.id);
+          if (index !== -1) {
+            uniqueProducts[index] = product;
+            productMap.set(product.id, product);
+            console.log(`🔄 Prioritized "${product.name}" expiring on ${product.expiration_date} over ${existingProduct.expiration_date} (FIFO - Earliest Expiry First)`);
+          }
+        } else {
+          console.log(`🔄 Kept "${existingProduct.name}" expiring on ${existingProduct.expiration_date} over ${product.expiration_date} (FIFO - Earliest Expiry First)`);
+        }
+      }
+    });
+    
+    // Sort final products by expiration date (earliest first), then by name
+    uniqueProducts.sort((a, b) => {
+      const aDate = a.expiration_date ? new Date(a.expiration_date) : new Date('9999-12-31');
+      const bDate = b.expiration_date ? new Date(b.expiration_date) : new Date('9999-12-31');
+      
+      if (aDate.getTime() !== bDate.getTime()) {
+        return aDate - bDate; // Earlier expiration first
+      }
+      return a.name.localeCompare(b.name); // Then alphabetically
+    });
+    
+    console.log('🔍 normalizeProducts output (deduplicated by expiration):', uniqueProducts);
+    return uniqueProducts;
   };
 
   // Generate search suggestions based on current products
@@ -564,8 +577,8 @@ export default function POS() {
     }
   };
 
-  // Load all available products for the current location
-  const loadAllProducts = async () => {
+  // Load all available products for the current location (wrapped in useCallback to prevent infinite loops)
+  const loadAllProducts = useCallback(async () => {
     try {
       console.log(`🔄 Loading all products for location: ${locationName}`);
       
@@ -653,7 +666,7 @@ export default function POS() {
       console.error('Error loading products:', error);
       setProducts([]);
     }
-  };
+  }, [locationName]); // Only re-create function when locationName changes
 
   // Search products by name for the current location (for items without barcodes)
   const searchProductsByName = async (term) => {
@@ -764,17 +777,17 @@ export default function POS() {
   // Refresh inventory and reload products
   const refreshInventory = async () => {
     try {
-      console.log(`🔄 Ready to scan barcode for ${locationName}...`);
-      // Do not auto-load products anymore; clear list and focus scanner input
-      setProducts([]);
+      console.log(`🔄 Refreshing inventory for ${locationName}...`);
+      // Load all products for the current location
+      await loadAllProducts();
+      
       try {
         const barcodeInput = document.getElementById('barcode-scanner');
         barcodeInput?.focus?.();
       } catch (_) {}
+      
       if (typeof window !== 'undefined' && window.toast) {
-        window.toast.info('I-scan ang barcode para lumabas ang item.');
-      } else {
-        console.log('ℹ️ Scan a barcode to show the item.');
+        window.toast.success('Inventory refreshed successfully!');
       }
     } catch (error) {
       console.error('Error refreshing inventory:', error);
@@ -886,7 +899,8 @@ export default function POS() {
       console.log(`Location changed to: ${locationName}`);
     }
     
-    // Do not auto-load products on location change; wait for barcode scan
+    // Auto-load products for the new location
+    loadAllProducts();
   }, [locationName]);
 
   // Calculate total
@@ -965,14 +979,22 @@ export default function POS() {
     console.log(`✅ Cart cleared. All stock restored.`);
   };
 
-  // Filter products based on search term and selected category, then sort A-Z
+  // Filter products based on search term and selected category, then sort by EXPIRATION DATE (FIFO)
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
     (selectedCategory === 'All' || product.category === selectedCategory)
   );
-  const sortedFilteredProducts = [...filteredProducts].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-  );
+  const sortedFilteredProducts = [...filteredProducts].sort((a, b) => {
+    // Sort by expiration date first (FIFO - earliest expiry first)
+    const aDate = a.expiration_date ? new Date(a.expiration_date) : new Date('9999-12-31');
+    const bDate = b.expiration_date ? new Date(b.expiration_date) : new Date('9999-12-31');
+    
+    if (aDate.getTime() !== bDate.getTime()) {
+      return aDate - bDate; // Earlier expiration first
+    }
+    // Then sort alphabetically by name
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
 
   // Update quantity input when navigating
   useEffect(() => {
@@ -2294,28 +2316,15 @@ export default function POS() {
 
   const confirmLogout = async () => {
     try {
-      // Stop heartbeat service immediately
-      console.log('💔 Stopping heartbeat service (POS logout)');
-      HeartbeatService.stop();
-
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
-      let empId = null;
-      
-      if (userData) {
-        try {
-          const user = JSON.parse(userData);
-          empId = user.user_id || user.emp_id || null;
-        } catch (e) {
-          console.error('Failed to parse user data:', e);
-        }
-      }
+      const empId = userData ? JSON.parse(userData).user_id : null;
       
       console.log('POS Logout attempt - User data:', userData);
       console.log('POS Logout attempt - Emp ID:', empId);
       
       // Call logout API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/login.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -2351,6 +2360,7 @@ export default function POS() {
     try {
       // Fetch current user data
       const response = await apiHandler.getCurrentUser();
+      console.log('API Response:', response); // Debug log
       
       if (response.success && response.data) {
         setCredentialsData({
@@ -2360,6 +2370,7 @@ export default function POS() {
           newPassword: '',
           confirmPassword: ''
         });
+        console.log('Set credentials data from API:', response.data); // Debug log
       } else {
         // If API fails, use fallback data
         setCredentialsData({
@@ -2369,6 +2380,7 @@ export default function POS() {
           newPassword: '',
           confirmPassword: ''
         });
+        console.log('Set fallback credentials data'); // Debug log
       }
       setShowCredentialsModal(true);
       setCredentialsFocusIndex(0);
@@ -2401,10 +2413,14 @@ export default function POS() {
   };
 
   const updateCredentialsField = (field, value) => {
-    setCredentialsData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setCredentialsData(prev => {
+      const newData = {
+        ...prev,
+        [field]: value
+      };
+      console.log('Updated credentials data:', newData); // Debug log
+      return newData;
+    });
   };
 
   const validateCredentialsForm = () => {
@@ -2633,18 +2649,6 @@ export default function POS() {
     }
   }, [products, locationName]);
 
-  // Show loading screen while checking authentication
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Verifying authentication...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
       <style jsx>{`
@@ -2744,11 +2748,12 @@ export default function POS() {
                           searchProductsByName(v);
                         }
                       } else {
-                        refreshInventory();
+                        // Load all products when search is empty
+                        loadAllProducts();
                       }
                     }}
                     className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-lg font-bold shadow-lg hover:shadow-xl"
-                    title="Search (Enter) or scan barcode; empty to refresh"
+                    title="Search (Enter) or scan barcode; empty to load all products"
                   >
                     🔍 Search
                   </button>
@@ -2867,6 +2872,21 @@ export default function POS() {
                 </div>
               </div>
 
+              {/* FIFO Notice Banner */}
+              <div className="mb-4 p-3 bg-gradient-to-r from-green-50 to-green-100 border-2 border-green-400 rounded-xl shadow-md">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📅</span>
+                  <div>
+                    <div className="text-base font-bold text-green-900">
+                      FIFO System Active - Products Sorted by Expiration Date
+                    </div>
+                    <div className="text-sm font-medium text-green-800 mt-1">
+                      ⚠️ <strong>Products expiring soonest appear first</strong> - This ensures older stock is sold before newer stock to minimize waste
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Section 1: Product List (A-Z) */}
               <div ref={productListRef} className="overflow-y-auto flex-1 scrollbar-hide" style={{ maxHeight: '400px' }}>
                 <table className="w-full min-w-max">
@@ -2876,6 +2896,12 @@ export default function POS() {
                         <div className="flex items-center gap-2">
                           <span className="text-gray-500">📦</span>
                           Product name
+                        </div>
+                      </th>
+                      <th className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="text-gray-500">📅</span>
+                          Expiration
                         </div>
                       </th>
                       <th className="px-4 py-3 text-right">
@@ -2904,7 +2930,7 @@ export default function POS() {
                     {sortedFilteredProducts.map((product, index) => (
                       <tr
                         ref={el => productItemRefs.current[index] = el}
-                        key={product.id}
+                        key={`${product.id}-${index}`}
                         className={`transition-all duration-200 hover:bg-gray-50 ${
                           navigationIndex === 1 && selectedIndex === index ? 'ring-2 ring-gray-500 bg-gray-50 shadow-sm' : ''
                         } ${
@@ -2920,6 +2946,53 @@ export default function POS() {
                             )}
                             <span className="text-gray-800">{product.name}</span>
                           </div>
+                        </td>
+                        <td className="px-4 py-4 text-center text-gray-700">
+                          {(() => {
+                            if (!product.expiration_date) return <span className="text-gray-400 text-xs">N/A</span>;
+                            
+                            const expiryDate = new Date(product.expiration_date);
+                            const today = new Date();
+                            const daysUntilExpiry = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+                            
+                            // Format date
+                            const formattedDate = expiryDate.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric' 
+                            });
+                            
+                            // Color coding based on days until expiry
+                            let colorClass = 'bg-green-100 text-green-800 border-green-300';
+                            let warningIcon = '✅';
+                            
+                            if (daysUntilExpiry < 0) {
+                              colorClass = 'bg-red-200 text-red-900 border-red-400';
+                              warningIcon = '⚠️';
+                            } else if (daysUntilExpiry <= 7) {
+                              colorClass = 'bg-red-100 text-red-800 border-red-300';
+                              warningIcon = '🔴';
+                            } else if (daysUntilExpiry <= 30) {
+                              colorClass = 'bg-orange-100 text-orange-800 border-orange-300';
+                              warningIcon = '⚠️';
+                            } else if (daysUntilExpiry <= 60) {
+                              colorClass = 'bg-yellow-100 text-yellow-800 border-yellow-300';
+                              warningIcon = '⏰';
+                            }
+                            
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <span className={`px-2 py-1 rounded-full text-xs font-bold border ${colorClass}`}>
+                                  {warningIcon} {formattedDate}
+                                </span>
+                                <span className="text-xs text-gray-600">
+                                  {daysUntilExpiry < 0 
+                                    ? `Expired ${Math.abs(daysUntilExpiry)}d ago` 
+                                    : `${daysUntilExpiry}d left`}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-4 text-right text-gray-700 font-medium">
                           <span className={`px-2 py-1 rounded-full text-xs ${
@@ -3012,14 +3085,23 @@ export default function POS() {
                    <div className="text-8xl mb-6">📦</div>
                    <h3 className="text-2xl font-bold text-gray-800 mb-4">No Products Available</h3>
                    <p className="text-lg text-gray-700 mb-6 max-w-2xl mx-auto">
-                     {searchTerm ? `No products match your search in ${locationName}.` : `Walang products na naka-display sa ${locationName}. I-scan muna ang barcode para lumabas ang item.`}
+                     {searchTerm 
+                       ? `No products match your search "${searchTerm}" in ${locationName}.` 
+                       : `No products loaded yet for ${locationName}.`
+                     }
                    </p>
                    <div className="text-base font-medium text-gray-600 mb-4">
-                     💡 I-scan ang barcode para magpakita ng product sa {locationName}. Hindi auto-load ang list.
+                     💡 Click the <strong>🔍 Search</strong> button (with empty search) to load all products, or scan a barcode to find specific items.
                    </div>
                    <div className="inline-block px-4 py-2 bg-blue-100 text-blue-800 rounded-lg text-base font-bold border border-blue-300">
                      🖥️ Terminal: <strong>{terminalName}</strong> → Location: <strong>{locationName}</strong>
                    </div>
+                   <button
+                     onClick={loadAllProducts}
+                     className="mt-6 px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-lg font-bold shadow-lg hover:shadow-xl"
+                   >
+                     📦 Load All Products
+                   </button>
                  </div>
                )}
             </div>
@@ -4602,5 +4684,7 @@ export default function POS() {
     </>
   );
 }
+
+               
 
                

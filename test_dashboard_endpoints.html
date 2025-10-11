@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        button { padding: 10px 15px; margin: 5px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>Dashboard API Endpoint Tests</h1>
+    
+    <div class="test-section info">
+        <h3>Test Controls</h3>
+        <button onclick="testAllEndpoints()">Test All Endpoints</button>
+        <button onclick="testWarehouseKPIs()">Test Warehouse KPIs</button>
+        <button onclick="testLocations()">Test Locations</button>
+        <button onclick="testProducts()">Test Products</button>
+        <button onclick="testTransfers()">Test Transfers</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        const API_BASE_URL = window.location.origin + '/caps2e2/Api';
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        function addResult(title, data, isSuccess = true) {
+            const resultsDiv = document.getElementById('results');
+            const section = document.createElement('div');
+            section.className = `test-section ${isSuccess ? 'success' : 'error'}`;
+            
+            section.innerHTML = `
+                <h3>${title}</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+                <small>Time: ${new Date().toLocaleString()}</small>
+            `;
+            
+            resultsDiv.appendChild(section);
+        }
+        
+        async function testEndpoint(endpoint, action, data = {}) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ action, ...data })
+                });
+                
+                const result = await response.json();
+                return { success: true, data: result };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+        
+        async function testWarehouseKPIs() {
+            const result = await testEndpoint('backend.php', 'get_warehouse_kpis', {
+                product: 'All',
+                location: 'Warehouse',
+                timePeriod: 'monthly'
+            });
+            
+            addResult('Warehouse KPIs Test', result, result.success);
+        }
+        
+        async function testLocations() {
+            const result = await testEndpoint('backend.php', 'get_locations');
+            addResult('Locations Test', result, result.success);
+        }
+        
+        async function testProducts() {
+            const result = await testEndpoint('backend.php', 'get_products', { location: 'Warehouse' });
+            addResult('Products Test', result, result.success);
+        }
+        
+        async function testTransfers() {
+            const result = await testEndpoint('transfer_api.php', 'get_transfers_with_details');
+            addResult('Transfers Test', result, result.success);
+        }
+        
+        async function testAllEndpoints() {
+            clearResults();
+            
+            await testWarehouseKPIs();
+            await testLocations();
+            await testProducts();
+            await testTransfers();
+            
+            // Test convenience store products
+            const convenienceResult = await testEndpoint('backend.php', 'get_products_by_location_name', {
+                location_name: 'Convenience Store'
+            });
+            addResult('Convenience Store Products Test', convenienceResult, convenienceResult.success);
+            
+            // Test pharmacy products
+            const pharmacyResult = await testEndpoint('backend.php', 'get_products_by_location_name', {
+                location_name: 'Pharmacy Store'
+            });
+            addResult('Pharmacy Products Test', pharmacyResult, pharmacyResult.success);
+        }
+        
+        // Auto-run basic tests on page load
+        window.onload = function() {
+            addResult('Page Loaded', { message: 'Dashboard API Test page loaded successfully' });
+        };
+    </script>
+</body>
+</html>

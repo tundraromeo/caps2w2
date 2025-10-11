@@ -104,7 +104,8 @@ function InventoryTransfer() {
     console.log("🚀 API Call Payload:", { action, ...data })
 
     try {
-      const response = await api.callGenericAPI('transfer_api.php', action, data);
+      // Use the correct endpoint based on action mapping
+      const response = await api.callGenericAPI('backend.php', action, data);
       console.log("✅ API Success Response:", response)
       return response;
     } catch (error) {
@@ -263,20 +264,57 @@ function InventoryTransfer() {
 
   const loadTransferLogs = async () => {
     try {
-      const response = await handleApiCall("get_transfer_log")
+      // Use get_transfers_with_details instead of get_transfer_log
+      // because tbl_transfer_log is empty but tbl_transfer_header has data
+      const response = await handleApiCall("get_transfers_with_details")
       console.log("📊 Transfer Logs Loaded from API:", response)
 
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ Number of transfer logs received:", response.data.length)
-        setTransferLogs(response.data)
+        console.log("✅ Transfer logs loaded:", response.data.length)
+        
+        // Convert transfer header data to transfer log format
+        const transferLogs = []
+        response.data.forEach(transfer => {
+          if (transfer.products && transfer.products.length > 0) {
+            transfer.products.forEach(product => {
+              transferLogs.push({
+                transfer_id: transfer.transfer_header_id,
+                product_id: product.product_id || 0,
+                product_name: product.product_name || 'Unknown Product',
+                from_location: transfer.source_location_name || 'Unknown',
+                to_location: transfer.destination_location_name || 'Unknown',
+                quantity: product.qty || product.quantity || 0,
+                transfer_date: transfer.date || new Date().toISOString().split('T')[0],
+                created_at: transfer.date || new Date().toISOString(),
+                batch_details: product.batch_details || []
+              })
+            })
+          } else {
+            // If no products, create a single log entry
+            transferLogs.push({
+              transfer_id: transfer.transfer_header_id,
+              product_id: 0,
+              product_name: 'Transfer Summary',
+              from_location: transfer.source_location_name || 'Unknown',
+              to_location: transfer.destination_location_name || 'Unknown',
+              quantity: transfer.total_products || 0,
+              transfer_date: transfer.date || new Date().toISOString().split('T')[0],
+              created_at: transfer.date || new Date().toISOString(),
+              batch_details: []
+            })
+          }
+        })
+        
+        setTransferLogs(transferLogs)
       } else {
         console.warn("⚠️ No transfer logs found or invalid format")
+        console.log("🔍 Response structure:", response)
         setTransferLogs([])
       }
     } catch (error) {
       console.error("❌ Error loading transfer logs:", error)
       setTransferLogs([])
-      try { await logActivity({ activityType: 'API_ERROR', description: `InventoryTransfer get_transfer_log failed: ${String(error && error.message ? error.message : error)}` }); } catch (_) {}
+      try { await logActivity({ activityType: 'API_ERROR', description: `InventoryTransfer get_transfers_with_details failed: ${String(error && error.message ? error.message : error)}` }); } catch (_) {}
     }
   }
 
@@ -368,6 +406,7 @@ function InventoryTransfer() {
     try {
       const res = await handleApiCall("get_locations")
       console.log("📦 API Response from get_locations:", res)
+      
       if (res.success && Array.isArray(res.data)) {
         setLocations(res.data)
         
@@ -601,32 +640,78 @@ function InventoryTransfer() {
     setSelectedTransferForBatchDetails(transfer);
     setShowBatchDetailsModal(true);
     
-    // Load batch details for this transfer
+    // Load comprehensive product details for this transfer
     try {
-      console.log("🔄 Loading batch details for transfer ID:", transfer.transfer_header_id);
-      const batchResponse = await handleApiCall("get_transfer_batch_details", {
+      console.log("🔄 Loading comprehensive product details for transfer ID:", transfer.transfer_header_id);
+      
+      // Get detailed product information including stock info and batch details
+      const productResponse = await handleApiCall("get_product_details", {
         transfer_id: transfer.transfer_header_id
       });
       
-      if (batchResponse.success && Array.isArray(batchResponse.data)) {
-        console.log("✅ Batch details loaded:", batchResponse.data);
-        // Update the transfer object with batch details
+      console.log("📊 Product details response:", productResponse);
+      
+      if (productResponse.success && productResponse.data) {
+        const { product, stock_info, batch_details } = productResponse.data;
+        console.log("✅ Product details loaded:", { product, stock_info, batch_details });
+        
+        // Update the transfer object with comprehensive details
         const updatedTransfer = {
           ...transfer,
-          batch_details: batchResponse.data
+          // Product information
+          product_id: product.product_id,
+          product_name: product.product_name,
+          barcode: product.barcode,
+          description: product.description,
+          category_name: product.category_name,
+          brand: product.brand,
+          supplier_name: product.supplier_name,
+          // Transfer information
+          transfer_date: product.transfer_date,
+          transfer_quantity: product.transfer_quantity,
+          unit_price: product.unit_price,
+          transfer_srp: product.transfer_srp,
+          source_location: product.source_location,
+          destination_location: product.destination_location,
+          employee_name: product.employee_name,
+          // Stock information
+          total_stock: stock_info.total_stock || 0,
+          total_batches: stock_info.total_batches || 0,
+          earliest_expiry: stock_info.earliest_expiry,
+          latest_expiry: stock_info.latest_expiry,
+          average_srp: stock_info.average_srp || 0,
+          min_srp: stock_info.min_srp || 0,
+          max_srp: stock_info.max_srp || 0,
+          // Batch details
+          batch_details: batch_details || []
         };
+        
         setSelectedTransferForBatchDetails(updatedTransfer);
+        console.log("✅ Updated transfer with comprehensive details:", updatedTransfer);
       } else {
-        console.warn("⚠️ No batch details found for transfer:", transfer.transfer_header_id);
-        // Set empty batch details
-        const updatedTransfer = {
-          ...transfer,
-          batch_details: []
-        };
-        setSelectedTransferForBatchDetails(updatedTransfer);
+        console.warn("⚠️ No product details found for transfer:", transfer.transfer_header_id);
+        // Fallback: try to get batch details only
+        const batchResponse = await handleApiCall("get_transfer_batch_details", {
+          transfer_id: transfer.transfer_header_id
+        });
+        
+        if (batchResponse.success && Array.isArray(batchResponse.data)) {
+          const updatedTransfer = {
+            ...transfer,
+            batch_details: batchResponse.data
+          };
+          setSelectedTransferForBatchDetails(updatedTransfer);
+        } else {
+          // Set empty batch details
+          const updatedTransfer = {
+            ...transfer,
+            batch_details: []
+          };
+          setSelectedTransferForBatchDetails(updatedTransfer);
+        }
       }
     } catch (error) {
-      console.error("❌ Error loading batch details:", error);
+      console.error("❌ Error loading product details:", error);
       // Set empty batch details on error
       const updatedTransfer = {
         ...transfer,
@@ -1670,6 +1755,7 @@ function InventoryTransfer() {
           </div>
 
         </div>
+
         {/* Transfer Log Table */}
         <div className={`rounded-lg shadow-sm border mb-6 ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
           <div className={`p-4 border-b ${isDarkMode ? 'border-slate-600' : 'border-gray-200'}`}>
@@ -1766,22 +1852,12 @@ function InventoryTransfer() {
                             e.preventDefault();
                             e.stopPropagation();
                             console.log("ℹ️ Details icon clicked for transfer:", log);
-                            console.log("🔍 Fetching fresh transfer details including batch info...");
-                            (async () => {
-                              try {
-                                const full = await handleApiCall("get_transfer_log_by_id", { transfer_id: log.transfer_id });
-                                if (full?.success && full?.data) {
-                                  setSelectedTransferForBatchDetails(full.data);
-                                } else {
-                                  setSelectedTransferForBatchDetails(log);
-                                }
-                              } catch (_) {
-                                setSelectedTransferForBatchDetails(log);
-                              } finally {
-                                setShowBatchDetailsModal(true);
-                                console.log("✅ Modal state set - should show modal now");
-                              }
-                            })();
+                            console.log("🔍 Using existing transfer data (tbl_transfer_log is deprecated)...");
+                            // Note: get_transfer_log_by_id queries deprecated tbl_transfer_log table
+                            // Instead, use the data already loaded from get_transfers_with_details
+                            setSelectedTransferForBatchDetails(log);
+                            setShowBatchDetailsModal(true);
+                            console.log("✅ Modal state set - showing batch details");
                           }}
                           className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all duration-200 hover:shadow-md ${
                             isDarkMode 
@@ -1869,16 +1945,25 @@ function InventoryTransfer() {
 
               {/* Summary Cards */}
               <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                   {/* Product Info Card */}
                   <div className={`border rounded-lg p-4 ${isDarkMode ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-200'}`}>
                     <div className="flex items-center gap-3">
                       <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-blue-800/30' : 'bg-blue-100'}`}>
                         <Package className={`h-6 w-6 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h4 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{selectedTransferForBatchDetails.product_name}</h4>
-                        <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Product ID: {selectedTransferForBatchDetails.product_id}</p>
+                        <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>ID: {selectedTransferForBatchDetails.product_id}</p>
+                        {selectedTransferForBatchDetails.barcode && (
+                          <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Barcode: {selectedTransferForBatchDetails.barcode}</p>
+                        )}
+                        {selectedTransferForBatchDetails.category_name && (
+                          <p className={`text-xs ${isDarkMode ? 'text-blue-300' : 'text-blue-600'}`}>Category: {selectedTransferForBatchDetails.category_name}</p>
+                        )}
+                        {selectedTransferForBatchDetails.brand && (
+                          <p className={`text-xs ${isDarkMode ? 'text-blue-300' : 'text-blue-600'}`}>Brand: {selectedTransferForBatchDetails.brand}</p>
+                        )}
                         <p className={`text-lg font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Transfer ID: TR-{selectedTransferForBatchDetails.transfer_id}</p>
                       </div>
                     </div>
@@ -1890,11 +1975,17 @@ function InventoryTransfer() {
                       <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-green-800/30' : 'bg-green-100'}`}>
                         <CheckCircle className={`h-6 w-6 ${isDarkMode ? 'text-green-400' : 'text-green-600'}`} />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h4 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Transfer Details</h4>
-                        <p className={`text-sm ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>Quantity: {selectedTransferForBatchDetails.quantity} units</p>
-                        <p className={`text-sm ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>From: {selectedTransferForBatchDetails.from_location}</p>
-                        <p className={`text-sm ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>To: {selectedTransferForBatchDetails.to_location}</p>
+                        <p className={`text-sm ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>Quantity: {selectedTransferForBatchDetails.transfer_quantity || selectedTransferForBatchDetails.quantity} units</p>
+                        <p className={`text-sm ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>From: {selectedTransferForBatchDetails.source_location || selectedTransferForBatchDetails.from_location}</p>
+                        <p className={`text-sm ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>To: {selectedTransferForBatchDetails.destination_location || selectedTransferForBatchDetails.to_location}</p>
+                        {selectedTransferForBatchDetails.employee_name && (
+                          <p className={`text-xs ${isDarkMode ? 'text-green-300' : 'text-green-700'}`}>By: {selectedTransferForBatchDetails.employee_name}</p>
+                        )}
+                        {selectedTransferForBatchDetails.transfer_srp && (
+                          <p className={`text-xs ${isDarkMode ? 'text-green-300' : 'text-green-700'}`}>SRP: ₱{Number.parseFloat(selectedTransferForBatchDetails.transfer_srp).toFixed(2)}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1934,13 +2025,72 @@ function InventoryTransfer() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Stock Information Card */}
+                  {(selectedTransferForBatchDetails.total_stock !== undefined || selectedTransferForBatchDetails.total_batches !== undefined) && (
+                    <div className={`border rounded-lg p-4 ${isDarkMode ? 'bg-indigo-900/20 border-indigo-700' : 'bg-indigo-50 border-indigo-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-indigo-800/30' : 'bg-indigo-100'}`}>
+                          <Package className={`h-6 w-6 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Current Stock</h4>
+                          <p className={`text-sm ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                            Total Stock: {selectedTransferForBatchDetails.total_stock || 0} units
+                          </p>
+                          <p className={`text-sm ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                            Active Batches: {selectedTransferForBatchDetails.total_batches || 0}
+                          </p>
+                          {selectedTransferForBatchDetails.average_srp && (
+                            <p className={`text-xs ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                              Avg SRP: ₱{Number.parseFloat(selectedTransferForBatchDetails.average_srp).toFixed(2)}
+                            </p>
+                          )}
+                          {selectedTransferForBatchDetails.earliest_expiry && (
+                            <p className={`text-xs ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                              Expires: {new Date(selectedTransferForBatchDetails.earliest_expiry).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Supplier Information Card */}
+                  {selectedTransferForBatchDetails.supplier_name && (
+                    <div className={`border rounded-lg p-4 ${isDarkMode ? 'bg-yellow-900/20 border-yellow-700' : 'bg-yellow-50 border-yellow-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-yellow-800/30' : 'bg-yellow-100'}`}>
+                          <Package className={`h-6 w-6 ${isDarkMode ? 'text-yellow-400' : 'text-yellow-600'}`} />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Supplier Info</h4>
+                          <p className={`text-sm ${isDarkMode ? 'text-yellow-400' : 'text-yellow-600'}`}>
+                            Supplier: {selectedTransferForBatchDetails.supplier_name}
+                          </p>
+                          {selectedTransferForBatchDetails.description && (
+                            <p className={`text-xs ${isDarkMode ? 'text-yellow-300' : 'text-yellow-700'}`}>
+                              {selectedTransferForBatchDetails.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Batch Details Table */}
                 <div className={`border rounded-lg ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-gray-200'}`}>
                   <div className={`px-6 py-4 border-b ${isDarkMode ? 'border-slate-600' : 'border-gray-200'}`}>
                     <h4 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Batch Consumption Details</h4>
-                    <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Showing which batches were consumed for this transfer</p>
+                    <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+                      Showing which batches were consumed for this transfer
+                      {selectedTransferForBatchDetails.batch_details && selectedTransferForBatchDetails.batch_details.length > 0 && (
+                        <span className={`ml-2 px-2 py-1 text-xs rounded-full ${isDarkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-800'}`}>
+                          {selectedTransferForBatchDetails.batch_details.filter(batch => (batch.quantity || batch.batch_quantity || 0) > 0).length} batch{selectedTransferForBatchDetails.batch_details.filter(batch => (batch.quantity || batch.batch_quantity || 0) > 0).length > 1 ? 'es' : ''} found
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -1962,39 +2112,82 @@ function InventoryTransfer() {
                               const quantity = batch.quantity || batch.batch_quantity || 0;
                               return quantity > 0; // Only show batches with quantity > 0
                             })
-                            .map((batch, index) => (
-                            <tr key={index} className={isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-50'}>
-                              <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                                {batch.batch_number || batch.batch_id || `B-${selectedTransferForBatchDetails.transfer_id}-${index + 1}`}
-                              </td>
-                              <td className={`px-6 py-4 whitespace-nowrap text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-500'}`}>
-                                {batch.batch_reference || `BR-${selectedTransferForBatchDetails.transfer_id}-${selectedTransferForBatchDetails.product_id}`}
-                              </td>
-                              <td className={`px-6 py-4 whitespace-nowrap text-center text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${isDarkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-800'}`}>
-                                  {batch.quantity || batch.batch_quantity || 0} units
-                                </span>
-                              </td>
-                              <td className={`px-6 py-4 whitespace-nowrap text-center text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                                ₱{Number.parseFloat(batch.batch_srp || batch.srp || 0).toFixed(2)}
-                              </td>
-                              <td className={`px-6 py-4 whitespace-nowrap text-center text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-500'}`}>
-                                {batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center">
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isDarkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800'}`}>
-                                  Consumed
-                                </span>
-                              </td>
-                            </tr>
-                          ))
+                            .map((batch, index) => {
+                              const quantity = batch.quantity || batch.batch_quantity || 0;
+                              const srp = batch.batch_srp || batch.srp || 0;
+                              const expiryDate = batch.expiration_date;
+                              const isExpired = expiryDate && new Date(expiryDate) < new Date();
+                              const isExpiringSoon = expiryDate && new Date(expiryDate) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                              
+                              return (
+                                <tr key={index} className={isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-50'}>
+                                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    <div className="flex items-center">
+                                      <Package className={`h-4 w-4 mr-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                                      {batch.batch_number || batch.batch_id || `B-${selectedTransferForBatchDetails.transfer_id}-${index + 1}`}
+                                    </div>
+                                  </td>
+                                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-500'}`}>
+                                    <code className={`px-2 py-1 rounded text-xs ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-gray-100 text-gray-700'}`}>
+                                      {batch.batch_reference || `BR-${selectedTransferForBatchDetails.transfer_id}-${selectedTransferForBatchDetails.product_id}`}
+                                    </code>
+                                  </td>
+                                  <td className={`px-6 py-4 whitespace-nowrap text-center text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${isDarkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-800'}`}>
+                                      {quantity} units
+                                    </span>
+                                  </td>
+                                  <td className={`px-6 py-4 whitespace-nowrap text-center text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    <span className="font-mono">
+                                      ₱{Number.parseFloat(srp).toFixed(2)}
+                                    </span>
+                                  </td>
+                                  <td className={`px-6 py-4 whitespace-nowrap text-center text-sm ${isDarkMode ? 'text-slate-300' : 'text-gray-500'}`}>
+                                    {expiryDate ? (
+                                      <div className="flex flex-col items-center">
+                                        <span className={`font-mono ${isExpired ? 'text-red-500' : isExpiringSoon ? 'text-yellow-500' : ''}`}>
+                                          {new Date(expiryDate).toLocaleDateString()}
+                                        </span>
+                                        {isExpired && (
+                                          <span className="text-xs text-red-500">Expired</span>
+                                        )}
+                                        {isExpiringSoon && !isExpired && (
+                                          <span className="text-xs text-yellow-500">Expiring Soon</span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400">N/A</span>
+                                    )}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isDarkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-800'}`}>
+                                      Consumed
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
                         ) : (
                           <tr>
                             <td colSpan={6} className={`px-6 py-8 text-center ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
-                              <div className="flex flex-col items-center space-y-2">
-                                <Package className={`h-8 w-8 ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`} />
-                                <p className={`text-lg font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-900'}`}>No detailed batch information available</p>
-                                <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>This transfer may not have detailed batch tracking</p>
+                              <div className="flex flex-col items-center space-y-4">
+                                <div className={`p-4 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-gray-100'}`}>
+                                  <Package className={`h-12 w-12 ${isDarkMode ? 'text-slate-500' : 'text-gray-400'}`} />
+                                </div>
+                                <div>
+                                  <p className={`text-lg font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-900'}`}>
+                                    No detailed batch information available
+                                  </p>
+                                  <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-600'}`}>
+                                    This transfer may not have detailed batch tracking or the batch details are still being processed
+                                  </p>
+                                  <div className={`mt-3 p-3 rounded-lg ${isDarkMode ? 'bg-slate-700' : 'bg-gray-100'}`}>
+                                    <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                                      <strong>Note:</strong> Batch details are automatically generated when transfers are processed. 
+                                      If this transfer was recently created, batch details may take a moment to appear.
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -2006,27 +2199,78 @@ function InventoryTransfer() {
 
                 {/* Summary */}
                 <div className={`mt-6 p-4 rounded-lg ${isDarkMode ? 'bg-slate-700' : 'bg-gray-50'}`}>
-                  <h4 className={`font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Transfer Summary</h4>
+                  <h4 className={`font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Transfer Summary</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Total Quantity:</span>
-                      <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{selectedTransferForBatchDetails.quantity} units</span>
-                    </div>
-                    <div>
-                      <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Batches Used:</span>
-                      <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{selectedTransferForBatchDetails.batch_details?.filter(batch => (batch.quantity || batch.batch_quantity || 0) > 0).length || 0}</span>
-                    </div>
-                    <div>
-                      <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Transfer Date:</span>
-                      <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-                        {new Date(selectedTransferForBatchDetails.transfer_date).toLocaleDateString()}
+                    <div className={`p-3 rounded-lg ${isDarkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <div className="flex items-center mb-1">
+                        <Package className={`h-4 w-4 mr-2 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
+                        <span className={`font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Total Quantity</span>
+                      </div>
+                      <span className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {selectedTransferForBatchDetails.transfer_quantity || selectedTransferForBatchDetails.quantity || 0} units
                       </span>
                     </div>
-                    <div>
-                      <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>FIFO Order:</span>
-                      <span className={`ml-2 font-semibold ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>✓ Active</span>
+                    <div className={`p-3 rounded-lg ${isDarkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <div className="flex items-center mb-1">
+                        <Package className={`h-4 w-4 mr-2 ${isDarkMode ? 'text-orange-400' : 'text-orange-600'}`} />
+                        <span className={`font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Batches Used</span>
+                      </div>
+                      <span className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {selectedTransferForBatchDetails.batch_details?.filter(batch => (batch.quantity || batch.batch_quantity || 0) > 0).length || 0}
+                      </span>
+                    </div>
+                    <div className={`p-3 rounded-lg ${isDarkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <div className="flex items-center mb-1">
+                        <Clock className={`h-4 w-4 mr-2 ${isDarkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+                        <span className={`font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Transfer Date</span>
+                      </div>
+                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {selectedTransferForBatchDetails.transfer_date ? new Date(selectedTransferForBatchDetails.transfer_date).toLocaleDateString() : 'N/A'}
+                      </span>
+                    </div>
+                    <div className={`p-3 rounded-lg ${isDarkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <div className="flex items-center mb-1">
+                        <CheckCircle className={`h-4 w-4 mr-2 ${isDarkMode ? 'text-green-400' : 'text-green-600'}`} />
+                        <span className={`font-medium ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>FIFO Order</span>
+                      </div>
+                      <span className={`text-sm font-semibold ${isDarkMode ? 'text-green-400' : 'text-green-600'}`}>✓ Active</span>
                     </div>
                   </div>
+                  
+                  {/* Additional Details */}
+                  {selectedTransferForBatchDetails.batch_details && selectedTransferForBatchDetails.batch_details.length > 0 && (
+                    <div className={`mt-4 p-3 rounded-lg ${isDarkMode ? 'bg-slate-600' : 'bg-white'}`}>
+                      <h5 className={`font-medium mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Batch Details Summary</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        <div>
+                          <span className={isDarkMode ? 'text-slate-400' : 'text-gray-500'}>Total Value:</span>
+                          <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            ₱{selectedTransferForBatchDetails.batch_details.reduce((sum, batch) => {
+                              const quantity = batch.quantity || batch.batch_quantity || 0;
+                              const srp = batch.batch_srp || batch.srp || 0;
+                              return sum + (quantity * srp);
+                            }, 0).toFixed(2)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className={isDarkMode ? 'text-slate-400' : 'text-gray-500'}>Average SRP:</span>
+                          <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            ₱{selectedTransferForBatchDetails.batch_details.length > 0 ? 
+                              (selectedTransferForBatchDetails.batch_details.reduce((sum, batch) => sum + (batch.batch_srp || batch.srp || 0), 0) / selectedTransferForBatchDetails.batch_details.length).toFixed(2) : 
+                              '0.00'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className={isDarkMode ? 'text-slate-400' : 'text-gray-500'}>Expiry Range:</span>
+                          <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            {selectedTransferForBatchDetails.batch_details.some(batch => batch.expiration_date) ? 
+                              `${new Date(Math.min(...selectedTransferForBatchDetails.batch_details.filter(batch => batch.expiration_date).map(batch => new Date(batch.expiration_date)))).toLocaleDateString()} - ${new Date(Math.max(...selectedTransferForBatchDetails.batch_details.filter(batch => batch.expiration_date).map(batch => new Date(batch.expiration_date)))).toLocaleDateString()}` : 
+                              'N/A'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

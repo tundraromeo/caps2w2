@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test FIFO Fix - No p.srp/p.quantity Errors</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-card h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .success {
+            color: #10b981;
+            font-weight: bold;
+        }
+        .error {
+            color: #ef4444;
+            font-weight: bold;
+        }
+        .warning {
+            color: #f59e0b;
+            font-weight: bold;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        pre {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .status.pending { background: #fef3c7; color: #92400e; }
+        .status.testing { background: #dbeafe; color: #1e40af; }
+        .status.passed { background: #d1fae5; color: #065f46; }
+        .status.failed { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <h1>🧪 FIFO Structure Fix - Test Suite</h1>
+    <p><strong>Objective:</strong> Verify that all API calls work correctly without <code>p.srp</code> or <code>p.quantity</code> column errors</p>
+
+    <div class="test-card">
+        <h3>Test 1: Get Products with Oldest Batch <span id="test1-status" class="status pending">PENDING</span></h3>
+        <p>Tests: <code>get_products_oldest_batch</code> action</p>
+        <button onclick="test1()">Run Test</button>
+        <div id="test1-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h3>Test 2: Get FIFO Stock <span id="test2-status" class="status pending">PENDING</span></h3>
+        <p>Tests: <code>get_fifo_stock</code> action</p>
+        <button onclick="test2()">Run Test</button>
+        <div id="test2-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h3>Test 3: Get POS Products (Convenience) <span id="test3-status" class="status pending">PENDING</span></h3>
+        <p>Tests: <code>get_pos_products_fifo</code> action</p>
+        <button onclick="test3()">Run Test</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h3>Test 4: Get All Batches <span id="test4-status" class="status pending">PENDING</span></h3>
+        <p>Tests: <code>get_all_batches</code> action</p>
+        <button onclick="test4()">Run Test</button>
+        <div id="test4-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h3>Summary</h3>
+        <div id="summary">
+            <p>Click "Run All Tests" to start testing</p>
+        </div>
+        <button onclick="runAllTests()" style="background: #10b981;">🚀 Run All Tests</button>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost/caps2e2/Api';
+
+        async function apiCall(endpoint, action, data = {}) {
+            try {
+                const response = await fetch(`${API_BASE}/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, ...data })
+                });
+                return await response.json();
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function test1() {
+            const statusEl = document.getElementById('test1-status');
+            const resultEl = document.getElementById('test1-result');
+            
+            statusEl.textContent = 'TESTING';
+            statusEl.className = 'status testing';
+            resultEl.innerHTML = '<p>⏳ Testing...</p>';
+
+            const result = await apiCall('backend.php', 'get_products_oldest_batch', { location_id: 2 });
+            
+            if (result.success && !result.message?.includes('Column not found') && !result.message?.includes('p.srp')) {
+                statusEl.textContent = 'PASSED';
+                statusEl.className = 'status passed';
+                resultEl.innerHTML = `
+                    <p class="success">✅ Test PASSED!</p>
+                    <p>Products returned: ${result.data?.length || 0}</p>
+                    <pre>${JSON.stringify(result, null, 2).substring(0, 500)}...</pre>
+                `;
+            } else {
+                statusEl.textContent = 'FAILED';
+                statusEl.className = 'status failed';
+                resultEl.innerHTML = `
+                    <p class="error">❌ Test FAILED!</p>
+                    <p>Error: ${result.message || result.error}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            }
+        }
+
+        async function test2() {
+            const statusEl = document.getElementById('test2-status');
+            const resultEl = document.getElementById('test2-result');
+            
+            statusEl.textContent = 'TESTING';
+            statusEl.className = 'status testing';
+            resultEl.innerHTML = '<p>⏳ Testing...</p>';
+
+            // First, get a product ID to test with
+            const productsResult = await apiCall('backend.php', 'get_products', { location_id: 2 });
+            const productId = productsResult.data?.[0]?.product_id || 1;
+
+            const result = await apiCall('backend.php', 'get_fifo_stock', { product_id: productId });
+            
+            if (result.success && !result.message?.includes('Column not found') && !result.message?.includes('p.srp')) {
+                statusEl.textContent = 'PASSED';
+                statusEl.className = 'status passed';
+                resultEl.innerHTML = `
+                    <p class="success">✅ Test PASSED!</p>
+                    <p>FIFO batches returned: ${result.data?.length || 0}</p>
+                    <pre>${JSON.stringify(result, null, 2).substring(0, 500)}...</pre>
+                `;
+            } else {
+                statusEl.textContent = 'FAILED';
+                statusEl.className = 'status failed';
+                resultEl.innerHTML = `
+                    <p class="error">❌ Test FAILED!</p>
+                    <p>Error: ${result.message || result.error}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            }
+        }
+
+        async function test3() {
+            const statusEl = document.getElementById('test3-status');
+            const resultEl = document.getElementById('test3-result');
+            
+            statusEl.textContent = 'TESTING';
+            statusEl.className = 'status testing';
+            resultEl.innerHTML = '<p>⏳ Testing...</p>';
+
+            const result = await apiCall('convenience_store_api.php', 'get_pos_products_fifo', { 
+                location_name: 'convenience',
+                search: '',
+                category: 'all'
+            });
+            
+            if (result.success && !result.message?.includes('Column not found') && !result.message?.includes('p.srp')) {
+                statusEl.textContent = 'PASSED';
+                statusEl.className = 'status passed';
+                resultEl.innerHTML = `
+                    <p class="success">✅ Test PASSED!</p>
+                    <p>Products returned: ${result.data?.length || 0}</p>
+                    <pre>${JSON.stringify(result, null, 2).substring(0, 500)}...</pre>
+                `;
+            } else {
+                statusEl.textContent = 'FAILED';
+                statusEl.className = 'status failed';
+                resultEl.innerHTML = `
+                    <p class="error">❌ Test FAILED!</p>
+                    <p>Error: ${result.message || result.error}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            }
+        }
+
+        async function test4() {
+            const statusEl = document.getElementById('test4-status');
+            const resultEl = document.getElementById('test4-result');
+            
+            statusEl.textContent = 'TESTING';
+            statusEl.className = 'status testing';
+            resultEl.innerHTML = '<p>⏳ Testing...</p>';
+
+            const result = await apiCall('backend.php', 'get_all_batches', { location_id: 2 });
+            
+            if (result.success && !result.message?.includes('Column not found') && !result.message?.includes('p.srp')) {
+                statusEl.textContent = 'PASSED';
+                statusEl.className = 'status passed';
+                resultEl.innerHTML = `
+                    <p class="success">✅ Test PASSED!</p>
+                    <p>Batches returned: ${result.data?.length || 0}</p>
+                    <pre>${JSON.stringify(result, null, 2).substring(0, 500)}...</pre>
+                `;
+            } else {
+                statusEl.textContent = 'FAILED';
+                statusEl.className = 'status failed';
+                resultEl.innerHTML = `
+                    <p class="error">❌ Test FAILED!</p>
+                    <p>Error: ${result.message || result.error}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            }
+        }
+
+        async function runAllTests() {
+            document.getElementById('summary').innerHTML = '<p>⏳ Running all tests...</p>';
+            
+            await test1();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await test2();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await test3();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await test4();
+            
+            // Calculate summary
+            const statuses = ['test1', 'test2', 'test3', 'test4'].map(test => 
+                document.getElementById(`${test}-status`).textContent
+            );
+            
+            const passed = statuses.filter(s => s === 'PASSED').length;
+            const failed = statuses.filter(s => s === 'FAILED').length;
+            
+            const summaryEl = document.getElementById('summary');
+            if (failed === 0) {
+                summaryEl.innerHTML = `
+                    <h2 class="success">🎉 ALL TESTS PASSED! (${passed}/4)</h2>
+                    <p>✅ No more "Column not found: p.srp" or "p.quantity" errors!</p>
+                    <p>✅ FIFO structure fix is working correctly!</p>
+                `;
+            } else {
+                summaryEl.innerHTML = `
+                    <h2 class="error">❌ Some Tests Failed</h2>
+                    <p class="success">Passed: ${passed}/4</p>
+                    <p class="error">Failed: ${failed}/4</p>
+                    <p>Check the individual test results above for details.</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
+
+
