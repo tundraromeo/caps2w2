@@ -987,7 +987,7 @@ function InventoryTransfer() {
       }
     }
     
-    // If there are insufficient products, show a warning but don't block the transfer
+    // If there are insufficient products, show a warning but don&apos;t block the transfer
     if (insufficientProducts.length > 0) {
       const productNames = insufficientProducts.map(p => `${p.name} (${p.requested} requested, ${p.available} available)`).join(', ')
       console.warn(`⚠️ Some products have insufficient stock: ${productNames}`)
@@ -1214,7 +1214,7 @@ function InventoryTransfer() {
     if (isConvenienceStoreTransfer) {
       console.log("🏪 Special handling for Warehouse → Convenience Store transfer")
       
-      // Check for insufficient quantities but don't block the transfer
+      // Check for insufficient quantities but don&apos;t block the transfer
       const insufficientProducts = productsToTransfer.filter(p => {
         const availableQty = p.oldest_batch_quantity || p.available_for_transfer || p.quantity;
         return p.transfer_quantity > availableQty;
@@ -1535,10 +1535,10 @@ function InventoryTransfer() {
     const totalAvailableQty = product?.total_quantity || product?.available_for_transfer || 0;
     const oldestBatchQty = product?.oldest_batch_quantity || 0;
     
-    // Allow any quantity input - don't automatically reduce it
+    // Allow any quantity input - don&apos;t automatically reduce it
     const finalQuantity = newQuantity;
     
-    // Show different warnings based on quantity (but don't auto-reduce)
+    // Show different warnings based on quantity (but don&apos;t auto-reduce)
     if (newQuantity > totalAvailableQty) {
       toast.warning(`⚠️ Warning: You're trying to transfer ${newQuantity} units but only ${totalAvailableQty} are available. Transfer may fail if insufficient stock.`);
     } else if (newQuantity > oldestBatchQty && oldestBatchQty > 0) {
@@ -2479,9 +2479,9 @@ function InventoryTransfer() {
                   <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>Delivery Date</label>
                   <div className={`w-full px-3 py-2 border rounded-md flex items-center ${isDarkMode ? 'border-slate-500 bg-slate-700 text-slate-300' : 'border-gray-300 bg-gray-50 text-gray-700'}`}>
                     <span className="font-medium">{transferInfo.deliveryDate}</span>
-                    <span className={`ml-2 text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>(Today's date)</span>
+                    <span className={`ml-2 text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>(Today&apos;s date)</span>
                   </div>
-                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Today's date is automatically set</p>
+                  <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Today&apos;s date is automatically set</p>
                 </div>
               </div>
               <div className="flex justify-center space-x-3 mt-4">
@@ -3067,7 +3067,7 @@ function InventoryTransfer() {
                             </div>
                             <div className={isDarkMode ? 'text-slate-400' : 'text-gray-500'}>
                               <p className="text-lg font-medium">No warehouse products found</p>
-                              <p className="text-sm">Click "Refresh" to load warehouse products or check if products exist in warehouse</p>
+                              <p className="text-sm">Click &ldquo;Refresh&rdquo; to load warehouse products or check if products exist in warehouse</p>
                             </div>
                           </div>
                         </td>

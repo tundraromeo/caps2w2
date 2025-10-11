@@ -1288,7 +1288,7 @@ function CreatePurchaseOrder() {
           toast.error(result.error || 'Failed to update received quantities');
         }
       } else {
-        // Initial receiving from Delivered - just update quantities locally, don't save to database yet
+        // Initial receiving from Delivered - just update quantities locally, don&apos;t save to database yet
         let newStatus = 'delivered';
 
         if (isComplete) {

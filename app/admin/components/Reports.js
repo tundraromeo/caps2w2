@@ -855,7 +855,7 @@ function Reports() {
               ) : (
                 <div className="text-center py-8" style={{ color: theme.text.secondary }}>
                   <div className="text-4xl mb-4">📊</div>
-                  <p>Click "Generate Report" to view {reportTypes.find(t => t.id === selectedReportType)?.name.toLowerCase()}</p>
+                  <p>Click &ldquo;Generate Report&rdquo; to view {reportTypes.find(t => t.id === selectedReportType)?.name.toLowerCase()}</p>
                 </div>
               )}
             </div>

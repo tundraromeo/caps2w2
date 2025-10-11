@@ -27,6 +27,7 @@ import {
   BellRing,
   Clock,
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   Calendar,
 } from "lucide-react";
@@ -2525,7 +2526,7 @@ console.log("API response for product quantities:", response);
               const totalPieces = p.product_type === "Medicine" 
                 ? parseInt(p.total_tablets || 0)
                 : parseInt(p.total_pieces || 0);
-              // Ensure we don't add NaN or invalid values
+              // Ensure we don&apos;t add NaN or invalid values
               return sum + (isNaN(totalPieces) || totalPieces <= 0 ? 1 : totalPieces);
             }, 0),
             total_value: newProducts.reduce((sum, p) => {
@@ -4725,7 +4726,7 @@ console.log("API response for product quantities:", response);
                       }}
                     />
                     <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
-                      ⚠️ Using existing product SRP. Check "Edit SRP" to set a different price for this batch.
+                      ⚠️ Using existing product SRP. Check &ldquo;Edit SRP&rdquo; to set a different price for this batch.
                     </p>
                   </div>
                 )}
@@ -5785,7 +5786,7 @@ console.log("API response for product quantities:", response);
                           handleNewProductInputChange("brand_id", ""); // Clear brand_id to indicate new brand
                         }}
                       >
-                        ➕ Create new brand: "{newProductForm.brand_search}"
+                        ➕ Create new brand: &ldquo;{newProductForm.brand_search}&rdquo;
                       </div>
                     )}
                   </div>
@@ -6686,7 +6687,7 @@ console.log("API response for product quantities:", response);
                   <div className="text-center py-8">
                     <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No products in batch yet.</p>
-                    <p className="text-sm text-gray-400 mt-2">Add products using the "Add New Product" modal.</p>
+                    <p className="text-sm text-gray-400 mt-2">Add products using the &ldquo;Add New Product&rdquo; modal.</p>
                   </div>
                 ) : (
                   <>
@@ -6886,7 +6887,7 @@ console.log("API response for product quantities:", response);
                       <div className="text-sm text-gray-600">
                         <p>• Products are stored temporarily until you save the batch</p>
                         <p>• You can add more products or remove existing ones</p>
-                        <p>• All products will be saved to database when you click "Save Batch"</p>
+                        <p>• All products will be saved to database when you click &ldquo;Save Batch&rdquo;</p>
                       </div>
                       <div className="flex space-x-4">
                         <button

@@ -190,7 +190,7 @@ const NotificationPanel = ({ isOpen, onClose }) => {
                 No notifications at this time
               </p>
               <p className="text-sm" style={{ color: theme.text.muted }}>
-                You're all caught up!
+                You&apos;re all caught up!
               </p>
             </div>
           ) : (
