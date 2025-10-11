@@ -379,7 +379,7 @@ function InventoryTransfer() {
         
         // Check for convenience store specifically
         const convenienceStore = res.data.find(loc => 
-          loc.location_name.toLowerCase() === "convenience"
+          loc.location_name.toLowerCase().includes('convenience')
         )
         if (convenienceStore) {
           console.log("✅ Found Convenience Store:", convenienceStore.location_name, "(ID:", convenienceStore.location_id, ")")
@@ -410,19 +410,41 @@ function InventoryTransfer() {
   const loadCurrentUser = async () => {
     try {
       console.log("🔍 Loading current user data...")
+      
+      // First, check sessionStorage for user data
+      const sessionUserData = sessionStorage.getItem('user_data')
+      if (sessionUserData) {
+        try {
+          const userData = JSON.parse(sessionUserData)
+          if (userData && (userData.full_name || userData.username)) {
+            const userName = userData.full_name || userData.username
+            console.log("✅ Found user session in sessionStorage:", userName)
+            setCurrentUser(userData)
+            setTransferInfo(prev => ({
+              ...prev,
+              transferredBy: userName
+            }))
+            return // Exit early since we found user data
+          }
+        } catch (parseError) {
+          console.warn("⚠️ Failed to parse session user data:", parseError)
+        }
+      }
+      
+      // If no session data, try API call
       const response = await handleApiCall("get_current_user")
       console.log("📋 Current user response:", response)
       
-      if (response.success) {
+      if (response.success && response.data) {
         setCurrentUser(response.data)
         // Auto-fill the transferred by field with current user's name
         setTransferInfo(prev => ({
           ...prev,
-          transferredBy: response.data.full_name
+          transferredBy: response.data.full_name || response.data.username
         }))
-        console.log("✅ Current user loaded successfully:", response.data.full_name)
+        console.log("✅ Current user loaded successfully:", response.data.full_name || response.data.username)
       } else {
-        console.warn("⚠️ No active session found - using default user")
+        console.info("ℹ️ No active session found - staff member will be selected automatically")
         // Set a default value if user data can't be loaded
         setTransferInfo(prev => ({
           ...prev,
@@ -432,7 +454,7 @@ function InventoryTransfer() {
         setCurrentUser(null)
       }
     } catch (err) {
-      console.warn("⚠️ Error loading current user - using default user:", err.message)
+      console.info("ℹ️ No active session - staff member will be selected automatically:", err.message)
       // Set a default value if there's an error
       setTransferInfo(prev => ({
         ...prev,
@@ -735,7 +757,7 @@ function InventoryTransfer() {
 
           ${hasBatchDetails ? `
             <div class="p-4">
-              <h5 class="font-medium mb-3" style="color: ${theme.text.primary}">📦 Batch Details (${transfer.batch_details.length} batch${transfer.batch_details.length > 1 ? 'es' : ''})</h5>
+              <h5 class="font-medium mb-3" style="color: ${theme.text.primary}">📦 Batch Details (${transfer.batch_details.filter(batch => (batch.batch_quantity || batch.quantity || 0) > 0).length} batch${transfer.batch_details.filter(batch => (batch.batch_quantity || batch.quantity || 0) > 0).length > 1 ? 'es' : ''})</h5>
               <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                   <thead>
@@ -748,11 +770,13 @@ function InventoryTransfer() {
                     </tr>
                   </thead>
                   <tbody>
-                    ${transfer.batch_details.map((batch, batchIndex) => `
+                    ${transfer.batch_details
+                      .filter(batch => (batch.batch_quantity || batch.quantity || 0) > 0) // Filter out 0 quantity batches
+                      .map((batch, batchIndex) => `
                       <tr style="border-bottom: 1px solid ${theme.border.light}">
                         <td class="px-3 py-2 font-mono" style="color: ${theme.text.primary}">${batch.batch_number || batch.batch_id || `B-${transfer.transfer_id}-${batchIndex + 1}`}</td>
                         <td class="px-3 py-2 font-mono text-xs" style="color: ${theme.text.primary}">${batch.batch_reference}</td>
-                        <td class="px-3 py-2 text-center font-medium" style="color: ${theme.colors.primary}">${batch.batch_quantity} units</td>
+                        <td class="px-3 py-2 text-center font-medium" style="color: ${theme.colors.primary}">${batch.batch_quantity || batch.quantity || 0} units</td>
                         <td class="px-3 py-2 text-center" style="color: ${theme.text.primary}">₱${Number.parseFloat(batch.unit_cost || 0).toFixed(2)}</td>
                         <td class="px-3 py-2 text-center" style="color: ${theme.text.primary}">
                           ${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}
@@ -1099,8 +1123,8 @@ function InventoryTransfer() {
     console.log("Transfer info:", transferInfo)
 
     // Enhanced validation for convenience store transfers
-    const isConvenienceStoreTransfer = storeData.destinationStore.toLowerCase() === "convenience";
-    const convenience = locations.find(loc => loc.location_name.toLowerCase() === "convenience");
+    const isConvenienceStoreTransfer = storeData.destinationStore.toLowerCase().includes('convenience');
+    const convenience = locations.find(loc => loc.location_name.toLowerCase().includes('convenience'));
     
     if (isConvenienceStoreTransfer) {
       console.log("🏪 Special handling for Warehouse → Convenience Store transfer")
@@ -1902,7 +1926,7 @@ function InventoryTransfer() {
                       <div>
                         <h4 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Batch Information</h4>
                         <p className={`text-sm ${isDarkMode ? 'text-orange-400' : 'text-orange-600'}`}>
-                          Batches Used: {selectedTransferForBatchDetails.batch_details?.length || 0}
+                          Batches Used: {selectedTransferForBatchDetails.batch_details?.filter(batch => (batch.quantity || batch.batch_quantity || 0) > 0).length || 0}
                         </p>
                         <p className={`text-sm ${isDarkMode ? 'text-orange-400' : 'text-orange-600'}`}>
                           FIFO Order: Active
@@ -1932,7 +1956,13 @@ function InventoryTransfer() {
                       </thead>
                       <tbody className={`divide-y ${isDarkMode ? 'bg-slate-800 divide-slate-600' : 'bg-white divide-gray-200'}`}>
                         {selectedTransferForBatchDetails.batch_details && selectedTransferForBatchDetails.batch_details.length > 0 ? (
-                          selectedTransferForBatchDetails.batch_details.map((batch, index) => (
+                          // Filter out batches with 0 quantity - only show batches that were actually consumed
+                          selectedTransferForBatchDetails.batch_details
+                            .filter(batch => {
+                              const quantity = batch.quantity || batch.batch_quantity || 0;
+                              return quantity > 0; // Only show batches with quantity > 0
+                            })
+                            .map((batch, index) => (
                             <tr key={index} className={isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-gray-50'}>
                               <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                                 {batch.batch_number || batch.batch_id || `B-${selectedTransferForBatchDetails.transfer_id}-${index + 1}`}
@@ -1984,7 +2014,7 @@ function InventoryTransfer() {
                     </div>
                     <div>
                       <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Batches Used:</span>
-                      <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{selectedTransferForBatchDetails.batch_details?.length || 0}</span>
+                      <span className={`ml-2 font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{selectedTransferForBatchDetails.batch_details?.filter(batch => (batch.quantity || batch.batch_quantity || 0) > 0).length || 0}</span>
                     </div>
                     <div>
                       <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Transfer Date:</span>

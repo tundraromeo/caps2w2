@@ -31,7 +31,7 @@ import {
   Calendar,
 } from "lucide-react";
 
-// API Configuratio
+// API Configuration
 
 // Safe toast wrapper function
 let errorToastShown = false;
@@ -68,10 +68,13 @@ async function handleApiCall(action, data = {}) {
   try {
     const endpoint = getApiEndpointForAction(action);
     console.log(`🔗 Making API call: ${action} -> ${endpoint}`, data);
+    console.log(`🔗 Full endpoint URL: ${process.env.NEXT_PUBLIC_API_BASE_URL}/${endpoint}`);
     
     const response = await apiHandler.callAPI(endpoint, action, data);
     
     console.log(`📥 API response for ${action}:`, response);
+    console.log(`📥 API response type:`, typeof response);
+    console.log(`📥 API response keys:`, response ? Object.keys(response) : 'null');
     
     if (response && typeof response === "object") {
       // Don't show error toast here - let the calling function handle it
@@ -119,7 +122,10 @@ async function checkBarcodeExists(barcode) {
   try {
     console.log("🔍 Calling checkBarcodeExists with barcode:", barcode);
     const response = await handleApiCall("check_barcode", { barcode: barcode });
-    console.log("🔍 checkBarcodeExists response:", response);
+    console.log("🔍 checkBarcodeExists RAW response:", JSON.stringify(response, null, 2));
+    console.log("🔍 checkBarcodeExists response.success:", response.success);
+    console.log("🔍 checkBarcodeExists response.found:", response.found);
+    console.log("🔍 checkBarcodeExists response.product:", response.product);
     return response;
   } catch (error) {
     console.error("❌ Error in checkBarcodeExists:", error);
@@ -253,9 +259,9 @@ function Warehouse() {
     const [scannerStatusMessage, setScannerStatusMessage] = useState("🔍 Scanner is ready and active - Scan any barcode to continue");
     const [scanTimeout, setScanTimeout] = useState(null);
     
-    // Product name checking states
+    // Product name/barcode checking states (smart detection)
     const [productNameInput, setProductNameInput] = useState("");
-    const [productNameStatusMessage, setProductNameStatusMessage] = useState("📝 Enter product name to check if it exists");
+    const [productNameStatusMessage, setProductNameStatusMessage] = useState("📝 Enter product name or barcode to check");
     const [isCheckingProductName, setIsCheckingProductName] = useState(false);
   
     const [inventoryData, setInventoryData] = useState([])
@@ -791,19 +797,19 @@ function Warehouse() {
       if (!p.earliest_expiration) return false;
       return new Date(p.earliest_expiration) < new Date();
     });
-    const lowStock = productsWithEarliestExpiry.filter(p => {
-      const qty = parseInt(p.quantity || p.product_quantity || 0);
-      return qty > 0 && qty <= (settings.lowStockThreshold || 10);
-    });
-    const outOfStock = productsWithEarliestExpiry.filter(p => {
-      const qty = parseInt(p.quantity || p.product_quantity || 0);
-      return qty <= 0;
-    });
+      const lowStock = productsWithEarliestExpiry.filter(p => {
+        const qty = parseInt(p.total_quantity || p.quantity || p.product_quantity || 0);
+        return qty > 0 && qty <= (settings.lowStockThreshold || 10);
+      });
+      const outOfStock = productsWithEarliestExpiry.filter(p => {
+        const qty = parseInt(p.total_quantity || p.quantity || p.product_quantity || 0);
+        return qty <= 0;
+      });
 
     setNotifications({
       expiring: expiringWithBatchInfo.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
       expired: expired.sort((a, b) => new Date(a.earliest_expiration) - new Date(b.earliest_expiration)),
-      lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
+      lowStock: lowStock.sort((a, b) => parseInt(a.total_quantity || a.quantity || 0) - parseInt(b.total_quantity || b.quantity || 0)),
       outOfStock: outOfStock
     });
     }
@@ -976,7 +982,7 @@ calculateLowStockAndExpiring(activeProducts);
     return sum + (Number.parseFloat(product.srp) || 0) * (Number.parseFloat(product.total_quantity || product.product_quantity || product.quantity || 0))
   }, 0)
 
-  // Calculate total quantity from product quantity
+  // Calculate total quantity from product quantity (sum of all batches)
   const totalProductQuantity = products.reduce((sum, product) => sum + (Number(product.total_quantity || product.product_quantity || product.quantity || 0)), 0);
   
   setStats((prev) => ({
@@ -1032,22 +1038,114 @@ calculateLowStockAndExpiring(activeProducts);
       }))
     }
   
-    // Enhanced Product Name Checking Functions
-  async function handleProductNameCheck(productName) {
-    if (!productName || productName.trim() === "") {
-      setProductNameStatusMessage("❌ Please enter a product name");
+    // Enhanced Product Name/Barcode Checking Functions
+  async function handleProductNameCheck(input) {
+    if (!input || input.trim() === "") {
+      setProductNameStatusMessage("❌ Please enter a product name or barcode");
       return;
     }
 
     setIsCheckingProductName(true);
+    
+    // Smart detection: Check if input looks like a barcode (numbers/alphanumeric without spaces)
+    const looksLikeBarcode = /^[A-Za-z0-9-_]+$/.test(input.trim()) && input.trim().length >= 6;
+    
+    if (looksLikeBarcode) {
+      setProductNameStatusMessage("🔍 Detecting barcode format - checking barcode...");
+      console.log("🔍 Input detected as BARCODE:", input);
+      
+      try {
+        // Search by barcode first in local inventory
+        const existingProductInInventory = inventoryData.find(product => 
+          product.barcode && product.barcode === input.trim()
+        );
+        
+        if (existingProductInInventory) {
+          console.log("✅ Product found by barcode in inventory data:", existingProductInInventory);
+          setExistingProduct(existingProductInInventory);
+          setNewStockQuantity("");
+          
+          const hasBulkFields = existingProductInInventory.boxes || existingProductInInventory.strips_per_box || 
+                                existingProductInInventory.tablets_per_strip || 
+                                existingProductInInventory.pieces_per_pack;
+          setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
+          
+          setShowUpdateStockModal(true);
+          setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
+        } else {
+          console.log("🔍 Product not in inventory data, checking API by barcode...");
+          // Check API by barcode
+          const barcodeCheck = await checkBarcodeExists(input.trim());
+          console.log("🔍 Barcode check result:", barcodeCheck);
+          console.log("🔍 MANUAL BARCODE CHECK - product object:", barcodeCheck.product);
+          console.log("🔍 MANUAL BARCODE CHECK - product exists:", !!barcodeCheck.product);
+          
+          // SIMPLE CHECK - if product exists in response, it was found
+          const productFound = barcodeCheck.product !== null && barcodeCheck.product !== undefined && typeof barcodeCheck.product === 'object';
+          console.log("🔍 MANUAL BARCODE CHECK - productFound:", productFound);
+          
+          if (productFound) {
+            console.log("✅ Product found by barcode via API:", barcodeCheck.product);
+            setExistingProduct(barcodeCheck.product);
+            setNewStockQuantity("");
+            
+            const hasBulkFields = barcodeCheck.product.boxes || barcodeCheck.product.strips_per_box || 
+                                  barcodeCheck.product.tablets_per_strip || 
+                                  barcodeCheck.product.pieces_per_pack;
+            setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
+            
+            setShowUpdateStockModal(true);
+            setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
+          } else {
+            console.log("❌ Barcode not found, opening new product modal");
+            setNewProductForm({
+              product_name: "",
+              category_id: "",
+              product_type: "",
+              configMode: "bulk",
+              barcode: input.trim(), // Pre-fill barcode
+              description: "",
+              srp: "",
+              brand_id: "",
+              brand_search: "",
+              supplier_id: "",
+              expiration: "",
+              date_added: new Date().toISOString().split('T')[0],
+              batch: generateBatchRef(),
+              order_number: "",
+              prescription: 0,
+              bulk: 0,
+              boxes: "",
+              strips_per_box: "",
+              tablets_per_strip: "",
+              total_tablets: "",
+              pieces_per_pack: "",
+              total_pieces: ""
+            });
+            setShowNewProductModal(true);
+            setProductNameStatusMessage("✅ New barcode detected! Opening new product modal.");
+          }
+        }
+      } catch (error) {
+        safeToast("error", "Error checking barcode:", error);
+        setProductNameStatusMessage("❌ Error checking barcode. Please try again.");
+      } finally {
+        setIsCheckingProductName(false);
+        setTimeout(() => {
+          setProductNameStatusMessage("📝 Enter product name or barcode to check");
+        }, 3000);
+      }
+      return;
+    }
+    
+    // If not barcode format, treat as product name
     setProductNameStatusMessage("🔍 Checking if product name exists...");
+    console.log("🔍 Input detected as PRODUCT NAME:", input);
 
     try {
-      console.log("🔍 Checking product name in database:", productName);
-      
       // First, try to find the product in existing inventory data
       const existingProductInInventory = inventoryData.find(product => 
-        product.product_name && product.product_name.toLowerCase().includes(productName.toLowerCase())
+        product.product_name && product.product_name.toLowerCase().includes(input.toLowerCase())
       );
       
       if (existingProductInInventory) {
@@ -1067,10 +1165,17 @@ calculateLowStockAndExpiring(activeProducts);
       } else {
         console.log("🔍 Product not in inventory data, checking API...");
         // If not in inventory, check API
-        const productNameCheck = await checkProductNameExists(productName);
+        const productNameCheck = await checkProductNameExists(input);
         console.log("🔍 Product name check result:", productNameCheck);
         
-        if (productNameCheck.success && productNameCheck.product) {
+        // Handle both API response formats:
+        // 1. sales_api.php: { success: true, found: true, product: {...} }
+        // 2. backend.php: { success: true, product: {...} } (no 'found' field)
+        const productFound = productNameCheck.success && 
+                             (productNameCheck.found === true || (productNameCheck.found === undefined && productNameCheck.product)) && 
+                             productNameCheck.product;
+        
+        if (productFound) {
           console.log("✅ Product found via API, opening update stock modal:", productNameCheck.product);
           setExistingProduct(productNameCheck.product);
           setNewStockQuantity("");
@@ -1087,7 +1192,7 @@ calculateLowStockAndExpiring(activeProducts);
           console.log("❌ Product not found, opening new product modal");
           // Product doesn't exist - show new product modal
           setNewProductForm({
-            product_name: productName, // Pre-fill with entered product name
+            product_name: input, // Pre-fill with entered product name
             category_id: "",
             product_type: "",
             configMode: "bulk", // Default to bulk mode
@@ -1125,7 +1230,7 @@ calculateLowStockAndExpiring(activeProducts);
       
       // Reset product name status after a delay
       setTimeout(() => {
-        setProductNameStatusMessage("📝 Enter product name to check if it exists");
+        setProductNameStatusMessage("📝 Enter product name or barcode to check");
       }, 3000);
     }
   }
@@ -1152,6 +1257,7 @@ calculateLowStockAndExpiring(activeProducts);
           
           if (existingProductInInventory) {
             console.log("✅ Product found in inventory data:", existingProductInInventory);
+            console.log("🚪 OPENING MODAL: UPDATE STOCK MODAL (from local inventory)");
             // Product exists - show update stock modal
             setExistingProduct(existingProductInInventory);
             setNewStockQuantity("");
@@ -1163,15 +1269,38 @@ calculateLowStockAndExpiring(activeProducts);
             setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
             
             setShowUpdateStockModal(true);
+            console.log("🚪 setShowUpdateStockModal(true) CALLED (from local)");
             setScannerStatusMessage("✅ Product found! Opening update stock modal.");
           } else {
             console.log("🔍 Product not in inventory data, checking API...");
+            console.log("📊 Current inventoryData length:", inventoryData.length);
+            console.log("📊 Scanned barcode:", scanned);
+            
             // If not in inventory, check API
             const barcodeCheck = await checkBarcodeExists(scanned);
             console.log("🔍 Barcode check result:", barcodeCheck);
+            console.log("🔍 barcodeCheck.success:", barcodeCheck.success);
+            console.log("🔍 barcodeCheck.found:", barcodeCheck.found);
+            console.log("🔍 barcodeCheck.product:", barcodeCheck.product);
             
-            if (barcodeCheck.success && barcodeCheck.product) {
+            // EXTREME DEBUGGING - Log EVERYTHING
+            console.log("🔍 ========== BARCODE CHECK DETAILS ==========");
+            console.log("🔍 barcodeCheck object:", barcodeCheck);
+            console.log("🔍 barcodeCheck.success type:", typeof barcodeCheck.success, "value:", barcodeCheck.success);
+            console.log("🔍 barcodeCheck.found type:", typeof barcodeCheck.found, "value:", barcodeCheck.found);
+            console.log("🔍 barcodeCheck.product type:", typeof barcodeCheck.product, "value:", barcodeCheck.product);
+            console.log("🔍 barcodeCheck has 'product' property:", 'product' in barcodeCheck);
+            console.log("🔍 barcodeCheck.product is truthy:", !!barcodeCheck.product);
+            
+            // SIMPLE CHECK - if product exists in response, it was found
+            const productFound = barcodeCheck.product !== null && barcodeCheck.product !== undefined && typeof barcodeCheck.product === 'object';
+            
+            console.log("🔍 productFound result:", productFound);
+            console.log("🔍 ==========================================");
+            
+            if (productFound) {
               console.log("✅ Product found via API, opening update stock modal:", barcodeCheck.product);
+              console.log("🚪 OPENING MODAL: UPDATE STOCK MODAL");
               setExistingProduct(barcodeCheck.product);
               setNewStockQuantity("");
               
@@ -1182,9 +1311,11 @@ calculateLowStockAndExpiring(activeProducts);
               setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
               
               setShowUpdateStockModal(true);
+              console.log("🚪 setShowUpdateStockModal(true) CALLED");
               setScannerStatusMessage("✅ Product found! Opening update stock modal.");
             } else {
               console.log("❌ Product not found, opening new product modal");
+              console.log("🚪 OPENING MODAL: NEW PRODUCT MODAL");
               // Product doesn't exist - show new product modal
               setNewProductForm({
                 product_name: "",
@@ -1355,6 +1486,9 @@ calculateLowStockAndExpiring(activeProducts);
       console.log("🔍 Product brand:", product.brand);
       console.log("🔍 Product category:", product.category);
       console.log("🔍 Product category_name:", product.category_name);
+      console.log("🔍 Product brand_id:", product.brand_id);
+      console.log("🔍 Product category_id:", product.category_id);
+      console.log("🔍 All product keys:", Object.keys(product));
       setExistingProduct(product);
       setNewStockQuantity("");
       setNewStockBoxes("");
@@ -1908,12 +2042,12 @@ console.log("API response for product quantities:", response);
           
           setQuantityHistoryData(response.data || []);
         } else {
-          console.warn("⚠️ Quantity history failed:", response?.message);
+          console.warn("Quantity history failed:", response?.message);
           // Don't show error toast - quantity history is not critical
           setQuantityHistoryData([]);
         }
       } catch (error) {
-        console.error("❌ Error loading quantity history:", error);
+        console.error("Error loading quantity history:", error);
         // Don't show error toast - quantity history is not critical
         setQuantityHistoryData([]);
       }
@@ -2704,7 +2838,7 @@ console.log("API response for product quantities:", response);
 
       // Low stock: using settings threshold
       const lowStockCount = products.filter(
-        (product) => isStockLow(Number(product.product_quantity || product.quantity))
+        (product) => isStockLow(Number(product.total_quantity || product.product_quantity || product.quantity))
       ).length;
 
       // Expiring soon: using settings threshold
@@ -2728,7 +2862,7 @@ console.log("API response for product quantities:", response);
       if (!settings.autoReorder) return;
       
       const lowStockProducts = products.filter(product => {
-        const quantity = parseInt(product.quantity || product.product_quantity || 0);
+        const quantity = parseInt(product.total_quantity || product.quantity || product.product_quantity || 0);
         return isStockLow(quantity);
       });
       
@@ -3039,11 +3173,11 @@ console.log("API response for product quantities:", response);
                   {scannerStatusMessage}
                 </div>
 
-                {/* Manual Entry Section */}
+                {/* Manual Entry Section - Smart Detection: Barcode or Product Name */}
                 <div className="flex items-center space-x-2">
                   <input
                     type="text"
-                    placeholder="Enter product name..."
+                    placeholder="Enter barcode or product name..."
                     value={productNameInput}
                     onChange={(e) => setProductNameInput(e.target.value)}
                     onKeyPress={(e) => {
@@ -3051,7 +3185,7 @@ console.log("API response for product quantities:", response);
                         handleProductNameCheck(productNameInput);
                       }
                     }}
-                    className="px-3 py-1 text-sm border rounded focus:outline-none focus:ring-1 w-48"
+                    className="px-3 py-1 text-sm border rounded focus:outline-none focus:ring-1 w-56"
                     style={{ 
                       borderColor: theme.border.default,
                       backgroundColor: theme.bg.secondary,
@@ -3059,6 +3193,7 @@ console.log("API response for product quantities:", response);
                       focusRingColor: theme.colors.accent
                     }}
                     disabled={isCheckingProductName}
+                    title="Type a barcode or product name and press Enter or click Check"
                   />
                   <button
                     onClick={() => handleProductNameCheck(productNameInput)}
@@ -3075,6 +3210,7 @@ console.log("API response for product quantities:", response);
                         ? 'not-allowed' 
                         : 'pointer'
                     }}
+                    title="Smart detection: automatically checks if input is barcode or product name"
                   >
                     <Search className="h-4 w-4 mr-1" />
                     {isCheckingProductName ? 'Checking...' : 'Check'}
@@ -3206,6 +3342,25 @@ console.log("API response for product quantities:", response);
               <div className="text-sm" style={{ color: theme.text.secondary }}>
                 {inventoryData.length} products found
               </div>
+              <div className="text-sm font-medium px-3 py-1 rounded-md" 
+                   style={{ 
+                     backgroundColor: theme.colors.primary + '15', 
+                     color: theme.colors.primary,
+                     border: `1px solid ${theme.colors.primary}30`
+                   }}>
+                Total Qty: {stats.totalQuantity || 0}
+              </div>
+              <div className="px-3 py-1 text-xs rounded-md font-bold" 
+                   style={{ 
+                     backgroundColor: theme.colors.success + '20', 
+                     color: theme.colors.success,
+                     border: `1px solid ${theme.colors.success}40`
+                   }}>
+                📦 TOTAL PRODUCTS: {inventoryData.length} | TOTAL QUANTITY: {inventoryData.reduce((sum, product) => {
+                  const qty = product.total_quantity || product.product_quantity || product.quantity || 0;
+                  return sum + parseInt(qty);
+                }, 0)} units
+              </div>
               <div className="flex space-x-2">
                 <button
                   onClick={() => setFilterOptions(prev => ({ ...prev, stockStatus: 'all' }))}
@@ -3278,7 +3433,7 @@ console.log("API response for product quantities:", response);
                   <div className="group relative">
                     PRODUCT QTY
                     <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
-                      Quantity from tbl_product
+                      Total quantity from all FIFO batches
                     </div>
                   </div>
                 </th>
@@ -3315,26 +3470,33 @@ console.log("API response for product quantities:", response);
                         product.product_name?.toLowerCase().includes(searchLower) ||
                         product.barcode?.toLowerCase().includes(searchLower) ||
                         product.category?.toLowerCase().includes(searchLower) ||
+                        product.category_name?.toLowerCase().includes(searchLower) ||
                         product.brand?.toLowerCase().includes(searchLower) ||
                         product.supplier_name?.toLowerCase().includes(searchLower);
                       if (!matchesSearch) return false;
                     }
                     
+                    // Filter by category
+                    if (filterOptions.category && filterOptions.category !== '') {
+                      const productCategory = product.category || product.category_name;
+                      if (productCategory !== filterOptions.category) return false;
+                    }
+                    
                     // Filter by stock status
                     if (filterOptions.stockStatus === 'all') return true;
                     if (filterOptions.stockStatus === 'low') {
-                      const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
+                      const qty = product.total_quantity || product.product_quantity || product.quantity || 0;
                       return qty > 0 && qty <= 10;
                     }
                     if (filterOptions.stockStatus === 'out') {
-                      const qty = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
+                      const qty = product.total_quantity || product.product_quantity || product.quantity || 0;
                       return qty <= 0;
                     }
                     return true;
                   })
                   .map((product) => {
                     // Check for alert conditions
-                    const quantity = product.oldest_batch_quantity || product.product_quantity || product.quantity || 0;
+                    const quantity = product.total_quantity || product.product_quantity || product.quantity || 0;
                     const isLowStock = settings.lowStockAlerts && isStockLow(quantity);
                     const isOutOfStock = quantity <= 0;
                     const isExpiringSoon = product.earliest_expiration && settings.expiryAlerts && isProductExpiringSoon(product.earliest_expiration);
@@ -3373,7 +3535,7 @@ console.log("API response for product quantities:", response);
                     </td>
                     <td className="px-3 py-2 text-sm">
                       <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.secondary }}>
-                        {product.category}
+                        {product.category || product.category_name || 'Uncategorized'}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
@@ -3387,17 +3549,42 @@ console.log("API response for product quantities:", response);
                     </td>
                     <td className="px-3 py-2 text-center">
                       <div className="font-semibold" style={{ 
-                        color: (product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 0 
+                        color: (product.total_quantity || product.product_quantity || product.quantity || 0) <= 0 
                           ? theme.colors.danger 
-                          : (product.oldest_batch_quantity || product.product_quantity || product.quantity || 0) <= 10 
+                          : (product.total_quantity || product.product_quantity || product.quantity || 0) <= 10 
                             ? theme.colors.warning 
                             : theme.text.primary
                       }}>
-                        {product.oldest_batch_quantity || product.product_quantity || product.quantity || 0}
+                        {product.total_quantity || product.product_quantity || product.quantity || 0}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{Number.parseFloat(product.oldest_batch_srp || product.first_batch_srp || product.srp || 0).toFixed(2)}
+                      ₱{(() => {
+                        // Try multiple possible SRP field names
+                        const srpValue = Number.parseFloat(
+                          product.oldest_batch_srp || 
+                          product.first_batch_srp || 
+                          product.srp || 
+                          product.unit_price ||
+                          product.transfer_srp ||
+                          0
+                        );
+                        
+                        // Debug logging for first product to see available fields
+                        if (product.product_name === 'Hot&Spicicy Ketchup') {
+                          console.log('🔍 SRP Debug for Hot&Spicicy Ketchup:', {
+                            oldest_batch_srp: product.oldest_batch_srp,
+                            first_batch_srp: product.first_batch_srp,
+                            srp: product.srp,
+                            unit_price: product.unit_price,
+                            transfer_srp: product.transfer_srp,
+                            finalValue: srpValue,
+                            allFields: Object.keys(product)
+                          });
+                        }
+                        
+                        return srpValue > 0 ? srpValue.toFixed(2) : '0.00';
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || "N/A"}
@@ -4360,7 +4547,18 @@ console.log("API response for product quantities:", response);
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                 <input
                   type="text"
-                  value={existingProduct.category_name || existingProduct.category || ""}
+                  value={(() => {
+                    // Try direct category name first
+                    if (existingProduct.category_name || existingProduct.category) {
+                      return existingProduct.category_name || existingProduct.category;
+                    }
+                    // Try to resolve from category_id
+                    if (existingProduct.category_id && categoriesData.length > 0) {
+                      const category = categoriesData.find(cat => cat.category_id == existingProduct.category_id);
+                      return category ? category.category_name : `Category ID: ${existingProduct.category_id}`;
+                    }
+                    return "N/A";
+                  })()}
                   readOnly
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
@@ -4369,7 +4567,18 @@ console.log("API response for product quantities:", response);
                 <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
                 <input
                   type="text"
-                  value={existingProduct.brand || "N/A"}
+                  value={(() => {
+                    // Try direct brand name first
+                    if (existingProduct.brand) {
+                      return existingProduct.brand;
+                    }
+                    // Try to resolve from brand_id
+                    if (existingProduct.brand_id && brandsData.length > 0) {
+                      const brand = brandsData.find(b => b.brand_id == existingProduct.brand_id);
+                      return brand ? brand.brand : `Brand ID: ${existingProduct.brand_id}`;
+                    }
+                    return "N/A";
+                  })()}
                   readOnly
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 />
@@ -5800,7 +6009,9 @@ console.log("API response for product quantities:", response);
                     <div className="p-4 rounded-lg" style={{ backgroundColor: theme.colors.warning + '20', borderColor: theme.colors.warning + '40', border: '1px solid' }}>
                       <h4 className="font-semibold mb-2" style={{ color: theme.colors.warning }}>All Batches Summary</h4>
                       <p className="text-sm" style={{ color: theme.text.secondary }}>Total Batches: {allBatchesData.length}</p>
-                      <p className="text-sm" style={{ color: theme.text.secondary }}>Total Available: {allBatchesData.reduce((sum, batch) => sum + parseInt(batch.available_quantity || 0), 0)}</p>
+                      <p className="text-sm font-bold" style={{ color: theme.colors.warning }}>
+                        Total Available Quantity: {allBatchesData.reduce((sum, batch) => sum + parseInt(batch.available_quantity || 0), 0)} units
+                      </p>
                       <p className="text-sm" style={{ color: theme.text.secondary }}>Total Value: ₱{allBatchesData.reduce((sum, batch) => sum + (Number.parseFloat(batch.srp || 0) * Number.parseFloat(batch.available_quantity || 0)), 0).toFixed(2)}</p>
                       <p className="text-sm" style={{ color: theme.text.secondary }}>Oldest Batch: {allBatchesData.length > 0 ? new Date(allBatchesData[0].batch_date || allBatchesData[0].entry_date).toLocaleDateString() : 'N/A'}</p>
                       <p className="text-sm" style={{ color: theme.text.secondary }}>Newest Batch: {allBatchesData.length > 0 ? new Date(allBatchesData[allBatchesData.length - 1].batch_date || allBatchesData[allBatchesData.length - 1].entry_date).toLocaleDateString() : 'N/A'}</p>
@@ -5857,7 +6068,7 @@ console.log("API response for product quantities:", response);
                             ₱{(Number.parseFloat(batch.srp || 0) * Number.parseFloat(batch.available_quantity || 0)).toFixed(2)}
                           </td>
                           <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
-                            {batch.category_name || 'N/A'}
+                            {batch.category_name || batch.category || 'N/A'}
                           </td>
                           <td className="px-3 py-2" style={{ borderColor: theme.border.default, border: `1px solid`, color: theme.text.primary }}>
                             {batch.supplier_name || 'N/A'}
@@ -5912,7 +6123,7 @@ console.log("API response for product quantities:", response);
                   <div className="text-center py-8">
                     <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-500">No batch data available.</p>
-                    <p className="text-sm text-gray-400 mt-2">This product may not have batch tracking enabled.</p>
+                   <p className="text-sm text-gray-400 mt-2">This product may not have batch tracking enabled.</p>
                   </div>
                 )}
               </div>
@@ -6020,12 +6231,19 @@ console.log("API response for product quantities:", response);
                           : 0
                       }
                     </p>
-                    <p className="text-sm" style={{ color: theme.text.primary }}>
-                      Total Available: {
+                    <p className="text-sm font-bold" style={{ color: theme.colors.warning }}>
+                      Total Available Quantity: {
                         fifoStockData && fifoStockData.length > 0 
                           ? fifoStockData.reduce((sum, batch) => sum + (batch.available_quantity || 0), 0)
                           : 0
                       } units
+                    </p>
+                    <p className="text-sm" style={{ color: theme.text.primary }}>
+                      Total Value: ₱{
+                        fifoStockData && fifoStockData.length > 0 
+                          ? fifoStockData.reduce((sum, batch) => sum + ((batch.fifo_srp || batch.srp || batch.unit_cost || 0) * (batch.available_quantity || 0)), 0).toFixed(2)
+                          : '0.00'
+                      }
                     </p>
                   </div>
                 </div>
@@ -6482,8 +6700,8 @@ console.log("API response for product quantities:", response);
                                       const category = categoriesData.find(cat => cat.category_id == product.category_id);
                                       return category ? category.category_name : `Category ID: ${product.category_id}`;
                                     }
-                                    // Fallback to product.category if available
-                                    return product.category || "No Category";
+                                    // Fallback to product.category or product.category_name if available
+                                    return product.category || product.category_name || "No Category";
                                   })()}
                                 </span>
                               </td>

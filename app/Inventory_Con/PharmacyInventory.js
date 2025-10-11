@@ -797,7 +797,7 @@ const PharmacyInventory = () => {
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
-                          {item.category}
+                          {item.category || item.category_name || 'Uncategorized'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
@@ -809,7 +809,10 @@ const PharmacyInventory = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                        ₱{Number.parseFloat(item.first_batch_srp || item.srp || 0).toFixed(2)}
+                        ₱{(() => {
+                          const srpValue = Number.parseFloat(item.first_batch_srp || item.srp || 0);
+                          return srpValue > 0 ? srpValue.toFixed(2) : '0.00';
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                         {item.supplier_name || "N/A"}

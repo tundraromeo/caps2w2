@@ -14,7 +14,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   const [reportDataLoading, setReportDataLoading] = useState(false);
   const [reportError, setReportError] = useState(null);
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
+    startDate: new Date().toISOString().split('T')[0], // today
     endDate: new Date().toISOString().split('T')[0] // today
   });
   const [selectedCashier, setSelectedCashier] = useState(null);
@@ -27,6 +27,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   const [currentUserData, setCurrentUserData] = useState(null);
   const [showCombineModal, setShowCombineModal] = useState(false);
   const [selectedReportTypes, setSelectedReportTypes] = useState(['sales']);
+  const [autoUpdateNotification, setAutoUpdateNotification] = useState(null);
   const [combineDateRange, setCombineDateRange] = useState({
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0]
@@ -45,6 +46,52 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
     const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
     setCurrentUserData(userData);
   }, []);
+
+  // Auto-update date range at midnight for real-time reports
+  useEffect(() => {
+    const updateDateRangeForNewDay = () => {
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      // Check if we need to update the date range
+      setDateRange(prevRange => {
+        const isTodayRange = prevRange.startDate === prevRange.endDate;
+        
+        if (isTodayRange && prevRange.endDate !== today) {
+          console.log('🕛 Midnight detected - updating date range for new day');
+          
+          // Show notification
+          setAutoUpdateNotification('🕛 Date range automatically updated for new day');
+          setTimeout(() => setAutoUpdateNotification(null), 5000);
+          
+          // For login logs, extend range to include yesterday to catch late-night logins
+          if (reportType === 'login_logs') {
+            return {
+              startDate: yesterday,
+              endDate: today
+            };
+          }
+          
+          return {
+            startDate: today,
+            endDate: today
+          };
+        }
+        
+        return prevRange;
+      });
+    };
+
+    // Update immediately
+    updateDateRangeForNewDay();
+
+    // Set up interval to check every minute for midnight crossing
+    const interval = setInterval(updateDateRangeForNewDay, 60000); // Check every minute
+
+    // Cleanup interval on unmount
+    return () => clearInterval(interval);
+  }, [reportType]);
 
   const fetchReportData = async (retryCount = 0, isAutoRefresh = false) => {
     try {
@@ -895,12 +942,21 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 <>
                   <button
                     onClick={() => {
+                      const now = new Date();
                       const yesterday = new Date();
                       yesterday.setDate(yesterday.getDate() - 1);
+                      
+                      // For login logs, extend range to catch late-night logins from previous day
+                      const startDate = reportType === 'login_logs' ? 
+                        yesterday.toISOString().split('T')[0] : 
+                        yesterday.toISOString().split('T')[0];
+                      
                       setDateRange({
-                        startDate: yesterday.toISOString().split('T')[0],
-                        endDate: new Date().toISOString().split('T')[0]
+                        startDate: startDate,
+                        endDate: now.toISOString().split('T')[0]
                       });
+                      
+                      console.log(`🕐 Setting ${reportType === 'login_logs' ? 'extended' : 'standard'} 24-hour range: ${startDate} to ${now.toISOString().split('T')[0]}`);
                     }}
                     disabled={reportDataLoading}
                     className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
@@ -961,6 +1017,11 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               
               <div className="text-xs" style={{ color: theme.text.secondary }}>
                 Last updated: {lastRefresh.toLocaleTimeString()}
+                {autoUpdateNotification && (
+                  <div className="mt-1 p-2 bg-green-100 border border-green-400 text-green-700 rounded text-xs">
+                    {autoUpdateNotification}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1000,6 +1061,11 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                     </p>
                     <p className="text-xs mt-1" style={{ color: theme.text.secondary }}>
                       Last updated: {lastRefresh.toLocaleTimeString()}
+                      {autoUpdateNotification && (
+                        <div className="mt-1 p-2 bg-green-100 border border-green-400 text-green-700 rounded text-xs">
+                          {autoUpdateNotification}
+                        </div>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -1119,7 +1185,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                     {Array.isArray(reportData) 
                       ? reportData.filter(item => item.login_status === 'ONLINE' && item.role === 'admin').length
-                      : (reportData.online_users?.filter(item => item.role === 'admin').length || 0)}
+                      : (Array.isArray(reportData.online_users) ? reportData.online_users.filter(item => item.role === 'admin').length : 0)}
                   </p>
                 </div>
               </div>
@@ -1132,7 +1198,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                     {Array.isArray(reportData) 
                       ? new Set(reportData.filter(item => item.login_status === 'ONLINE').map(item => item.location).filter(Boolean)).size
-                      : new Set((reportData.online_users || []).map(item => item.location).filter(Boolean)).size}
+                      : new Set((Array.isArray(reportData.online_users) ? reportData.online_users : []).map(item => item.location).filter(Boolean)).size}
                   </p>
                 </div>
               </div>

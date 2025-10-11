@@ -8,6 +8,7 @@ function Dashboard() {
   const { theme } = useTheme();
   const [selectedProduct, setSelectedProduct] = useState("All");
   const [selectedLocation, setSelectedLocation] = useState("Warehouse");
+  const [selectedTimePeriod, setSelectedTimePeriod] = useState("monthly");
   const [categories, setCategories] = useState([]);
   const [locations, setLocations] = useState([]);
   const [warehouseData, setWarehouseData] = useState({
@@ -79,12 +80,16 @@ function Dashboard() {
         activeTransfers: 2
       },
       fastMovingItemsTrend: [
-        { month: 'Jan', product: 'Mang Tomas', quantity: 103 },
-        { month: 'Feb', product: 'Mang Tomas', quantity: 89 },
-        { month: 'Mar', product: 'Mang Tomas', quantity: 125 },
-        { month: 'Apr', product: 'Mang Tomas', quantity: 142 },
-        { month: 'May', product: 'Mang Tomas', quantity: 189 },
-        { month: 'Jun', product: 'Mang Tomas', quantity: 195 }
+        { product: 'Mang Tomas', quantity: 195 },
+        { product: 'Lucky Me Pancit Canton', quantity: 142 },
+        { product: 'Nissin Cup Noodles', quantity: 125 },
+        { product: 'Skyflakes Crackers', quantity: 103 },
+        { product: 'Bear Brand Milk', quantity: 89 },
+        { product: 'Coca Cola 1.5L', quantity: 78 },
+        { product: 'Sprite 1.5L', quantity: 65 },
+        { product: 'Royal Tru Orange', quantity: 58 },
+        { product: 'Pepsi 1.5L', quantity: 52 },
+        { product: 'Mirinda Orange', quantity: 45 }
       ],
       criticalStockAlerts: [
         { product: 'Lava Cake', quantity: 0 },
@@ -131,7 +136,7 @@ function Dashboard() {
   // Fetch data from database
   useEffect(() => {
     fetchAllData();
-  }, [selectedProduct, selectedLocation, retryCount]);
+  }, [selectedProduct, selectedLocation, selectedTimePeriod, retryCount]);
 
   const fetchCategoriesAndLocations = async () => {
     try {
@@ -182,7 +187,8 @@ function Dashboard() {
       // Use centralized API handler instead of direct fetch
       const warehouseResponse = await apiHandler.getWarehouseKPIs({
         product: selectedProduct,
-        location: selectedLocation
+        location: selectedLocation,
+        timePeriod: selectedTimePeriod
       });
       
       console.log('📊 Warehouse KPIs response:', warehouseResponse);
@@ -211,7 +217,8 @@ function Dashboard() {
       try {
         const supplyProductResponse = await apiHandler.getWarehouseSupplyByProduct({
           product: selectedProduct,
-          location: selectedLocation
+          location: selectedLocation,
+          timePeriod: selectedTimePeriod
         });
         if (supplyProductResponse) {
           // Handle both direct response format and wrapped response format
@@ -229,7 +236,8 @@ function Dashboard() {
       try {
         const supplyLocationResponse = await apiHandler.getWarehouseSupplyByLocation({
           product: selectedProduct,
-          location: selectedLocation
+          location: selectedLocation,
+          timePeriod: selectedTimePeriod
         });
         if (supplyLocationResponse) {
           // Handle both direct response format and wrapped response format
@@ -260,7 +268,8 @@ function Dashboard() {
       try {
         const topProductsResponse = await apiHandler.getTopProductsByQuantity({
           product: selectedProduct,
-          location: selectedLocation
+          location: selectedLocation,
+          timePeriod: selectedTimePeriod
         });
         if (topProductsResponse) {
           // Handle both direct response format and wrapped response format
@@ -278,7 +287,8 @@ function Dashboard() {
       try {
         const categoryDistributionResponse = await apiHandler.getStockDistributionByCategory({
           product: selectedProduct,
-          location: selectedLocation
+          location: selectedLocation,
+          timePeriod: selectedTimePeriod
         });
         if (categoryDistributionResponse) {
           // Handle both direct response format and wrapped response format
@@ -296,12 +306,39 @@ function Dashboard() {
       try {
         const fastMovingResponse = await apiHandler.getFastMovingItemsTrend({
           product: selectedProduct,
-          location: selectedLocation
+          location: selectedLocation,
+          timePeriod: selectedTimePeriod
         });
         if (fastMovingResponse) {
           // Handle both direct response format and wrapped response format
           const data = fastMovingResponse.success ? fastMovingResponse.data : fastMovingResponse;
-          setFastMovingItemsTrend(Array.isArray(data) ? data : []);
+          
+          if (Array.isArray(data)) {
+            // Process data to remove duplicates and aggregate quantities by product
+            const productMap = new Map();
+            
+            data.forEach(item => {
+              const productName = item.product || item.product_name || 'Unknown Product';
+              const quantity = item.quantity || item.total_quantity || 0;
+              
+              if (productMap.has(productName)) {
+                // Aggregate quantities for duplicate products
+                productMap.set(productName, productMap.get(productName) + quantity);
+              } else {
+                productMap.set(productName, quantity);
+              }
+            });
+            
+            // Convert map back to array and sort by quantity (descending)
+            const uniqueProducts = Array.from(productMap.entries())
+              .map(([product, quantity]) => ({ product, quantity }))
+              .sort((a, b) => b.quantity - a.quantity)
+              .slice(0, 10); // Get top 10 products
+            
+            setFastMovingItemsTrend(uniqueProducts);
+          } else {
+            setFastMovingItemsTrend([]);
+          }
         } else {
           setFastMovingItemsTrend([]);
         }
@@ -314,7 +351,8 @@ function Dashboard() {
       try {
         const criticalStockResponse = await apiHandler.getCriticalStockAlerts({
           product: selectedProduct,
-          location: selectedLocation
+          location: selectedLocation,
+          timePeriod: selectedTimePeriod
         });
         if (criticalStockResponse) {
           // Handle both direct response format and wrapped response format
@@ -973,7 +1011,7 @@ function Dashboard() {
             </div>
             <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Warehouse Management</h1>
           </div>
-          <div className="flex space-x-4">
+          <div className="flex flex-wrap gap-4">
             <select 
               value={selectedProduct} 
               onChange={(e) => setSelectedProduct(e.target.value)}
@@ -1007,6 +1045,20 @@ function Dashboard() {
                   {location.location_name}
                 </option>
               ))}
+            </select>
+            <select 
+              value={selectedTimePeriod} 
+              onChange={(e) => setSelectedTimePeriod(e.target.value)}
+              className="px-3 py-2 rounded border"
+              style={{ 
+                backgroundColor: theme.bg.card, 
+                color: theme.text.primary,
+                borderColor: theme.border.default
+              }}
+            >
+              <option value="today">Today</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
             </select>
           </div>
         </div>
@@ -1094,8 +1146,8 @@ function Dashboard() {
 
         {/* Charts Section - Second Row */}
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-          {/* Line Chart - Stock trend of fast-moving items */}
-          {renderLineChart(fastMovingItemsTrend, "Fast-Moving Items Trend")}
+          {/* Bar Chart - Fast-moving items by product */}
+          {renderBarChart(fastMovingItemsTrend, "Fast-Moving Items Trend")}
           
           {/* Gauge - Critical stock alerts */}
           {renderGauge(criticalStockAlerts, "Critical Stock Alerts")}

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Progress } from "../../components/ui/progress";
 import { Badge } from "../../components/ui/badge";
@@ -23,6 +24,7 @@ import axios from 'axios';
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
 
 export default function PharmacyDashboard() {
+  const router = useRouter();
   const [dashboardData, setDashboardData] = useState({
     totalSalesToday: 0,
     monthlySales: 0,
@@ -43,10 +45,41 @@ export default function PharmacyDashboard() {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scannedProduct, setScannedProduct] = useState(null);
   const [scanning, setScanning] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Check authentication first
+  useEffect(() => {
+    const userData = sessionStorage.getItem('user_data');
+    if (!userData) {
+      console.log('🚫 No user data found, redirecting to login');
+      router.push('/');
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userData);
+      // Check if user has pharmacy/pharmacist permissions
+      const role = user.role?.toLowerCase() || '';
+      if (!role.includes('pharmacist') && !role.includes('pharmacy') && !role.includes('admin') && !role.includes('inventory')) {
+        console.log('🚫 User does not have pharmacy permissions, redirecting to login');
+        router.push('/');
+        return;
+      }
+
+      console.log('✅ User authenticated for pharmacy dashboard');
+      setIsAuthenticated(true);
+    } catch (e) {
+      console.error('❌ Failed to parse user data:', e);
+      router.push('/');
+      return;
+    }
+  }, [router]);
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    if (isAuthenticated) {
+      fetchDashboardData();
+    }
+  }, [isAuthenticated]);
 
   const fetchDashboardData = async () => {
     try {
@@ -178,6 +211,18 @@ export default function PharmacyDashboard() {
   };
 
   const salesProgress = (dashboardData.currentSales / dashboardData.salesTarget) * 100;
+
+  // Show loading screen while checking authentication
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Verifying authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

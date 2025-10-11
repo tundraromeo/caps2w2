@@ -21,15 +21,18 @@ import { NotificationProvider } from "./NotificationContext";
 import { AlertManagerProvider } from "./AlertManager";
 import { SettingsProvider } from "./SettingsContext";
 import ThemeToggle from "./ThemeToggle";
+import { HeartbeatService } from "../lib/HeartbeatService";
 
 export default function InventoryPage() {
   const [activeComponent, setActiveComponent] = useState("Dashboard");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Check if user is logged in
+  // Check if user is logged in and start heartbeat
   useEffect(() => {
     const userData = sessionStorage.getItem('user_data');
     if (!userData) {
@@ -44,6 +47,18 @@ export default function InventoryPage() {
       router.push('/');
       return;
     }
+
+    // Start heartbeat service for real-time online/offline detection
+    console.log('💓 Starting heartbeat service for inventory user');
+    HeartbeatService.start(user);
+    setIsAuthenticated(true);
+    setIsLoading(false);
+
+    // Cleanup: Stop heartbeat when component unmounts
+    return () => {
+      console.log('💔 Stopping heartbeat service (component unmount)');
+      HeartbeatService.stop();
+    };
   }, [router]);
 
   const componentMap = {
@@ -67,15 +82,28 @@ export default function InventoryPage() {
 
   const confirmLogout = async () => {
     try {
+      // Stop heartbeat service immediately
+      console.log('💔 Stopping heartbeat service (logout)');
+      HeartbeatService.stop();
+
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
-      const empId = userData ? JSON.parse(userData).user_id : null;
+      let empId = null;
+      
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          empId = user.user_id || user.emp_id || null;
+        } catch (e) {
+          console.error('Failed to parse user data:', e);
+        }
+      }
       
       console.log('Inventory Logout attempt - User data:', userData);
       console.log('Inventory Logout attempt - Emp ID:', empId);
       
       // Call logout API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -104,6 +132,18 @@ export default function InventoryPage() {
   const cancelLogout = () => {
     setShowLogoutConfirm(false);
   };
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verifying authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ThemeProvider>

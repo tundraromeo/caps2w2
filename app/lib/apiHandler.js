@@ -470,6 +470,7 @@ export const getApiEndpointForAction = (action) => {
     get_batches: 'batch_tracking.php',
     update_batch: 'backend.php',
     add_batch_entry: 'backend.php',
+    get_all_batches: 'backend.php',
     get_batch_transfers_by_location: 'convenience_store_api.php',
     sync_transferred_products: 'convenience_store_api.php',
     get_transferred_batches: 'get_transferred_batches_api.php',
@@ -491,11 +492,11 @@ export const getApiEndpointForAction = (action) => {
 
     // ============= POS & SALES =============
     get_pos_products: 'sales_api.php',
-    check_barcode: 'sales_api.php',
+    check_barcode: 'backend_modular.php',  // Routes to Api/modules/barcode.php
     check_product_name: 'sales_api.php',
     get_product_batches: 'sales_api.php',
     get_discounts: 'sales_api.php',
-    update_product_stock: 'sales_api.php',
+    update_product_stock: 'backend.php', // Fixed: Route to backend.php for full FIFO/batch support
     reduce_product_stock: 'sales_api.php',
     simple_update_product_stock: 'sales_api.php',
     

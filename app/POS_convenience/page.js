@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
+import { HeartbeatService } from '../lib/HeartbeatService';
 
 export default function POS() {
   const router = useRouter();
@@ -47,6 +48,8 @@ export default function POS() {
   const [showReturnQtyModal, setShowReturnQtyModal] = useState(false);
   const [returnModal, setReturnModal] = useState({ transactionId: null, productId: null, max: 0 });
   const [returnQtyInput, setReturnQtyInput] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [showClearCartModal, setShowClearCartModal] = useState(false);
   const [showCustomerReturnModal, setShowCustomerReturnModal] = useState(false);
   const [showReturnConfirmModal, setShowReturnConfirmModal] = useState(false);
@@ -215,6 +218,42 @@ export default function POS() {
     }
     return 'Convenience Store'; // default
   };
+
+  // Start heartbeat service for real-time online/offline detection
+  useEffect(() => {
+    const userData = sessionStorage.getItem('user_data');
+    if (!userData) {
+      console.log('🚫 No user data found, redirecting to login');
+      router.push('/');
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userData);
+      // Check if user has POS/cashier permissions
+      const role = user.role?.toLowerCase() || '';
+      if (!role.includes('cashier') && !role.includes('pos') && !role.includes('admin')) {
+        console.log('🚫 User does not have POS permissions, redirecting to login');
+        router.push('/');
+        return;
+      }
+
+      console.log('✅ User authenticated, starting heartbeat service for POS cashier');
+      HeartbeatService.start(user);
+      setIsAuthenticated(true);
+      setIsLoading(false);
+
+      // Cleanup: Stop heartbeat when component unmounts
+      return () => {
+        console.log('💔 Stopping heartbeat service (component unmount)');
+        HeartbeatService.stop();
+      };
+    } catch (e) {
+      console.error('❌ Failed to parse user data:', e);
+      router.push('/');
+      return;
+    }
+  }, [router]);
 
   // Fetch discount options from backend
   useEffect(() => {
@@ -2255,15 +2294,28 @@ export default function POS() {
 
   const confirmLogout = async () => {
     try {
+      // Stop heartbeat service immediately
+      console.log('💔 Stopping heartbeat service (POS logout)');
+      HeartbeatService.stop();
+
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
-      const empId = userData ? JSON.parse(userData).user_id : null;
+      let empId = null;
+      
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          empId = user.user_id || user.emp_id || null;
+        } catch (e) {
+          console.error('Failed to parse user data:', e);
+        }
+      }
       
       console.log('POS Logout attempt - User data:', userData);
       console.log('POS Logout attempt - Emp ID:', empId);
       
       // Call logout API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/login.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -2580,6 +2632,18 @@ export default function POS() {
       barcodeInput.focus();
     }
   }, [products, locationName]);
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verifying authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

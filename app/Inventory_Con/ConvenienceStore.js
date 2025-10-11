@@ -215,6 +215,20 @@ function ConvenienceInventory() {
         );
         console.log("✅ Active convenience store products after filtering:", activeProducts.length);
         console.log("📋 Products:", activeProducts.map(p => `${p.product_name} (${p.quantity}) - ${p.product_type}`));
+        
+        // Debug SRP fields for first product
+        if (activeProducts.length > 0) {
+          const firstProduct = activeProducts[0];
+          console.log("🔍 SRP Debug for first product:", {
+            product_name: firstProduct.product_name,
+            srp: firstProduct.srp,
+            first_batch_srp: firstProduct.first_batch_srp,
+            unit_price: firstProduct.unit_price,
+            transfer_srp: firstProduct.transfer_srp,
+            allFields: Object.keys(firstProduct)
+          });
+        }
+        
         setProducts(activeProducts);
         calculateNotifications(activeProducts);
       } else {
@@ -1055,7 +1069,7 @@ function ConvenienceInventory() {
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
-                        {product.category}
+                        {product.category || product.category_name || 'Uncategorized'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
@@ -1067,7 +1081,10 @@ function ConvenienceInventory() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                      ₱{Number.parseFloat(product.first_batch_srp || product.srp || 0).toFixed(2)}
+                      ₱{(() => {
+                        const srpValue = Number.parseFloat(product.first_batch_srp || product.srp || 0);
+                        return srpValue > 0 ? srpValue.toFixed(2) : '0.00';
+                      })()}
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || product.brand || "Unknown"}

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { FaBell } from "react-icons/fa";
 import { ThemeProvider, useTheme } from './components/ThemeContext';
 import { SettingsProvider } from './components/SettingsContext';
@@ -14,6 +15,7 @@ import NotificationTestPanel from './components/NotificationTestPanel';
 import NotificationTestComponent from './components/NotificationTestComponent';
 import RealtimeNotificationService from './components/RealtimeNotificationService';
 import ReturnNotificationService from './components/ReturnNotificationService';
+import { HeartbeatService } from "../lib/HeartbeatService";
 
 // Import all components
 import Dashboard from './components/Dashboard';
@@ -37,18 +39,28 @@ import LoginLogsReport from './components/LoginLogsReport';
 import ActivityLogsReport from './components/ActivityLogsReport';
 import ReturnManagement from './components/ReturnManagement';
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
-const LOGIN_API_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`;
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL}/backend.php`;
+const LOGIN_API_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL}/login.php`;
 
 // Logout function
 const logoutUser = async () => {
   try {
+    // Stop heartbeat service immediately
+    console.log('💔 Stopping heartbeat service (admin logout)');
+    HeartbeatService.stop();
+
     // Get user data from sessionStorage
     const userData = sessionStorage.getItem('user_data');
-    const empId = userData ? JSON.parse(userData).user_id : null;
+    let empId = null;
     
-    
-    
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        empId = user.user_id || user.emp_id || null;
+      } catch (e) {
+        console.error('Failed to parse user data:', e);
+      }
+    }
     
     // Call logout API
     const response = await fetch(LOGIN_API_URL, {
@@ -198,7 +210,46 @@ function AdminContent() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { markNotificationAsViewed, clearSystemUpdates } = useNotification();
+  const router = useRouter();
+
+  // Check if user is logged in and has admin permissions
+  useEffect(() => {
+    const userData = sessionStorage.getItem('user_data');
+    if (!userData) {
+      console.log('🚫 No user data found, redirecting to login');
+      router.push('/');
+      return;
+    }
+
+    try {
+      const user = JSON.parse(userData);
+      // Check if user has admin permissions
+      const role = user.role?.toLowerCase() || '';
+      if (!role.includes('admin') && !role.includes('manager') && !role.includes('supervisor')) {
+        console.log('🚫 User does not have admin permissions, redirecting to login');
+        router.push('/');
+        return;
+      }
+
+      console.log('✅ User authenticated, starting heartbeat service for admin user');
+      HeartbeatService.start(user);
+      setIsAuthenticated(true);
+      setIsLoading(false);
+
+      // Cleanup: Stop heartbeat when component unmounts
+      return () => {
+        console.log('💔 Stopping heartbeat service (component unmount)');
+        HeartbeatService.stop();
+      };
+    } catch (e) {
+      console.error('❌ Failed to parse user data:', e);
+      router.push('/');
+      return;
+    }
+  }, [router]);
 
   const componentMap = {
     Dashboard: <Dashboard />,
@@ -263,12 +314,26 @@ function AdminContent() {
   };
 
   useEffect(() => {
-    // Log initial page load
-    recordActivity({ 
-      activityType: 'PAGE_VIEW', 
-      description: 'Admin dashboard loaded' 
-    });
-  }, []);
+    // Log initial page load only if authenticated
+    if (isAuthenticated) {
+      recordActivity({ 
+        activityType: 'PAGE_VIEW', 
+        description: 'Admin dashboard loaded' 
+      });
+    }
+  }, [isAuthenticated]);
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--admin-bg-primary)' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verifying authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen" style={{ backgroundColor: 'var(--admin-bg-primary)' }}>
