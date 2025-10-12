@@ -856,7 +856,7 @@ export default function POS() {
           handleBarcodeScan(barcode);
         } else {
           console.log(`⚠️ Invalid barcode format: ${barcode}`);
-          // Still try to scan in case it's a valid format we don't recognize
+          // Still try to scan in case it's a valid format we don&apos;t recognize
           handleBarcodeScan(barcode);
         }
       }
@@ -2585,7 +2585,7 @@ export default function POS() {
       return;
     }
     
-    // Try to print receipt (but don't block checkout if it fails)
+    // Try to print receipt (but don&apos;t block checkout if it fails)
     const printResult = await printReceipt();
 
     // Persist this sale in local history regardless of print success
@@ -3484,7 +3484,7 @@ export default function POS() {
                 fetchTodaySales();
               }}
             >
-              Today's Sales (Alt+T)
+              Today&apos;s Sales (Alt+T)
             </button>
           </div>
         </div>
@@ -4239,7 +4239,7 @@ export default function POS() {
         >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border-2 border-gray-300">
             <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-green-50 to-green-100">
-              <h3 className="text-2xl font-bold text-gray-900">📊 Today's Sales Summary</h3>
+              <h3 className="text-2xl font-bold text-gray-900">📊 Today&apos;s Sales Summary</h3>
               <div className="text-sm text-gray-500">Alt+T to close • Enter to refresh</div>
             </div>
             

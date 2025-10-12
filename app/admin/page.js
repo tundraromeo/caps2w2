@@ -11,8 +11,6 @@ import Sidebar from './sidebar';
 import LogoutConfirm from './LogoutConfirm';
 import NotificationManager from './components/NotificationManager';
 import NotificationPanel from './components/NotificationPanel';
-import NotificationTestPanel from './components/NotificationTestPanel';
-import NotificationTestComponent from './components/NotificationTestComponent';
 import RealtimeNotificationService from './components/RealtimeNotificationService';
 import ReturnNotificationService from './components/ReturnNotificationService';
 import { HeartbeatService } from "../lib/HeartbeatService";
@@ -382,12 +380,6 @@ function AdminContent() {
         {/* Theme Toggle Button */}
         <ThemeToggle />
       </div>
-
-      {/* Notification Test Panel (Development Only) */}
-      <NotificationTestPanel />
-      
-      {/* Notification Test Component */}
-      <NotificationTestComponent />
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

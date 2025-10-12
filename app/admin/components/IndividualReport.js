@@ -901,7 +901,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             </h3>
             {reportType === 'activity_logs' && (
               <div className="mb-3 p-3 rounded-md" style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}>
-                <p className="text-sm font-medium">📅 Activity Logs automatically show today's activities only</p>
+                <p className="text-sm font-medium">📅 Activity Logs automatically show today&apos;s activities only</p>
                 <p className="text-xs mt-1">Real-time system activities from tbl_activity_log table</p>
               </div>
             )}
