@@ -6,8 +6,8 @@
  */
 
 // Load environment variables
-require_once __DIR__ . '/../simple_dotenv.php';
-$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+require_once __DIR__ . '/simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__);
 $dotenv->load();
 
 // Get database credentials from environment variables
@@ -17,10 +17,16 @@ $dbname = $_ENV['DB_DATABASE'] ?? 'enguio2';
 $username = $_ENV['DB_USER'] ?? 'root';
 $password = $_ENV['DB_PASS'] ?? '';
 $charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
+$socket = $_ENV['DB_SOCKET'] ?? '';
 
 // Create PDO connection (primary connection type)
 try {
-    $dsn = "mysql:host=$servername;port=$port;dbname=$dbname;charset=$charset";
+    // Use socket if provided, otherwise use host and port
+    if (!empty($socket)) {
+        $dsn = "mysql:unix_socket=$socket;dbname=$dbname;charset=$charset";
+    } else {
+        $dsn = "mysql:host=$servername;port=$port;dbname=$dbname;charset=$charset";
+    }
     
     $conn = new PDO($dsn, $username, $password, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,

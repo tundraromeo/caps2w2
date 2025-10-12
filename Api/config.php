@@ -13,7 +13,7 @@ class Config {
      * Load configuration from .env file
      */
     private static function loadEnv() {
-        $envFile = __DIR__ . '/../.env';
+        $envFile = __DIR__ . '/.env';
         
         if (file_exists($envFile)) {
             $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -53,9 +53,9 @@ class Config {
             self::$config = [
                 // Database Configuration
                 'DB_HOST' => getenv('DB_HOST') ?: 'localhost',
-                'DB_USERNAME' => getenv('DB_USERNAME') ?: 'root',
-                'DB_PASSWORD' => getenv('DB_PASSWORD') ?: '',
-                'DB_NAME' => getenv('DB_NAME') ?: 'enguio2',
+                'DB_USERNAME' => getenv('DB_USER') ?: 'root',
+                'DB_PASSWORD' => getenv('DB_PASS') ?: '',
+                'DB_NAME' => getenv('DB_DATABASE') ?: 'enguio2',
                 'DB_CHARSET' => getenv('DB_CHARSET') ?: 'utf8mb4',
                 
                 // API Configuration
