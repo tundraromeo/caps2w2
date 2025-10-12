@@ -258,6 +258,54 @@ function Warehouse() {
   const { theme } = useTheme();
   const { settings, isProductExpiringSoon, isProductExpired, getExpiryStatus, isStockLow } = useSettings();
 
+  // Smart product type detection function
+  function detectProductType(productName) {
+    if (!productName) return "Non-Medicine";
+    
+    const medicineKeywords = [
+      'biogesic', 'paracetamol', 'acetaminophen', 'ibuprofen', 'aspirin',
+      'vitamin', 'vitamins', 'supplement', 'medicine', 'tablet', 'tablets',
+      'capsule', 'capsules', 'syrup', 'injection', 'drops', 'cream', 'ointment',
+      'antibiotic', 'antihistamine', 'antacid', 'laxative', 'pain reliever',
+      'fever reducer', 'cough', 'cold', 'flu', 'allergy', 'asthma',
+      'diabetes', 'blood pressure', 'cholesterol', 'heart', 'liver',
+      'kidney', 'stomach', 'digestive', 'sleep', 'anxiety', 'depression'
+    ];
+    
+    const lowerName = productName.toLowerCase();
+    
+    // Check for medicine keywords
+    for (const keyword of medicineKeywords) {
+      if (lowerName.includes(keyword)) {
+        console.log(`🔍 Auto-detected MEDICINE: "${productName}" contains "${keyword}"`);
+        return "Medicine";
+      }
+    }
+    
+    // Check for mg dosage (common in medicines)
+    if (/\d+\s*mg\b/i.test(productName)) {
+      console.log(`🔍 Auto-detected MEDICINE: "${productName}" contains mg dosage`);
+      return "Medicine";
+    }
+    
+    // Check for medicine brand names
+    const medicineBrands = [
+      'biogesic', 'alaxan', 'advil', 'tylenol', 'motrin', 'aleve',
+      'benadryl', 'claritin', 'zyrtec', 'pepcid', 'prilosec',
+      'metformin', 'lisinopril', 'amlodipine', 'atorvastatin'
+    ];
+    
+    for (const brand of medicineBrands) {
+      if (lowerName.includes(brand)) {
+        console.log(`🔍 Auto-detected MEDICINE: "${productName}" contains brand "${brand}"`);
+        return "Medicine";
+      }
+    }
+    
+    console.log(`🔍 Auto-detected NON-MEDICINE: "${productName}" - no medicine keywords found`);
+    return "Non-Medicine";
+  }
+
   // Helper function to calculate stock status based on quantity and settings
   const getStockStatus = (quantity) => {
     const qty = parseInt(quantity || 0);
@@ -1076,7 +1124,55 @@ calculateLowStockAndExpiring(activeProducts);
         
         if (existingProductInInventory) {
           console.log("✅ Product found by barcode in inventory data:", existingProductInInventory);
-          setExistingProduct(existingProductInInventory);
+          
+          // Use stored product_type from database, with fallback to auto-detection
+          let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
+          
+          if (!existingProductInInventory.product_type) {
+            console.log("🔍 Barcode check: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
+            
+            // Auto-detection logic
+            const medicineCategories = [
+              "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+              "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+              "Vitamins", "Supplements", "Health", "Medical"
+            ];
+            const categoryName = existingProductInInventory.category_name || existingProductInInventory.category || "";
+            
+            if (medicineCategories.some(medCat => 
+              categoryName.toLowerCase().includes(medCat.toLowerCase())
+            )) {
+              productType = "Medicine";
+              console.log("🔍 Barcode check: Auto-detected Medicine product based on category:", categoryName);
+            } else {
+              const medicineKeywords = [
+                "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+                "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+                "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+                "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+              ];
+              const productName = (existingProductInInventory.product_name || "").toLowerCase();
+              
+              if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+                productType = "Medicine";
+                console.log("🔍 Barcode check: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
+              } else {
+                productType = "Non-Medicine";
+                console.log("🔍 Barcode check: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
+              }
+            }
+          } else {
+            console.log("🔍 Barcode check: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
+          }
+          
+          // Add product_type to the product object
+          const productWithType = {
+            ...existingProductInInventory,
+            product_type: productType
+          };
+          
+          console.log("🔍 Barcode check: Final product type determined:", productType);
+          setExistingProduct(productWithType);
           setNewStockQuantity("");
           
           const hasBulkFields = existingProductInInventory.boxes || existingProductInInventory.strips_per_box || 
@@ -1100,7 +1196,55 @@ calculateLowStockAndExpiring(activeProducts);
           
           if (productFound) {
             console.log("✅ Product found by barcode via API:", barcodeCheck.product);
-            setExistingProduct(barcodeCheck.product);
+            
+            // Use stored product_type from database, with fallback to auto-detection
+            let productType = barcodeCheck.product.product_type || detectProductType(barcodeCheck.product.product_name);
+            
+            if (!barcodeCheck.product.product_type) {
+              console.log("🔍 Manual barcode API check: No stored product_type, using auto-detection for:", barcodeCheck.product.product_name);
+              
+              // Auto-detection logic
+              const medicineCategories = [
+                "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+                "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+                "Vitamins", "Supplements", "Health", "Medical"
+              ];
+              const categoryName = barcodeCheck.product.category_name || barcodeCheck.product.category || "";
+              
+              if (medicineCategories.some(medCat => 
+                categoryName.toLowerCase().includes(medCat.toLowerCase())
+              )) {
+                productType = "Medicine";
+                console.log("🔍 Manual barcode API check: Auto-detected Medicine product based on category:", categoryName);
+              } else {
+                const medicineKeywords = [
+                  "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+                  "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+                  "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+                  "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+                ];
+                const productName = (barcodeCheck.product.product_name || "").toLowerCase();
+                
+                if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+                  productType = "Medicine";
+                  console.log("🔍 Manual barcode API check: Auto-detected Medicine product based on product name:", barcodeCheck.product.product_name);
+                } else {
+                  productType = "Non-Medicine";
+                  console.log("🔍 Manual barcode API check: Auto-detected Non-Medicine product for:", barcodeCheck.product.product_name);
+                }
+              }
+            } else {
+              console.log("🔍 Manual barcode API check: Using stored product_type:", barcodeCheck.product.product_type, "for:", barcodeCheck.product.product_name);
+            }
+            
+            // Add product_type to the product object
+            const productWithType = {
+              ...barcodeCheck.product,
+              product_type: productType
+            };
+            
+            console.log("🔍 Manual barcode API check: Final product type determined:", productType);
+            setExistingProduct(productWithType);
             setNewStockQuantity("");
             
             const hasBulkFields = barcodeCheck.product.boxes || barcodeCheck.product.strips_per_box || 
@@ -1164,8 +1308,55 @@ calculateLowStockAndExpiring(activeProducts);
       
       if (existingProductInInventory) {
         console.log("✅ Product found in inventory data:", existingProductInInventory);
-        // Product exists - show update stock modal
-        setExistingProduct(existingProductInInventory);
+        
+        // Use stored product_type from database, with fallback to auto-detection
+        let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
+        
+        if (!existingProductInInventory.product_type) {
+          console.log("🔍 Product name check: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
+          
+          // Auto-detection logic
+          const medicineCategories = [
+            "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+            "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+            "Vitamins", "Supplements", "Health", "Medical"
+          ];
+          const categoryName = existingProductInInventory.category_name || existingProductInInventory.category || "";
+          
+          if (medicineCategories.some(medCat => 
+            categoryName.toLowerCase().includes(medCat.toLowerCase())
+          )) {
+            productType = "Medicine";
+            console.log("🔍 Product name check: Auto-detected Medicine product based on category:", categoryName);
+          } else {
+            const medicineKeywords = [
+              "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+              "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+              "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+              "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+            ];
+            const productName = (existingProductInInventory.product_name || "").toLowerCase();
+            
+            if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+              productType = "Medicine";
+              console.log("🔍 Product name check: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
+            } else {
+              productType = "Non-Medicine";
+              console.log("🔍 Product name check: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
+            }
+          }
+        } else {
+          console.log("🔍 Product name check: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
+        }
+        
+        // Add product_type to the product object
+        const productWithType = {
+          ...existingProductInInventory,
+          product_type: productType
+        };
+        
+        console.log("🔍 Product name check: Final product type determined:", productType);
+        setExistingProduct(productWithType);
         setNewStockQuantity("");
         
         // Set default configuration mode based on product data
@@ -1191,7 +1382,55 @@ calculateLowStockAndExpiring(activeProducts);
         
         if (productFound) {
           console.log("✅ Product found via API, opening update stock modal:", productNameCheck.product);
-          setExistingProduct(productNameCheck.product);
+          
+          // Use stored product_type from database, with fallback to auto-detection
+          let productType = productNameCheck.product.product_type || detectProductType(productNameCheck.product.product_name);
+          
+          if (!productNameCheck.product.product_type) {
+            console.log("🔍 API product name check: No stored product_type, using auto-detection for:", productNameCheck.product.product_name);
+            
+            // Auto-detection logic
+            const medicineCategories = [
+              "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+              "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+              "Vitamins", "Supplements", "Health", "Medical"
+            ];
+            const categoryName = productNameCheck.product.category_name || productNameCheck.product.category || "";
+            
+            if (medicineCategories.some(medCat => 
+              categoryName.toLowerCase().includes(medCat.toLowerCase())
+            )) {
+              productType = "Medicine";
+              console.log("🔍 API product name check: Auto-detected Medicine product based on category:", categoryName);
+            } else {
+              const medicineKeywords = [
+                "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+                "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+                "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+                "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+              ];
+              const productName = (productNameCheck.product.product_name || "").toLowerCase();
+              
+              if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+                productType = "Medicine";
+                console.log("🔍 API product name check: Auto-detected Medicine product based on product name:", productNameCheck.product.product_name);
+              } else {
+                productType = "Non-Medicine";
+                console.log("🔍 API product name check: Auto-detected Non-Medicine product for:", productNameCheck.product.product_name);
+              }
+            }
+          } else {
+            console.log("🔍 API product name check: Using stored product_type:", productNameCheck.product.product_type, "for:", productNameCheck.product.product_name);
+          }
+          
+          // Add product_type to the product object
+          const productWithType = {
+            ...productNameCheck.product,
+            product_type: productType
+          };
+          
+          console.log("🔍 API product name check: Final product type determined:", productType);
+          setExistingProduct(productWithType);
           setNewStockQuantity("");
           
           // Set default configuration mode based on product data
@@ -1272,8 +1511,55 @@ calculateLowStockAndExpiring(activeProducts);
           if (existingProductInInventory) {
             console.log("✅ Product found in inventory data:", existingProductInInventory);
             console.log("🚪 OPENING MODAL: UPDATE STOCK MODAL (from local inventory)");
-            // Product exists - show update stock modal
-            setExistingProduct(existingProductInInventory);
+            
+            // Use stored product_type from database, with fallback to auto-detection
+            let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
+            
+            if (!existingProductInInventory.product_type) {
+              console.log("🔍 Scanner: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
+              
+              // Auto-detection logic
+              const medicineCategories = [
+                "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+                "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+                "Vitamins", "Supplements", "Health", "Medical"
+              ];
+              const categoryName = existingProductInInventory.category_name || existingProductInInventory.category || "";
+              
+              if (medicineCategories.some(medCat => 
+                categoryName.toLowerCase().includes(medCat.toLowerCase())
+              )) {
+                productType = "Medicine";
+                console.log("🔍 Scanner: Auto-detected Medicine product based on category:", categoryName);
+              } else {
+                const medicineKeywords = [
+                  "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+                  "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+                  "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+                  "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+                ];
+                const productName = (existingProductInInventory.product_name || "").toLowerCase();
+                
+                if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+                  productType = "Medicine";
+                  console.log("🔍 Scanner: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
+                } else {
+                  productType = "Non-Medicine";
+                  console.log("🔍 Scanner: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
+                }
+              }
+            } else {
+              console.log("🔍 Scanner: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
+            }
+            
+            // Add product_type to the product object
+            const productWithType = {
+              ...existingProductInInventory,
+              product_type: productType
+            };
+            
+            console.log("🔍 Scanner: Final product type determined:", productType);
+            setExistingProduct(productWithType);
             setNewStockQuantity("");
             
             // Set default configuration mode based on product data
@@ -1315,7 +1601,55 @@ calculateLowStockAndExpiring(activeProducts);
             if (productFound) {
               console.log("✅ Product found via API, opening update stock modal:", barcodeCheck.product);
               console.log("🚪 OPENING MODAL: UPDATE STOCK MODAL");
-              setExistingProduct(barcodeCheck.product);
+              
+              // Use stored product_type from database, with fallback to auto-detection
+              let productType = barcodeCheck.product.product_type || detectProductType(barcodeCheck.product.product_name);
+              
+              if (!barcodeCheck.product.product_type) {
+                console.log("🔍 Scanner API barcode check: No stored product_type, using auto-detection for:", barcodeCheck.product.product_name);
+                
+                // Auto-detection logic
+                const medicineCategories = [
+                  "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+                  "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+                  "Vitamins", "Supplements", "Health", "Medical"
+                ];
+                const categoryName = barcodeCheck.product.category_name || barcodeCheck.product.category || "";
+                
+                if (medicineCategories.some(medCat => 
+                  categoryName.toLowerCase().includes(medCat.toLowerCase())
+                )) {
+                  productType = "Medicine";
+                  console.log("🔍 Scanner API barcode check: Auto-detected Medicine product based on category:", categoryName);
+                } else {
+                  const medicineKeywords = [
+                    "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+                    "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+                    "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+                    "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+                  ];
+                  const productName = (barcodeCheck.product.product_name || "").toLowerCase();
+                  
+                  if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+                    productType = "Medicine";
+                    console.log("🔍 Scanner API barcode check: Auto-detected Medicine product based on product name:", barcodeCheck.product.product_name);
+                  } else {
+                    productType = "Non-Medicine";
+                    console.log("🔍 Scanner API barcode check: Auto-detected Non-Medicine product for:", barcodeCheck.product.product_name);
+                  }
+                }
+              } else {
+                console.log("🔍 Scanner API barcode check: Using stored product_type:", barcodeCheck.product.product_type, "for:", barcodeCheck.product.product_name);
+              }
+              
+              // Add product_type to the product object
+              const productWithType = {
+                ...barcodeCheck.product,
+                product_type: productType
+              };
+              
+              console.log("🔍 Scanner API barcode check: Final product type determined:", productType);
+              setExistingProduct(productWithType);
               setNewStockQuantity("");
               
               // Set default configuration mode based on product data
@@ -1503,7 +1837,57 @@ calculateLowStockAndExpiring(activeProducts);
       console.log("🔍 Product brand_id:", product.brand_id);
       console.log("🔍 Product category_id:", product.category_id);
       console.log("🔍 All product keys:", Object.keys(product));
-      setExistingProduct(product);
+      
+      // Use stored product_type from database, with fallback to auto-detection
+      let productType = product.product_type || detectProductType(product.product_name); // Use stored value first
+      
+      // If no stored product_type, use auto-detection as fallback
+      if (!product.product_type) {
+        console.log("🔍 No stored product_type found, using auto-detection for:", product.product_name);
+        
+        // Primary detection: Check category name for medicine-related categories
+        const medicineCategories = [
+          "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
+          "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
+          "Vitamins", "Supplements", "Health", "Medical"
+        ];
+        const categoryName = product.category_name || product.category || "";
+        
+        if (medicineCategories.some(medCat => 
+          categoryName.toLowerCase().includes(medCat.toLowerCase())
+        )) {
+          productType = "Medicine";
+          console.log("🔍 Auto-detected Medicine product based on category:", categoryName);
+        } else {
+          // Secondary detection: Check product name for medicine keywords
+          const medicineKeywords = [
+            "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
+            "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
+            "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
+            "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
+          ];
+          const productName = (product.product_name || "").toLowerCase();
+          
+          if (medicineKeywords.some(keyword => productName.includes(keyword))) {
+            productType = "Medicine";
+            console.log("🔍 Auto-detected Medicine product based on product name:", product.product_name);
+          } else {
+            productType = "Non-Medicine";
+            console.log("🔍 Auto-detected Non-Medicine product for:", product.product_name);
+          }
+        }
+      } else {
+        console.log("🔍 Using stored product_type:", product.product_type, "for:", product.product_name);
+      }
+      
+      // Add product_type to the product object
+      const productWithType = {
+        ...product,
+        product_type: productType
+      };
+      
+      console.log("🔍 Final product type determined:", productType);
+      setExistingProduct(productWithType);
       setNewStockQuantity("");
       setNewStockBoxes("");
       setNewStockStripsPerBox("");
@@ -4581,10 +4965,32 @@ console.log("API response for product quantities:", response);
 
   {showUpdateStockModal && existingProduct && (
     <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[95vh] border border-gray-200/50">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
-          <h3 className="text-lg font-semibold text-gray-900">Update Product Stock</h3>
-          <button onClick={closeUpdateStockModal} className="text-gray-400 hover:text-gray-600">
+      <div 
+        className="backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[95vh] border"
+        style={{
+          backgroundColor: theme.bg.card,
+          borderColor: theme.border.default,
+          color: theme.text.primary
+        }}
+      >
+        <div 
+          className="px-6 py-4 border-b flex items-center justify-between sticky top-0 backdrop-blur-md z-10"
+          style={{
+            backgroundColor: theme.bg.card,
+            borderColor: theme.border.default
+          }}
+        >
+          <h3 
+            className="text-lg font-semibold"
+            style={{ color: theme.text.primary }}
+          >
+            Update Product Stock
+          </h3>
+          <button 
+            onClick={closeUpdateStockModal} 
+            style={{ color: theme.text.muted }}
+            className="hover:opacity-70 transition-opacity"
+          >
             <X className="h-6 w-6" />
           </button>
         </div>
@@ -4595,25 +5001,50 @@ console.log("API response for product quantities:", response);
             {/* Product Details Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                <label 
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: theme.text.secondary }}
+                >
+                  Product Name
+                </label>
                 <input
                   type="text"
                   value={existingProduct.product_name || ""}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                  className="w-full px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Barcode</label>
+                <label 
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: theme.text.secondary }}
+                >
+                  Barcode
+                </label>
                 <input
                   type="text"
                   value={existingProduct.barcode || ""}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                  className="w-full px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <label 
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: theme.text.secondary }}
+                >
+                  Category
+                </label>
                 <input
                   type="text"
                   value={(() => {
@@ -4629,11 +5060,21 @@ console.log("API response for product quantities:", response);
                     return "N/A";
                   })()}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                  className="w-full px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                <label 
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: theme.text.secondary }}
+                >
+                  Brand
+                </label>
                 <input
                   type="text"
                   value={(() => {
@@ -4649,23 +5090,47 @@ console.log("API response for product quantities:", response);
                     return "N/A";
                   })()}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                  className="w-full px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Current Stock</label>
+                <label 
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: theme.text.secondary }}
+                >
+                  Current Stock
+                </label>
                 <input
                   type="text"
                   value={existingProduct.quantity || "0"}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                  className="w-full px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
                 />
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label 
+                    className="block text-sm font-medium"
+                    style={{ color: theme.text.secondary }}
+                  >
                     SRP *
-                    <span className="ml-2 text-xs font-normal px-2 py-1 rounded" style={{ backgroundColor: theme.colors.danger + '20', color: theme.colors.danger }}>
+                    <span 
+                      className="ml-2 text-xs font-normal px-2 py-1 rounded" 
+                      style={{ 
+                        backgroundColor: theme.colors.danger + '20', 
+                        color: theme.colors.danger 
+                      }}
+                    >
                       REQUIRED FOR FIFO
                     </span>
                   </label>
@@ -4682,9 +5147,17 @@ console.log("API response for product quantities:", response);
                           setNewSrp("");
                         }
                       }}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      className="h-4 w-4 rounded"
+                      style={{
+                        accentColor: theme.colors.accent,
+                        borderColor: theme.border.default
+                      }}
                     />
-                    <label htmlFor="editSrp" className="ml-2 text-sm text-gray-600">
+                    <label 
+                      htmlFor="editSrp" 
+                      className="ml-2 text-sm"
+                      style={{ color: theme.text.muted }}
+                    >
                       Edit SRP for this batch
                     </label>
                   </div>
@@ -4734,98 +5207,202 @@ console.log("API response for product quantities:", response);
 
             {/* Description Section */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label 
+                className="block text-sm font-medium mb-1"
+                style={{ color: theme.text.secondary }}
+              >
+                Description
+              </label>
               <textarea
                 value={existingProduct.description || ""}
                 readOnly
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
+                className="w-full px-3 py-2 border rounded-md"
+                style={{
+                  backgroundColor: theme.bg.hover,
+                  borderColor: theme.border.default,
+                  color: theme.text.primary
+                }}
               />
             </div>
 
+            {/* Product Type Override Section */}
+            <div 
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                backgroundColor: theme.colors.info + '10',
+                borderColor: theme.colors.info + '30'
+              }}
+            >
+              <h4 
+                className="text-sm font-semibold mb-3 flex items-center"
+                style={{ color: theme.colors.info }}
+              >
+                🔧 Product Type Detection
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label 
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: theme.text.secondary }}
+                  >
+                    Detected Type: <span 
+                      className="font-semibold"
+                      style={{ 
+                        color: existingProduct.product_type === "Medicine" 
+                          ? theme.colors.success 
+                          : theme.colors.warning 
+                      }}
+                    >
+                      {existingProduct.product_type}
+                    </span>
+                  </label>
+                  <p 
+                    className="text-xs"
+                    style={{ color: theme.text.muted }}
+                  >
+                    Auto-detected based on category and product name
+                  </p>
+                </div>
+                <div>
+                  <label 
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: theme.text.secondary }}
+                  >
+                    Override Product Type (if needed)
+                  </label>
+                  <select
+                    value={existingProduct.product_type || "Non-Medicine"}
+                    onChange={(e) => {
+                      const newProductType = e.target.value;
+                      setExistingProduct(prev => ({
+                        ...prev,
+                        product_type: newProductType
+                      }));
+                      console.log("🔧 Product type manually overridden to:", newProductType);
+                    }}
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                    style={{
+                      backgroundColor: theme.bg.card,
+                      borderColor: theme.border.default,
+                      color: theme.text.primary,
+                      focusRingColor: theme.colors.accent
+                    }}
+                  >
+                    <option value="Non-Medicine">Non-Medicine</option>
+                    <option value="Medicine">Medicine</option>
+                  </select>
+                  <p 
+                    className="text-xs mt-1"
+                    style={{ color: theme.text.muted }}
+                  >
+                    Change this if the auto-detection is incorrect
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Bulk Configuration Section */}
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-800 mb-4 flex items-center">
+            <div 
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                backgroundColor: theme.bg.hover,
+                borderColor: theme.border.default
+              }}
+            >
+              <h4 
+                className="text-sm font-semibold mb-4 flex items-center"
+                style={{ color: theme.text.primary }}
+              >
                 ⚙️ Configuration Mode
               </h4>
-              <p className="text-xs text-gray-600 mb-4">
+              <p 
+                className="text-xs mb-4"
+                style={{ color: theme.text.muted }}
+              >
                 Choose how you want to configure the product quantity. <strong>Pieces Mode</strong> is recommended for quick stock updates.
               </p>
               
               {/* Status Indicator */}
-              <div className="mb-4 p-2 rounded-lg border" style={{
-                backgroundColor: (() => {
-                  if (stockUpdateConfigMode === "pieces") {
-                    return (newStockQuantity && newStockQuantity > 0) 
-                      ? 'rgb(240 253 244)' // green-50
-                      : 'rgb(254 252 232)'; // yellow-50
-                  } else {
-                    // Bulk mode validation
-                    if (existingProduct.product_type === "Medicine") {
-                      return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
-                        ? 'rgb(240 253 244)' // green-50
-                        : 'rgb(254 252 232)'; // yellow-50
-                    } else if (existingProduct.product_type === "Non-Medicine") {
-                      return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
-                        ? 'rgb(240 253 244)' // green-50
-                        : 'rgb(254 252 232)'; // yellow-50
-                    } else {
-                      // Unknown product type - check if bulk fields are filled
-                      return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
-                        ? 'rgb(240 253 244)' // green-50
-                        : 'rgb(254 252 232)'; // yellow-50
-                    }
-                  }
-                })(),
-                borderColor: (() => {
-                  if (stockUpdateConfigMode === "pieces") {
-                    return (newStockQuantity && newStockQuantity > 0) 
-                      ? 'rgb(187 247 208)' // green-200
-                      : 'rgb(254 240 138)'; // yellow-200
-                  } else {
-                    // Bulk mode validation
-                    if (existingProduct.product_type === "Medicine") {
-                      return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
-                        ? 'rgb(187 247 208)' // green-200
-                        : 'rgb(254 240 138)'; // yellow-200
-                    } else if (existingProduct.product_type === "Non-Medicine") {
-                      return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
-                        ? 'rgb(187 247 208)' // green-200
-                        : 'rgb(254 240 138)'; // yellow-200
-                    } else {
-                      // Unknown product type - check if bulk fields are filled
-                      return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
-                        ? 'rgb(187 247 208)' // green-200
-                        : 'rgb(254 240 138)'; // yellow-200
-                    }
-                  }
-                })()
-              }}>
-                <p className="text-xs" style={{
-                  color: (() => {
+              <div 
+                className="mb-4 p-2 rounded-lg border" 
+                style={{
+                  backgroundColor: (() => {
                     if (stockUpdateConfigMode === "pieces") {
                       return (newStockQuantity && newStockQuantity > 0) 
-                        ? 'rgb(21 128 61)' // green-700
-                        : 'rgb(161 98 7)'; // yellow-700
+                        ? theme.colors.success + '20'
+                        : theme.colors.warning + '20';
                     } else {
                       // Bulk mode validation
                       if (existingProduct.product_type === "Medicine") {
                         return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
-                          ? 'rgb(21 128 61)' // green-700
-                          : 'rgb(161 98 7)'; // yellow-700
+                          ? theme.colors.success + '20'
+                          : theme.colors.warning + '20';
                       } else if (existingProduct.product_type === "Non-Medicine") {
                         return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
-                          ? 'rgb(21 128 61)' // green-700
-                          : 'rgb(161 98 7)'; // yellow-700
+                          ? theme.colors.success + '20'
+                          : theme.colors.warning + '20';
                       } else {
                         // Unknown product type - check if bulk fields are filled
                         return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
-                          ? 'rgb(21 128 61)' // green-700
-                          : 'rgb(161 98 7)'; // yellow-700
+                          ? theme.colors.success + '20'
+                          : theme.colors.warning + '20';
+                      }
+                    }
+                  })(),
+                  borderColor: (() => {
+                    if (stockUpdateConfigMode === "pieces") {
+                      return (newStockQuantity && newStockQuantity > 0) 
+                        ? theme.colors.success + '40'
+                        : theme.colors.warning + '40';
+                    } else {
+                      // Bulk mode validation
+                      if (existingProduct.product_type === "Medicine") {
+                        return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
+                          ? theme.colors.success + '40'
+                          : theme.colors.warning + '40';
+                      } else if (existingProduct.product_type === "Non-Medicine") {
+                        return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
+                          ? theme.colors.success + '40'
+                          : theme.colors.warning + '40';
+                      } else {
+                        // Unknown product type - check if bulk fields are filled
+                        return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
+                          ? theme.colors.success + '40'
+                          : theme.colors.warning + '40';
                       }
                     }
                   })()
-                }}>
+                }}
+              >
+                <p 
+                  className="text-xs"
+                  style={{
+                    color: (() => {
+                      if (stockUpdateConfigMode === "pieces") {
+                        return (newStockQuantity && newStockQuantity > 0) 
+                          ? theme.colors.success
+                          : theme.colors.warning;
+                      } else {
+                        // Bulk mode validation
+                        if (existingProduct.product_type === "Medicine") {
+                          return (newStockBoxes && newStockBoxes > 0 && newStockStripsPerBox && newStockStripsPerBox > 0 && newStockTabletsPerStrip && newStockTabletsPerStrip > 0)
+                            ? theme.colors.success
+                            : theme.colors.warning;
+                        } else if (existingProduct.product_type === "Non-Medicine") {
+                          return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
+                            ? theme.colors.success
+                            : theme.colors.warning;
+                        } else {
+                          // Unknown product type - check if bulk fields are filled
+                          return (newStockBoxes && newStockBoxes > 0 && newStockPiecesPerPack && newStockPiecesPerPack > 0)
+                            ? theme.colors.success
+                            : theme.colors.warning;
+                        }
+                      }
+                    })()
+                  }}
+                >
                   <strong>Status:</strong> {
                     stockUpdateConfigMode === "pieces" 
                       ? (newStockQuantity && newStockQuantity > 0) 
@@ -4853,7 +5430,14 @@ console.log("API response for product quantities:", response);
               </div>
               
               <div className="flex items-center space-x-6 mb-4">
-                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "bulk" ? "bg-gray-100 border border-gray-300" : "hover:bg-gray-50"}`}>
+                <div 
+                  className="flex items-center space-x-2 p-2 rounded-lg transition-colors"
+                  style={{
+                    backgroundColor: stockUpdateConfigMode === "bulk" ? theme.bg.hover : 'transparent',
+                    borderColor: stockUpdateConfigMode === "bulk" ? theme.border.default : 'transparent',
+                    borderWidth: stockUpdateConfigMode === "bulk" ? '1px' : '0px'
+                  }}
+                >
                   <input
                     type="radio"
                     id="bulkMode"
@@ -4861,13 +5445,28 @@ console.log("API response for product quantities:", response);
                     value="bulk"
                     checked={stockUpdateConfigMode === "bulk"}
                     onChange={(e) => setStockUpdateConfigMode("bulk")}
-                    className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300"
+                    className="h-4 w-4"
+                    style={{
+                      accentColor: theme.colors.accent,
+                      borderColor: theme.border.default
+                    }}
                   />
-                  <label htmlFor="bulkMode" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  <label 
+                    htmlFor="bulkMode" 
+                    className="text-sm font-medium cursor-pointer"
+                    style={{ color: theme.text.secondary }}
+                  >
                     📦 Bulk Mode (Boxes × Pieces)
                   </label>
                 </div>
-                <div className={`flex items-center space-x-2 p-2 rounded-lg transition-colors ${stockUpdateConfigMode === "pieces" ? "bg-gray-100 border border-gray-300" : "hover:bg-gray-50"}`}>
+                <div 
+                  className="flex items-center space-x-2 p-2 rounded-lg transition-colors"
+                  style={{
+                    backgroundColor: stockUpdateConfigMode === "pieces" ? theme.bg.hover : 'transparent',
+                    borderColor: stockUpdateConfigMode === "pieces" ? theme.border.default : 'transparent',
+                    borderWidth: stockUpdateConfigMode === "pieces" ? '1px' : '0px'
+                  }}
+                >
                   <input
                     type="radio"
                     id="piecesMode"
@@ -4875,10 +5474,23 @@ console.log("API response for product quantities:", response);
                     value="pieces"
                     checked={stockUpdateConfigMode === "pieces"}
                     onChange={(e) => setStockUpdateConfigMode("pieces")}
-                    className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300"
+                    className="h-4 w-4"
+                    style={{
+                      accentColor: theme.colors.accent,
+                      borderColor: theme.border.default
+                    }}
                   />
-                  <label htmlFor="piecesMode" className="text-sm font-medium text-gray-700 cursor-pointer">
-                    🔢 Pieces Mode (Direct Total) - <span className="text-green-600 font-semibold">Recommended</span>
+                  <label 
+                    htmlFor="piecesMode" 
+                    className="text-sm font-medium cursor-pointer"
+                    style={{ color: theme.text.secondary }}
+                  >
+                    🔢 Pieces Mode (Direct Total) - <span 
+                      className="font-semibold"
+                      style={{ color: theme.colors.success }}
+                    >
+                      Recommended
+                    </span>
                   </label>
                 </div>
               </div>
@@ -4890,8 +5502,17 @@ console.log("API response for product quantities:", response);
                   if (stockUpdateConfigMode === "bulk") {
                     // Medicine with Bulk Mode (Boxes × Strips × Tablets)
                     return (
-                      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                        <h4 className="text-sm font-semibold text-green-800 mb-3 flex items-center">
+                      <div 
+                        className="p-4 rounded-lg border"
+                        style={{
+                          backgroundColor: theme.colors.success + '10',
+                          borderColor: theme.colors.success + '30'
+                        }}
+                      >
+                        <h4 
+                          className="text-sm font-semibold mb-3 flex items-center"
+                          style={{ color: theme.colors.success }}
+                        >
                           💊 Medicine Configuration (Bulk Mode)
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -4949,14 +5570,29 @@ console.log("API response for product quantities:", response);
                         </div>
                         
                         {/* Auto-computed Total Display */}
-                        <div className="mt-4 p-3 bg-white rounded border border-green-200">
-                          <div className="text-sm text-green-700">
+                        <div 
+                          className="mt-4 p-3 rounded border"
+                          style={{
+                            backgroundColor: theme.bg.card,
+                            borderColor: theme.colors.success + '30'
+                          }}
+                        >
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.success }}
+                          >
                             <span className="font-medium">Auto-computed Total: </span>
-                            <span className="text-lg font-bold text-green-800">
+                            <span 
+                              className="text-lg font-bold"
+                              style={{ color: theme.colors.success }}
+                            >
                               {parseInt(newStockBoxes || 0) * parseInt(newStockStripsPerBox || 0) * parseInt(newStockTabletsPerStrip || 0)} tablets
                             </span>
                           </div>
-                          <div className="text-xs text-green-600 mt-1">
+                          <div 
+                            className="text-xs mt-1"
+                            style={{ color: theme.colors.success }}
+                          >
                             Formula: {newStockBoxes || 0} boxes × {newStockStripsPerBox || 0} strips × {newStockTabletsPerStrip || 0} tablets
                           </div>
                         </div>
@@ -4965,8 +5601,17 @@ console.log("API response for product quantities:", response);
                   } else {
                     // Medicine with Pieces Mode (Direct Total Input)
                     return (
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                      <div 
+                        className="p-4 rounded-lg border"
+                        style={{
+                          backgroundColor: theme.bg.hover,
+                          borderColor: theme.border.default
+                        }}
+                      >
+                        <h4 
+                          className="text-sm font-semibold mb-3 flex items-center"
+                          style={{ color: theme.text.primary }}
+                        >
                           💊 Medicine Configuration (Pieces Mode)
                         </h4>
                                                  <div>
@@ -4995,8 +5640,17 @@ console.log("API response for product quantities:", response);
                   if (stockUpdateConfigMode === "bulk") {
                     // Non-Medicine with Bulk Mode (Boxes × Pieces per Box)
                     return (
-                      <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                        <h4 className="text-sm font-semibold text-orange-800 mb-3 flex items-center">
+                      <div 
+                        className="p-4 rounded-lg border"
+                        style={{
+                          backgroundColor: theme.colors.warning + '10',
+                          borderColor: theme.colors.warning + '30'
+                        }}
+                      >
+                        <h4 
+                          className="text-sm font-semibold mb-3 flex items-center"
+                          style={{ color: theme.colors.warning }}
+                        >
                           📦 Non-Medicine Configuration (Bulk Mode)
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -5037,14 +5691,29 @@ console.log("API response for product quantities:", response);
                         </div>
                         
                         {/* Auto-computed Total Display */}
-                        <div className="mt-4 p-3 bg-white rounded border border-orange-200">
-                          <div className="text-sm text-orange-700">
+                        <div 
+                          className="mt-4 p-3 rounded border"
+                          style={{
+                            backgroundColor: theme.bg.card,
+                            borderColor: theme.colors.warning + '30'
+                          }}
+                        >
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.warning }}
+                          >
                             <span className="font-medium">Auto-computed Total: </span>
-                            <span className="text-lg font-bold text-orange-800">
+                            <span 
+                              className="text-lg font-bold"
+                              style={{ color: theme.colors.warning }}
+                            >
                               {parseInt(newStockBoxes || 0) * parseInt(newStockPiecesPerPack || 0)} pieces
                             </span>
                           </div>
-                          <div className="text-xs text-orange-600 mt-1">
+                          <div 
+                            className="text-xs mt-1"
+                            style={{ color: theme.colors.warning }}
+                          >
                             Formula: {newStockBoxes || 0} boxes × {newStockPiecesPerPack || 0} pieces
                           </div>
                         </div>
@@ -5053,8 +5722,17 @@ console.log("API response for product quantities:", response);
                   } else {
                     // Non-Medicine with Pieces Mode (Direct Total Input)
                     return (
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                      <div 
+                        className="p-4 rounded-lg border"
+                        style={{
+                          backgroundColor: theme.bg.hover,
+                          borderColor: theme.border.default
+                        }}
+                      >
+                        <h4 
+                          className="text-sm font-semibold mb-3 flex items-center"
+                          style={{ color: theme.text.primary }}
+                        >
                           📦 Non-Medicine Configuration (Pieces Mode)
                         </h4>
                         <div>
@@ -5082,8 +5760,17 @@ console.log("API response for product quantities:", response);
                   // Default Configuration (Unknown Product Type)
                   if (stockUpdateConfigMode === "bulk") {
                     return (
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                      <div 
+                        className="p-4 rounded-lg border"
+                        style={{
+                          backgroundColor: theme.bg.hover,
+                          borderColor: theme.border.default
+                        }}
+                      >
+                        <h4 
+                          className="text-sm font-semibold mb-3 flex items-center"
+                          style={{ color: theme.text.primary }}
+                        >
                           📦 Product Configuration (Bulk Mode)
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -5124,14 +5811,29 @@ console.log("API response for product quantities:", response);
                         </div>
                         
                         {/* Auto-computed Total Display */}
-                        <div className="mt-4 p-3 bg-white rounded border border-gray-200">
-                          <div className="text-sm text-gray-700">
+                        <div 
+                          className="mt-4 p-3 rounded border"
+                          style={{
+                            backgroundColor: theme.bg.card,
+                            borderColor: theme.border.default
+                          }}
+                        >
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.text.secondary }}
+                          >
                             <span className="font-medium">Auto-computed Total: </span>
-                            <span className="text-lg font-bold text-gray-800">
+                            <span 
+                              className="text-lg font-bold"
+                              style={{ color: theme.text.primary }}
+                            >
                               {parseInt(newStockBoxes || 0) * parseInt(newStockPiecesPerPack || 0)} pieces
                             </span>
                           </div>
-                          <div className="text-xs text-gray-600 mt-1">
+                          <div 
+                            className="text-xs mt-1"
+                            style={{ color: theme.text.muted }}
+                          >
                             Formula: {newStockBoxes || 0} boxes × {newStockPiecesPerPack || 0} pieces
                           </div>
                         </div>
@@ -5139,21 +5841,46 @@ console.log("API response for product quantities:", response);
                     );
                   } else {
                     return (
-                      <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                      <div 
+                        className="p-4 rounded-lg border"
+                        style={{
+                          backgroundColor: theme.bg.hover,
+                          borderColor: theme.border.default
+                        }}
+                      >
+                        <h4 
+                          className="text-sm font-semibold mb-3 flex items-center"
+                          style={{ color: theme.text.primary }}
+                        >
                           📦 Product Configuration (Pieces Mode)
                         </h4>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Total Pieces to Add *</label>
+                          <label 
+                            className="block text-sm font-medium mb-1"
+                            style={{ color: theme.text.secondary }}
+                          >
+                            Total Pieces to Add *
+                          </label>
                           <input
                             type="number"
                             min="1"
                             value={newStockQuantity || ""}
                             onChange={(e) => setNewStockQuantity(e.target.value)}
                             placeholder="Enter total number of pieces"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                            style={{
+                              backgroundColor: theme.bg.card,
+                              borderColor: theme.border.default,
+                              color: theme.text.primary,
+                              focusRingColor: theme.colors.accent
+                            }}
                           />
-                          <p className="text-xs text-gray-500 mt-1">Direct input of total pieces for this product</p>
+                          <p 
+                            className="text-xs mt-1"
+                            style={{ color: theme.text.muted }}
+                          >
+                            Direct input of total pieces for this product
+                          </p>
                         </div>
                       </div>
                     );
@@ -5209,7 +5936,8 @@ console.log("API response for product quantities:", response);
                   <button
                     type="button"
                     onClick={openBatchEntryModal}
-                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md flex items-center"
+                    className="px-4 py-2 text-white rounded-md flex items-center hover:opacity-80 transition-opacity"
+                    style={{ backgroundColor: theme.colors.warning }}
                   >
                     <Package className="h-4 w-4 mr-2" />
                     View Batch ({temporaryProducts.length})
@@ -5220,7 +5948,12 @@ console.log("API response for product quantities:", response);
                 <button
                   type="button"
                   onClick={closeUpdateStockModal}
-                  className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                  className="px-4 py-2 border rounded-md hover:opacity-70 transition-opacity"
+                  style={{
+                    borderColor: theme.border.default,
+                    backgroundColor: theme.bg.hover,
+                    color: theme.text.secondary
+                  }}
                 >
                   Cancel
                 </button>
@@ -5241,7 +5974,8 @@ console.log("API response for product quantities:", response);
                       return (!newStockQuantity || newStockQuantity <= 0);
                     }
                   })()}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50"
+                  className="px-4 py-2 text-white rounded-md disabled:opacity-50 hover:opacity-80 transition-opacity"
+                  style={{ backgroundColor: theme.colors.success }}
                 >
                   {loading ? "Adding..." : "Add to Batch"}
                 </button>
@@ -5254,10 +5988,31 @@ console.log("API response for product quantities:", response);
   )}
             {showNewProductModal && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden border border-gray-200/50">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
-          <h3 className="text-lg font-semibold text-gray-900">Add New Product</h3>
-          <button onClick={closeNewProductModal} className="text-gray-400 hover:text-gray-600">
+          <div 
+            className="backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden border"
+            style={{
+              backgroundColor: theme.bg.card,
+              borderColor: theme.border.default
+            }}
+          >
+        <div 
+          className="px-6 py-4 border-b flex items-center justify-between sticky top-0 backdrop-blur-md z-10"
+          style={{
+            backgroundColor: theme.bg.card,
+            borderColor: theme.border.default
+          }}
+        >
+          <h3 
+            className="text-lg font-semibold"
+            style={{ color: theme.text.primary }}
+          >
+            Add New Product
+          </h3>
+          <button 
+            onClick={closeNewProductModal} 
+            style={{ color: theme.text.muted }}
+            className="hover:opacity-70 transition-opacity"
+          >
             <X className="h-6 w-6" />
           </button>
         </div>
@@ -5323,10 +6078,20 @@ console.log("API response for product quantities:", response);
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">Available categories: {categoriesData.length}</p>
+              <p 
+                className="text-xs mt-1"
+                style={{ color: theme.text.muted }}
+              >
+                Available categories: {categoriesData.length}
+              </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Product Type *</label>
+              <label 
+                className="block text-sm font-medium mb-1"
+                style={{ color: theme.text.secondary }}
+              >
+                Product Type *
+              </label>
               <div className="flex items-center space-x-3">
                 <select
                   required
@@ -5345,7 +6110,13 @@ console.log("API response for product quantities:", response);
                       handleNewProductInputChange("total_tablets", "");
                     }
                   }}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                  style={{
+                    borderColor: theme.border.default,
+                    backgroundColor: theme.bg.secondary,
+                    color: theme.text.primary,
+                    focusRingColor: theme.colors.accent
+                  }}
                 >
                   <option value="">Select Product Type</option>
                   <option value="Medicine">Medicine</option>
@@ -5539,7 +6310,11 @@ console.log("API response for product quantities:", response);
                           value="bulk"
                           checked={newProductForm.configMode === "bulk"}
                           onChange={(e) => handleNewProductInputChange("configMode", e.target.value)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                          className="h-4 w-4 rounded"
+                          style={{
+                            accentColor: theme.colors.accent,
+                            borderColor: theme.border.default
+                          }}
                         />
                         <label htmlFor="newBulkMode" className="text-sm font-medium" style={{ color: theme.text.primary }}>
                           📦 Bulk Mode (Boxes × Pieces)
@@ -5553,7 +6328,11 @@ console.log("API response for product quantities:", response);
                           value="pieces"
                           checked={newProductForm.configMode === "pieces"}
                           onChange={(e) => handleNewProductInputChange("configMode", e.target.value)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                          className="h-4 w-4 rounded"
+                          style={{
+                            accentColor: theme.colors.accent,
+                            borderColor: theme.border.default
+                          }}
                         />
                         <label htmlFor="newPiecesMode" className="text-sm font-medium" style={{ color: theme.text.primary }}>
                           🔢 Pieces Mode (Direct Total)
@@ -5866,7 +6645,10 @@ console.log("API response for product quantities:", response);
                   focusRingColor: theme.colors.accent
                 }}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p 
+                className="text-xs mt-1"
+                style={{ color: theme.text.muted }}
+              >
                 Leave empty to use current batch or enter custom reference
               </p>
             </div>
@@ -5887,14 +6669,29 @@ console.log("API response for product quantities:", response);
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date Added</label>
+              <label 
+                className="block text-sm font-medium mb-1"
+                style={{ color: theme.text.secondary }}
+              >
+                Date Added
+              </label>
               <input
                 type="date"
                 value={newProductForm.date_added || ""}
                 readOnly
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-700 cursor-not-allowed"
+                className="w-full px-3 py-2 border rounded-md cursor-not-allowed"
+                style={{
+                  backgroundColor: theme.bg.hover,
+                  borderColor: theme.border.default,
+                  color: theme.text.primary
+                }}
               />
-              <p className="text-xs text-gray-500 mt-1">Automatically set to current date</p>
+              <p 
+                className="text-xs mt-1"
+                style={{ color: theme.text.muted }}
+              >
+                Automatically set to current date
+              </p>
             </div>
             <div className="md:col-span-3">
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Description</label>
@@ -5919,9 +6716,17 @@ console.log("API response for product quantities:", response);
                     id="newPrescription"
                     checked={newProductForm.prescription === 1}
                     onChange={(e) => handleNewProductInputChange("prescription", e.target.checked ? 1 : 0)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 rounded"
+                    style={{
+                      accentColor: theme.colors.accent,
+                      borderColor: theme.border.default
+                    }}
                   />
-                  <label htmlFor="newPrescription" className="text-sm font-medium text-gray-700">
+                  <label 
+                    htmlFor="newPrescription" 
+                    className="text-sm font-medium"
+                    style={{ color: theme.text.secondary }}
+                  >
                     Prescription Required
                   </label>
                 </div>
@@ -5931,9 +6736,17 @@ console.log("API response for product quantities:", response);
                     id="newBulk"
                     checked={newProductForm.bulk === 1}
                     onChange={(e) => handleNewProductInputChange("bulk", e.target.checked ? 1 : 0)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 rounded"
+                    style={{
+                      accentColor: theme.colors.accent,
+                      borderColor: theme.border.default
+                    }}
                   />
-                  <label htmlFor="newBulk" className="text-sm font-medium text-gray-700">
+                  <label 
+                    htmlFor="newBulk" 
+                    className="text-sm font-medium"
+                    style={{ color: theme.text.secondary }}
+                  >
                     Bulk Product
                   </label>
                 </div>
@@ -5943,21 +6756,60 @@ console.log("API response for product quantities:", response);
 
           {/* Summary Section */}
           {newProductForm.product_type && (
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Product Summary</h4>
+            <div 
+              className="mt-6 p-4 rounded-lg border"
+              style={{
+                backgroundColor: theme.bg.hover,
+                borderColor: theme.border.default
+              }}
+            >
+              <h4 
+                className="text-sm font-semibold mb-3"
+                style={{ color: theme.text.primary }}
+              >
+                Product Summary
+              </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white p-3 rounded border border-gray-200">
-                  <h5 className="text-xs font-medium text-gray-800 mb-2">Bulk Units (for Reports & Inventory)</h5>
-                  <p className="text-sm text-gray-700">
+                <div 
+                  className="p-3 rounded border"
+                  style={{
+                    backgroundColor: theme.bg.card,
+                    borderColor: theme.border.default
+                  }}
+                >
+                  <h5 
+                    className="text-xs font-medium mb-2"
+                    style={{ color: theme.text.secondary }}
+                  >
+                    Bulk Units (for Reports & Inventory)
+                  </h5>
+                  <p 
+                    className="text-sm"
+                    style={{ color: theme.text.primary }}
+                  >
                     {newProductForm.product_type === "Medicine" 
                       ? `${newProductForm.boxes || 0} boxes`
                       : `${newProductForm.boxes || 0} boxes`
                     }
                   </p>
                 </div>
-                <div className="bg-white p-3 rounded border border-gray-200">
-                  <h5 className="text-xs font-medium text-gray-800 mb-2">Total Pieces (for Internal & POS)</h5>
-                  <p className="text-sm text-gray-700">
+                <div 
+                  className="p-3 rounded border"
+                  style={{
+                    backgroundColor: theme.bg.card,
+                    borderColor: theme.border.default
+                  }}
+                >
+                  <h5 
+                    className="text-xs font-medium mb-2"
+                    style={{ color: theme.text.secondary }}
+                  >
+                    Total Pieces (for Internal & POS)
+                  </h5>
+                  <p 
+                    className="text-sm"
+                    style={{ color: theme.text.primary }}
+                  >
                     {newProductForm.product_type === "Medicine" 
                       ? `${newProductForm.total_tablets || 0} tablets`
                       : `${newProductForm.total_pieces || 0} pieces`
@@ -5965,7 +6817,10 @@ console.log("API response for product quantities:", response);
                   </p>
                 </div>
               </div>
-              <div className="mt-3 text-xs text-gray-600">
+              <div 
+                className="mt-3 text-xs"
+                style={{ color: theme.text.muted }}
+              >
                 <strong>Note:</strong> Reports and inventory display bulk units. Total pieces are used for internal calculations and POS operations.
               </div>
             </div>
@@ -5974,7 +6829,10 @@ console.log("API response for product quantities:", response);
           <div className="flex justify-between items-center mt-6">
             <div className="flex items-center space-x-2">
               {temporaryProducts.length > 0 && (
-                <span className="text-sm text-gray-600">
+                <span 
+                  className="text-sm"
+                  style={{ color: theme.text.muted }}
+                >
                   {temporaryProducts.length} product(s) in batch
                 </span>
               )}
@@ -5984,7 +6842,8 @@ console.log("API response for product quantities:", response);
                 <button
                   type="button"
                   onClick={openBatchEntryModal}
-                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md flex items-center"
+                  className="px-4 py-2 text-white rounded-md flex items-center hover:opacity-80 transition-opacity"
+                  style={{ backgroundColor: theme.colors.warning }}
                 >
                   <Package className="h-4 w-4 mr-2" />
                   View Batch ({temporaryProducts.length})
@@ -5993,7 +6852,12 @@ console.log("API response for product quantities:", response);
               <button
                 type="button"
                 onClick={closeNewProductModal}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 border rounded-md hover:opacity-70 transition-opacity"
+                style={{
+                  borderColor: theme.border.default,
+                  backgroundColor: theme.bg.hover,
+                  color: theme.text.secondary
+                }}
               >
                 Cancel
               </button>
@@ -6022,7 +6886,8 @@ console.log("API response for product quantities:", response);
                   
                   return true; // Disable if no product type selected
                 })()}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50"
+                className="px-4 py-2 text-white rounded-md disabled:opacity-50 hover:opacity-80 transition-opacity"
+                style={{ backgroundColor: theme.colors.success }}
                 title={(() => {
                   if (!newProductForm.product_name) return "Please enter product name";
                   if (!newProductForm.category_id) return "Please select category";
@@ -6671,12 +7536,30 @@ console.log("API response for product quantities:", response);
     
         {showBatchEntryModal && (
           <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[99999]">
-            <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-gray-200/50">
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">
+            <div 
+              className="backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto border"
+              style={{
+                backgroundColor: theme.bg.card,
+                borderColor: theme.border.default
+              }}
+            >
+              <div 
+                className="px-6 py-4 border-b flex items-center justify-between"
+                style={{
+                  borderColor: theme.border.default
+                }}
+              >
+                <h3 
+                  className="text-lg font-semibold"
+                  style={{ color: theme.text.primary }}
+                >
                   Batch Entry - {temporaryProducts.length} Product(s)
                 </h3>
-                <button onClick={closeBatchEntryModal} className="text-gray-400 hover:text-gray-600">
+                <button 
+                  onClick={closeBatchEntryModal} 
+                  style={{ color: theme.text.muted }}
+                  className="hover:opacity-70 transition-opacity"
+                >
                   <X className="h-6 w-6" />
                 </button>
               </div>
@@ -6684,32 +7567,74 @@ console.log("API response for product quantities:", response);
               <div className="p-6">
                 {temporaryProducts.length === 0 ? (
                   <div className="text-center py-8">
-                    <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500">No products in batch yet.</p>
-                    <p className="text-sm text-gray-400 mt-2">Add products using the "Add New Product" modal.</p>
+                    <Package 
+                      className="h-12 w-12 mx-auto mb-4" 
+                      style={{ color: theme.text.muted }}
+                    />
+                    <p style={{ color: theme.text.secondary }}>No products in batch yet.</p>
+                    <p 
+                      className="text-sm mt-2"
+                      style={{ color: theme.text.muted }}
+                    >
+                      Add products using the "Add New Product" modal.
+                    </p>
                   </div>
                 ) : (
                   <>
                     <div className="mb-6">
-                      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-blue-50 rounded-lg">
+                      <div 
+                        className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 rounded-lg"
+                        style={{
+                          backgroundColor: theme.colors.info + '10'
+                        }}
+                      >
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{temporaryProducts.length}</div>
-                          <div className="text-sm text-blue-700">Total Items</div>
+                          <div 
+                            className="text-2xl font-bold"
+                            style={{ color: theme.colors.info }}
+                          >
+                            {temporaryProducts.length}
+                          </div>
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.info }}
+                          >
+                            Total Items
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-indigo-600">
+                          <div 
+                            className="text-2xl font-bold"
+                            style={{ color: theme.colors.accent }}
+                          >
                             {temporaryProducts.filter(p => !p.is_stock_update).length}
                           </div>
-                          <div className="text-sm text-indigo-700">New Products</div>
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.accent }}
+                          >
+                            New Products
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-cyan-600">
+                          <div 
+                            className="text-2xl font-bold"
+                            style={{ color: theme.colors.success }}
+                          >
                             {temporaryProducts.filter(p => p.is_stock_update).length}
                           </div>
-                          <div className="text-sm text-cyan-700">Stock Updates</div>
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.success }}
+                          >
+                            Stock Updates
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">
+                          <div 
+                            className="text-2xl font-bold"
+                            style={{ color: theme.colors.success }}
+                          >
                             {temporaryProducts.reduce((sum, p) => {
                               if (p.is_stock_update) {
                                 return sum + parseInt(p.quantity_to_add || 0);
@@ -6727,10 +7652,18 @@ console.log("API response for product quantities:", response);
                               return sum + totalPieces;
                             }, 0)}
                           </div>
-                          <div className="text-sm text-green-700">Total Pieces</div>
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.success }}
+                          >
+                            Total Pieces
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-2xl font-bold text-purple-600">
+                          <div 
+                            className="text-2xl font-bold"
+                            style={{ color: theme.colors.warning }}
+                          >
                             ₱{temporaryProducts.reduce((sum, p) => {
                               if (p.is_stock_update) {
                                 return sum + ((parseFloat(p.new_srp || p.srp || 0)) * parseInt(p.quantity_to_add || 0));
@@ -6748,34 +7681,140 @@ console.log("API response for product quantities:", response);
                               return sum + ((parseFloat(p.srp || 0) * totalPieces));
                             }, 0).toFixed(2)}
                           </div>
-                          <div className="text-sm text-purple-700">Total Value</div>
+                          <div 
+                            className="text-sm"
+                            style={{ color: theme.colors.warning }}
+                          >
+                            Total Value
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     <div className="overflow-x-auto">
-                      <table className="w-full border-collapse border border-gray-300">
+                      <table 
+                        className="w-full border-collapse border"
+                        style={{ borderColor: theme.border.default }}
+                      >
                         <thead>
-                          <tr className="bg-gray-100">
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">#</th>
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Product Name</th>
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Category</th>
-                            <th className="border border-gray-300 px-3 py-2 text-left text-sm font-semibold text-gray-900">Brand</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Quantity</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">SRP</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Total Value</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Expiration</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Type</th>
-                            <th className="border border-gray-300 px-3 py-2 text-center text-sm font-semibold text-gray-900">Actions</th>
+                          <tr style={{ backgroundColor: theme.bg.hover }}>
+                            <th 
+                              className="border px-3 py-2 text-left text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              #
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-left text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Product Name
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-left text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Category
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-left text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Brand
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Quantity
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              SRP
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Total Value
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Expiration
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Type
+                            </th>
+                            <th 
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                color: theme.text.primary 
+                              }}
+                            >
+                              Actions
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {temporaryProducts.map((product, index) => (
-                            <tr key={product.temp_id} className={`hover:bg-gray-50 ${product.is_stock_update ? 'bg-blue-50' : ''}`}>
-                              <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
+                            <tr 
+                              key={product.temp_id} 
+                              className="hover:opacity-80 transition-opacity"
+                              style={{
+                                backgroundColor: product.is_stock_update ? theme.colors.info + '10' : 'transparent'
+                              }}
+                            >
+                              <td 
+                                className="border px-3 py-2 text-center font-medium"
+                                style={{
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary
+                                }}
+                              >
                                 {index + 1}
                               </td>
-                              <td className="border border-gray-300 px-3 py-2 font-medium text-gray-900">
+                              <td 
+                                className="border px-3 py-2 font-medium"
+                                style={{
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary
+                                }}
+                              >
                                 {product.product_name}
                                 {product.is_stock_update && (
                                   <span className="ml-2 inline-flex px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
@@ -6799,7 +7838,13 @@ console.log("API response for product quantities:", response);
                               <td className="border border-gray-300 px-3 py-2 text-gray-900">
                                 {product.brand_search || product.brand_id || product.brand || "N/A"}
                               </td>
-                              <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-900">
+                              <td 
+                                className="border px-3 py-2 text-center font-medium"
+                                style={{
+                                  borderColor: theme.border.default,
+                                  color: theme.text.primary
+                                }}
+                              >
                                 {product.is_stock_update ? (
                                   <div>
                                     <div className="text-blue-600 font-semibold">+{product.quantity_to_add}</div>
@@ -6965,7 +8010,11 @@ console.log("API response for product quantities:", response);
                                   value="bulk"
                                   checked={productTypeForm.configMode === "bulk"}
                                   onChange={(e) => handleProductTypeInputChange("configMode", e.target.value)}
-                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                                  className="h-4 w-4 rounded"
+                          style={{
+                            accentColor: theme.colors.accent,
+                            borderColor: theme.border.default
+                          }}
                                 />
                                 <label htmlFor="bulkMode" className="text-sm font-medium text-gray-700">
                                   📦 Bulk Mode (Boxes × Strips/Pieces)
@@ -6979,7 +8028,11 @@ console.log("API response for product quantities:", response);
                                   value="pieces"
                                   checked={productTypeForm.configMode === "pieces"}
                                   onChange={(e) => handleProductTypeInputChange("configMode", e.target.value)}
-                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                                  className="h-4 w-4 rounded"
+                          style={{
+                            accentColor: theme.colors.accent,
+                            borderColor: theme.border.default
+                          }}
                                 />
                                 <label htmlFor="piecesMode" className="text-sm font-medium text-gray-700">
                                   🔢 Pieces Mode (Direct Total Input)

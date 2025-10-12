@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Pharmacy Batch Details Fix</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        .button { 
+            background: #4CAF50; 
+            color: white; 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        .button:hover { background: #45a049; }
+        .result { 
+            margin-top: 20px; 
+            padding: 15px; 
+            background: #f9f9f9; 
+            border-left: 4px solid #4CAF50;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .error { border-left-color: #f44336; background: #ffebee; }
+        .success { border-left-color: #4CAF50; background: #e8f5e9; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #4CAF50; color: white; }
+        tr:hover { background-color: #f5f5f5; }
+        .batch-card {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background: white;
+        }
+        .batch-reference { font-weight: bold; color: #2196F3; }
+        .batch-quantity { color: #4CAF50; font-size: 18px; }
+        .batch-srp { color: #FF9800; }
+        .debug { background: #fff3cd; border-left-color: #ffc107; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 Test Pharmacy Batch Details Fix</h1>
+        <p>Test the fixed batch details API for pharmacy products (copied from Convenience Store logic):</p>
+        
+        <div>
+            <label>Product ID: </label>
+            <input type="number" id="productId" value="1" placeholder="Enter Product ID">
+            <button class="button" onclick="testBatchDetails()">🔍 Get Batch Details</button>
+            <button class="button" onclick="clearResults()" style="background: #f44336;">🗑️ Clear</button>
+        </div>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost/caps2e2/Api/pharmacy_api.php';
+
+        async function testBatchDetails() {
+            const resultDiv = document.getElementById('result');
+            const productId = document.getElementById('productId').value;
+            
+            if (!productId) {
+                resultDiv.innerHTML = '<div class="result error"><h3>❌ Error</h3><p>Please enter a Product ID</p></div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p>⏳ Loading batch details for Product ID: ' + productId + '...</p>';
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'get_pharmacy_batch_details',
+                        product_id: parseInt(productId),
+                        location_id: 3 // Pharmacy location ID
+                    })
+                });
+
+                const data = await response.json();
+                console.log('API Response:', data);
+
+                if (data.success) {
+                    displayBatchDetails(data.data, productId);
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            <h3>❌ Error</h3>
+                            <p>${data.message || 'Failed to load batch details'}</p>
+                            <div class="debug">
+                                <h4>🔍 Debug Info:</h4>
+                                <p><strong>Error:</strong> ${data.message}</p>
+                                <p><strong>Action:</strong> get_pharmacy_batch_details</p>
+                                <p><strong>Product ID:</strong> ${productId}</p>
+                                <p><strong>Location ID:</strong> 3</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Network Error</h3>
+                        <p>${error.message}</p>
+                        <p><strong>Make sure XAMPP Apache is running!</strong></p>
+                        <div class="debug">
+                            <h4>🔍 Debug Info:</h4>
+                            <p><strong>Error:</strong> ${error.message}</p>
+                            <p><strong>API URL:</strong> ${API_URL}</p>
+                            <p><strong>Action:</strong> get_pharmacy_batch_details</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function displayBatchDetails(data, productId) {
+            const resultDiv = document.getElementById('result');
+            const batchDetails = data.batch_details || [];
+            const summary = data.summary || {};
+            
+            if (batchDetails.length === 0) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        <h3>⚠️ No Batch Details Found</h3>
+                        <p>No batch details found for Product ID: ${productId}</p>
+                        <p><strong>Summary:</strong></p>
+                        <ul>
+                            <li>Total Transfers: ${summary.total_transfers || 0}</li>
+                            <li>Total Quantity: ${summary.total_quantity || 0}</li>
+                            <li>Total Value: ₱${(summary.total_value || 0).toFixed(2)}</li>
+                        </ul>
+                        <div class="debug">
+                            <h4>🔍 Debug Info:</h4>
+                            <p><strong>Product ID:</strong> ${productId}</p>
+                            <p><strong>Location ID:</strong> 3</p>
+                            <p><strong>API Response:</strong> Success but no data</p>
+                            <p><strong>Possible Reasons:</strong></p>
+                            <ul>
+                                <li>Product not transferred to pharmacy yet</li>
+                                <li>No batch details in tbl_transfer_batch_details</li>
+                                <li>Product ID doesn't exist</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="result success">
+                    <h3>✅ Batch Details Found for Product ID: ${productId}</h3>
+                    <p><strong>Fixed:</strong> Copied logic from Convenience Store to avoid "Column not found" error</p>
+                    
+                    <div style="margin-bottom: 20px; padding: 10px; background: #e3f2fd; border-radius: 5px;">
+                        <h4>📊 Summary:</h4>
+                        <ul>
+                            <li><strong>Total Batches:</strong> ${summary.total_transfers || batchDetails.length}</li>
+                            <li><strong>Total Quantity:</strong> ${summary.total_quantity || batchDetails.reduce((sum, b) => sum + parseInt(b.batch_quantity || 0), 0)} units</li>
+                            <li><strong>Total Value:</strong> ₱${(summary.total_value || batchDetails.reduce((sum, b) => sum + (parseFloat(b.batch_srp || 0) * parseInt(b.batch_quantity || 0)), 0)).toFixed(2)}</li>
+                        </ul>
+                    </div>
+                    
+                    <h4>📦 Batch Details:</h4>
+            `;
+
+            batchDetails.forEach((batch, index) => {
+                const qty = parseInt(batch.batch_quantity || 0);
+                const srp = parseFloat(batch.batch_srp || batch.srp || 0).toFixed(2);
+                const expiry = batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A';
+                const transferDate = batch.transfer_date ? new Date(batch.transfer_date).toLocaleDateString() : 'N/A';
+                
+                html += `
+                    <div class="batch-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span class="batch-reference">${batch.batch_reference || 'BR-' + (batch.batch_id || index + 1)}</span>
+                                <span style="margin-left: 10px; color: #666;">${batch.product_name || 'Unknown Product'}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="batch-quantity">${qty} units</div>
+                                <div class="batch-srp">₱${srp}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                            <div>Transfer Date: ${transferDate}</div>
+                            <div>Expiry Date: ${expiry}</div>
+                            <div>Status: ${batch.status || 'Available'}</div>
+                            <div>Barcode: ${batch.barcode || 'N/A'}</div>
+                            <div>Category: ${batch.category_name || 'N/A'}</div>
+                            <div>Brand: ${batch.brand || 'N/A'}</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Batch Reference</th>
+                                <th>Product</th>
+                                <th>Category</th>
+                                <th>Quantity</th>
+                                <th>SRP</th>
+                                <th>Transfer Date</th>
+                                <th>Expiry Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            batchDetails.forEach((batch, index) => {
+                const qty = parseInt(batch.batch_quantity || 0);
+                const srp = parseFloat(batch.batch_srp || batch.srp || 0).toFixed(2);
+                const expiry = batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A';
+                const transferDate = batch.transfer_date ? new Date(batch.transfer_date).toLocaleDateString() : 'N/A';
+                
+                html += `
+                    <tr>
+                        <td><strong>${batch.batch_reference || 'BR-' + (batch.batch_id || index + 1)}</strong></td>
+                        <td>${batch.product_name || 'Unknown Product'}</td>
+                        <td>${batch.category_name || 'N/A'}</td>
+                        <td style="color: #4CAF50; font-weight: bold;">${qty}</td>
+                        <td style="color: #FF9800; font-weight: bold;">₱${srp}</td>
+                        <td>${transferDate}</td>
+                        <td>${expiry}</td>
+                        <td>${batch.status || 'Available'}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                    
+                    <div class="debug" style="margin-top: 20px;">
+                        <h4>🔍 Debug Info:</h4>
+                        <p><strong>✅ Success:</strong> API call successful</p>
+                        <p><strong>✅ Fixed:</strong> Column 'c.category_name' error resolved</p>
+                        <p><strong>✅ Logic:</strong> Copied from Convenience Store</p>
+                        <p><strong>Product ID:</strong> ${productId}</p>
+                        <p><strong>Location ID:</strong> 3</p>
+                        <p><strong>Batches Found:</strong> ${batchDetails.length}</p>
+                    </div>
+                </div>
+            `;
+
+            resultDiv.innerHTML = html;
+        }
+
+        function clearResults() {
+            document.getElementById('result').innerHTML = '';
+        }
+
+        // Auto-load on page load
+        window.onload = function() {
+            console.log('Page loaded. Enter a Product ID and click "Get Batch Details" to test the fix.');
+        };
+    </script>
+</body>
+</html>
+

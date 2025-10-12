@@ -84,6 +84,11 @@ const PharmacyInventory = () => {
           response = await api.getFIFOStock(data.product_id, data.location_id);
           break;
           
+        case 'get_pharmacy_batch_details':
+          // Use pharmacy_api.php for batch details
+          response = await api.callGenericAPI('pharmacy_api.php', action, data);
+          break;
+          
         default:
           // For batch tracking specific actions, use the centralized API with batch_tracking.php endpoint
           response = await api.callGenericAPI('batch_tracking.php', action, data);
@@ -103,31 +108,6 @@ const PharmacyInventory = () => {
   }
 
 
-  // Function to fetch transferred batches using the centralized API system
-  async function fetchTransferredBatches(data = {}) {
-    try {
-      const response = await api.callGenericAPI('get_transferred_batches_api.php', 'get_transferred_batches', data);
-      console.log("✅ Transferred Batches API Success Response:", response);
-      return response;
-    } catch (error) {
-      console.error("❌ Transferred Batches API Call Error:", error);
-      throw error;
-    }
-  }
-
-  // Function to populate missing batch details using centralized API
-  async function populateMissingBatchDetails() {
-    try {
-      const response = await api.callGenericAPI('get_transferred_batches_api.php', 'populate_missing_batch_details', {
-        location_name: 'pharmacy'
-      });
-      console.log("✅ Populate Missing Batch Details API Response:", response);
-      return response;
-    } catch (error) {
-      console.error("❌ Populate Missing Batch Details API Call Error:", error);
-      throw error;
-    }
-  }
 
   // Calculate notifications for expiring and low stock products
   const calculateNotifications = (productList) => {
@@ -197,52 +177,90 @@ const PharmacyInventory = () => {
   // Function to get pharmacy location using centralized API
   const loadPharmacyLocation = async () => {
     try {
+      console.log("🔍 Loading pharmacy location...");
       const response = await api.getLocations();
+      console.log("📍 Locations response:", response);
+      
       if (response.success && response.data) {
         const pharmacy = response.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
+        console.log("🏥 Found pharmacy location:", pharmacy);
+        
         if (pharmacy) {
           setPharmacyLocationId(pharmacy.location_id);
+          console.log("✅ Set pharmacy location ID:", pharmacy.location_id);
+          return pharmacy.location_id;
+        } else {
+          console.warn("⚠️ No pharmacy location found in:", response.data);
+          toast.error("Pharmacy location not found. Please check database.");
+          return null;
         }
-        
-        return pharmacy?.location_id || null;
+      } else {
+        console.error("❌ Failed to load locations:", response.message);
+        toast.error("Failed to load locations: " + (response.message || "Unknown error"));
+        return null;
       }
     } catch (error) {
-      console.error("Error loading pharmacy location:", error);
-      toast.error("Failed to load pharmacy location");
+      console.error("❌ Error loading pharmacy location:", error);
+      toast.error("Failed to load pharmacy location: " + error.message);
+      return null;
     }
-    return null;
   };
 
   // Function to load products using centralized API
   const loadProducts = async () => {
-    if (!pharmacyLocationId) return;
+    if (!pharmacyLocationId) {
+      console.log("⚠️ No pharmacy location ID, skipping product load");
+      return;
+    }
     
     setIsLoading(true);
     try {
+      console.log("🔄 Loading pharmacy products for location ID:", pharmacyLocationId);
+      
       const response = await api.getPharmacyProducts({
-        location_name: 'pharmacy'
+        location_name: 'pharmacy',
+        location_id: pharmacyLocationId
       });
       
+      console.log("📦 API Response:", response);
+      
       if (response.success && response.data) {
-        // Filter out archived products
-        const activeProducts = response.data.filter(product => 
-          product.status !== 'archived'
-        );
+        // Filter out archived products and products with 0 quantity
+        const activeProducts = response.data.filter(product => {
+          const quantity = parseInt(product.total_quantity || product.quantity || 0);
+          const isActive = product.status !== 'archived';
+          const hasQuantity = quantity > 0;
+          
+          if (!isActive) console.log("❌ Filtered out archived:", product.product_name);
+          if (!hasQuantity) console.log("⚠️ Product with 0 quantity:", product.product_name, "- keeping for visibility");
+          
+          // Show all active products even if quantity is 0
+          return isActive;
+        });
+        
+        console.log(`✅ Loaded ${activeProducts.length} active products out of ${response.data.length} total`);
         
         // Debug: Log first few products to check SRP values
         console.log("🔍 First 3 products with SRP data:", activeProducts.slice(0, 3).map(p => ({
           name: p.product_name,
           srp: p.srp,
           first_batch_srp: p.first_batch_srp,
-          total_srp_value: p.total_srp_value
+          total_quantity: p.total_quantity,
+          quantity: p.quantity
         })));
         
         setInventory(activeProducts);
         setFilteredInventory(activeProducts);
+        calculateNotifications(activeProducts);
+      } else {
+        console.error("❌ API Error:", response.message);
+        toast.error(response.message || "Failed to load products");
+        setInventory([]);
+        setFilteredInventory([]);
       }
     } catch (error) {
-      console.error("Error loading products:", error);
-      toast.error("Failed to load products");
+      console.error("❌ Error loading products:", error);
+      toast.error("Failed to load products: " + error.message);
       setInventory([]);
       setFilteredInventory([]);
     } finally {
@@ -253,9 +271,14 @@ const PharmacyInventory = () => {
   // Initialize component
   useEffect(() => {
     const initialize = async () => {
+      console.log("🚀 Initializing Pharmacy Inventory...");
       const locationId = await loadPharmacyLocation();
+      console.log("📍 Pharmacy Location ID:", locationId);
       if (locationId) {
         await loadProducts();
+      } else {
+        console.error("❌ Failed to get pharmacy location ID");
+        toast.error("Failed to load pharmacy location. Please check if pharmacy location exists.");
       }
     };
     initialize();
@@ -421,15 +444,8 @@ const PharmacyInventory = () => {
       console.log("Loading batch transfer details for product ID:", productId);
       console.log("Pharmacy location ID:", pharmacyLocationId);
       
-      // First, try to populate missing batch details
-      try {
-        await populateMissingBatchDetails();
-      } catch (error) {
-        console.warn("Failed to populate missing batch details:", error);
-      }
-      
-      // Get batch transfer details using the new API
-      const response = await fetchTransferredBatches({
+      // Use same logic as Convenience Store - call get_pharmacy_batch_details
+      const response = await handleApiCall("get_pharmacy_batch_details", {
         location_id: pharmacyLocationId,
         product_id: productId
       });
@@ -437,12 +453,12 @@ const PharmacyInventory = () => {
       console.log("Batch transfer details response:", response);
       
       if (response.success && response.data) {
-        const batchDetails = response.data || [];
-        const summary = response.summary || {};
+        console.log("Transfer data received:", response.data);
+        const batchDetails = response.data.batch_details || [];
+        const summary = response.data.summary || {};
         
-        console.log("Batch transfer data received:", response.data);
-        console.log("Batch details:", batchDetails);
-        console.log("Summary:", summary);
+        console.log("Batch details extracted:", batchDetails);
+        console.log("Summary extracted:", summary);
         
         if (batchDetails.length > 0) {
           console.log("✅ Found batch transfer details");
@@ -484,11 +500,13 @@ const PharmacyInventory = () => {
     }
     return null;
   }).filter(Boolean))];
-  const pages = Math.ceil(filteredInventory.length / rowsPerPage);
-  const items = filteredInventory.slice((page - 1) * rowsPerPage, page * rowsPerPage);
-
+  
   // Update uniqueProducts for both table and stats
   const uniqueProducts = Array.from(new Map(filteredInventory.map(item => [item.product_name, item])).values());
+  
+  // Fix pagination to use uniqueProducts
+  const pages = Math.ceil(uniqueProducts.length / rowsPerPage);
+  const items = uniqueProducts.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   return (
     <div className="p-6 space-y-6" style={{ backgroundColor: theme.bg.primary }}>
@@ -736,7 +754,7 @@ const PharmacyInventory = () => {
           <div className="flex justify-between items-center">
             <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Products</h3>
             <div className="text-sm" style={{ color: theme.text.secondary }}>
-              {filteredInventory.length} products found
+              {uniqueProducts.length} unique products found ({filteredInventory.length} total entries)
             </div>
           </div>
         </div>
@@ -781,8 +799,8 @@ const PharmacyInventory = () => {
                   </td>
                 </tr>
               ) : items.length > 0 ? (
-                // Remove duplicates by product_name
-                uniqueProducts.map((item, index) => {
+                // Display paginated unique products
+                items.map((item, index) => {
                   const quantity = parseInt(item.total_quantity || item.quantity || 0);
                   
                   return (

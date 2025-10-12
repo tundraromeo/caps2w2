@@ -3,6 +3,8 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
 
 export default function POS() {
@@ -216,8 +218,6 @@ export default function POS() {
       return 'Convenience Store';
     } else if (terminalLower.includes('pharmacy')) {
       return 'Pharmacy';
-    } else if (terminalLower.includes('inventory')) {
-      return 'Warehouse';
     }
     return 'Convenience Store'; // default
   };
@@ -281,9 +281,19 @@ export default function POS() {
       const paidAmount = parseFloat(amountPaid);
       const calculatedChange = paidAmount - base;
       // Only allow positive change or zero - no negative amounts
-      setChange(Math.max(0, calculatedChange));
+      const finalChange = Math.max(0, calculatedChange);
+      setChange(finalChange);
+      
+      // Debug logging for change calculation
+      console.log(`💰 Change Calculation Debug:`, {
+        payableTotal: base,
+        amountPaid: paidAmount,
+        calculatedChange: calculatedChange,
+        finalChange: finalChange
+      });
     } else {
       setChange(0);
+      console.log(`💰 Change Calculation Debug: No amount paid or invalid amount`);
     }
   }, [amountPaid, payableTotal]);
 
@@ -355,10 +365,22 @@ export default function POS() {
     const processedProducts = rows.map((d) => {
       const id = d.id ?? d.product_id ?? d.productId;
       const name = d.name ?? d.product_name ?? d.productName ?? '';
-      // Prioritize srp over unit_price when unit_price is 0 or null
-      const unitPrice = Number(d.unit_price) || 0;
-      const srp = Number(d.srp) || 0;
-      const priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
+      // Get expiration date first to determine which price to use
+      const expirationDate = d.expiration ?? d.expiration_date ?? d.transfer_expiration ?? null;
+      
+      // If using expiration (earliest date), use transfer_srp to match the batch
+      // If using transfer_expiration, use transfer_srp
+      // Otherwise fallback to regular price logic
+      let priceRaw;
+      if (expirationDate === d.expiration || expirationDate === d.expiration_date) {
+        // Using earliest expiration date - use transfer_srp to match the batch
+        priceRaw = Number(d.transfer_srp) || 0;
+      } else {
+        // Fallback to regular price logic
+        const unitPrice = Number(d.unit_price) || 0;
+        const srp = Number(d.srp) || 0;
+        priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
+      }
       const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
       const category = d.category ?? d.category_name ?? 'Uncategorized';
       const location = d.location_name ?? d.location ?? null;
@@ -366,8 +388,7 @@ export default function POS() {
       const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
       const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
       
-      // Get expiration date - prioritize transfer_expiration (from tbl_fifo_stock), then expiration_date, then expiration
-      const expirationDate = d.transfer_expiration ?? d.expiration_date ?? d.expiration ?? null;
+      // Expiration date already determined above
       
       // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
       const requiresPrescription = isBulkProduct ? false : Boolean(prescriptionFromDB);
@@ -570,10 +591,27 @@ export default function POS() {
       
       // Product not found in convenience store
       console.log(`❌ Product not found in ${locationName}`);
-      alert(`Product with barcode ${code} not found in ${locationName}.\n\nPlease check if:\n1. The barcode is correct\n2. The product exists in this store\n3. The product needs to be transferred to ${locationName}\n4. The product is not archived`);
+      toast.error(
+        <div>
+          <div className="font-bold">Product with barcode {code} not found in {locationName}.</div>
+          <div className="mt-2 text-sm">
+            <div>Please check if:</div>
+            <div>1. The barcode is correct</div>
+            <div>2. The product exists in this store</div>
+            <div>3. The product needs to be transferred to {locationName}</div>
+            <div>4. The product is not archived</div>
+          </div>
+        </div>,
+        { autoClose: 6000 }
+      );
     } catch (e) {
       console.error('Barcode scan error:', e);
-      alert('Scan failed. Please try again.\n\nError: ' + e.message);
+      toast.error(
+        <div>
+          <div className="font-bold">Scan failed. Please try again.</div>
+          <div className="mt-1 text-sm">Error: {e.message}</div>
+        </div>
+      );
     }
   };
 
@@ -899,8 +937,9 @@ export default function POS() {
       console.log(`Location changed to: ${locationName}`);
     }
     
-    // Auto-load products for the new location
-    loadAllProducts();
+    // ❌ REMOVED: Auto-load products for the new location
+    // Products will only load when user searches or scans a barcode
+    // loadAllProducts();
   }, [locationName]);
 
   // Calculate total
@@ -916,7 +955,7 @@ export default function POS() {
   // Add to cart with custom quantity
   const addToCart = (product, quantity) => {
     if (quantity <= 0 || quantity > product.quantity) {
-      alert(`Please enter a valid quantity (1–${product.quantity})`);
+      toast.warning(`Please enter a valid quantity (1–${product.quantity})`);
       return;
     }
     
@@ -1194,7 +1233,7 @@ export default function POS() {
         if (product) {
           openAdjustmentModal(product.id);
         } else {
-          alert('No product selected to adjust.');
+          toast.warning('No product selected to adjust.');
         }
         return;
       }
@@ -1712,6 +1751,9 @@ export default function POS() {
 
     try {
       console.log('📤 Sending receipt data:', receiptData);
+      console.log('💰 Receipt Change Amount:', receiptData.change);
+      console.log('💰 Receipt Amount Paid:', receiptData.amountPaid);
+      console.log('💰 Receipt Grand Total:', receiptData.grandTotal);
       
       // Server-side printing (for local XAMPP)
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
@@ -1926,7 +1968,7 @@ export default function POS() {
     const alreadyReturned = Number(item.returnedQuantity || 0);
     const maxReturnable = Math.max(0, Number(item.quantity || 0) - alreadyReturned);
     if (maxReturnable <= 0) {
-      alert('Nothing left to return for this item.');
+      toast.warning('Nothing left to return for this item.');
       return;
     }
     setReturnModal({ transactionId, productId, max: maxReturnable });
@@ -1945,7 +1987,7 @@ export default function POS() {
     const maxReturnable = Math.max(0, Number(item.quantity || 0) - alreadyReturned);
     const quantityToReturn = Number(qty);
     if (!Number.isFinite(quantityToReturn) || quantityToReturn <= 0 || quantityToReturn > maxReturnable) {
-      alert('Invalid quantity.');
+      toast.warning('Invalid quantity.');
       return;
     }
     // Update history record
@@ -1980,15 +2022,15 @@ export default function POS() {
     const currentQty = Number(product.quantity || 0);
     const qty = Number(adjustmentQty);
     if (!Number.isFinite(qty) || qty <= 0) {
-      alert('Enter a valid damaged quantity.');
+      toast.warning('Enter a valid damaged quantity.');
       return;
     }
     if (!adjustmentReason.trim()) {
-      alert('Please provide a reason for the adjustment.');
+      toast.warning('Please provide a reason for the adjustment.');
       return;
     }
     if (qty > currentQty) {
-      alert('Damaged quantity cannot exceed current stock.');
+      toast.warning('Damaged quantity cannot exceed current stock.');
       return;
     }
     adjustProductStock(adjustmentProductId, -qty);
@@ -2047,12 +2089,12 @@ export default function POS() {
         }));
         console.log('Transaction found:', transaction);
       } else {
-        alert('Transaction not found. Please check the transaction ID.');
+        toast.error('Transaction not found. Please check the transaction ID.');
         setCustomerReturnData(prev => ({ ...prev, items: [] }));
       }
     } catch (error) {
       console.error('Error searching transaction:', error);
-      alert('Error searching transaction. Please try again.');
+      toast.error('Error searching transaction. Please try again.');
     }
   };
 
@@ -2085,7 +2127,7 @@ export default function POS() {
 
   const processCustomerReturn = async () => {
     if (!customerReturnData.transactionId || !customerReturnData.returnReason.trim()) {
-      alert('Please enter transaction ID and return reason.');
+      toast.warning('Please enter transaction ID and return reason.');
       return;
     }
     
@@ -2095,12 +2137,12 @@ export default function POS() {
       : customerReturnData.returnReason;
     
     if (!finalReason) {
-      alert('Please enter a return reason.');
+      toast.warning('Please enter a return reason.');
       return;
     }
     
     if (customerReturnData.items.length === 0) {
-      alert('No items found for this transaction.');
+      toast.warning('No items found for this transaction.');
       return;
     }
 
@@ -2111,7 +2153,7 @@ export default function POS() {
     });
 
     if (!hasReturnItems) {
-      alert('Please specify quantities to return for at least one item.');
+      toast.warning('Please specify quantities to return for at least one item.');
       return;
     }
 
@@ -2173,7 +2215,22 @@ export default function POS() {
 
       const result = await response.json();
       if (result.success) {
-        alert(`Return submitted successfully!\nReturn Number: ${returnNumber}\nStatus: Pending Admin Approval\n\n✅ Return request created\n⏳ Waiting for admin approval\n📋 Check Return Management for status\n\nStock will be restored only after admin approval.`);
+        toast.success(
+          <div>
+            <div className="font-bold text-lg">Return Submitted Successfully!</div>
+            <div className="mt-2">
+              <div><strong>Return Number:</strong> {returnNumber}</div>
+              <div><strong>Status:</strong> Pending Admin Approval</div>
+            </div>
+            <div className="mt-3 text-sm">
+              <div>✅ Return request created</div>
+              <div>⏳ Waiting for admin approval</div>
+              <div>📋 Check Return Management for status</div>
+              <div className="mt-2 text-orange-600">Stock will be restored only after admin approval.</div>
+            </div>
+          </div>,
+          { autoClose: 8000 }
+        );
         setShowCustomerReturnModal(false);
         setShowReturnConfirmModal(false);
         setCustomerReturnData({ transactionId: '', returnReason: '', customReason: '', items: [] });
@@ -2225,11 +2282,11 @@ export default function POS() {
         setSalesHistory(updatedHistory);
         
       } else {
-        alert(`Failed to process return: ${result.message || 'Unknown error'}`);
+        toast.error(`Failed to process return: ${result.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error processing return:', error);
-      alert('Error processing return. Please try again.');
+      toast.error('Error processing return. Please try again.');
     }
   };
 
@@ -2464,7 +2521,7 @@ export default function POS() {
   const saveCredentials = async () => {
     const validationError = validateCredentialsForm();
     if (validationError) {
-      alert(validationError);
+      toast.warning(validationError);
       return;
     }
     
@@ -2497,12 +2554,12 @@ export default function POS() {
         }
       }
       
-      alert('Your credentials updated successfully!');
+      toast.success('Your credentials updated successfully!');
       closeCredentialsModal();
       
     } catch (error) {
       console.error('Error updating credentials:', error);
-      alert('Error updating credentials: ' + error.message);
+      toast.error('Error updating credentials: ' + error.message);
     } finally {
       setIsUpdatingCredentials(false);
     }
@@ -2517,13 +2574,13 @@ export default function POS() {
     
     // Validate payment
     if (!amountPaid || isNaN(amountPaid) || parseFloat(amountPaid) < payableTotal) {
-      alert('Please enter a valid amount that covers the total cost.');
+      toast.warning('Please enter a valid amount that covers the total cost.');
       setIsCheckoutProcessing(false);
       return;
     }
     
     if (paymentMethod === 'gcash' && !referenceNumber.trim()) {
-      alert('Please enter GCash reference number.');
+      toast.warning('Please enter GCash reference number.');
       setIsCheckoutProcessing(false);
       return;
     }
@@ -2579,7 +2636,7 @@ export default function POS() {
       
     } catch (error) {
       console.error('❌ Failed to persist sale:', error);
-      alert('Sale completed but failed to update inventory. Please check stock levels manually.');
+      toast.warning('Sale completed but failed to update inventory. Please check stock levels manually.');
     }
     
     // Always proceed with checkout regardless of print success
@@ -2625,7 +2682,14 @@ export default function POS() {
       console.log('Transaction completed successfully but receipt processing failed:', printResult.message);
       // Optionally show a warning to the user about printing failure
       setTimeout(() => {
-        alert(`Transaction completed but printing failed: ${printResult.message}\n\nCheck the receipts folder for saved receipt.`);
+        toast.warning(
+          <div>
+            <div className="font-bold">Transaction completed but printing failed</div>
+            <div className="mt-1 text-sm">{printResult.message}</div>
+            <div className="mt-1 text-sm">Check the receipts folder for saved receipt.</div>
+          </div>,
+          { autoClose: 6000 }
+        );
       }, 2500); // Show after thank you modal
     }
     
@@ -2797,7 +2861,6 @@ export default function POS() {
                   >
                     <option value="Convenience POS">Convenience POS</option>
                     <option value="Pharmacy POS">Pharmacy POS</option>
-                    <option value="Inventory Terminal">Inventory Terminal</option>
                   </select>
                 </div>
                 <div className="mb-3 flex items-center gap-3">

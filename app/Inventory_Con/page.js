@@ -22,6 +22,7 @@ import { AlertManagerProvider } from "./AlertManager";
 import { SettingsProvider } from "./SettingsContext";
 import ThemeToggle from "./ThemeToggle";
 import { HeartbeatService } from "../lib/HeartbeatService";
+import { getApiUrl } from "../lib/apiConfig";
 
 export default function InventoryPage() {
   const [activeComponent, setActiveComponent] = useState("Dashboard");
@@ -102,8 +103,11 @@ export default function InventoryPage() {
       console.log('Inventory Logout attempt - User data:', userData);
       console.log('Inventory Logout attempt - Emp ID:', empId);
       
-      // Call logout API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/login.php`, {
+      // Call logout API using configured API URL
+      const logoutUrl = getApiUrl('login.php');
+      console.log('Logout API URL:', logoutUrl);
+      
+      const response = await fetch(logoutUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -112,16 +116,28 @@ export default function InventoryPage() {
         })
       });
       
-      const result = await response.json();
-      console.log('Inventory Logout API response:', result);
+      // Check if response is JSON
+      const contentType = response.headers.get('Content-Type');
+      console.log('Response Content-Type:', contentType);
       
-      if (result.success) {
-        console.log('Inventory logout successful');
+      if (contentType && contentType.includes('application/json')) {
+        const result = await response.json();
+        console.log('Inventory Logout API response:', result);
+        
+        if (result.success) {
+          console.log('Inventory logout successful');
+        } else {
+          console.error('Inventory logout failed:', result.message);
+        }
       } else {
-        console.error('Inventory logout failed:', result.message);
+        // Response is not JSON (probably HTML error page)
+        const text = await response.text();
+        console.error('Logout API returned non-JSON response:', text.substring(0, 200));
+        console.warn('⚠️ Logout API returned HTML instead of JSON. Proceeding with local logout.');
       }
     } catch (error) {
       console.error('Inventory logout error:', error);
+      console.warn('⚠️ Logout failed but proceeding with local logout.');
     } finally {
       // Always clear session and redirect
       sessionStorage.removeItem('user_data');

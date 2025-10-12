@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 export default function ReturnApprovalManager() {
   const [pendingReturns, setPendingReturns] = useState([]);
@@ -89,17 +91,27 @@ export default function ReturnApprovalManager() {
 
       const data = await response.json();
       if (data.success) {
-        alert('Return approved successfully! Stock has been restored.');
+        toast.success(
+          <div>
+            <div className="font-bold text-lg">Return Approved Successfully!</div>
+            <div className="mt-2">Stock has been restored to the store.</div>
+            <div className="mt-2 text-sm">
+              <div><strong>Restored Items:</strong> {data.restored_items || 'Multiple items'}</div>
+              <div><strong>Total Quantity:</strong> {data.total_quantity_restored || 'Multiple units'}</div>
+            </div>
+          </div>,
+          { autoClose: 6000 }
+        );
         setShowApprovalModal(false);
         setShowDetailsModal(false);
         setApprovalNotes('');
         loadPendingReturns();
       } else {
-        alert(`Failed to approve return: ${data.message}`);
+        toast.error(`Failed to approve return: ${data.message}`);
       }
     } catch (error) {
       console.error('Error approving return:', error);
-      alert('Error approving return. Please try again.');
+      toast.error('Error approving return. Please try again.');
     }
   };
 
@@ -123,17 +135,17 @@ export default function ReturnApprovalManager() {
 
       const data = await response.json();
       if (data.success) {
-        alert('Return rejected successfully.');
+        toast.success('Return rejected successfully.');
         setShowRejectionModal(false);
         setShowDetailsModal(false);
         setRejectionReason('');
         loadPendingReturns();
       } else {
-        alert(`Failed to reject return: ${data.message}`);
+        toast.error(`Failed to reject return: ${data.message}`);
       }
     } catch (error) {
       console.error('Error rejecting return:', error);
-      alert('Error rejecting return. Please try again.');
+      toast.error('Error rejecting return. Please try again.');
     }
   };
 

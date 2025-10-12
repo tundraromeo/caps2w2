@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Management Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #764ba2;
+            margin-top: 30px;
+            border-left: 4px solid #764ba2;
+            padding-left: 15px;
+        }
+        .test-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #dee2e6;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 5px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.6;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 2px;
+        }
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+        .badge-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Session Management Test</h1>
+        
+        <div class="info">
+            <strong>📋 Purpose:</strong> Test session management and the <code>get_current_user</code> API endpoint. 
+            This helps diagnose login session issues in the Inventory Transfer system.
+        </div>
+
+        <div class="test-section">
+            <h2>Session Status</h2>
+            <div id="sessionStatus">
+                <div class="info">Click "Check Session Status" to begin...</div>
+            </div>
+            <button onclick="checkSessionStatus()">🔍 Check Session Status</button>
+            <button onclick="clearSession()">🗑️ Clear Session Data</button>
+        </div>
+
+        <div class="test-section">
+            <h2>SessionStorage Data</h2>
+            <div id="storageData">
+                <div class="info">Click "View SessionStorage" to inspect stored data...</div>
+            </div>
+            <button onclick="viewSessionStorage()">📦 View SessionStorage</button>
+            <button onclick="clearSessionStorage()">🗑️ Clear SessionStorage</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Simulate Login (For Testing)</h2>
+            <div class="warning">
+                <strong>⚠️ Note:</strong> This is for testing only. In production, users should login through the actual login page.
+            </div>
+            <div class="form-group">
+                <label for="testUsername">Username:</label>
+                <input type="text" id="testUsername" placeholder="e.g., admin" value="admin">
+            </div>
+            <div class="form-group">
+                <label for="testFullName">Full Name:</label>
+                <input type="text" id="testFullName" placeholder="e.g., John Doe" value="John Doe">
+            </div>
+            <div class="form-group">
+                <label for="testEmpId">Employee ID:</label>
+                <input type="number" id="testEmpId" placeholder="e.g., 1" value="1">
+            </div>
+            <button onclick="simulateLogin()">🔑 Simulate Login</button>
+            <button onclick="simulateLogout()">🚪 Simulate Logout</button>
+            <div id="loginResult"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>API Response Debug</h2>
+            <div id="apiDebug"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost/caps2e2/Api';
+
+        async function callAPI(endpoint, action, data = {}) {
+            const url = `${API_BASE_URL}/${endpoint}`;
+            console.log('🚀 API Call:', url, { action, ...data });
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include', // Important for session cookies
+                    body: JSON.stringify({
+                        action: action,
+                        ...data
+                    })
+                });
+
+                const result = await response.json();
+                console.log('✅ API Response:', result);
+                return result;
+            } catch (error) {
+                console.error('❌ API Error:', error);
+                return {
+                    success: false,
+                    message: error.message,
+                    error: 'REQUEST_ERROR'
+                };
+            }
+        }
+
+        async function checkSessionStatus() {
+            const statusDiv = document.getElementById('sessionStatus');
+            const debugDiv = document.getElementById('apiDebug');
+            
+            statusDiv.innerHTML = '<div class="info">⏳ Checking session status...</div>';
+
+            const result = await callAPI('backend.php', 'get_current_user');
+
+            if (result.success && result.data) {
+                const user = result.data;
+                let html = '<div class="success">';
+                html += '<h3>✅ Session Active - User Logged In</h3>';
+                html += '</div>';
+
+                html += '<div class="stat-grid">';
+                html += `<div class="stat-card">
+                    <div class="stat-value">${user.emp_id || user.user_id}</div>
+                    <div class="stat-label">Employee ID</div>
+                </div>`;
+                html += `<div class="stat-card">
+                    <div class="stat-value">${user.username}</div>
+                    <div class="stat-label">Username</div>
+                </div>`;
+                html += `<div class="stat-card">
+                    <div class="stat-value">${user.role}</div>
+                    <div class="stat-label">Role</div>
+                </div>`;
+                html += `<div class="stat-card">
+                    <div class="stat-value">${user.status}</div>
+                    <div class="stat-label">Status</div>
+                </div>`;
+                html += '</div>';
+
+                html += '<div class="info">';
+                html += `<strong>Full Name:</strong> ${user.full_name || user.fullName}<br>`;
+                html += `<strong>Email:</strong> ${user.email}<br>`;
+                html += `<strong>Session ID:</strong> <code>${user.session_id}</code><br>`;
+                html += '</div>';
+
+                statusDiv.innerHTML = html;
+            } else {
+                let html = '<div class="warning">';
+                html += '<h3>⚠️ No Active Session</h3>';
+                html += `<p>${result.message}</p>`;
+                html += '</div>';
+
+                if (result.debug) {
+                    html += '<div class="info">';
+                    html += '<strong>Debug Information:</strong><br>';
+                    html += `<strong>Session ID:</strong> ${result.debug.session_id}<br>`;
+                    html += `<strong>Has user_id:</strong> ${result.debug.has_user_id ? '✓' : '✗'}<br>`;
+                    html += `<strong>Has emp_id:</strong> ${result.debug.has_emp_id ? '✓' : '✗'}<br>`;
+                    html += `<strong>Has username:</strong> ${result.debug.has_username ? '✓' : '✗'}<br>`;
+                    html += `<strong>Session Keys:</strong> ${result.debug.session_keys.join(', ') || 'None'}<br>`;
+                    html += '</div>';
+
+                    html += '<div class="warning">';
+                    html += `<strong>💡 Recommendation:</strong> ${result.debug.recommendation}`;
+                    html += '</div>';
+                }
+
+                statusDiv.innerHTML = html;
+            }
+
+            // Show full API response
+            debugDiv.innerHTML = '<h3>📄 Full API Response</h3>';
+            debugDiv.innerHTML += '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+        }
+
+        function viewSessionStorage() {
+            const storageDiv = document.getElementById('storageData');
+            
+            try {
+                const userData = sessionStorage.getItem('user_data');
+                
+                if (userData) {
+                    const parsedData = JSON.parse(userData);
+                    let html = '<div class="success">';
+                    html += '<h3>✅ User Data Found in SessionStorage</h3>';
+                    html += '</div>';
+                    html += '<pre>' + JSON.stringify(parsedData, null, 2) + '</pre>';
+                    storageDiv.innerHTML = html;
+                } else {
+                    storageDiv.innerHTML = '<div class="warning">⚠️ No user data found in sessionStorage</div>';
+                }
+            } catch (error) {
+                storageDiv.innerHTML = '<div class="error">❌ Error reading sessionStorage: ' + error.message + '</div>';
+            }
+        }
+
+        function clearSessionStorage() {
+            try {
+                sessionStorage.removeItem('user_data');
+                document.getElementById('storageData').innerHTML = '<div class="success">✅ SessionStorage cleared</div>';
+            } catch (error) {
+                document.getElementById('storageData').innerHTML = '<div class="error">❌ Error clearing sessionStorage: ' + error.message + '</div>';
+            }
+        }
+
+        function clearSession() {
+            clearSessionStorage();
+            document.getElementById('sessionStatus').innerHTML = '<div class="info">Session data cleared. Reload the page and check status again.</div>';
+        }
+
+        function simulateLogin() {
+            const username = document.getElementById('testUsername').value;
+            const fullName = document.getElementById('testFullName').value;
+            const empId = parseInt(document.getElementById('testEmpId').value);
+            const resultDiv = document.getElementById('loginResult');
+
+            if (!username || !fullName || !empId) {
+                resultDiv.innerHTML = '<div class="error">❌ Please fill in all fields</div>';
+                return;
+            }
+
+            const userData = {
+                user_id: empId,
+                emp_id: empId,
+                username: username,
+                full_name: fullName,
+                fullName: fullName,
+                email: `${username}@example.com`,
+                role: 'Inventory Manager',
+                role_id: 2,
+                status: 'active',
+                session_id: 'test_session_' + Date.now()
+            };
+
+            try {
+                sessionStorage.setItem('user_data', JSON.stringify(userData));
+                
+                let html = '<div class="success">';
+                html += '<h3>✅ Simulated Login Successful</h3>';
+                html += '<p>User data stored in sessionStorage. You can now test the Inventory Transfer page.</p>';
+                html += '</div>';
+                html += '<div class="info">';
+                html += '<strong>Next Steps:</strong><br>';
+                html += '1. Go to the Inventory Transfer page<br>';
+                html += '2. The system should now detect the user from sessionStorage<br>';
+                html += '3. Check the "Transferred by" field should show: ' + fullName;
+                html += '</div>';
+                html += '<pre>' + JSON.stringify(userData, null, 2) + '</pre>';
+                
+                resultDiv.innerHTML = html;
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Error simulating login: ' + error.message + '</div>';
+            }
+        }
+
+        function simulateLogout() {
+            clearSessionStorage();
+            document.getElementById('loginResult').innerHTML = '<div class="success">✅ Simulated logout complete. SessionStorage cleared.</div>';
+        }
+
+        // Auto-check session on load
+        window.addEventListener('load', () => {
+            console.log('🚀 Session test page loaded');
+            checkSessionStatus();
+            viewSessionStorage();
+        });
+    </script>
+</body>
+</html>
+
+

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Login Fix - Enguio Inventory</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        .error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .success {
+            background: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+        .info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin: 5px;
+            width: 100%;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.danger {
+            background: #dc3545;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        pre {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 5px;
+        }
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .step {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 2px solid #e9ecef;
+        }
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Quick Login Fix</h1>
+        <p class="subtitle">Fix "No active session found" warning in Inventory Transfer</p>
+        
+        <div id="statusDiv" class="section warning">
+            <strong>⚠️ Issue Detected:</strong> Session exists but no user data (not logged in)
+            <br><br>
+            <strong>Session ID:</strong> <code>ueq76dkjk6go4dlbid8kqpk3op</code> (empty session)
+        </div>
+
+        <!-- Step 1: Check Current Session -->
+        <div class="step">
+            <h3><span class="step-number">1</span>Check Current Session</h3>
+            <p style="margin: 10px 0 15px 40px; color: #666;">First, let's see if you're logged in</p>
+            <button onclick="checkSession()">🔍 Check Session Status</button>
+            <div id="sessionResult"></div>
+        </div>
+
+        <!-- Step 2: Quick Login (One Click) -->
+        <div class="step">
+            <h3><span class="step-number">2</span>Quick Login (One Click)</h3>
+            <p style="margin: 10px 0 15px 40px; color: #666;">Use the first active inventory user for testing</p>
+            <button onclick="quickLogin()">⚡ Quick Login (Auto-select user)</button>
+            <div id="quickLoginResult"></div>
+        </div>
+
+        <!-- Step 3: Manual Login -->
+        <div class="step">
+            <h3><span class="step-number">3</span>Manual Login</h3>
+            <p style="margin: 10px 0 15px 40px; color: #666;">Or login with specific credentials</p>
+            
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" placeholder="Enter username" value="">
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" placeholder="Enter password" value="">
+            </div>
+            
+            <button onclick="manualLogin()">🔑 Login</button>
+            <div id="manualLoginResult"></div>
+        </div>
+
+        <!-- Step 4: Get Available Users -->
+        <div class="step">
+            <h3><span class="step-number">4</span>Available Test Users</h3>
+            <p style="margin: 10px 0 15px 40px; color: #666;">See which users you can login with</p>
+            <button onclick="getTestUsers()" class="secondary">👥 Show Available Users</button>
+            <div id="usersResult"></div>
+        </div>
+
+        <!-- Step 5: Clear Session -->
+        <div class="step">
+            <h3><span class="step-number">5</span>Clear Session</h3>
+            <p style="margin: 10px 0 15px 40px; color: #666;">Clear session if you want to start fresh</p>
+            <button onclick="clearSession()" class="danger">🗑️ Clear Session</button>
+            <div id="clearResult"></div>
+        </div>
+
+        <div class="section info" style="margin-top: 30px;">
+            <strong>💡 Next Steps After Login:</strong>
+            <ol style="margin: 10px 0 0 20px;">
+                <li>Refresh your Inventory Transfer page</li>
+                <li>You should see "✓ Logged In" badge</li>
+                <li>Your name should appear in "Transferred by" field</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost/caps2e2/Api';
+
+        async function checkSession() {
+            const resultDiv = document.getElementById('sessionResult');
+            resultDiv.innerHTML = '<div class="section info">⏳ Checking session... <span class="loading"></span></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/quick_login_test.php?action=check_session`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const hasUser = result.has_user_id || result.has_emp_id;
+                    
+                    if (hasUser) {
+                        resultDiv.innerHTML = `
+                            <div class="section success">
+                                <h4>✅ Session Active - User Logged In</h4>
+                                <p><strong>User ID:</strong> ${result.session_data.user_id || result.session_data.emp_id}</p>
+                                <p><strong>Username:</strong> ${result.session_data.username}</p>
+                                <p><strong>Role:</strong> ${result.session_data.role}</p>
+                                <p><strong>Full Name:</strong> ${result.session_data.full_name}</p>
+                                <p><strong>Session ID:</strong> ${result.session_id}</p>
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="section warning">
+                                <h4>⚠️ Session Exists But Empty (Not Logged In)</h4>
+                                <p><strong>Session ID:</strong> ${result.session_id}</p>
+                                <p><strong>Session Keys:</strong> ${Object.keys(result.session_data).length === 0 ? 'None' : Object.keys(result.session_data).join(', ')}</p>
+                                <br>
+                                <p>👉 <strong>Solution:</strong> Use "Quick Login" button above to log in</p>
+                            </div>
+                        `;
+                    }
+                    
+                    console.log('Session result:', result);
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="section error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function quickLogin() {
+            const resultDiv = document.getElementById('quickLoginResult');
+            resultDiv.innerHTML = '<div class="section info">⏳ Logging in... <span class="loading"></span></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/quick_login_test.php?action=quick_login`);
+                const result = await response.json();
+
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="section success">
+                            <h4>✅ Login Successful!</h4>
+                            <p><strong>User:</strong> ${result.user.full_name} (@${result.user.username})</p>
+                            <p><strong>Role:</strong> ${result.user.role}</p>
+                            <p><strong>Employee ID:</strong> ${result.user.emp_id}</p>
+                            <p><strong>Session ID:</strong> ${result.session_id}</p>
+                            <br>
+                            <div class="info">
+                                <strong>👉 Next Steps:</strong>
+                                <ol style="margin: 10px 0 0 20px;">
+                                    <li>Refresh your Inventory Transfer page (F5)</li>
+                                    <li>You should see "✓ Logged In" badge</li>
+                                    <li>Your name should appear: <strong>${result.user.full_name}</strong></li>
+                                </ol>
+                            </div>
+                        </div>
+                    `;
+
+                    // Store in sessionStorage for the frontend
+                    sessionStorage.setItem('user_data', JSON.stringify({
+                        user_id: result.user.emp_id,
+                        emp_id: result.user.emp_id,
+                        username: result.user.username,
+                        full_name: result.user.full_name,
+                        role: result.user.role
+                    }));
+                    
+                    console.log('Login successful:', result);
+                    
+                    // Show success message
+                    document.getElementById('statusDiv').innerHTML = `
+                        <div class="section success">
+                            ✅ <strong>Logged in as:</strong> ${result.user.full_name} (${result.user.role})
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="section error">❌ ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="section error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function manualLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('manualLoginResult');
+
+            if (!username || !password) {
+                resultDiv.innerHTML = '<div class="section error">❌ Please enter username and password</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div class="section info">⏳ Logging in... <span class="loading"></span></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/quick_login_test.php?action=manual_login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="section success">
+                            <h4>✅ Login Successful!</h4>
+                            <p><strong>User:</strong> ${result.user.full_name} (@${result.user.username})</p>
+                            <p><strong>Role:</strong> ${result.user.role}</p>
+                            <p><strong>Session ID:</strong> ${result.session_id}</p>
+                        </div>
+                    `;
+
+                    // Store in sessionStorage
+                    sessionStorage.setItem('user_data', JSON.stringify({
+                        user_id: result.user.emp_id,
+                        emp_id: result.user.emp_id,
+                        username: result.user.username,
+                        full_name: result.user.full_name,
+                        role: result.user.role
+                    }));
+                    
+                    document.getElementById('statusDiv').innerHTML = `
+                        <div class="section success">
+                            ✅ <strong>Logged in as:</strong> ${result.user.full_name} (${result.user.role})
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="section error">❌ ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="section error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function getTestUsers() {
+            const resultDiv = document.getElementById('usersResult');
+            resultDiv.innerHTML = '<div class="section info">⏳ Loading users... <span class="loading"></span></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/quick_login_test.php?action=get_test_users`);
+                const result = await response.json();
+
+                if (result.success && result.users.length > 0) {
+                    let html = '<div class="section success"><h4>👥 Available Users:</h4>';
+                    html += '<table style="width: 100%; margin-top: 10px; border-collapse: collapse;">';
+                    html += '<thead><tr style="background: #667eea; color: white; text-align: left;">';
+                    html += '<th style="padding: 8px;">Username</th>';
+                    html += '<th style="padding: 8px;">Name</th>';
+                    html += '<th style="padding: 8px;">Role</th>';
+                    html += '<th style="padding: 8px;">Action</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    result.users.forEach((user, index) => {
+                        html += `<tr style="border-bottom: 1px solid #dee2e6; background: ${index % 2 === 0 ? '#f8f9fa' : 'white'}">`;
+                        html += `<td style="padding: 8px;"><strong>${user.username}</strong></td>`;
+                        html += `<td style="padding: 8px;">${user.Fname} ${user.Lname}</td>`;
+                        html += `<td style="padding: 8px;"><span class="badge badge-success">${user.role}</span></td>`;
+                        html += `<td style="padding: 8px;">
+                            <button onclick="fillUsername('${user.username}')" style="padding: 5px 10px; font-size: 12px; width: auto;">
+                                Use This
+                            </button>
+                        </td>`;
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    html += '<p style="margin-top: 10px; font-size: 12px; color: #666;">💡 Click "Use This" to fill the username field above</p>';
+                    html += '</div>';
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.innerHTML = '<div class="section error">❌ No users found</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="section error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        function fillUsername(username) {
+            document.getElementById('username').value = username;
+            document.getElementById('password').focus();
+            
+            // Show a helpful message
+            const resultDiv = document.getElementById('usersResult');
+            resultDiv.innerHTML = `
+                <div class="section info">
+                    ℹ️ Username set to: <strong>${username}</strong><br>
+                    Now enter the password and click "Login" above.
+                </div>
+            `;
+        }
+
+        async function clearSession() {
+            const resultDiv = document.getElementById('clearResult');
+            resultDiv.innerHTML = '<div class="section info">⏳ Clearing session... <span class="loading"></span></div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/quick_login_test.php?action=clear_session`);
+                const result = await response.json();
+
+                if (result.success) {
+                    sessionStorage.clear();
+                    resultDiv.innerHTML = '<div class="section success">✅ Session cleared successfully</div>';
+                    document.getElementById('statusDiv').innerHTML = `
+                        <div class="section warning">
+                            ⚠️ Session cleared. Use "Quick Login" to log in again.
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="section error">❌ ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="section error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-check session on load
+        window.addEventListener('load', () => {
+            console.log('Quick Login Fix loaded');
+            console.log('API Base:', API_BASE);
+            checkSession();
+        });
+    </script>
+</body>
+</html>
+

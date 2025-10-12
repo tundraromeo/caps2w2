@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { useTheme } from './ThemeContext';
 import { useNotification } from './NotificationContext';
 
@@ -165,8 +167,21 @@ export default function ReturnManagement() {
 
       const data = await response.json();
       if (data.success) {
-        const transferMessage = data.transfer_details_updated ? '\nTransfer details have been updated with returned quantities.' : '';
-        alert(`Return approved successfully! Stock has been restored to ${data.location_name}.${transferMessage}\n\nRestored Items: ${data.restored_items}\nTotal Quantity: ${data.total_quantity_restored} units`);
+        const transferMessage = data.transfer_details_updated ? 'Transfer details have been updated with returned quantities.' : '';
+        toast.success(
+          <div>
+            <div className="font-bold text-lg">Return Approved Successfully!</div>
+            <div className="mt-2">
+              <div>Stock has been restored to <strong>{data.location_name}</strong></div>
+              {transferMessage && <div className="mt-1">{transferMessage}</div>}
+            </div>
+            <div className="mt-3 text-sm">
+              <div><strong>Restored Items:</strong> {data.restored_items}</div>
+              <div><strong>Total Quantity:</strong> {data.total_quantity_restored} units</div>
+            </div>
+          </div>,
+          { autoClose: 8000 }
+        );
         setShowApprovalModal(false);
         setShowDetailsModal(false);
         setApprovalNotes('');
@@ -188,11 +203,11 @@ export default function ReturnManagement() {
           }));
         }
       } else {
-        alert(`Failed to approve return: ${data.message}`);
+        toast.error(`Failed to approve return: ${data.message}`);
       }
     } catch (error) {
       console.error('Error approving return:', error);
-      alert('Error approving return. Please try again.');
+      toast.error('Error approving return. Please try again.');
     }
   };
 
@@ -216,7 +231,7 @@ export default function ReturnManagement() {
 
       const data = await response.json();
       if (data.success) {
-        alert('Return rejected successfully.');
+        toast.success('Return rejected successfully.');
         setShowRejectionModal(false);
         setShowDetailsModal(false);
         setRejectionReason('');
@@ -225,11 +240,11 @@ export default function ReturnManagement() {
         // Clear return notifications after rejection
         markNotificationAsViewed('returns');
       } else {
-        alert(`Failed to reject return: ${data.message}`);
+        toast.error(`Failed to reject return: ${data.message}`);
       }
     } catch (error) {
       console.error('Error rejecting return:', error);
-      alert('Error rejecting return. Please try again.');
+      toast.error('Error rejecting return. Please try again.');
     }
   };
 

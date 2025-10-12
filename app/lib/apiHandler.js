@@ -245,7 +245,7 @@ class APIHandler {
   // ============= PHARMACY API METHODS =============
   
   async getPharmacyProducts(filters = {}) {
-    return this.callAPI(this.endpoints.PHARMACY, 'get_products', filters);
+    return this.callAPI(this.endpoints.PHARMACY, 'get_pharmacy_products', filters);
   }
 
   async updatePharmacyStock(stockData) {
