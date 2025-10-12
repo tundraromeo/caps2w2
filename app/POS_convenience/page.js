@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
+import { getApiUrl } from '../lib/apiConfig';
 
 export default function POS() {
   const router = useRouter();
@@ -79,6 +80,7 @@ export default function POS() {
   const [credentialsFocusIndex, setCredentialsFocusIndex] = useState(0); // 0: Name, 1: Email, 2: Username, 3: Password, 4: Confirm Password, 5: Save, 6: Cancel
   const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
   const credentialsRefs = useRef([]);
+
 
   // Auto-focus Transaction ID field when modal opens
   useEffect(() => {
@@ -952,7 +954,8 @@ export default function POS() {
     localStorage.setItem('pos-cart', JSON.stringify(cart));
   }, [cart]);
 
-  // Add to cart with custom quantity
+
+  // Add to cart with custom quantity (fallback for direct add)
   const addToCart = (product, quantity) => {
     if (quantity <= 0 || quantity > product.quantity) {
       toast.warning(`Please enter a valid quantity (1–${product.quantity})`);
@@ -1667,10 +1670,22 @@ export default function POS() {
             // Focus search bar
             document.getElementById('search-input')?.focus();
           } else if (navigationIndex === 1 && sortedFilteredProducts[selectedIndex]) {
-            // Add selected product to cart
+            // Add selected product to cart and move to cart Quick Add dropdown
             const product = sortedFilteredProducts[selectedIndex];
-            const quantity = quantityInputs[product.id] || 1;
-            addToCart(product, quantity);
+            addToCart(product, 1);
+            
+            // Move to checkout and focus on first cart item's Quick Add dropdown
+            setNavigationIndex(2);
+            setCheckoutFocusIndex('cart');
+            setCartFocusIndex(0);
+            
+            // Focus the Quick Add dropdown after cart update
+            setTimeout(() => {
+              const quickAddDropdown = document.querySelector('.quick-add-dropdown');
+              if (quickAddDropdown) {
+                quickAddDropdown.focus();
+              }
+            }, 100);
           } else if (navigationIndex === 2) {
             // Trigger checkout
             handleCheckout();
@@ -2380,29 +2395,56 @@ export default function POS() {
       console.log('POS Logout attempt - User data:', userData);
       console.log('POS Logout attempt - Emp ID:', empId);
       
-      // Call logout API
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/login.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'logout',
-          emp_id: empId 
-        })
-      });
-      
-      const result = await response.json();
-      console.log('POS Logout API response:', result);
-      
-      if (result.success) {
-        console.log('POS logout successful');
+      // Validate empId before attempting logout
+      if (!empId) {
+        console.warn('No employee ID found, clearing local session only');
+        toast.warning('Session expired. Redirecting to login...');
       } else {
-        console.error('POS logout failed:', result.message);
+        try {
+          // Call logout API with credentials to include session cookies
+          const logoutUrl = getApiUrl('login.php');
+          console.log('🔄 Calling logout API:', logoutUrl);
+          
+          const response = await fetch(logoutUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // Include session cookies
+            body: JSON.stringify({ 
+              action: 'logout',
+              emp_id: empId 
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          console.log('POS Logout API response:', result);
+          
+          if (result.success) {
+            console.log('✅ POS logout successful');
+            toast.success('Logged out successfully');
+          } else {
+            console.warn('⚠️ POS logout warning:', result.message);
+            toast.warning('Logged out locally');
+          }
+        } catch (fetchError) {
+          console.error('❌ Logout API call failed:', fetchError);
+          console.log('Proceeding with local logout only');
+          toast.warning('Logged out locally');
+        }
       }
     } catch (error) {
-      console.error('POS logout error:', error);
+      console.error('❌ POS logout error:', error);
+      toast.warning('Logged out locally');
     } finally {
-      // Always clear session and redirect
+      // Always clear session and redirect regardless of API call result
+      console.log('🧹 Clearing local session data');
       sessionStorage.removeItem('user_data');
+      localStorage.clear(); // Clear any other stored data
+      
+      console.log('🔄 Redirecting to login page');
       router.push('/');
     }
   };
@@ -3130,8 +3172,8 @@ export default function POS() {
                         </td>
                         <td className="px-4 py-4 text-right">
                           <button
-                            onClick={() => addToCart(product, quantityInputs[product.id] || 1)}
-                            className="bg-gradient-to-r from-gray-600 to-gray-700 text-white px-5 py-2 rounded-lg hover:from-gray-700 hover:to-gray-800 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                            onClick={() => addToCart(product, 1)}
+                            className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-5 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
                           >
                             ➕ Add
                           </button>
@@ -3197,11 +3239,86 @@ export default function POS() {
                       <li ref={el => cartItemRefs.current[idx] = el} key={item.product.id} className={`p-4 border-b border-gray-200 ${checkoutFocusIndex === 'cart' && cartFocusIndex === idx ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50'}`}>
                         <div className="flex justify-between items-center">
                           <div className="flex-1">
-                            <div className="text-base font-semibold text-gray-800 mb-1">
+                            <div className="text-base font-semibold text-gray-800 mb-2">
                               {item.product.name}
                             </div>
+                            
+                            {/* Quick Unit Converter */}
+                            <div className="flex items-center gap-2 mb-2">
+                              <select
+                                className="quick-add-dropdown text-xs px-2 py-1 border border-blue-300 rounded bg-blue-50 font-semibold text-blue-700 hover:bg-blue-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                onChange={(e) => {
+                                  const unit = e.target.value;
+                                  const currentQty = item.quantity;
+                                  let newQty = currentQty;
+                                  
+                                  if (unit === 'box') {
+                                    const isPharmacy = String(terminalName || '').toLowerCase().includes('pharmacy');
+                                    if (isPharmacy) {
+                                      // Medicine: 1 box = 10 strips × 10 tablets = 100
+                                      newQty = currentQty + 100;
+                                    } else {
+                                      // Convenience: 1 box = 12 pieces
+                                      newQty = currentQty + 12;
+                                    }
+                                  } else if (unit === 'strip') {
+                                    // Pharmacy only: 1 strip = 10 tablets
+                                    newQty = currentQty + 10;
+                                  } else if (unit === '1pc') {
+                                    newQty = currentQty + 1;
+                                  }
+                                  
+                                  updateCartItemQuantity(item.product.id, newQty);
+                                  e.target.value = ''; // Reset dropdown
+                                }}
+                                onKeyDown={(e) => {
+                                  const isPharmacy = String(terminalName || '').toLowerCase().includes('pharmacy');
+                                  if (e.key.toLowerCase() === 'b') {
+                                    e.preventDefault();
+                                    e.target.value = 'box';
+                                    e.target.dispatchEvent(new Event('change', { bubbles: true }));
+                                  } else if (e.key.toLowerCase() === 's' && isPharmacy) {
+                                    e.preventDefault();
+                                    e.target.value = 'strip';
+                                    e.target.dispatchEvent(new Event('change', { bubbles: true }));
+                                  } else if (e.key.toLowerCase() === 'p') {
+                                    e.preventDefault();
+                                    e.target.value = '1pc';
+                                    e.target.dispatchEvent(new Event('change', { bubbles: true }));
+                                  } else if (e.key === 'Tab') {
+                                    // Move to Amount Paid field
+                                    e.preventDefault();
+                                    setCheckoutFocusIndex(0);
+                                    setTimeout(() => {
+                                      amountPaidRef.current?.focus();
+                                    }, 50);
+                                  } else if (e.key === 'Enter') {
+                                    // Move to Amount Paid field
+                                    e.preventDefault();
+                                    setCheckoutFocusIndex(0);
+                                    setTimeout(() => {
+                                      amountPaidRef.current?.focus();
+                                    }, 50);
+                                  }
+                                }}
+                                defaultValue=""
+                              >
+                                <option value="">➕ Quick Add</option>
+                                <option value="box">📦 +1 Box (B)</option>
+                                {String(terminalName || '').toLowerCase().includes('pharmacy') && (
+                                  <option value="strip">📋 +1 Strip (S)</option>
+                                )}
+                                <option value="1pc">🔢 +1 Piece (P)</option>
+                              </select>
+                              <span className="text-xs text-gray-500">
+                                {String(terminalName || '').toLowerCase().includes('pharmacy') 
+                                  ? '(Box=100, Strip=10)' 
+                                  : '(Box=12)'}
+                              </span>
+                            </div>
+                            
                             <div className="text-sm text-gray-600">
-                              Quantity: <span className="font-bold text-blue-600">x{item.quantity}</span>
+                              Quantity: <span className="font-bold text-blue-600">x{item.quantity} pcs</span>
                             </div>
                             <div className="text-sm text-gray-600">
                               Price: <span className="font-bold text-green-600">₱{item.product.price.toFixed(2)} each</span>
@@ -4744,6 +4861,7 @@ export default function POS() {
           </div>
         </div>
       )}
+
     </>
   );
 }

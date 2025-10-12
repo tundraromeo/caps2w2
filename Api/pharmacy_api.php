@@ -776,13 +776,8 @@ try {
                             $remaining_to_consume -= $consume_qty;
                         }
                         
-                        // Update product quantity
-                        $updateProductStmt = $conn->prepare("
-                            UPDATE tbl_product 
-                            SET quantity = quantity - ?
-                            WHERE product_id = ?
-                        ");
-                        $updateProductStmt->execute([$quantity, $product_id]);
+                        // Note: tbl_product.quantity column has been removed in multi-unit migration
+                        // Quantities are now tracked in tbl_fifo_stock and tbl_transfer_batch_details
                         
                         // Update stock summary
                         $updateStockSummaryStmt = $conn->prepare("
