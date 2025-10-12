@@ -5,19 +5,17 @@
  * Uses environment variables from .env file
  */
 
-// Load environment variables
-require_once __DIR__ . '/simple_dotenv.php';
-$dotenv = new SimpleDotEnv(__DIR__);
-$dotenv->load();
+// Load configuration
+require_once __DIR__ . '/config.php';
 
-// Get database credentials from environment variables
-$servername = $_ENV['DB_HOST'] ?? 'localhost';
-$port = $_ENV['DB_PORT'] ?? '3306';
-$dbname = $_ENV['DB_DATABASE'] ?? 'enguio2';
-$username = $_ENV['DB_USER'] ?? 'root';
-$password = $_ENV['DB_PASS'] ?? '';
-$charset = $_ENV['DB_CHARSET'] ?? 'utf8mb4';
-$socket = $_ENV['DB_SOCKET'] ?? '';
+// Get database credentials from configuration
+$servername = Config::get('DB_HOST');
+$port = Config::get('DB_PORT');
+$dbname = Config::get('DB_NAME');
+$username = Config::get('DB_USERNAME');
+$password = Config::get('DB_PASSWORD');
+$charset = Config::get('DB_CHARSET');
+$socket = Config::get('DB_SOCKET');
 
 // Create PDO connection (primary connection type)
 try {
@@ -32,21 +30,20 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES $charset"
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES $charset",
+        PDO::ATTR_TIMEOUT => 10, // Connection timeout in seconds
+        PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true
     ]);
     
 } catch(PDOException $e) {
     // Log error securely without exposing credentials
     error_log("Database connection failed: " . $e->getMessage());
-    
+
     header("Content-Type: application/json");
-    
-    // Show detailed error only in development
-    $isDevelopment = ($_ENV['APP_ENV'] ?? 'production') === 'development';
-    
+
     echo json_encode([
         "success" => false,
-        "message" => $isDevelopment 
+        "message" => Config::isDebug()
             ? "Connection failed: " . $e->getMessage()
             : "Database connection failed. Please contact support."
     ]);
@@ -85,14 +82,12 @@ function getMySQLiConnection() {
         
     } catch(Exception $e) {
         error_log("MySQLi connection failed: " . $e->getMessage());
-        
+
         header("Content-Type: application/json");
-        
-        $isDevelopment = ($_ENV['APP_ENV'] ?? 'production') === 'development';
-        
+
         echo json_encode([
             "success" => false,
-            "message" => $isDevelopment 
+            "message" => Config::isDebug()
                 ? "Connection failed: " . $e->getMessage()
                 : "Database connection failed. Please contact support."
         ]);

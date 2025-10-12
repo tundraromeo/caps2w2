@@ -14,7 +14,7 @@ class Config {
      */
     private static function loadEnv() {
         $envFile = __DIR__ . '/.env';
-        
+
         if (file_exists($envFile)) {
             $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             foreach ($lines as $line) {
@@ -22,13 +22,19 @@ class Config {
                 if (strpos(trim($line), '#') === 0) {
                     continue;
                 }
-                
+
                 // Parse key=value pairs
                 if (strpos($line, '=') !== false) {
                     list($key, $value) = explode('=', $line, 2);
                     $key = trim($key);
                     $value = trim($value);
-                    
+
+                    // Remove surrounding quotes
+                    if ((substr($value, 0, 1) === '"' && substr($value, -1) === '"') ||
+                        (substr($value, 0, 1) === "'" && substr($value, -1) === "'")) {
+                        $value = substr($value, 1, -1);
+                    }
+
                     // Set environment variable if not already set
                     if (!getenv($key)) {
                         putenv("$key=$value");
@@ -53,26 +59,28 @@ class Config {
             self::$config = [
                 // Database Configuration
                 'DB_HOST' => getenv('DB_HOST') ?: 'localhost',
+                'DB_PORT' => getenv('DB_PORT') ?: '3306',
                 'DB_USERNAME' => getenv('DB_USER') ?: 'root',
                 'DB_PASSWORD' => getenv('DB_PASS') ?: '',
                 'DB_NAME' => getenv('DB_DATABASE') ?: 'enguio2',
                 'DB_CHARSET' => getenv('DB_CHARSET') ?: 'utf8mb4',
-                
+                'DB_SOCKET' => getenv('DB_SOCKET') ?: '',
+
                 // API Configuration
                 'API_URL' => getenv('API_URL') ?: 'http://localhost:3000',
-                'CORS_ORIGIN' => getenv('CORS_ORIGIN') ?: 'http://localhost:3000',
-                
+                'CORS_ALLOWED_ORIGINS' => getenv('CORS_ALLOWED_ORIGINS') ?: 'http://localhost:3000,http://localhost:3001',
+
                 // Environment
                 'APP_ENV' => getenv('APP_ENV') ?: 'development',
                 'APP_DEBUG' => getenv('APP_DEBUG') ?: 'true',
-                
+
                 // Session Configuration
                 'SESSION_LIFETIME' => getenv('SESSION_LIFETIME') ?: 3600,
                 'SESSION_NAME' => getenv('SESSION_NAME') ?: 'ENGUIO_SESSION',
-                
+
                 // Logging
                 'LOG_ERRORS' => getenv('LOG_ERRORS') ?: 'true',
-                'ERROR_LOG_PATH' => getenv('ERROR_LOG_PATH') ?: 'php_errors.log',
+                'ERROR_LOG_PATH' => getenv('ERROR_LOG_PATH') ?: __DIR__ . '/php_errors.log',
             ];
         }
         

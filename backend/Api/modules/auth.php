@@ -398,7 +398,8 @@ function handle_login($conn, $data) {
             echo json_encode(["success" => false, "message" => "Invalid username or password"]);
         }
 
-    } catch (Exception $e) {
+    }
+    catch (Exception $e) {
         echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
     }
 }
@@ -467,7 +468,7 @@ function handle_logout($conn, $data) {
                 $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($empData) {
-                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, employee_name, role, activity_type, activity_description, module, action, location, terminal_id, date_created, time_created, created_at) VALUES (:user_id, :username, :employee_name, :role, :activity_type, :activity_description, :module, :action, :location, :terminal_id, CURDATE(), CURTIME(), NOW())");
                     $logStmt->execute([
                         ':user_id' => $empId,
                         ':username' => $empData['username'],
