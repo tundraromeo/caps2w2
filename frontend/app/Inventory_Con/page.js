@@ -21,7 +21,6 @@ import { NotificationProvider } from "./NotificationContext";
 import { AlertManagerProvider } from "./AlertManager";
 import { SettingsProvider } from "./SettingsContext";
 import ThemeToggle from "./ThemeToggle";
-import { HeartbeatService } from "../lib/HeartbeatService";
 import { getApiUrl } from "../lib/apiConfig";
 
 export default function InventoryPage() {
@@ -33,7 +32,7 @@ export default function InventoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Check if user is logged in and start heartbeat
+  // Check if user is logged in
   useEffect(() => {
     const userData = sessionStorage.getItem('user_data');
     if (!userData) {
@@ -49,19 +48,11 @@ export default function InventoryPage() {
       return;
     }
 
-    // Start heartbeat service for real-time online/offline detection
-    console.log('💓 Starting heartbeat service for inventory user');
-    HeartbeatService.start(user);
     setIsAuthenticated(true);
     setIsLoading(false);
 
     // Add automatic logout on tab close
     const handleBeforeUnload = async (event) => {
-      console.log('🚪 Tab closing - Auto logout triggered');
-      
-      // Stop heartbeat immediately
-      HeartbeatService.stop();
-      
       // Perform logout API call
       try {
         const logoutUrl = getApiUrl('login.php');
@@ -96,10 +87,8 @@ export default function InventoryPage() {
     // Add event listener for tab close
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Cleanup: Stop heartbeat when component unmounts
+    // Cleanup when component unmounts
     return () => {
-      console.log('💔 Stopping heartbeat service (component unmount)');
-      HeartbeatService.stop();
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [router]);
@@ -125,10 +114,6 @@ export default function InventoryPage() {
 
   const confirmLogout = async () => {
     try {
-      // Stop heartbeat service immediately
-      console.log('💔 Stopping heartbeat service (logout)');
-      HeartbeatService.stop();
-
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
       let empId = null;

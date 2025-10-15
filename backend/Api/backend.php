@@ -5,28 +5,8 @@ ini_set('display_startup_errors', 0);
 error_reporting(0); // Suppress all errors/warnings from being displayed
 
 // CORS headers must be set first, before any output
-// Load environment variables for CORS configuration
-require_once __DIR__ . '/../simple_dotenv.php';
-$dotenv = new SimpleDotEnv(__DIR__ . '/..');
-$dotenv->load();
-
-// Get allowed origins from environment variable (comma-separated) - PRODUCTION READY
-$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'https://enguiostore.vercel.app,https://enguio.shop,http://localhost:3000,http://localhost:3001';
-$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
-
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-
-if (!empty($origin) && in_array($origin, $allowed_origins)) {
-    header("Access-Control-Allow-Origin: $origin");
-} else {
-    // Fallback to production URL
-    header("Access-Control-Allow-Origin: https://enguiostore.vercel.app");
-}
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
-header("Access-Control-Allow-Credentials: true");
-header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
-header("Content-Type: application/json; charset=utf-8");
+// Use centralized CORS configuration
+require_once __DIR__ . '/cors.php';
 
 // Cache-busting headers to prevent API response caching
 header("Cache-Control: no-cache, no-store, must-revalidate");

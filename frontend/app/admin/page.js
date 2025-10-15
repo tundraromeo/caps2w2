@@ -13,7 +13,6 @@ import NotificationManager from './components/NotificationManager';
 import NotificationPanel from './components/NotificationPanel';
 import RealtimeNotificationService from './components/RealtimeNotificationService';
 import ReturnNotificationService from './components/ReturnNotificationService';
-import { HeartbeatService } from "../lib/HeartbeatService";
 
 // Import all components
 import Dashboard from './components/Dashboard';
@@ -43,10 +42,6 @@ const LOGIN_API_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL}/login.php`;
 // Logout function
 const logoutUser = async () => {
   try {
-    // Stop heartbeat service immediately
-    console.log('💔 Stopping heartbeat service (admin logout)');
-    HeartbeatService.stop();
-
     // Get user data from sessionStorage
     const userData = sessionStorage.getItem('user_data');
     let empId = null;
@@ -256,18 +251,11 @@ function AdminContent() {
         return;
       }
 
-      console.log('✅ User authenticated, starting heartbeat service for admin user');
-      HeartbeatService.start(user);
       setIsAuthenticated(true);
       setIsLoading(false);
 
       // Add automatic logout on tab close
       const handleBeforeUnload = async (event) => {
-        console.log('🚪 Tab closing - Auto logout triggered');
-        
-        // Stop heartbeat immediately
-        HeartbeatService.stop();
-        
         // Perform logout API call
         try {
           const response = await fetch(LOGIN_API_URL, {
@@ -301,10 +289,8 @@ function AdminContent() {
       // Add event listener for tab close
       window.addEventListener('beforeunload', handleBeforeUnload);
 
-      // Cleanup: Stop heartbeat when component unmounts
+      // Cleanup when component unmounts
       return () => {
-        console.log('💔 Stopping heartbeat service (component unmount)');
-        HeartbeatService.stop();
         window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     } catch (e) {

@@ -1,10 +1,9 @@
 <?php
 // Receipt printer – fixed width 32 chars, original layout, raw copy to printer
 ob_start();
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+
+// Use centralized CORS configuration
+require_once __DIR__ . '/../cors.php';
 
 function returnJson($success, $message, $data = []) {
     ob_end_clean();
@@ -152,15 +151,7 @@ ob_start();
 
 
 /* header('Content-Type: application/json; charset=utf-8'); */
-
-
-header('Access-Control-Allow-Origin: *');
-
-
-header('Access-Control-Allow-Methods: POST');
-
-
-header('Access-Control-Allow-Headers: Content-Type');
+/* Removed duplicate CORS headers - using centralized cors.php at top of file */
 
 
 
