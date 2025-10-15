@@ -63,8 +63,8 @@ class Config {
                 'CORS_ORIGIN' => getenv('CORS_ORIGIN') ?: 'http://localhost:3001',
                 
                 // Environment
-                'APP_ENV' => getenv('APP_ENV') ?: 'development',
-                'APP_DEBUG' => getenv('APP_DEBUG') ?: 'true',
+                'APP_ENV' => getenv('APP_ENV') ?: 'production',
+                'APP_DEBUG' => getenv('APP_DEBUG') ?: 'false',
                 
                 // Session Configuration
                 'SESSION_LIFETIME' => getenv('SESSION_LIFETIME') ?: 3600,

@@ -11,13 +11,18 @@
 
 require_once __DIR__ . '/config.php';
 
-// Get allowed origins from configuration
-$allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://localhost:3000',
-    'https://localhost:3001',
-];
+// Load environment variables
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+try {
+    $dotenv->load();
+} catch (Exception $e) {
+    // .env not loaded, will use defaults
+}
+
+// Get allowed origins from .env or use production defaults
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'https://enguiostore.vercel.app,https://enguio.shop,http://localhost:3000,http://localhost:3001';
+$allowedOrigins = array_map('trim', explode(',', $corsOriginsEnv));
 
 // Get the request origin
 $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -26,8 +31,8 @@ $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($requestOrigin, $allowedOrigins)) {
     $corsOrigin = $requestOrigin;
 } else {
-    // Fallback to config or first allowed origin
-    $corsOrigin = Config::get('CORS_ORIGIN', $allowedOrigins[0]);
+    // Fallback to first allowed origin
+    $corsOrigin = $allowedOrigins[0] ?? '*';
 }
 
 // Set CORS headers
