@@ -11,8 +11,7 @@ import Sidebar from './sidebar';
 import LogoutConfirm from './LogoutConfirm';
 import NotificationManager from './components/NotificationManager';
 import NotificationPanel from './components/NotificationPanel';
-import RealtimeNotificationService from './components/RealtimeNotificationService';
-import ReturnNotificationService from './components/ReturnNotificationService';
+import NotificationService from '../lib/NotificationService';
 
 // Import all components
 import Dashboard from './components/Dashboard';
@@ -390,8 +389,6 @@ function AdminContent() {
     <div className="flex h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Notification Services */}
       <NotificationManager />
-      <RealtimeNotificationService />
-      <ReturnNotificationService />
       
       {/* Mobile top bar */}
       <MobileHeaderWithNotifications 
