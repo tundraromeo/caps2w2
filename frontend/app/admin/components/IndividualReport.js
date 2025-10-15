@@ -319,14 +319,188 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         reportTypes.find(t => t.id === type)?.name || type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
       ).join(', ');
       
+      // Generate report data table HTML based on report type
+      const generateReportDataTable = () => {
+        if (!reportData || (Array.isArray(reportData) ? reportData.length === 0 : (reportData.all_logs?.length === 0 && reportData.online_users?.length === 0))) {
+          return '<div style="text-align: center; padding: 20px; color: #666;">No data found for the selected date range</div>';
+        }
+
+        const dataToProcess = Array.isArray(reportData) ? reportData : (reportData.all_logs || []);
+        const columns = getReportColumns();
+        
+        if (columns.length === 0) {
+          return '<div style="text-align: center; padding: 20px; color: #666;">No columns defined for this report type</div>';
+        }
+
+        let tableHTML = `
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px;">
+            <thead>
+              <tr style="background-color: #f8f9fa;">
+        `;
+
+        // Add table headers
+        columns.forEach(column => {
+          tableHTML += `<th style="border: 1px solid #000; padding: 8px; text-align: left;">${column}</th>`;
+        });
+
+        tableHTML += `
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        // Add table rows
+        dataToProcess.slice(0, 50).forEach((row, index) => { // Limit to 50 rows for PDF
+          tableHTML += `
+            <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
+          `;
+
+          columns.forEach(column => {
+            const columnKey = column.toLowerCase().replace(/\s+/g, '_');
+            let cellValue = row[columnKey] || 'N/A';
+            
+            // Format specific cell types for PDF
+            if (columnKey === 'total_value' || columnKey === 'total_amount' || columnKey === 'unit_price') {
+              cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
+            } else if (columnKey === 'date') {
+              cellValue = row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : 'N/A';
+            } else if (columnKey === 'time') {
+              cellValue = row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+            } else if (columnKey === 'payment_method' || columnKey === 'payment_type') {
+              if (cellValue === 'cash') cellValue = 'Cash';
+              else if (cellValue === 'card') cellValue = 'Card';
+              else if (cellValue === 'Gcash') cellValue = 'GCash';
+            }
+
+            // Truncate long values
+            if (typeof cellValue === 'string' && cellValue.length > 30) {
+              cellValue = cellValue.substring(0, 30) + '...';
+            }
+
+            tableHTML += `<td style="border: 1px solid #000; padding: 6px;">${cellValue}</td>`;
+          });
+
+          tableHTML += '</tr>';
+        });
+
+        if (dataToProcess.length > 50) {
+          tableHTML += `
+            <tr style="background-color: #f0f0f0;">
+              <td colspan="${columns.length}" style="border: 1px solid #000; padding: 6px; text-align: center; font-style: italic;">
+                ... and ${dataToProcess.length - 50} more records (showing first 50 for PDF)
+              </td>
+            </tr>
+          `;
+        }
+
+        tableHTML += '</tbody></table>';
+        return tableHTML;
+      };
+
+      // Generate summary statistics based on report type
+      const generateSummaryStats = () => {
+        if (!reportData || (Array.isArray(reportData) ? reportData.length === 0 : (reportData.all_logs?.length === 0 && reportData.online_users?.length === 0))) {
+          return '';
+        }
+
+        const dataToProcess = Array.isArray(reportData) ? reportData : (reportData.all_logs || []);
+        let summaryHTML = '';
+
+        switch (reportType) {
+          case 'sales':
+            const totalSales = dataToProcess.reduce((sum, item) => sum + (parseFloat(item.total_amount) || 0), 0);
+            const totalItems = dataToProcess.reduce((sum, item) => sum + (parseInt(item.items_sold) || 0), 0);
+            summaryHTML = `
+              <div style="margin-bottom: 20px; padding: 15px; background: #f0fdf4; border-left: 4px solid #22c55e;">
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Sales Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+                  <div>Total Transactions: ${dataToProcess.length}</div>
+                  <div>Total Sales: ₱${totalSales.toFixed(2)}</div>
+                  <div>Total Items Sold: ${totalItems.toLocaleString()}</div>
+                  <div>Average Sale: ₱${dataToProcess.length > 0 ? (totalSales / dataToProcess.length).toFixed(2) : '0.00'}</div>
+                </div>
+              </div>
+            `;
+            break;
+          case 'stock_in':
+            const totalQuantity = dataToProcess.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+            const totalValue = dataToProcess.reduce((sum, item) => sum + (parseFloat(item.total_value) || 0), 0);
+            summaryHTML = `
+              <div style="margin-bottom: 20px; padding: 15px; background: #f0fdf4; border-left: 4px solid #22c55e;">
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Stock In Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+                  <div>Total Items: ${dataToProcess.length}</div>
+                  <div>Total Quantity: ${totalQuantity.toLocaleString()}</div>
+                  <div>Total Value: ₱${totalValue.toFixed(2)}</div>
+                  <div>Unique Products: ${new Set(dataToProcess.map(item => item.product_name).filter(Boolean)).size}</div>
+                </div>
+              </div>
+            `;
+            break;
+          case 'stock_out':
+            const totalOutQuantity = dataToProcess.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+            summaryHTML = `
+              <div style="margin-bottom: 20px; padding: 15px; background: #fef2f2; border-left: 4px solid #ef4444;">
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Stock Out Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+                  <div>Total Items: ${dataToProcess.length}</div>
+                  <div>Total Quantity: ${totalOutQuantity.toLocaleString()}</div>
+                  <div>Unique Products: ${new Set(dataToProcess.map(item => item.product_name).filter(Boolean)).size}</div>
+                  <div>Approved Adjustments: ${dataToProcess.filter(item => item.status === 'Approved').length}</div>
+                </div>
+              </div>
+            `;
+            break;
+          case 'cashier_performance':
+            const totalCashierSales = dataToProcess.reduce((sum, item) => sum + (parseFloat(item.total_sales) || 0), 0);
+            summaryHTML = `
+              <div style="margin-bottom: 20px; padding: 15px; background: #fef3c7; border-left: 4px solid #f59e0b;">
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Cashier Performance Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+                  <div>Total Cashiers: ${dataToProcess.length}</div>
+                  <div>Total Sales: ₱${totalCashierSales.toFixed(2)}</div>
+                  <div>Total Transactions: ${dataToProcess.reduce((sum, item) => sum + (parseInt(item.transactions_count) || 0), 0)}</div>
+                  <div>Average Transaction: ₱${dataToProcess.length > 0 ? (totalCashierSales / dataToProcess.reduce((sum, item) => sum + (parseInt(item.transactions_count) || 0), 0)).toFixed(2) : '0.00'}</div>
+                </div>
+              </div>
+            `;
+            break;
+          case 'login_logs':
+            const onlineUsers = Array.isArray(reportData) ? reportData.filter(item => item.login_status === 'ONLINE').length : (reportData.online_users?.length || 0);
+            summaryHTML = `
+              <div style="margin-bottom: 20px; padding: 15px; background: #e0f2fe; border-left: 4px solid #0284c7;">
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Login Activity Summary</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+                  <div>Total Activities: ${dataToProcess.length}</div>
+                  <div>Currently Online: ${onlineUsers}</div>
+                  <div>Online Admins: ${Array.isArray(reportData) ? reportData.filter(item => item.login_status === 'ONLINE' && item.role === 'admin').length : (Array.isArray(reportData.online_users) ? reportData.online_users.filter(item => item.role === 'admin').length : 0)}</div>
+                  <div>Active Locations: ${new Set(dataToProcess.map(item => item.location).filter(Boolean)).size}</div>
+                </div>
+              </div>
+            `;
+            break;
+          default:
+            summaryHTML = `
+              <div style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-left: 4px solid #64748b;">
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
+                <div style="font-size: 11px;">
+                  Total Records: ${dataToProcess.length}
+                </div>
+              </div>
+            `;
+        }
+
+        return summaryHTML;
+      };
+
       tempDiv.innerHTML = `
         <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: #f8fafc; border: 2px solid #000000;">
           <div style="font-size: 24px; font-weight: bold; color: #000000; margin-bottom: 5px;">ENGUIO PHARMACY SYSTEM</div>
-          <div style="font-size: 14px; color: #000000;">Combined Reports</div>
+          <div style="font-size: 14px; color: #000000;">${reportName}</div>
         </div>
         
         <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #000000;">
-          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Combined Reports</div>
+          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">${reportName}</div>
           <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated on: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}</div>
           <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated by: ${userData.full_name || userData.username || 'Admin'}</div>
         </div>
@@ -335,8 +509,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Information</div>
           <div style="display: table; width: 100%;">
             <div style="display: table-row;">
-              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Types:</div>
-              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reportNames}</div>
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Type:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reportName}</div>
             </div>
             <div style="display: table-row;">
               <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
@@ -348,13 +522,12 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             </div>
           </div>
         </div>
-        
-        <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border: 1px solid #000000;">
-          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
-          <div style="font-size: 11px; color: #000000; line-height: 1.6;">
-            This combined report contains data from multiple report types for the specified date range. 
-            Each report type provides detailed information about different aspects of the inventory management system.
-          </div>
+
+        ${generateSummaryStats()}
+
+        <div style="margin-top: 20px;">
+          <div style="font-size: 16px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Details</div>
+          ${generateReportDataTable()}
         </div>
       `;
       
@@ -831,31 +1004,31 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
-      <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
+      <div className="p-3" style={{ backgroundColor: theme.bg.card }}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center space-x-6 mb-4">
-              <span className="text-4xl">{reportIcon}</span>
+            <div className="flex items-center space-x-4 mb-2">
+              <span className="text-2xl">{reportIcon}</span>
               <div>
-                <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>{reportName}</h1>
-                <p className="text-lg" style={{ color: theme.text.secondary }}>Detailed Report Analysis</p>
+                <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>{reportName}</h1>
+                <p className="text-sm" style={{ color: theme.text.secondary }}>Detailed Report Analysis</p>
                 {currentUserData && currentUserData.role && (
-                  <div className="mt-2">
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium" 
+                  <div className="mt-1">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium" 
                           style={{ 
-                            backgroundColor: theme.colors.accent + '20', 
-                            color: theme.colors.accent 
+                            backgroundColor: theme.bg.hover, 
+                            color: theme.text.primary 
                           }}>
                       👤 {currentUserData.full_name || currentUserData.username} 
-                      <span className="ml-2 px-2 py-0.5 rounded text-xs" 
+                      <span className="ml-1 px-1 py-0.5 rounded text-xs" 
                             style={{ 
-                              backgroundColor: theme.colors.accent, 
+                              backgroundColor: theme.text.muted, 
                               color: 'white' 
                             }}>
                         {currentUserData.role.toUpperCase()}
                       </span>
                     </span>
-                    <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+                    <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
                       {currentUserData.role.toLowerCase() === 'cashier' 
                         ? '📊 Showing only your sales transactions'
                         : currentUserData.role.toLowerCase() === 'admin' || currentUserData.role.toLowerCase() === 'manager'
@@ -872,10 +1045,10 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             <button
               onClick={openCombineModal}
               disabled={reportDataLoading}
-              className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2"
+              className="px-3 py-1 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2 text-sm"
               style={{
                 backgroundColor: theme.bg.hover,
-                color: theme.text.secondary,
+                color: theme.text.primary,
                 border: `1px solid ${theme.border.default}`
               }}
             >
@@ -893,7 +1066,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             className="rounded-lg shadow-md p-4"
             style={{
               backgroundColor: theme.bg.card,
-              boxShadow: `0 10px 25px ${theme.shadow}`
+              boxShadow: `0 10px 25px ${theme.shadow.lg}`
             }}
           >
             <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>
@@ -938,82 +1111,6 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   </div>
                 </>
               )}
-              {reportType !== 'activity_logs' && (
-                <>
-                  <button
-                    onClick={() => {
-                      const now = new Date();
-                      const yesterday = new Date();
-                      yesterday.setDate(yesterday.getDate() - 1);
-                      
-                      // For login logs, extend range to catch late-night logins from previous day
-                      const startDate = reportType === 'login_logs' ? 
-                        yesterday.toISOString().split('T')[0] : 
-                        yesterday.toISOString().split('T')[0];
-                      
-                      setDateRange({
-                        startDate: startDate,
-                        endDate: now.toISOString().split('T')[0]
-                      });
-                      
-                      console.log(`🕐 Setting ${reportType === 'login_logs' ? 'extended' : 'standard'} 24-hour range: ${startDate} to ${now.toISOString().split('T')[0]}`);
-                    }}
-                    disabled={reportDataLoading}
-                    className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                    style={{
-                      backgroundColor: theme.colors.success,
-                      color: 'white'
-                    }}
-                  >
-                    Last 24 Hours
-                  </button>
-                  <button
-                    onClick={() => {
-                      const sevenDaysAgo = new Date();
-                      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                      setDateRange({
-                        startDate: sevenDaysAgo.toISOString().split('T')[0],
-                        endDate: new Date().toISOString().split('T')[0]
-                      });
-                    }}
-                    disabled={reportDataLoading}
-                    className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                    style={{
-                      backgroundColor: theme.colors.accent,
-                      color: theme.text.primary
-                    }}
-                  >
-                    Last 7 Days
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDateRange({
-                        startDate: '2024-01-01',
-                        endDate: '2025-12-31'
-                      });
-                    }}
-                    disabled={reportDataLoading}
-                    className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                    style={{
-                      backgroundColor: theme.colors.warning || '#f59e0b',
-                      color: 'white'
-                    }}
-                  >
-                    All Time
-                  </button>
-                </>
-              )}
-              <button
-                onClick={() => generateReport()}
-                disabled={reportDataLoading}
-                className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                style={{
-                  backgroundColor: theme.colors.accent,
-                  color: theme.text.primary
-                }}
-              >
-                {reportDataLoading ? 'Generating...' : 'Generate Report'}
-              </button>
               
               <div className="text-xs" style={{ color: theme.text.secondary }}>
                 Last updated: {lastRefresh.toLocaleTimeString()}
@@ -1034,7 +1131,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               className="rounded-lg shadow-md p-4 border-l-4 animate-pulse"
               style={{
                 backgroundColor: theme.bg.card,
-                boxShadow: `0 10px 25px ${theme.shadow}`,
+                boxShadow: `0 10px 25px ${theme.shadow.lg}`,
                 borderLeftColor: theme.colors.success
               }}
             >
@@ -1059,14 +1156,14 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                         : 'New login/logout activity has been detected in the system.'
                       }
                     </p>
-                    <p className="text-xs mt-1" style={{ color: theme.text.secondary }}>
-                      Last updated: {lastRefresh.toLocaleTimeString()}
+                    <div className="text-xs mt-1" style={{ color: theme.text.secondary }}>
+                      <p>Last updated: {lastRefresh.toLocaleTimeString()}</p>
                       {autoUpdateNotification && (
                         <div className="mt-1 p-2 bg-green-100 border border-green-400 text-green-700 rounded text-xs">
                           {autoUpdateNotification}
                         </div>
                       )}
-                    </p>
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -1092,7 +1189,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         {/* Summary Cards for Sales Report */}
         {reportType === 'sales' && reportData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🛒</div>
                 <div>
@@ -1101,7 +1198,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">💰</div>
                 <div>
@@ -1112,7 +1209,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📦</div>
                 <div>
@@ -1123,7 +1220,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📊</div>
                 <div>
@@ -1134,7 +1231,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">💳</div>
                 <div>
@@ -1153,7 +1250,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         {/* Summary Cards for Login Logs Report - Show Only Online Users */}
         {reportType === 'login_logs' && (Array.isArray(reportData) ? reportData.length > 0 : (reportData.all_logs?.length > 0 || reportData.online_users?.length > 0)) && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">👥</div>
                 <div>
@@ -1164,7 +1261,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🟢</div>
                 <div>
@@ -1177,7 +1274,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">👑</div>
                 <div>
@@ -1190,7 +1287,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🏢</div>
                 <div>
@@ -1209,7 +1306,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         {/* Summary Cards for Activity Logs Report */}
         {reportType === 'activity_logs' && reportData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📊</div>
                 <div>
@@ -1218,7 +1315,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">💰</div>
                 <div>
@@ -1229,7 +1326,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🔓</div>
                 <div>
@@ -1240,7 +1337,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📦</div>
                 <div>
@@ -1262,7 +1359,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         {/* Summary Cards for Stock In Report */}
         {reportType === 'stock_in' && reportData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📦</div>
                 <div>
@@ -1271,7 +1368,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📊</div>
                 <div>
@@ -1282,7 +1379,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">💰</div>
                 <div>
@@ -1293,7 +1390,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🏢</div>
                 <div>
@@ -1312,7 +1409,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           className="rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
           style={{
             backgroundColor: theme.bg.card,
-            boxShadow: `0 10px 25px ${theme.shadow}`
+            boxShadow: `0 10px 25px ${theme.shadow.lg}`
           }}
         >
           <div className="p-6">
@@ -1409,7 +1506,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       {selectedCashier && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden"
+            className="rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden"
+            style={{ backgroundColor: theme.bg.card }}
             style={{ backgroundColor: theme.bg.card }}
           >
             <div className="p-6 border-b" style={{ borderColor: theme.border.default }}>
@@ -1442,7 +1540,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 <>
                   {/* Summary Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                    <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                       <div className="flex items-center">
                         <div className="text-3xl mr-3">🛒</div>
                         <div>
@@ -1451,7 +1549,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                         </div>
                       </div>
                     </div>
-                    <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                    <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                       <div className="flex items-center">
                         <div className="text-3xl mr-3">💰</div>
                         <div>
@@ -1462,7 +1560,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                         </div>
                       </div>
                     </div>
-                    <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                    <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                       <div className="flex items-center">
                         <div className="text-3xl mr-3">📦</div>
                         <div>
@@ -1474,7 +1572,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   </div>
 
                   {/* Sales Details Table */}
-                  <div className="rounded-lg shadow-md" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                  <div className="rounded-lg shadow-md" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                     <div className="p-6">
                       <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>
                         Sales Transactions - {dateRange.startDate} to {dateRange.endDate}
@@ -1542,7 +1640,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       {showCombineModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div 
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-indigo-300"
+            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
+            style={{ backgroundColor: theme.bg.card, borderColor: theme.colors.accent }}
             style={{ 
               backgroundColor: theme.bg.card,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(99, 102, 241, 0.2)'
@@ -1560,7 +1659,10 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               </div>
               <button
                 onClick={() => setShowCombineModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="transition-colors"
+                style={{ color: theme.text.muted }}
+                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
+                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

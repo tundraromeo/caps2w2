@@ -300,13 +300,27 @@ function update_product_stock($conn, $data) {
             // Creating/adding quantity - create new FIFO batch
             $batch_ref = $batch_reference ?: "MANUAL-ADD-" . time();
             
-            // Create batch record
-            $createBatchStmt = $conn->prepare("
-                INSERT INTO tbl_batch (batch, batch_reference, expiration_date, location_id, entry_date, entry_by)
-                VALUES (?, ?, ?, (SELECT location_id FROM tbl_product WHERE product_id = ? LIMIT 1), CURDATE(), ?)
+            // Check if batch already exists to prevent duplicates
+            $checkBatchStmt = $conn->prepare("
+                SELECT batch_id FROM tbl_batch 
+                WHERE batch_reference = ? 
+                LIMIT 1
             ");
-            $createBatchStmt->execute([$batch_ref, $batch_ref, $expiration_date, $product_id, $entry_by]);
-            $batch_id_for_movement = $conn->lastInsertId();
+            $checkBatchStmt->execute([$batch_ref]);
+            $existingBatch = $checkBatchStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingBatch) {
+                // Use existing batch
+                $batch_id_for_movement = $existingBatch['batch_id'];
+            } else {
+                // Create new batch record only if it doesn't exist
+                $createBatchStmt = $conn->prepare("
+                    INSERT INTO tbl_batch (batch, batch_reference, expiration_date, location_id, entry_date, entry_by)
+                    VALUES (?, ?, ?, (SELECT location_id FROM tbl_product WHERE product_id = ? LIMIT 1), CURDATE(), ?)
+                ");
+                $createBatchStmt->execute([$batch_ref, $batch_ref, $expiration_date, $product_id, $entry_by]);
+                $batch_id_for_movement = $conn->lastInsertId();
+            }
             
             // Create FIFO stock entry
             $fifoStmt = $conn->prepare("

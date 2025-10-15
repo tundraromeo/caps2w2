@@ -52,8 +52,11 @@ class APIHandler {
     try {
       const config = {
         method: method,
+        mode: 'cors',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
       };
 
@@ -71,22 +74,73 @@ class APIHandler {
   }
 
   /**
-   * Make HTTP request
+   * Make HTTP request with retry logic
    */
-  async makeRequest(url, config) {
-    const response = await fetch(url, config);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
+  async makeRequest(url, config, retryCount = 0, maxRetries = 2) {
+    // Debug logging - check what URL is being called
+    console.log('🔍 API Request Debug:', {
+      url: url,
+      baseUrl: this.baseUrl,
+      envVariable: process.env.NEXT_PUBLIC_API_BASE_URL,
+      method: config.method,
+      attempt: retryCount + 1
+    });
 
-    const text = await response.text();
-    
     try {
-      const result = JSON.parse(text);
-      return result;
-    } catch (jsonError) {
-      throw new Error('Server returned invalid JSON');
+      const response = await fetch(url, config);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+
+      const text = await response.text();
+      
+      try {
+        const result = JSON.parse(text);
+        return result;
+      } catch (jsonError) {
+        console.error('❌ Invalid JSON response:', text.substring(0, 200));
+        throw new Error('Server returned invalid JSON');
+      }
+    } catch (error) {
+      // More detailed error logging
+      if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+        
+        // If we haven't exceeded max retries, try again after a delay
+        if (retryCount < maxRetries) {
+          const delayMs = 1000 * (retryCount + 1); // Exponential backoff: 1s, 2s
+          console.warn(`⚠️ Network error, retrying in ${delayMs}ms... (Attempt ${retryCount + 1}/${maxRetries})`);
+          
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          return this.makeRequest(url, config, retryCount + 1, maxRetries);
+        }
+        
+        console.error('❌ Network Error (All retries failed):', {
+          url,
+          baseUrl: this.baseUrl,
+          envVariable: process.env.NEXT_PUBLIC_API_BASE_URL,
+          message: 'Cannot reach the server. Please check:',
+          checks: [
+            '1. Is Apache/XAMPP running?',
+            '2. Is the backend URL correct?',
+            '3. Are there any CORS issues?',
+            '4. Is the network connection stable?',
+            '5. Did you RESTART Next.js after creating .env.local?'
+          ],
+          solution: 'RESTART Next.js: Press Ctrl+C, then run: npm run dev'
+        });
+        
+        // Return a safe empty response instead of throwing
+        return {
+          success: false,
+          message: 'Network error: Cannot connect to server',
+          data: [],
+          error: 'NETWORK_ERROR'
+        };
+      }
+      
+      // For other errors, throw them
+      throw error;
     }
   }
 
@@ -230,6 +284,10 @@ class APIHandler {
     return this.callAPI(this.endpoints.CONVENIENCE, 'get_products', filters);
   }
 
+  async getConvenienceProductsFIFO(filters = {}) {
+    return this.callAPI(this.endpoints.CONVENIENCE, 'get_convenience_products_fifo', filters);
+  }
+
   async updateConvenienceStock(stockData) {
     return this.callAPI(this.endpoints.CONVENIENCE, 'update_stock', stockData);
   }
@@ -246,6 +304,30 @@ class APIHandler {
   
   async getPharmacyProducts(filters = {}) {
     return this.callAPI(this.endpoints.PHARMACY, 'get_pharmacy_products', filters);
+  }
+
+  async getPharmacyProductsFIFO(filters = {}) {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_pharmacy_products_fifo', filters);
+  }
+
+  async getPharmacyProductsFixed(filters = {}) {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_pharmacy_products', filters);
+  }
+
+  async getPharmacyKPIsFixed(filters = {}) {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_pharmacy_kpis', filters);
+  }
+
+  async getPharmacyProductsFromBatch(filters = {}) {
+    return this.callAPI('batch_tracking.php', 'get_pharmacy_products', filters);
+  }
+
+  async getPharmacyKPIs(filters = {}) {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_pharmacy_kpis', filters);
+  }
+
+  async getPharmacyStockSummary(filters = {}) {
+    return this.callAPI(this.endpoints.PHARMACY, 'get_stock_summary', filters);
   }
 
   async updatePharmacyStock(stockData) {
@@ -492,8 +574,8 @@ export const getApiEndpointForAction = (action) => {
 
     // ============= POS & SALES =============
     get_pos_products: 'sales_api.php',
-    check_barcode: 'backend_modular.php',  // Routes to Api/modules/barcode.php
-    check_product_name: 'sales_api.php',
+    check_barcode: 'barcode_api.php',  // Routes to barcode API
+    check_product_name: 'warehouse_product_name_api.php',
     get_product_batches: 'sales_api.php',
     get_discounts: 'sales_api.php',
     update_product_stock: 'backend.php', // Fixed: Route to backend.php for full FIFO/batch support

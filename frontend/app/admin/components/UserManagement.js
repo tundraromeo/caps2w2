@@ -15,6 +15,7 @@ const toTitleCaseLoose = (str) => {
 function UserManagement() { 
   const { theme } = useTheme();
   const [showModal, setShowModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
     fname: "",
     mname: "",
@@ -47,10 +48,15 @@ function UserManagement() {
 
   const fetchRolesAndShifts = async () => {
     try {
+      console.log('Fetching roles and shifts...');
+      
       // Fetch roles
       const rolesResponse = await axios.post(API_BASE_URL, {
         action: "get_roles"
       });
+      
+      console.log('Roles response:', rolesResponse.data);
+      
       if (rolesResponse.data.success) {
         const roleMap = {};
         rolesResponse.data.data.forEach(role => {
@@ -58,22 +64,36 @@ function UserManagement() {
         });
         setRoles(roleMap);
         setRolesList(rolesResponse.data.data);
+        console.log('Roles loaded:', rolesResponse.data.data);
+      } else {
+        console.error('Failed to fetch roles:', rolesResponse.data.message);
+        toast.error('Failed to load roles from database');
       }
 
       // Fetch shifts
       const shiftsResponse = await axios.post(API_BASE_URL, {
         action: "get_shifts"
       });
+      
+      console.log('Shifts response:', shiftsResponse.data);
+      
       if (shiftsResponse.data.success) {
         const shiftMap = {};
         shiftsResponse.data.data.forEach(shift => {
+          console.log('Processing shift:', shift);
           shiftMap[shift.shift_id] = shift.shift_name;
         });
         setShifts(shiftMap);
         setShiftsList(shiftsResponse.data.data);
+        console.log('Shifts loaded successfully:', shiftsResponse.data.data);
+        console.log('Shift map created:', shiftMap);
+      } else {
+        console.error('Failed to fetch shifts:', shiftsResponse.data.message);
+        toast.error('Failed to load shifts from database: ' + shiftsResponse.data.message);
       }
     } catch (error) {
       console.error('Error fetching roles and shifts:', error);
+      toast.error('Error loading roles and shifts from database');
     }
   };
 
@@ -115,6 +135,28 @@ function UserManagement() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    
+    // Handle contact number validation
+    if (name === 'contact') {
+      // Only allow numbers and limit to 11 digits
+      const numericValue = value.replace(/\D/g, '');
+      if (numericValue.length <= 11) {
+        setFormData({ ...formData, [name]: numericValue });
+      }
+      return;
+    }
+    
+    // Handle age validation
+    if (name === 'age') {
+      const numericValue = value.replace(/\D/g, '');
+      const age = parseInt(numericValue);
+      if (numericValue === '' || (age >= 18 && age <= 65)) {
+        setFormData({ ...formData, [name]: numericValue });
+      }
+      return;
+    }
+    
+    // Handle name fields with title case
     if (name === 'fname' || name === 'mname' || name === 'lname') {
       setFormData({ ...formData, [name]: toTitleCaseLoose(value) });
     } else {
@@ -126,8 +168,8 @@ function UserManagement() {
     e.preventDefault();
     try {
       setLoading(true);
-      const response = await axios.post(API_BASE_URL, {
-        action: "add_employee",
+      const requestData = {
+        action: editingUser ? "update_employee" : "add_employee",
         fname: formData.fname,
         mname: formData.mname,
         lname: formData.lname,
@@ -140,12 +182,24 @@ function UserManagement() {
         age: formData.age,
         address: formData.address,
         username: formData.username,
-        password: formData.password
-      });
+      };
+
+      // Only include password if it's provided (for add or if updating password)
+      if (formData.password) {
+        requestData.password = formData.password;
+      }
+
+      // Add employee ID for update
+      if (editingUser) {
+        requestData.emp_id = editingUser.id;
+      }
+
+      const response = await axios.post(API_BASE_URL, requestData);
       
       if (response.data.success) {
-        toast.success('Employee added successfully!');
+        toast.success(editingUser ? 'Employee updated successfully!' : 'Employee added successfully!');
         setShowModal(false);
+        setEditingUser(null);
         setFormData({
           fname: "",
           mname: "",
@@ -163,14 +217,80 @@ function UserManagement() {
         });
         fetchUsers();
       } else {
-        toast.error(response.data.message || 'Failed to add employee');
+        toast.error(response.data.message || `Failed to ${editingUser ? 'update' : 'add'} employee`);
       }
     } catch (error) {
-      console.error('Error adding employee:', error);
-      toast.error('Error adding employee');
+      console.error(`Error ${editingUser ? 'updating' : 'adding'} employee:`, error);
+      toast.error(`Error ${editingUser ? 'updating' : 'adding'} employee`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEdit = (user) => {
+    setEditingUser(user);
+    setFormData({
+      fname: user.fname || "",
+      mname: user.mname || "",
+      lname: user.lname || "",
+      gender: user.gender || "",
+      birthdate: user.birthdate || "",
+      email: user.email || "",
+      contact: user.contact || "",
+      role: user.role || "",
+      shift: user.shift || "",
+      age: user.age || "",
+      address: user.address || "",
+      username: user.username || "",
+      password: "", // Leave password empty for editing
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (user) => {
+    if (!window.confirm(`Are you sure you want to delete ${user.fname} ${user.lname}?`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await axios.post(API_BASE_URL, {
+        action: "delete_employee",
+        emp_id: user.id
+      });
+
+      if (response.data.success) {
+        toast.success('Employee deleted successfully!');
+        fetchUsers();
+      } else {
+        toast.error(response.data.message || 'Failed to delete employee');
+      }
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      toast.error('Error deleting employee');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setEditingUser(null);
+    setFormData({
+      fname: "",
+      mname: "",
+      lname: "",
+      gender: "",
+      birthdate: "",
+      email: "",
+      contact: "",
+      role: "",
+      shift: "",
+      age: "",
+      address: "",
+      username: "",
+      password: "",
+    });
   };
 
   // Filter users based on search term and role
@@ -187,24 +307,18 @@ function UserManagement() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
-      <div className="p-6 shadow-sm" style={{ 
-        backgroundColor: theme.colors.accent || '#3b82f6',
-        background: theme.isDarkMode 
-          ? 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)' 
-          : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
-      }}>
+      <div className="p-3" style={{ backgroundColor: theme.bg.card }}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white" style={{ 
-              textShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}>User Management</h1>
+            <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>User Management</h1>
           </div>
           <button
             onClick={() => setShowModal(true)}
-            className="px-6 py-3 rounded-lg text-white font-semibold transition-all duration-200 hover:scale-105 shadow-lg"
+            className="px-3 py-1 rounded-md text-sm font-semibold transition-all duration-200 hover:scale-105"
             style={{ 
-              backgroundColor: theme.colors.success || '#10b981',
-              boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+              backgroundColor: theme.colors.success,
+              color: 'white',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
           >
             + Add User
@@ -259,7 +373,7 @@ function UserManagement() {
           style={{
             backgroundColor: theme.bg.card,
             borderColor: theme.border.default,
-            boxShadow: `0 4px 6px ${theme.shadow}`
+            boxShadow: `0 4px 6px ${theme.shadow.lg}`
           }}
         >
           <div className="overflow-x-auto">
@@ -427,6 +541,7 @@ function UserManagement() {
                       }}>
                         <div className="flex space-x-2">
                           <button
+                            onClick={() => handleEdit(user)}
                             className="px-3 py-1 text-sm font-semibold rounded border transition-all duration-200 hover:scale-105 hover:shadow-md"
                             style={{
                               color: theme.colors.accent,
@@ -437,6 +552,7 @@ function UserManagement() {
                             Edit
                           </button>
                           <button
+                            onClick={() => handleDelete(user)}
                             className="px-3 py-1 text-sm font-semibold rounded border transition-all duration-200 hover:scale-105 hover:shadow-md"
                             style={{
                               color: theme.colors.danger,
@@ -464,7 +580,7 @@ function UserManagement() {
               style={{ 
                 backgroundColor: theme.bg.modal || theme.bg.card,
                 border: `1px solid ${theme.border.default}`,
-                boxShadow: `0 25px 50px ${theme.shadow}`
+                boxShadow: `0 25px 50px ${theme.shadow.lg}`
               }}
             >
               <div className="flex items-center justify-between mb-6">
@@ -472,15 +588,14 @@ function UserManagement() {
                   className="text-xl font-semibold"
                   style={{ color: theme.text.primary }}
                 >
-                  Add New User
+                  {editingUser ? 'Edit User' : 'Add New User'}
                 </h3>
                 <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 rounded hover:bg-gray-100"
-                  style={{ 
-                    color: theme.text.muted,
-                    backgroundColor: 'transparent'
-                  }}
+                  onClick={handleCloseModal}
+                  className="p-2 rounded transition-colors"
+                  style={{ color: theme.text.muted }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                 >
                   ✕
                 </button>
@@ -566,7 +681,7 @@ function UserManagement() {
                       <input
                         type="date"
                         name="birthdate"
-                        min="1800-01-01"
+                        min="1950-01-01"
                         max="2010-01-01"
                         value={formData.birthdate}
                         onChange={handleInputChange}
@@ -577,6 +692,7 @@ function UserManagement() {
                           color: theme.text.primary
                         }}
                         required
+                        placeholder="Select your birth date"
                       />
                     </div>
                   </div>
@@ -603,7 +719,12 @@ function UserManagement() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.primary }}>Contact Number *</label>
+                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.primary }}>
+                        Contact Number * 
+                        <span className="text-xs font-normal opacity-75" style={{ color: theme.text.secondary }}>
+                          ({formData.contact.length}/11 digits)
+                        </span>
+                      </label>
                       <input
                         type="tel"
                         name="contact"
@@ -612,12 +733,20 @@ function UserManagement() {
                         className="w-full border p-2 rounded"
                         style={{
                           backgroundColor: theme.bg.input || theme.bg.secondary,
-                          borderColor: theme.border.default,
+                          borderColor: formData.contact.length > 11 ? '#ef4444' : theme.border.default,
                           color: theme.text.primary
                         }}
                         required
                         inputMode="numeric"
+                        pattern="[0-9]{10,11}"
+                        maxLength="11"
+                        placeholder="09XXXXXXXXX"
                       />
+                      {formData.contact.length > 0 && formData.contact.length < 10 && (
+                        <p className="text-xs mt-1" style={{ color: '#f59e0b' }}>
+                          ⚠️ Phone number should be 10-11 digits
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -634,6 +763,7 @@ function UserManagement() {
                         color: theme.text.primary
                       }}
                       required
+                      placeholder="Enter complete address"
                     />
                   </div>
                 </div>
@@ -657,11 +787,15 @@ function UserManagement() {
                         required
                       >
                         <option value="">Select Role</option>
-                        {rolesList.map(role => (
-                          <option key={role.role_id} value={role.role_id}>
-                            {role.role}
-                          </option>
-                        ))}
+                        {rolesList.length === 0 ? (
+                          <option disabled>Loading roles...</option>
+                        ) : (
+                          rolesList.map(role => (
+                            <option key={role.role_id} value={role.role_id}>
+                              {role.role}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
                     <div>
@@ -679,15 +813,26 @@ function UserManagement() {
                         required
                       >
                         <option value="">Select Shift</option>
-                        {shiftsList.map(shift => (
-                          <option key={shift.shift_id} value={shift.shift_id}>
-                            {shift.shift_name}
-                          </option>
-                        ))}
+                        {shiftsList.length === 0 ? (
+                          <option disabled>Loading shifts...</option>
+                        ) : (
+                          shiftsList.map(shift => (
+                            <option key={shift.shift_id} value={shift.shift_id}>
+                              {shift.shift_name}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.primary }}>Age *</label>
+                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.primary }}>
+                        Age * 
+                        {formData.age && (
+                          <span className="text-xs font-normal opacity-75" style={{ color: theme.text.secondary }}>
+                            ({formData.age} years old)
+                          </span>
+                        )}
+                      </label>
                       <input
                         type="number"
                         name="age"
@@ -696,12 +841,19 @@ function UserManagement() {
                         className="w-full border p-2 rounded"
                         style={{
                           backgroundColor: theme.bg.input || theme.bg.secondary,
-                          borderColor: theme.border.default,
+                          borderColor: formData.age && (parseInt(formData.age) < 18 || parseInt(formData.age) > 65) ? '#ef4444' : theme.border.default,
                           color: theme.text.primary
                         }}
                         required
                         min={18}
+                        max={65}
+                        placeholder="Enter age (18-65)"
                       />
+                      {formData.age && (parseInt(formData.age) < 18 || parseInt(formData.age) > 65) && (
+                        <p className="text-xs mt-1" style={{ color: '#ef4444' }}>
+                          ⚠️ Age must be between 18 and 65
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -724,10 +876,13 @@ function UserManagement() {
                           color: theme.text.primary
                         }}
                         required
+                        placeholder="Enter username"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.primary }}>Password *</label>
+                      <label className="block text-sm font-medium mb-1" style={{ color: theme.text.primary }}>
+                        Password {editingUser ? '(leave blank to keep current)' : '*'}
+                      </label>
                       <div className="relative">
                         <input
                           type={showPassword ? 'text' : 'password'}
@@ -740,8 +895,8 @@ function UserManagement() {
                             borderColor: theme.border.input,
                             color: theme.text.primary
                           }}
-                          required
-                          placeholder="Must have Uppercase and Number"
+                          required={!editingUser}
+                          placeholder={editingUser ? "Leave blank to keep current password" : "Must have Uppercase and Number"}
                         />
                         <button
                           type="button"
@@ -759,7 +914,7 @@ function UserManagement() {
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => setShowModal(false)}
+                    onClick={handleCloseModal}
                     className="px-4 py-2 border rounded transition-all duration-200"
                     style={{
                       backgroundColor: theme.bg.hover || theme.bg.secondary,
@@ -775,7 +930,7 @@ function UserManagement() {
                     className="px-6 py-2 rounded text-white transition-all duration-200 hover:scale-105 disabled:opacity-50"
                     style={{ backgroundColor: theme.colors.success || '#10b981' }}
                   >
-                    {loading ? 'Adding...' : 'Add User'}
+                    {loading ? (editingUser ? 'Updating...' : 'Adding...') : (editingUser ? 'Update User' : 'Add User')}
                   </button>
                 </div>
               </form>

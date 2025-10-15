@@ -7,13 +7,8 @@
 // Start output buffering to prevent unwanted output
 ob_start();
 
-// Set content type to JSON for error responses
-header('Content-Type: application/json');
-
-// Enable CORS
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+// Use centralized CORS configuration
+require_once __DIR__ . '/cors.php';
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);

@@ -10,6 +10,25 @@ import { getApiUrl } from '../lib/apiConfig';
 
 export default function POS() {
   const router = useRouter();
+  
+  // Load QZ Tray integration script
+  useEffect(() => {
+    const loadQZTrayScript = () => {
+      if (typeof window !== 'undefined' && !window.QZTrayIntegration) {
+        const script = document.createElement('script');
+        script.src = '/qz-tray-integration.js';
+        script.onload = () => {
+          console.log('✅ QZ Tray integration script loaded');
+        };
+        script.onerror = () => {
+          console.log('⚠️ QZ Tray integration script failed to load');
+        };
+        document.head.appendChild(script);
+      }
+    };
+    
+    loadQZTrayScript();
+  }, []);
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -805,10 +824,13 @@ export default function POS() {
 
   // Update product stock in local state
   const updateLocalStock = (productId, quantityChange) => {
+    // Validate and sanitize the quantity change
+    const sanitizedChange = Number(quantityChange) || 0;
+    
     setProducts(prevProducts => 
       prevProducts.map(product => 
         product.id === productId 
-          ? { ...product, quantity: Math.max(0, product.quantity + quantityChange) }
+          ? { ...product, quantity: Math.max(0, (product.quantity || 0) + sanitizedChange) }
           : product
       )
     );
@@ -947,7 +969,7 @@ export default function POS() {
   // Calculate total
   useEffect(() => {
     const newTotal = cart.reduce(
-      (acc, item) => acc + (item.product.price * item.quantity),
+      (acc, item) => acc + ((item.product.price || 0) * (item.quantity || 0)),
       0
     );
     setTotal(newTotal);
@@ -995,8 +1017,11 @@ export default function POS() {
 
   // Remove item from cart and restore stock
   const removeFromCart = (productId, quantity) => {
+    // Validate and sanitize the quantity
+    const sanitizedQuantity = Number(quantity) || 0;
+    
     // Restore stock
-    updateLocalStock(productId, quantity);
+    updateLocalStock(productId, sanitizedQuantity);
     
     // Remove from cart
     setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
@@ -1703,7 +1728,9 @@ export default function POS() {
 
   // Cart functions
   const updateCartItemQuantity = (productId, newQuantity) => {
-    if (newQuantity < 1) {
+    // Validate and sanitize the new quantity
+    const sanitizedQuantity = Number(newQuantity);
+    if (isNaN(sanitizedQuantity) || sanitizedQuantity < 1) {
       // Get the current quantity in cart to restore stock
       const currentItem = cart.find(item => item.product.id === productId);
       if (currentItem) {
@@ -1716,7 +1743,7 @@ export default function POS() {
     // Find the current item to calculate stock difference
     const currentItem = cart.find(item => item.product.id === productId);
     if (currentItem) {
-      const quantityDifference = newQuantity - currentItem.quantity;
+      const quantityDifference = sanitizedQuantity - currentItem.quantity;
       if (quantityDifference !== 0) {
         // Update stock based on quantity difference
         updateLocalStock(productId, -quantityDifference);
@@ -1726,7 +1753,7 @@ export default function POS() {
     setCart(prevCart =>
       prevCart.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: newQuantity }
+          ? { ...item, quantity: sanitizedQuantity }
           : item
       )
     );
@@ -1750,9 +1777,9 @@ export default function POS() {
       terminalName,
       items: cart.map(item => ({
         name: item.product.name,
-        quantity: item.quantity,
-        price: item.product.price,
-        total: item.product.price * item.quantity
+        quantity: item.quantity || 0,
+        price: item.product.price || 0,
+        total: (item.product.price || 0) * (item.quantity || 0)
       })),
       subtotal: total,
       discountType: discountType || null,
@@ -1770,39 +1797,174 @@ export default function POS() {
       console.log('💰 Receipt Amount Paid:', receiptData.amountPaid);
       console.log('💰 Receipt Grand Total:', receiptData.grandTotal);
       
-      // Server-side printing (for local XAMPP)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(receiptData)
-      });
-
-      console.log('📥 Response status:', response.status, response.ok);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ HTTP Error:', response.status, errorText);
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // METHOD 1: Try QZ Tray first (best for online with printer)
+      if (typeof QZTrayIntegration !== 'undefined') {
+        try {
+          console.log('🖨️ Attempting QZ Tray printing...');
+          const qzTray = new QZTrayIntegration();
+          const initialized = await qzTray.initialize();
+          
+          if (initialized) {
+            // Get available printers and set the first one
+            const printers = await qzTray.getPrinters();
+            if (printers && printers.length > 0) {
+              qzTray.setPrinter(printers[0]);
+              console.log(`🖨️ Using printer: ${printers[0]}`);
+            }
+            
+            const result = await qzTray.printReceipt(receiptData);
+            console.log('✅ Receipt printed successfully via QZ Tray!');
+            return { success: true, message: 'Receipt printed successfully via QZ Tray', transactionId, method: 'qz-tray' };
+          }
+        } catch (qzError) {
+          console.log('⚠️ QZ Tray failed:', qzError.message);
+          // Continue to next method
+        }
       }
-
-      const result = await response.json();
-      console.log('📋 Server print result:', result);
       
-      if (result.success) {
-        console.log('✅ Receipt printed successfully via server!');
-        return { success: true, message: 'Receipt printed successfully', transactionId, method: 'server-print' };
+      // METHOD 2: Check if running online (not localhost)
+      const isOnline = !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
+      
+      if (isOnline) {
+        // Online mode - Use browser print dialog as fallback
+        console.log('🌐 Online mode detected - Using browser print dialog');
+        const printWindow = window.open('', '_blank');
+        const receiptHTML = generateReceiptHTML(receiptData);
+        printWindow.document.write(receiptHTML);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+        
+        return { success: true, message: 'Receipt opened for printing', transactionId, method: 'browser-print' };
       } else {
-        console.error('❌ Print failed:', result.message);
-        return { success: false, message: result.message, transactionId };
+        // Local mode - Server-side printing
+        console.log('🏠 Local mode detected - Using server-side printing');
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(receiptData)
+        });
+
+        console.log('📥 Response status:', response.status, response.ok);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ HTTP Error:', response.status, errorText);
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('📋 Server print result:', result);
+        
+        if (result.success) {
+          console.log('✅ Receipt printed successfully via server!');
+          return { success: true, message: 'Receipt printed successfully', transactionId, method: 'server-print' };
+        } else {
+          console.error('❌ Print failed:', result.message);
+          return { success: false, message: result.message, transactionId };
+        }
       }
       
     } catch (error) {
       console.error('❌ Print error:', error);
-      // Return error details for better debugging
-      return { success: false, message: error.message, transactionId };
+      // Fallback to browser print dialog
+      try {
+        console.log('🔄 Falling back to browser print dialog');
+        const printWindow = window.open('', '_blank');
+        const receiptHTML = generateReceiptHTML(receiptData);
+        printWindow.document.write(receiptHTML);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+        printWindow.close();
+        
+        return { success: true, message: 'Receipt opened for printing (fallback)', transactionId, method: 'browser-print-fallback' };
+      } catch (fallbackError) {
+        console.error('❌ Fallback print also failed:', fallbackError);
+        return { success: false, message: error.message, transactionId };
+      }
     }
+  };
+
+  // Generate HTML receipt for browser printing
+  const generateReceiptHTML = (receiptData) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Receipt - ${receiptData.transactionId}</title>
+        <style>
+          body { font-family: monospace; font-size: 12px; margin: 0; padding: 20px; }
+          .receipt { max-width: 300px; margin: 0 auto; }
+          .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+          .item { display: flex; justify-content: space-between; margin: 5px 0; }
+          .total { border-top: 1px solid #000; padding-top: 10px; margin-top: 10px; font-weight: bold; }
+          .footer { text-align: center; margin-top: 20px; font-size: 10px; }
+          @media print { body { margin: 0; padding: 10px; } }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <div class="header">
+            <h2>${receiptData.storeName}</h2>
+            <p>Date: ${receiptData.date} ${receiptData.time}</p>
+            <p>TXN ID: ${receiptData.transactionId}</p>
+            <p>Cashier: ${receiptData.cashier}</p>
+            <p>Terminal: ${receiptData.terminalName}</p>
+          </div>
+          
+          <div class="items">
+            ${receiptData.items.map(item => `
+              <div class="item">
+                <span>${item.quantity}x ${item.name}</span>
+                <span>₱${item.total.toFixed(2)}</span>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="total">
+            <div class="item">
+              <span>Subtotal:</span>
+              <span>₱${receiptData.subtotal.toFixed(2)}</span>
+            </div>
+            ${receiptData.discountType ? `
+              <div class="item">
+                <span>Discount (${receiptData.discountType}):</span>
+                <span>-₱${receiptData.discountAmount.toFixed(2)}</span>
+              </div>
+            ` : ''}
+            <div class="item">
+              <span><strong>GRAND TOTAL:</strong></span>
+              <span><strong>₱${receiptData.grandTotal.toFixed(2)}</strong></span>
+            </div>
+            <div class="item">
+              <span>Payment: ${receiptData.paymentMethod}</span>
+              <span>₱${receiptData.amountPaid.toFixed(2)}</span>
+            </div>
+            <div class="item">
+              <span>Change:</span>
+              <span>₱${receiptData.change.toFixed(2)}</span>
+            </div>
+            ${receiptData.gcashRef ? `
+              <div class="item">
+                <span>GCash Ref:</span>
+                <span>${receiptData.gcashRef}</span>
+              </div>
+            ` : ''}
+          </div>
+          
+          <div class="footer">
+            <p>Thank you!</p>
+            <p>Please come again</p>
+            <p>This is your official receipt</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
   };
 
   // Persist sale to backend (always called, even if printing fails)
@@ -1830,7 +1992,7 @@ export default function POS() {
         action: action,
         transaction_id: transactionId,
         total_amount: payableTotal,
-        items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
+        items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity || 0, price: it.product.price || 0 }))
       });
       
       // Use appropriate API based on location/terminal
@@ -1847,7 +2009,7 @@ export default function POS() {
           location_name: locationName,
           emp_id: empId,
           username,
-          items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
+          items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity || 0, price: it.product.price || 0 }))
         })
       });
       const json1 = await res1.json().catch(() => ({}));
@@ -1878,8 +2040,8 @@ export default function POS() {
           emp_id: parseInt(finalEmpId), // Pass employee ID
           items: cart.map(it => ({ 
             product_id: it.product.id, 
-            quantity: it.quantity, 
-            price: it.product.price 
+            quantity: it.quantity || 0, 
+            price: it.product.price || 0 
           }))
         })
       });
@@ -2390,14 +2552,34 @@ export default function POS() {
     try {
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
-      const empId = userData ? JSON.parse(userData).user_id : null;
+      let empId = null;
       
-      console.log('POS Logout attempt - User data:', userData);
-      console.log('POS Logout attempt - Emp ID:', empId);
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          empId = user.user_id || user.emp_id || null;
+          console.log('POS Logout - Parsed user data:', user);
+          console.log('POS Logout - Found emp_id:', empId);
+        } catch (e) {
+          console.error('Failed to parse user data:', e);
+        }
+      }
+      
+      // Fallback: Try to get emp_id from localStorage
+      if (!empId) {
+        const localEmpId = localStorage.getItem('pos-emp-id');
+        if (localEmpId) {
+          empId = parseInt(localEmpId);
+          console.log('POS Logout - Using emp_id from localStorage:', empId);
+        }
+      }
+      
+      console.log('POS Logout attempt - Final Emp ID:', empId);
       
       // Validate empId before attempting logout
       if (!empId) {
-        console.warn('No employee ID found, clearing local session only');
+        console.warn('⚠️ No employee ID found in session or local storage');
+        console.log('📍 Clearing local session data and redirecting to login');
         toast.warning('Session expired. Redirecting to login...');
       } else {
         try {
@@ -2423,7 +2605,7 @@ export default function POS() {
           console.log('POS Logout API response:', result);
           
           if (result.success) {
-            console.log('✅ POS logout successful');
+            console.log('✅ POS logout successful - Server confirmed logout');
             toast.success('Logged out successfully');
           } else {
             console.warn('⚠️ POS logout warning:', result.message);
@@ -2431,20 +2613,23 @@ export default function POS() {
           }
         } catch (fetchError) {
           console.error('❌ Logout API call failed:', fetchError);
-          console.log('Proceeding with local logout only');
+          console.log('📍 Proceeding with local cleanup even though API call failed');
           toast.warning('Logged out locally');
         }
       }
     } catch (error) {
       console.error('❌ POS logout error:', error);
+      console.log('📍 Proceeding with local logout despite errors');
       toast.warning('Logged out locally');
     } finally {
       // Always clear session and redirect regardless of API call result
-      console.log('🧹 Clearing local session data');
-      sessionStorage.removeItem('user_data');
-      localStorage.clear(); // Clear any other stored data
+      console.log('🧹 Cleaning up: Clearing all session and local storage');
+      sessionStorage.clear(); // Clear all session data
+      localStorage.removeItem('pos-terminal');
+      localStorage.removeItem('pos-cashier');
+      localStorage.removeItem('pos-emp-id');
+      console.log('✅ Cleanup complete, redirecting to login page');
       
-      console.log('🔄 Redirecting to login page');
       router.push('/');
     }
   };
@@ -2638,9 +2823,9 @@ export default function POS() {
       items: cart.map(item => ({
         id: item.product.id,
         name: item.product.name,
-        quantity: item.quantity,
-        price: item.product.price,
-        total: item.product.price * item.quantity,
+        quantity: item.quantity || 0,
+        price: item.product.price || 0,
+        total: (item.product.price || 0) * (item.quantity || 0),
         returnedQuantity: 0,
       })),
       subtotal: total,
@@ -2757,7 +2942,7 @@ export default function POS() {
 
   return (
     <>
-      <style jsx>{`
+      <style jsx global>{`
         .scrollbar-hide {
           -ms-overflow-style: none;
           scrollbar-width: none;
@@ -2765,8 +2950,14 @@ export default function POS() {
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }
+        button {
+          zoom: 0.8;
+        }
+        .fixed.inset-0 {
+          zoom: 0.8;
+        }
       `}</style>
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-gray-50" style={{ zoom: '0.8' }}>
         <main className="flex-1 p-8 pb-24 overflow-y-auto bg-white transition-all duration-300 ease-in-out">
           {/* Layout */}
           <div className="flex flex-col md:flex-row flex-1">
@@ -3318,31 +3509,31 @@ export default function POS() {
                             </div>
                             
                             <div className="text-sm text-gray-600">
-                              Quantity: <span className="font-bold text-blue-600">x{item.quantity} pcs</span>
+                              Quantity: <span className="font-bold text-blue-600">x{item.quantity || 0} pcs</span>
                             </div>
                             <div className="text-sm text-gray-600">
-                              Price: <span className="font-bold text-green-600">₱{item.product.price.toFixed(2)} each</span>
+                              Price: <span className="font-bold text-green-600">₱{(item.product.price || 0).toFixed(2)} each</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <button
                               className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => updateCartItemQuantity(item.product.id, item.quantity - 1)}
+                              onClick={() => updateCartItemQuantity(item.product.id, (item.quantity || 0) - 1)}
                             >
                               −
                             </button>
                             <span className="text-lg font-bold text-gray-800 min-w-[80px] text-center">
-                              ₱{(item.product.price * item.quantity).toFixed(2)}
+                              ₱{((item.product.price || 0) * (item.quantity || 0)).toFixed(2)}
                             </span>
                             <button
                               className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => updateCartItemQuantity(item.product.id, item.quantity + 1)}
+                              onClick={() => updateCartItemQuantity(item.product.id, (item.quantity || 0) + 1)}
                             >
                               +
                             </button>
                             <button
                               className="w-8 h-8 bg-red-200 rounded-full hover:bg-red-300 text-red-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => removeFromCart(item.product.id, item.quantity)}
+                              onClick={() => removeFromCart(item.product.id, item.quantity || 0)}
                               title="Remove item"
                             >
                               ×
@@ -4142,7 +4333,7 @@ export default function POS() {
                               <div className="flex-1">
                                 <div className="font-semibold text-gray-800">{item.name || item.product_name}</div>
                                 <div className="text-sm text-gray-600">
-                                  Original: {item.quantity} × ₱{itemPrice.toFixed(2)} = ₱{(itemPrice * item.quantity).toFixed(2)}
+                                  Original: {item.quantity || 0} × ₱{(itemPrice || 0).toFixed(2)} = ₱{((itemPrice || 0) * (item.quantity || 0)).toFixed(2)}
                                 </div>
                               </div>
                             </div>

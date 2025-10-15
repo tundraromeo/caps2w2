@@ -5,8 +5,27 @@
  * Direct implementation instead of proxy to backend.php
  */
 
-// Include CORS and configuration
-require_once __DIR__ . '/cors.php';
+// CORS headers must be set first, before any output
+// Load environment variables for CORS configuration
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
+
+// Get allowed origins from environment variable (comma-separated)
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000,http://localhost:3001';
+$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    // Fallback to first allowed origin for development
+    header("Access-Control-Allow-Origin: " . $allowed_origins[0]);
+}
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
 header("Content-Type: application/json; charset=utf-8");
 
 // Handle preflight OPTIONS requests immediately
@@ -545,7 +564,7 @@ try {
                                         tbd_warehouse2.expiration_date ASC,
                                         tbd_warehouse2.id ASC
                                      LIMIT 1),
-                                    p.srp, 0)
+                                    COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0), 0)
                             ELSE 
                                 COALESCE(
                                     (SELECT tbd2.srp 
@@ -558,7 +577,7 @@ try {
                                         tbd2.expiration_date ASC,
                                         tbd2.id ASC
                                      LIMIT 1),
-                                    p.srp, 0)
+                                    COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0), 0)
                         END as unit_price,
                         CASE 
                             WHEN p.product_name = 'Mang tomas' THEN 
@@ -574,7 +593,7 @@ try {
                                         tbd_warehouse3.expiration_date ASC,
                                         tbd_warehouse3.id ASC
                                      LIMIT 1),
-                                    p.srp, 0)
+                                    COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0), 0)
                             ELSE 
                                 COALESCE(
                                     (SELECT tbd3.srp 
@@ -587,7 +606,7 @@ try {
                                         tbd3.expiration_date ASC,
                                         tbd3.id ASC
                                      LIMIT 1),
-                                    p.srp, 0)
+                                    COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0), 0)
                         END as srp,
                         ? as location_name,
                         COALESCE(b.brand, '') as brand,
@@ -883,7 +902,7 @@ try {
                         p.barcode,
                         c.category_name as category,
                         sm.quantity,
-                        p.srp as unit_price,
+                        COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
                         sm.movement_type,
                         sm.reference_no,
                         DATE(sm.movement_date) as date,
@@ -912,7 +931,7 @@ try {
                             p.barcode,
                             c.category_name as category,
                             td.qty as quantity,
-                            p.srp as unit_price,
+                            COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
                             'TRANSFER' as movement_type,
                             th.reference_number as reference_no,
                             DATE(th.date) as date,

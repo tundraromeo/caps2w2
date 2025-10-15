@@ -1,9 +1,46 @@
 <?php
-// Include CORS and configuration
-require_once __DIR__ . '/cors.php';
+// Disable ALL error display immediately - MUST BE FIRST
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
+error_reporting(0); // Suppress all errors/warnings from being displayed
+
+// CORS headers must be set first, before any output
+// Load environment variables for CORS configuration
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
+
+// Get allowed origins from environment variable (comma-separated)
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000,http://localhost:3001';
+$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
+
+// Add common development origins if not already present
+$common_origins = ['http://localhost:3000', 'http://localhost:3001', 'https://localhost:3000', 'https://localhost:3001'];
+$allowed_origins = array_unique(array_merge($allowed_origins, $common_origins));
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? $_SERVER['HTTP_REFERER'] ?? '';
+// Extract origin from referer if needed
+if (empty($origin) && !empty($_SERVER['HTTP_REFERER'])) {
+    $parsed = parse_url($_SERVER['HTTP_REFERER']);
+    $origin = ($parsed['scheme'] ?? 'http') . '://' . ($parsed['host'] ?? 'localhost:3001');
+}
+
+if (!empty($origin) && in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    // Fallback to allow localhost:3001 for development
+    header("Access-Control-Allow-Origin: http://localhost:3001");
+}
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
 header("Content-Type: application/json; charset=utf-8");
+
+// Cache-busting headers to prevent API response caching
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
 
 // Handle preflight OPTIONS requests immediately
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -29,7 +66,17 @@ register_shutdown_function(function() {
     }
 });
 
-session_start();
+// Configure session save path to use a writable directory
+$sessionPath = __DIR__ . '/../../sessions';
+if (!file_exists($sessionPath)) {
+    @mkdir($sessionPath, 0777, true);
+}
+if (is_writable($sessionPath)) {
+    session_save_path($sessionPath);
+}
+
+// Suppress any session warnings
+@session_start();
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);
@@ -64,6 +111,9 @@ function getStockStatusSQL($quantityField, $lowStockThreshold = 10) {
 
 // Use centralized database connection
 require_once __DIR__ . '/conn.php';
+
+// Load DateFilterHelper for dashboard filtering
+require_once __DIR__ . '/utils/DateFilterHelper.php';
 
 // Don't clear output buffer as it contains CORS headers
 
@@ -135,9 +185,17 @@ try {
     /**
      * Direct database queries for dashboard chart data
      */
-    function getSalesChartDataDirect($conn, $days = 7) {
+    function getSalesChartDataDirect($conn, $days = 7, $period = 'all') {
         try {
             $days = max(1, min(30, (int)$days)); // Sanitize as integer
+            
+            // Apply period filter
+            $dateCondition = DateFilterHelper::getTransactionDateCondition($period);
+            
+            // Use period filter if provided, otherwise use days parameter
+            $whereClause = !empty($dateCondition['condition']) 
+                ? "WHERE 1=1 {$dateCondition['condition']}" 
+                : "WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)";
             
             $sql = "
                 SELECT 
@@ -145,7 +203,7 @@ try {
                     COALESCE(SUM(psh.total_amount), 0) as daily_sales_amount
                 FROM tbl_pos_transaction pt
                 JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
-                WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
+                $whereClause
                 GROUP BY DATE(pt.date)
                 ORDER BY DATE(pt.date) DESC
             ";
@@ -168,16 +226,24 @@ try {
         }
     }
 
-    function getTransferChartDataDirect($conn, $days = 7) {
+    function getTransferChartDataDirect($conn, $days = 7, $period = 'all') {
         try {
             $days = max(1, min(30, (int)$days)); // Sanitize as integer
+            
+            // Apply period filter
+            $dateCondition = DateFilterHelper::getDateCondition($period, 'date');
+            
+            // Use period filter if provided, otherwise use days parameter
+            $whereClause = !empty($dateCondition['condition']) 
+                ? "WHERE 1=1 {$dateCondition['condition']}" 
+                : "WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)";
             
             $sql = "
                 SELECT 
                     DATE(date) as transfer_date,
                     COUNT(*) as daily_transfer_count
                 FROM tbl_transfer_header
-                WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
+                $whereClause
                 GROUP BY DATE(date)
                 ORDER BY DATE(date) DESC
             ";
@@ -200,17 +266,25 @@ try {
         }
     }
 
-    function getReturnChartDataDirect($conn, $days = 7) {
+    function getReturnChartDataDirect($conn, $days = 7, $period = 'all') {
         try {
             $days = max(1, min(30, (int)$days)); // Sanitize as integer
+            
+            // Apply period filter
+            $dateCondition = DateFilterHelper::getReturnDateCondition($period);
+            
+            // Use period filter if provided, otherwise use days parameter
+            $dateFilter = !empty($dateCondition['condition']) 
+                ? $dateCondition['condition']
+                : "AND DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)";
             
             $sql = "
                 SELECT 
                     DATE(pr.created_at) as return_date,
                     COALESCE(SUM(pr.total_refund), 0) as daily_return_amount
                 FROM tbl_pos_returns pr
-                WHERE DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)
-                AND pr.status IN ('pending', 'approved', 'completed')
+                WHERE pr.status IN ('pending', 'approved', 'completed')
+                $dateFilter
                 GROUP BY DATE(pr.created_at)
                 ORDER BY DATE(pr.created_at) DESC
             ";
@@ -233,8 +307,11 @@ try {
         }
     }
 
-    function getTopSellingProductsDirect($conn, $limit = 5) {
+    function getTopSellingProductsDirect($conn, $limit = 5, $period = 'all') {
         try {
+            // Apply period filter
+            $dateCondition = DateFilterHelper::getTransactionDateCondition($period);
+            
             $sql = "
                 SELECT 
                     p.product_name,
@@ -244,8 +321,10 @@ try {
                     p.stock_status
                 FROM tbl_pos_sales_details psd
                 JOIN tbl_pos_sales_header psh ON psd.sales_header_id = psh.sales_header_id
+                JOIN tbl_pos_transaction pt ON psh.transaction_id = pt.transaction_id
                 JOIN tbl_product p ON psd.product_id = p.product_id
-                WHERE p.status IS NULL OR p.status <> 'archived'
+                WHERE (p.status IS NULL OR p.status <> 'archived')
+                {$dateCondition['condition']}
                 GROUP BY p.product_id, p.product_name, p.status, p.stock_status
                 ORDER BY total_quantity_sold DESC
                 LIMIT :limit
@@ -269,6 +348,104 @@ try {
             return $topProducts;
         } catch (Exception $e) {
             return [];
+        }
+    }
+
+    // Direct data functions for dashboard
+    function getTransferDataDirect($conn, $period = 'all') {
+        try {
+            $dateCondition = DateFilterHelper::getDateCondition($period, 'date');
+            
+            $stmt = $conn->prepare("SELECT COUNT(*) AS total FROM tbl_transfer_header WHERE 1=1 {$dateCondition['condition']}");
+            $stmt->execute($dateCondition['params']);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return [
+                'total_transfer' => $result['total'] ?? 0,
+                'trend' => '0.0%',
+                'trend_direction' => 'up'
+            ];
+        } catch (Exception $e) {
+            return ['total_transfer' => '0', 'trend' => '0.0%', 'trend_direction' => 'up'];
+        }
+    }
+    
+    function getSalesDataDirect($conn, $period = 'all') {
+        try {
+            $dateCondition = DateFilterHelper::getTransactionDateCondition($period);
+            
+            $stmt = $conn->prepare("
+                SELECT COALESCE(SUM(psh.total_amount), 0) as total_sales
+                FROM tbl_pos_transaction pt
+                JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
+                WHERE 1=1 {$dateCondition['condition']}
+            ");
+            $stmt->execute($dateCondition['params']);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return [
+                'total_sales' => number_format($result['total_sales'] ?? 0, 2),
+                'trend' => '0.0%',
+                'trend_direction' => 'up'
+            ];
+        } catch (Exception $e) {
+            return ['total_sales' => '0.00', 'trend' => '0.0%', 'trend_direction' => 'up'];
+        }
+    }
+    
+    function getReturnDataDirect($conn, $period = 'all') {
+        try {
+            $dateCondition = DateFilterHelper::getReturnDateCondition($period);
+            
+            $stmt = $conn->prepare("
+                SELECT COALESCE(SUM(total_refund), 0) as total_return
+                FROM tbl_pos_returns
+                WHERE status = 'approved' AND method = 'refund'
+                {$dateCondition['condition']}
+            ");
+            $stmt->execute($dateCondition['params']);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            return [
+                'total_return' => number_format($result['total_return'] ?? 0, 2),
+                'trend' => '0.0%',
+                'trend_direction' => 'up'
+            ];
+        } catch (Exception $e) {
+            return ['total_return' => '0.00', 'trend' => '0.0%', 'trend_direction' => 'up'];
+        }
+    }
+    
+    function getPaymentMethodsDataDirect($conn, $period = 'all') {
+        try {
+            $dateCondition = DateFilterHelper::getTransactionDateCondition($period);
+            
+            $stmt = $conn->prepare("
+                SELECT 
+                    psh.payment_method,
+                    COUNT(*) as transaction_count,
+                    SUM(psh.total_amount) as total_amount
+                FROM tbl_pos_sales_header psh
+                JOIN tbl_pos_transaction pt ON psh.transaction_id = pt.transaction_id
+                WHERE 1=1 {$dateCondition['condition']}
+                GROUP BY psh.payment_method
+                ORDER BY total_amount DESC
+            ");
+            $stmt->execute($dateCondition['params']);
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $paymentMethods = [];
+            foreach ($results as $row) {
+                $paymentMethods[] = [
+                    'method' => $row['payment_method'],
+                    'amount' => (float)$row['total_amount'],
+                    'count' => (int)$row['transaction_count']
+                ];
+            }
+            
+            return ['data' => $paymentMethods];
+        } catch (Exception $e) {
+            return ['data' => []];
         }
     }
 
@@ -523,6 +700,113 @@ switch ($action) {
         }
         break;
 
+    case 'update_employee':
+        try {
+            // Extract and sanitize input data
+            $emp_id = isset($data['emp_id']) ? trim($data['emp_id']) : '';
+            $fname = isset($data['fname']) && !empty($data['fname']) ? trim($data['fname']) : '';
+            $mname = isset($data['mname']) && !empty($data['mname']) ? trim($data['mname']) : '';
+            $lname = isset($data['lname']) && !empty($data['lname']) ? trim($data['lname']) : '';
+            $email = isset($data['email']) ? trim($data['email']) : '';
+            $contact = isset($data['contact_num']) ? trim($data['contact_num']) : '';
+            $role_id = isset($data['role_id']) ? trim($data['role_id']) : '';
+            $shift_id = isset($data['shift_id']) && $data['shift_id'] !== null && $data['shift_id'] !== '' ? (int)$data['shift_id'] : null;
+            $username = isset($data['username']) ? trim($data['username']) : '';
+            $password = isset($data['password']) ? trim($data['password']) : '';
+            $age = isset($data['age']) ? trim($data['age']) : '';
+            $address = isset($data['address']) ? trim($data['address']) : '';
+            $gender = isset($data['gender']) ? trim($data['gender']) : '';
+            $birthdate = isset($data['birthdate']) ? trim($data['birthdate']) : '';
+
+            // Only require shift_id for cashier (3) and pharmacist (2)
+            if (($role_id == 2 || $role_id == 3) && empty($shift_id)) {
+                echo json_encode(["success" => false, "message" => "Shift is required."]);
+                exit;
+            }
+
+            // Prepare the SQL statement - only update password if provided
+            if (!empty($password)) {
+                $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+                $stmt = $conn->prepare("
+                    UPDATE tbl_employee SET 
+                        Fname = :fname, Mname = :mname, Lname = :lname, email = :email, 
+                        contact_num = :contact_num, role_id = :role_id, shift_id = :shift_id,
+                        username = :username, password = :password, age = :age, 
+                        address = :address, gender = :gender, birthdate = :birthdate
+                    WHERE emp_id = :emp_id
+                ");
+                $stmt->bindParam(":password", $hashedPassword, PDO::PARAM_STR);
+            } else {
+                $stmt = $conn->prepare("
+                    UPDATE tbl_employee SET 
+                        Fname = :fname, Mname = :mname, Lname = :lname, email = :email, 
+                        contact_num = :contact_num, role_id = :role_id, shift_id = :shift_id,
+                        username = :username, age = :age, address = :address, 
+                        gender = :gender, birthdate = :birthdate
+                    WHERE emp_id = :emp_id
+                ");
+            }
+
+            // Bind parameters
+            $stmt->bindParam(":emp_id", $emp_id, PDO::PARAM_INT);
+            $stmt->bindParam(":fname", $fname, PDO::PARAM_STR);
+            $stmt->bindParam(":mname", $mname, PDO::PARAM_STR);
+            $stmt->bindParam(":lname", $lname, PDO::PARAM_STR);
+            $stmt->bindParam(":email", $email, PDO::PARAM_STR);
+            $stmt->bindParam(":contact_num", $contact, PDO::PARAM_STR);
+            $stmt->bindParam(":role_id", $role_id, PDO::PARAM_INT);
+            if ($shift_id !== null) {
+                $stmt->bindValue(":shift_id", $shift_id, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue(":shift_id", null, PDO::PARAM_NULL);
+            }
+            $stmt->bindParam(":username", $username, PDO::PARAM_STR);
+            $stmt->bindParam(":age", $age, PDO::PARAM_INT);
+            $stmt->bindParam(":address", $address, PDO::PARAM_STR);
+            $stmt->bindParam(":gender", $gender, PDO::PARAM_STR);
+            $stmt->bindParam(":birthdate", $birthdate, PDO::PARAM_STR);
+
+            // Execute the statement
+            if ($stmt->execute()) {
+                echo json_encode(["success" => true, "message" => "Employee updated successfully"]);
+            } else {
+                echo json_encode(["success" => false, "message" => "Failed to update employee"]);
+            }
+
+        } catch (Exception $e) {
+            echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
+        }
+        break;
+
+    case 'delete_employee':
+        try {
+            $emp_id = isset($data['emp_id']) ? trim($data['emp_id']) : '';
+
+            if (empty($emp_id)) {
+                echo json_encode(["success" => false, "message" => "Employee ID is required"]);
+                exit;
+            }
+
+            // Prepare the SQL statement to delete employee
+            $stmt = $conn->prepare("DELETE FROM tbl_employee WHERE emp_id = :emp_id");
+            $stmt->bindParam(":emp_id", $emp_id, PDO::PARAM_INT);
+
+            // Execute the statement
+            if ($stmt->execute()) {
+                if ($stmt->rowCount() > 0) {
+                    echo json_encode(["success" => true, "message" => "Employee deleted successfully"]);
+                } else {
+                    echo json_encode(["success" => false, "message" => "Employee not found"]);
+                }
+            } else {
+                echo json_encode(["success" => false, "message" => "Failed to delete employee"]);
+            }
+
+        } catch (Exception $e) {
+            echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
+        }
+        break;
+
             case 'login':
                 try {
                     $username = isset($data['username']) ? trim($data['username']) : '';
@@ -573,7 +857,7 @@ switch ($action) {
     
                 if ($user && $passwordValid) {
                     // Start session and store user data
-                    session_start();
+                    @session_start();
                     $_SESSION['user_id'] = $user['emp_id'];
                     $_SESSION['username'] = $user['username'];
                     $_SESSION['role'] = $user['role'];
@@ -773,7 +1057,7 @@ switch ($action) {
 
             if ($user && $passwordValid) {
                 // Start session and store user data
-                session_start();
+                @session_start();
                 $_SESSION['user_id'] = $user['emp_id'];
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['role'] = $user['role'];
@@ -885,7 +1169,7 @@ switch ($action) {
     case 'logout':
         try {
             if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
+            @session_start();
             }
 
             $empId = $_SESSION['user_id'] ?? null;
@@ -1045,7 +1329,7 @@ switch ($action) {
 
     case 'register_terminal_route':
         try {
-            if (session_status() !== PHP_SESSION_ACTIVE) { session_start(); }
+            if (session_status() !== PHP_SESSION_ACTIVE) { @session_start(); }
             $empId = $_SESSION['user_id'] ?? ($data['emp_id'] ?? null);
             $route = strtolower(trim($data['route'] ?? ''));
             if (!$empId || $route === '') {
@@ -1613,6 +1897,60 @@ switch ($action) {
                 "success" => false,
                 "message" => "Database error: " . $e->getMessage(),
                 "employees" => []
+            ]);
+        }
+        break;
+
+    case 'get_roles':
+        try {
+            $stmt = $conn->prepare("SELECT role_id, role FROM tbl_role ORDER BY role_id");
+            $stmt->execute();
+            $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if ($roles) {
+                echo json_encode([
+                    "success" => true,
+                    "data" => $roles
+                ]);
+            } else {
+                echo json_encode([
+                    "success" => true,
+                    "data" => [],
+                    "message" => "No roles found"
+                ]);
+            }
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage(),
+                "data" => []
+            ]);
+        }
+        break;
+
+    case 'get_shifts':
+        try {
+            $stmt = $conn->prepare("SELECT shift_id, shifts as shift_name FROM tbl_shift ORDER BY shift_id");
+            $stmt->execute();
+            $shifts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if ($shifts) {
+                echo json_encode([
+                    "success" => true,
+                    "data" => $shifts
+                ]);
+            } else {
+                echo json_encode([
+                    "success" => true,
+                    "data" => [],
+                    "message" => "No shifts found"
+                ]);
+            }
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage(),
+                "data" => []
             ]);
         }
         break;
@@ -2189,7 +2527,6 @@ case 'get_products_oldest_batch_for_transfer':
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id 
                 LEFT JOIN tbl_brand br ON p.brand_id = br.brand_id 
-                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_batch b ON p.batch_id = b.batch_id
                 $whereClause
@@ -3756,8 +4093,16 @@ case 'get_products_oldest_batch_for_transfer':
             $new_srp = $data['new_srp'] ?? null;
             $entry_by = $data['entry_by'] ?? 'admin';
             
-            error_log("🔍 Update Product Stock - Received data: " . json_encode($data));
-            error_log("🔍 Product ID: $product_id, Quantity: $new_quantity, Batch Ref: $batch_reference");
+            error_log("🔍 ========== UPDATE_PRODUCT_STOCK DEBUG ==========");
+            error_log("🔍 Received data: " . json_encode($data));
+            error_log("🔍 Product ID: $product_id");
+            error_log("🔍 Quantity: $new_quantity");
+            error_log("🔍 Batch Reference: '$batch_reference'");
+            error_log("🔍 Batch Reference Length: " . strlen($batch_reference));
+            error_log("🔍 Batch Reference Empty?: " . (empty($batch_reference) ? 'YES ❌' : 'NO ✅'));
+            error_log("🔍 Expiration: $expiration_date");
+            error_log("🔍 SRP: $new_srp");
+            error_log("🔍 ===============================================");
             
             // Use new_srp if provided, otherwise use 0
             $srp = $new_srp ?? 0;
@@ -3801,29 +4146,71 @@ case 'get_products_oldest_batch_for_transfer':
             error_log("🔍 Product details: " . json_encode($productDetails));
             error_log("🔍 Old quantity: $old_quantity, New quantity: $new_quantity, Quantity change: $quantity_change");
             
-            // Create batch record - always create one for stock updates
+            // Create batch record - always need one for FIFO stock entry
             $batch_id = null;
-            $final_batch_reference = $batch_reference ?: 'STOCK-UPDATE-' . date('YmdHis') . '-' . $product_id;
+            $final_batch_reference = $batch_reference;
             
-            error_log("🔍 About to create batch with reference: $final_batch_reference");
-            
-            $batchStmt = $conn->prepare("
-                INSERT INTO tbl_batch (
-                    date, batch, batch_reference, supplier_id, location_id, 
-                    entry_date, entry_time, entry_by
-                ) VALUES (?, ?, ?, ?, ?, CURDATE(), CURTIME(), ?)
-            ");
-            $batchStmt->execute([
-                date('Y-m-d'), 
-                $final_batch_reference, 
-                $final_batch_reference, 
-                $productDetails['supplier_id'], 
-                $productDetails['location_id'], 
-                $entry_by
-            ]);
-            $batch_id = $conn->lastInsertId();
-            
-            error_log("✅ Batch created successfully - Batch ID: $batch_id, Reference: $final_batch_reference");
+            if ($final_batch_reference) {
+                error_log("🔍 Checking for existing batch with reference: $final_batch_reference");
+                
+                // Check if batch reference already exists to prevent duplicates
+                $checkBatchStmt = $conn->prepare("
+                    SELECT batch_id FROM tbl_batch 
+                    WHERE batch_reference = ? 
+                    LIMIT 1
+                ");
+                $checkBatchStmt->execute([$final_batch_reference]);
+                $existingBatch = $checkBatchStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($existingBatch) {
+                    // Use existing batch
+                    $batch_id = $existingBatch['batch_id'];
+                    error_log("✅ Using existing batch - Batch ID: $batch_id, Reference: $final_batch_reference");
+                } else {
+                    // Create new batch
+                    error_log("🔍 Creating new batch with reference: $final_batch_reference");
+                    
+                    $batchStmt = $conn->prepare("
+                        INSERT INTO tbl_batch (
+                            date, batch, batch_reference, supplier_id, location_id, 
+                            entry_date, entry_time, entry_by
+                        ) VALUES (?, ?, ?, ?, ?, CURDATE(), CURTIME(), ?)
+                    ");
+                    $batchStmt->execute([
+                        date('Y-m-d'), 
+                        $final_batch_reference, 
+                        $final_batch_reference, 
+                        $productDetails['supplier_id'], 
+                        $productDetails['location_id'], 
+                        $entry_by
+                    ]);
+                    $batch_id = $conn->lastInsertId();
+                    
+                    error_log("✅ New batch created successfully - Batch ID: $batch_id, Reference: $final_batch_reference");
+                }
+            } else {
+                // Create temporary batch entry for FIFO tracking (will be linked to main batch later)
+                $temp_batch_reference = 'TEMP-' . date('YmdHis') . '-' . $product_id;
+                error_log("🔍 Creating temporary batch for FIFO tracking: $temp_batch_reference");
+                
+                $batchStmt = $conn->prepare("
+                    INSERT INTO tbl_batch (
+                        date, batch, batch_reference, supplier_id, location_id, 
+                        entry_date, entry_time, entry_by
+                    ) VALUES (?, ?, ?, ?, ?, CURDATE(), CURTIME(), ?)
+                ");
+                $batchStmt->execute([
+                    date('Y-m-d'), 
+                    $temp_batch_reference, 
+                    $temp_batch_reference, 
+                    $productDetails['supplier_id'], 
+                    $productDetails['location_id'], 
+                    $entry_by
+                ]);
+                $batch_id = $conn->lastInsertId();
+                
+                error_log("✅ Temporary batch created - Batch ID: $batch_id, Reference: $temp_batch_reference");
+            }
             
             error_log("🔍 Skipping product quantity update - quantity is ONLY in tbl_fifo_stock now");
             
@@ -3843,6 +4230,8 @@ case 'get_products_oldest_batch_for_transfer':
             error_log("🔍 About to create FIFO stock entry");
             
             // Create FIFO stock entry
+            $fifo_batch_reference = $final_batch_reference ?: 'TEMP-' . date('YmdHis') . '-' . $product_id;
+            
             $fifoStmt = $conn->prepare("
                 INSERT INTO tbl_fifo_stock (
                     product_id, batch_id, batch_reference, quantity, available_quantity,
@@ -3850,7 +4239,7 @@ case 'get_products_oldest_batch_for_transfer':
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)
             ");
             $fifoStmt->execute([
-                $product_id, $batch_id, $final_batch_reference, $new_quantity, $new_quantity,
+                $product_id, $batch_id, $fifo_batch_reference, $new_quantity, $new_quantity,
                 $srp, $expiration_date, $entry_by
             ]);
             
@@ -5413,11 +5802,14 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt = $conn->prepare("
                 SELECT 
                     p.product_name as product,
-                    COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity
+                    COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity,
+                    c.category_name as category,
+                    l.location_name as location
                 FROM tbl_product p
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
+                HAVING quantity > 0
                 ORDER BY quantity DESC
                 LIMIT 10
             ");
@@ -5426,7 +5818,8 @@ case 'get_products_oldest_batch_for_transfer':
             
             echo json_encode([
                 "success" => true,
-                "data" => $topProducts
+                "data" => $topProducts,
+                "count" => count($topProducts)
             ]);
         } catch (Exception $e) {
             echo json_encode([
@@ -5458,13 +5851,15 @@ case 'get_products_oldest_batch_for_transfer':
             
             $stmt = $conn->prepare("
                 SELECT 
-                    c.category_name,
+                    c.category_name as category,
                     COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity
                 FROM tbl_product p
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
+                AND c.category_name IS NOT NULL
                 GROUP BY c.category_name
+                HAVING quantity > 0
                 ORDER BY quantity DESC
                 LIMIT 8
             ");
@@ -5473,7 +5868,8 @@ case 'get_products_oldest_batch_for_transfer':
             
             echo json_encode([
                 "success" => true,
-                "data" => $categoryDistribution
+                "data" => $categoryDistribution,
+                "count" => count($categoryDistribution)
             ]);
         } catch (Exception $e) {
             echo json_encode([
@@ -5588,11 +5984,16 @@ case 'get_products_oldest_batch_for_transfer':
                         $weekStmt->execute([$product['product'], $startDays, $endDays]);
                         $weekData = $weekStmt->fetch(PDO::FETCH_ASSOC);
                         
-                        $trendData[] = [
-                            'product' => $product['product'],
-                            'month' => $week,
-                            'quantity' => max(0, $weekData['weekly_movement'] ?: rand(5, 25))
-                        ];
+                        $weeklyMovement = $weekData['weekly_movement'] ?: 0;
+                        
+                        // Only add to trend data if there's actual movement (no zero values)
+                        if ($weeklyMovement > 0) {
+                            $trendData[] = [
+                                'product' => $product['product'],
+                                'month' => $week,
+                                'quantity' => $weeklyMovement
+                            ];
+                        }
                     }
                 } else {
                     foreach ($months as $month) {
@@ -5608,11 +6009,16 @@ case 'get_products_oldest_batch_for_transfer':
                         $monthStmt->execute([$product['product'], $monthDate]);
                         $monthData = $monthStmt->fetch(PDO::FETCH_ASSOC);
                         
-                        $trendData[] = [
-                            'product' => $product['product'],
-                            'month' => $month,
-                            'quantity' => max(0, $monthData['monthly_movement'] ?: rand(10, 50))
-                        ];
+                        $monthlyMovement = $monthData['monthly_movement'] ?: 0;
+                        
+                        // Only add to trend data if there's actual movement (no zero values)
+                        if ($monthlyMovement > 0) {
+                            $trendData[] = [
+                                'product' => $product['product'],
+                                'month' => $month,
+                                'quantity' => $monthlyMovement
+                            ];
+                        }
                     }
                 }
             }
@@ -5673,13 +6079,20 @@ case 'get_products_oldest_batch_for_transfer':
             $stmt = $conn->prepare("
                 SELECT 
                     p.product_name as product,
-                    COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity
+                    COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity,
+                    c.category_name as category,
+                    l.location_name as location,
+                    CASE 
+                        WHEN COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) = 0 THEN 'Out of Stock'
+                        WHEN COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) <= 5 THEN 'Critical'
+                        ELSE 'Low Stock'
+                    END as alert_level
                 FROM tbl_product p
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 $whereClause
                 AND COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) <= 10
-                ORDER BY quantity ASC
+                ORDER BY quantity ASC, p.product_name ASC
                 LIMIT 10
             ");
             $stmt->execute($params);
@@ -5687,7 +6100,8 @@ case 'get_products_oldest_batch_for_transfer':
             
             echo json_encode([
                 "success" => true,
-                "data" => $criticalAlerts
+                "data" => $criticalAlerts,
+                "count" => count($criticalAlerts)
             ]);
         } catch (Exception $e) {
             echo json_encode([
@@ -5809,6 +6223,36 @@ case 'get_products_oldest_batch_for_transfer':
             ]);
         }
         break;
+    case 'test_transfer_batch_details':
+        try {
+            $stmt = $conn->prepare("
+                SELECT 
+                    tbd.location_id,
+                    l.location_name,
+                    COUNT(*) as product_count,
+                    GROUP_CONCAT(DISTINCT p.product_name) as products
+                FROM tbl_transfer_batch_details tbd
+                LEFT JOIN tbl_location l ON tbd.location_id = l.location_id
+                LEFT JOIN tbl_product p ON tbd.product_id = p.product_id
+                WHERE tbd.quantity > 0
+                GROUP BY tbd.location_id, l.location_name
+                ORDER BY tbd.location_id
+            ");
+            $stmt->execute();
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                "success" => true,
+                "data" => $results
+            ]);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage()
+            ]);
+        }
+        break;
+
     case 'get_location_products':
         try {
             $location_id = $data['location_id'] ?? 0;
@@ -7393,7 +7837,7 @@ case 'get_products_oldest_batch_for_transfer':
         try {
             // Start session if not already started
             if (session_status() === PHP_SESSION_NONE) {
-                session_start();
+                @session_start();
             }
             
             // Debug: Log session state
@@ -8446,17 +8890,19 @@ case 'get_products_oldest_batch_for_transfer':
                 break;
             }
             
-            // Check if batch reference already exists
-            $checkStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_batch WHERE batch_reference = ?");
+            // Check if batch reference already exists and reuse it (for stock updates + new products in same batch)
+            $checkStmt = $conn->prepare("SELECT batch_id FROM tbl_batch WHERE batch_reference = ?");
             $checkStmt->execute([$batch_reference]);
-            $existingCount = $checkStmt->fetchColumn();
+            $existingBatch = $checkStmt->fetch(PDO::FETCH_ASSOC);
             
-            if ($existingCount > 0) {
-                echo json_encode([
-                    "success" => false,
-                    "message" => "Batch reference '$batch_reference' already exists. Please use a unique reference."
-                ]);
-                break;
+            $batch_id = null;
+            $batch_existed = false;
+            
+            if ($existingBatch) {
+                // Reuse existing batch (stock updates might have created it already)
+                $batch_id = $existingBatch['batch_id'];
+                $batch_existed = true;
+                error_log("✅ Reusing existing batch - Batch ID: $batch_id, Reference: $batch_reference");
             }
             
             if (empty($products)) {
@@ -8526,47 +8972,58 @@ case 'get_products_oldest_batch_for_transfer':
             // Start transaction
             $conn->beginTransaction();
             
+            // ✅ FIX: Define location_id OUTSIDE if block to prevent NULL values!
+            $supplier_id = 1; // Default supplier
+            $location_id = 2; // Warehouse location (ALWAYS defined!)
+            $order_no = ''; // Can be updated later
+            
             try {
-                // 1. Insert batch entry
-                $batchStmt = $conn->prepare("
-                    INSERT INTO tbl_batch (
-                        date, batch, batch_reference, supplier_id, location_id, 
-                        entry_date, entry_time, entry_by, order_no
-                    ) VALUES (
-                        ?, ?, ?, ?, ?, ?, CURTIME(), ?, ?
-                    )
-                ");
+                // 1. Insert batch entry (only if it doesn't exist)
+                if (!$batch_existed) {
+                    $batchStmt = $conn->prepare("
+                        INSERT INTO tbl_batch (
+                            date, batch, batch_reference, supplier_id, location_id, 
+                            entry_date, entry_time, entry_by, order_no
+                        ) VALUES (
+                            ?, ?, ?, ?, ?, ?, CURTIME(), ?, ?
+                        )
+                    ");
+                    
+                    // Debug: Log batch parameters
+                    $batchParams = [
+                        $batch_date,
+                        $batch_reference,
+                        $batch_reference,
+                        $supplier_id,
+                        $location_id,
+                        $batch_date,
+                        $entry_by,
+                        $order_no
+                    ];
+                    
+                    error_log("Batch parameters count: " . count($batchParams));
+                    error_log("Batch parameters: " . json_encode($batchParams));
+                    error_log("✅ Using location_id: $location_id for new batch");
+                    
+                    $batchStmt->execute($batchParams);
+                    
+                    $batch_id = $conn->lastInsertId();
+                    error_log("✅ New batch created - Batch ID: $batch_id, Reference: $batch_reference");
+                } else {
+                    error_log("✅ Using existing batch - Batch ID: $batch_id, Reference: $batch_reference");
+                }
                 
-                $supplier_id = 1; // Default supplier
-                $location_id = 2; // Warehouse location
-                $order_no = ''; // Can be updated later
-                
-                // Debug: Log batch parameters
-                $batchParams = [
-                    $batch_date,
-                    $batch_reference,
-                    $batch_reference,
-                    $supplier_id,
-                    $location_id,
-                    $batch_date,
-                    $entry_by,
-                    $order_no
-                ];
-                
-                error_log("Batch parameters count: " . count($batchParams));
-                error_log("Batch parameters: " . json_encode($batchParams));
-                
-                $batchStmt->execute($batchParams);
-                
-                $batch_id = $conn->lastInsertId();
+                // ✅ LOG: Verify location_id is still defined after if block
+                error_log("✅ location_id for products: $location_id");
                 
                 // 2. Insert all products with the same batch_id - NO quantity/srp in tbl_product!
                 $productStmt = $conn->prepare("
                     INSERT INTO tbl_product (
                         product_name, category_id, barcode, description, 
-                        brand_id, supplier_id, location_id, batch_id, status, date_added
+                        brand_id, supplier_id, location_id, batch_id, status, date_added,
+                        product_type, bulk, prescription
                     ) VALUES (
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                 ");
                 
@@ -8610,6 +9067,11 @@ case 'get_products_oldest_batch_for_transfer':
                             $brand_id = 1;
                         }
                         
+                        // Get product_type and bulk configuration
+                        $product_type = $product['product_type'] ?? 'Non-Medicine';
+                        $bulk = isset($product['bulk']) ? (int)$product['bulk'] : 0;
+                        $prescription = isset($product['prescription']) ? (int)$product['prescription'] : 0;
+                        
                         // NO quantity/srp in tbl_product - they go ONLY to tbl_fifo_stock!
                         $productParams = [
                             $product['product_name'],
@@ -8621,11 +9083,15 @@ case 'get_products_oldest_batch_for_transfer':
                             $location_id,
                             $batch_id,
                             'active',
-                            date('Y-m-d')
+                            date('Y-m-d'),
+                            $product_type,
+                            $bulk,
+                            $prescription
                         ];
                         
                         error_log("Product parameters count: " . count($productParams));
                         error_log("Product parameters: " . json_encode($productParams));
+                        error_log("Product type being saved: " . $product_type);
                         
                         $productStmt->execute($productParams);
                         
@@ -8654,6 +9120,94 @@ case 'get_products_oldest_batch_for_transfer':
                         error_log("FIFO parameters: " . json_encode($fifoParams));
                         
                         $fifoStmt->execute($fifoParams);
+                        
+                        // 4. Insert unit configuration into tbl_product_units for Medicine products with bulk mode
+                        if ($product_type === 'Medicine' && isset($product['configMode']) && $product['configMode'] === 'bulk') {
+                            // Check if we have the necessary bulk configuration data
+                            if (isset($product['boxes']) && isset($product['strips_per_box']) && isset($product['tablets_per_strip'])) {
+                                $boxes = (int)$product['boxes'];
+                                $strips_per_box = (int)$product['strips_per_box'];
+                                $tablets_per_strip = (int)$product['tablets_per_strip'];
+                                
+                                // Calculate unit prices based on SRP (which is the price per tablet)
+                                $srp = (float)($product['srp'] ?? 0);
+                                $strip_price = $srp * $tablets_per_strip;
+                                $box_price = $strip_price * $strips_per_box;
+                                
+                                error_log("Inserting medicine units - Boxes: $boxes, Strips/Box: $strips_per_box, Tablets/Strip: $tablets_per_strip");
+                                error_log("Unit prices - Tablet: $srp, Strip: $strip_price, Box: $box_price");
+                                
+                                // Insert base unit (tablet)
+                                $unitStmt = $conn->prepare("
+                                    INSERT INTO tbl_product_units (
+                                        product_id, unit_name, unit_quantity, unit_price, is_base_unit, status
+                                    ) VALUES (?, ?, ?, ?, ?, ?)
+                                ");
+                                
+                                // Tablet (base unit)
+                                $unitStmt->execute([$product_id, 'tablet', 1, $srp, 1, 'active']);
+                                error_log("Inserted tablet unit for product_id: $product_id");
+                                
+                                // Strip
+                                $unitStmt->execute([$product_id, 'strip', $tablets_per_strip, $strip_price, 0, 'active']);
+                                error_log("Inserted strip unit for product_id: $product_id");
+                                
+                                // Box
+                                $total_tablets_per_box = $strips_per_box * $tablets_per_strip;
+                                $unitStmt->execute([$product_id, 'box', $total_tablets_per_box, $box_price, 0, 'active']);
+                                error_log("Inserted box unit for product_id: $product_id");
+                                
+                                // Update product to enable multi-unit and set default unit
+                                $updateProductStmt = $conn->prepare("
+                                    UPDATE tbl_product 
+                                    SET allow_multi_unit = 1, default_unit = 'tablet'
+                                    WHERE product_id = ?
+                                ");
+                                $updateProductStmt->execute([$product_id]);
+                                error_log("Updated product $product_id to enable multi-unit");
+                            } else {
+                                error_log("Warning: Medicine product '{$product['product_name']}' has bulk mode but missing unit configuration data");
+                            }
+                        }
+                        // Handle Non-Medicine products with bulk configuration
+                        else if ($product_type === 'Non-Medicine' && isset($product['configMode']) && $product['configMode'] === 'bulk') {
+                            if (isset($product['boxes']) && isset($product['pieces_per_pack'])) {
+                                $boxes = (int)$product['boxes'];
+                                $pieces_per_pack = (int)$product['pieces_per_pack'];
+                                
+                                // Calculate unit prices
+                                $srp = (float)($product['srp'] ?? 0);
+                                $box_price = $srp * $pieces_per_pack;
+                                
+                                error_log("Inserting non-medicine units - Boxes: $boxes, Pieces/Box: $pieces_per_pack");
+                                error_log("Unit prices - Piece: $srp, Box: $box_price");
+                                
+                                $unitStmt = $conn->prepare("
+                                    INSERT INTO tbl_product_units (
+                                        product_id, unit_name, unit_quantity, unit_price, is_base_unit, status
+                                    ) VALUES (?, ?, ?, ?, ?, ?)
+                                ");
+                                
+                                // Piece (base unit)
+                                $unitStmt->execute([$product_id, 'piece', 1, $srp, 1, 'active']);
+                                error_log("Inserted piece unit for product_id: $product_id");
+                                
+                                // Box
+                                $unitStmt->execute([$product_id, 'box', $pieces_per_pack, $box_price, 0, 'active']);
+                                error_log("Inserted box unit for product_id: $product_id");
+                                
+                                // Update product to enable multi-unit
+                                $updateProductStmt = $conn->prepare("
+                                    UPDATE tbl_product 
+                                    SET allow_multi_unit = 1, default_unit = 'piece'
+                                    WHERE product_id = ?
+                                ");
+                                $updateProductStmt->execute([$product_id]);
+                                error_log("Updated product $product_id to enable multi-unit");
+                            } else {
+                                error_log("Warning: Non-Medicine product '{$product['product_name']}' has bulk mode but missing unit configuration data");
+                            }
+                        }
                         
                         $successCount++;
                     } catch (Exception $e) {
@@ -9028,8 +9582,10 @@ case 'get_products_oldest_batch_for_transfer':
             // Get low stock items
             $lowStockStmt = $conn->prepare("
                 SELECT COUNT(*) as count 
-                FROM tbl_product 
-                WHERE quantity <= ? AND quantity > 0 AND (status IS NULL OR status <> 'archived')
+                FROM tbl_product p
+                WHERE (SELECT COALESCE(SUM(fs.available_quantity), 0) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id) <= ? 
+                AND (SELECT COALESCE(SUM(fs.available_quantity), 0) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id) > 0 
+                AND (p.status IS NULL OR p.status <> 'archived')
             ");
             $lowStockStmt->execute([$lowStockThreshold]);
             $lowStock = $lowStockStmt->fetch()['count'];
@@ -9037,8 +9593,9 @@ case 'get_products_oldest_batch_for_transfer':
             // Get out of stock items
             $outOfStockStmt = $conn->prepare("
                 SELECT COUNT(*) as count 
-                FROM tbl_product 
-                WHERE quantity = 0 AND (status IS NULL OR status <> 'archived')
+                FROM tbl_product p
+                WHERE (SELECT COALESCE(SUM(fs.available_quantity), 0) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id) = 0 
+                AND (p.status IS NULL OR p.status <> 'archived')
             ");
             $outOfStockStmt->execute();
             $outOfStock = $outOfStockStmt->fetch()['count'];
@@ -9381,17 +9938,26 @@ case 'get_products_oldest_batch_for_transfer':
  
     case 'get_dashboard_data':
         try {
-            // Get real data from separate API files
-            $transferData = getDashboardDataFromAPI('dashboard_transfer_api.php', 'get_total_transfer');
-            $salesData = getDashboardDataFromAPI('dashboard_sales_api.php', 'get_total_sales');
-            $returnData = getDashboardDataFromAPI('dashboard_return_api.php', 'get_total_return');
-            $paymentMethodsData = getDashboardDataFromAPI('dashboard_sales_api.php', 'get_payment_methods');
+            // Get period filter
+            $period = $data['period'] ?? 'all'; // today, week, month, all
+            
+            // Include date filter helper
+            require_once 'utils/DateFilterHelper.php';
+            
+            // Get real data directly from database with period filter
+            $transferData = getTransferDataDirect($conn, $period);
+            $salesData = getSalesDataDirect($conn, $period);
+            $returnData = getReturnDataDirect($conn, $period);
+            $paymentMethodsData = getPaymentMethodsDataDirect($conn, $period);
             
             // If helper APIs returned empty, compute simple fallbacks directly from DB
             if (empty($transferData)) {
                 try {
-                    $stmt = $conn->prepare("SELECT COUNT(*) AS total FROM tbl_transfer_header");
-                    $stmt->execute();
+                    // Get date condition for transfers
+                    $transferDateCondition = DateFilterHelper::getDateCondition($period, 'date');
+                    
+                    $stmt = $conn->prepare("SELECT COUNT(*) AS total FROM tbl_transfer_header WHERE 1=1 {$transferDateCondition['condition']}");
+                    $stmt->execute($transferDateCondition['params']);
                     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['total' => 0];
                     $transferData = [
                         'total_transfer' => (string)($row['total'] ?? 0),
@@ -9399,9 +9965,13 @@ case 'get_products_oldest_batch_for_transfer':
                         'trend_direction' => 'up',
                     ];
 
-                    // summary over last 10 days
-                    $sumStmt = $conn->prepare("SELECT DATE_FORMAT(date, '%d') AS day, COUNT(*) AS totalTransfer FROM tbl_transfer_header WHERE date >= DATE_SUB(CURDATE(), INTERVAL 10 DAY) GROUP BY DATE(date) ORDER BY DATE(date)");
-                    $sumStmt->execute();
+                    // summary with period filter
+                    $chartDateCondition = DateFilterHelper::getDateCondition($period, 'date');
+                    $whereClause = !empty($chartDateCondition['condition']) 
+                        ? "WHERE 1=1 {$chartDateCondition['condition']}" 
+                        : "WHERE date >= DATE_SUB(CURDATE(), INTERVAL 10 DAY)";
+                    $sumStmt = $conn->prepare("SELECT DATE_FORMAT(date, '%d') AS day, COUNT(*) AS totalTransfer FROM tbl_transfer_header $whereClause GROUP BY DATE(date) ORDER BY DATE(date)");
+                    $sumStmt->execute($chartDateCondition['params']);
                     $transferChartRows = $sumStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
                     $transferChartData = [ 'data' => array_map(function($r){ return [ 'day' => $r['day'], 'totalTransfer' => (float)$r['totalTransfer'] ]; }, $transferChartRows) ];
                 } catch (Exception $e) {
@@ -9435,20 +10005,44 @@ case 'get_products_oldest_batch_for_transfer':
                 ]
             ];
 
-            // Get chart data - use direct database queries instead of API calls
-            $salesChartData = getSalesChartDataDirect($conn, 7);
-            $transferChartData = isset($transferChartData) ? $transferChartData : getTransferChartDataDirect($conn, 7);
-            $returnChartData = getReturnChartDataDirect($conn, 7);
+            // Get chart data - use direct database queries with period filter
+            $salesChartData = getSalesChartDataDirect($conn, 7, $period);
+            $transferChartData = isset($transferChartData) ? $transferChartData : getTransferChartDataDirect($conn, 7, $period);
+            $returnChartData = getReturnChartDataDirect($conn, 7, $period);
             
-            // Get top selling products - call function directly
-            $topProductsData = getTopSellingProductsDirect($conn, 5);
+            // Get top selling products - call function with period filter
+            $topProductsData = getTopSellingProductsDirect($conn, 5, $period);
             
             // Get inventory alerts
             $inventoryAlertsData = getInventoryAlertsDirect($conn);
             
-            // Combine chart data
+            // Combine chart data - generate dynamic days based on period
             $combinedChartData = [];
-            $chartDays = ['02', '03', '04', '05', '06', '07', '08', '09', '10', '11'];
+            
+            // Generate appropriate chart days based on period
+            $chartDays = [];
+            if ($period === 'today') {
+                $chartDays = [date('d')]; // Just today
+            } else if ($period === 'week') {
+                // Last 7 days including today
+                for ($i = 6; $i >= 0; $i--) {
+                    $chartDays[] = date('d', strtotime("-$i days"));
+                }
+            } else if ($period === 'month') {
+                // Days from start of month to today
+                $startOfMonth = date('Y-m-01');
+                $today = date('Y-m-d');
+                $current = $startOfMonth;
+                while ($current <= $today) {
+                    $chartDays[] = date('d', strtotime($current));
+                    $current = date('Y-m-d', strtotime($current . ' +1 day'));
+                }
+            } else {
+                // Default: last 10 days
+                for ($i = 9; $i >= 0; $i--) {
+                    $chartDays[] = date('d', strtotime("-$i days"));
+                }
+            }
             
             foreach ($chartDays as $day) {
                 $salesAmount = 0;
@@ -9542,6 +10136,101 @@ case 'get_products_oldest_batch_for_transfer':
     case 'change_current_user_password':
         require_once __DIR__ . '/modules/admin.php';
         handle_change_current_user_password($conn, $data);
+        break;
+
+    case 'get_product_units':
+        try {
+            $product_id = $data['product_id'] ?? 0;
+            
+            if (!$product_id) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Product ID is required"
+                ]);
+                break;
+            }
+            
+            // Get product details first to check product_type
+            $productStmt = $conn->prepare("
+                SELECT 
+                    p.product_id,
+                    p.product_name,
+                    p.product_type,
+                    p.allow_multi_unit,
+                    p.default_unit
+                FROM tbl_product p
+                WHERE p.product_id = ?
+            ");
+            $productStmt->execute([$product_id]);
+            $product = $productStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$product) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Product not found"
+                ]);
+                break;
+            }
+            
+            // Get units from tbl_product_units
+            $unitsStmt = $conn->prepare("
+                SELECT 
+                    unit_id,
+                    product_id,
+                    unit_name,
+                    unit_quantity,
+                    unit_price,
+                    is_base_unit,
+                    barcode,
+                    status
+                FROM tbl_product_units
+                WHERE product_id = ? AND status = 'active'
+                ORDER BY is_base_unit DESC, unit_quantity ASC
+            ");
+            $unitsStmt->execute([$product_id]);
+            $units = $unitsStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // If no units found, return default units based on product type
+            if (empty($units)) {
+                if ($product['product_type'] === 'Medicine') {
+                    $units = [
+                        [
+                            'unit_id' => null,
+                            'unit_name' => 'tablet',
+                            'unit_quantity' => 1,
+                            'unit_price' => 0,
+                            'is_base_unit' => 1,
+                            'status' => 'active'
+                        ]
+                    ];
+                } else {
+                    $units = [
+                        [
+                            'unit_id' => null,
+                            'unit_name' => 'piece',
+                            'unit_quantity' => 1,
+                            'unit_price' => 0,
+                            'is_base_unit' => 1,
+                            'status' => 'active'
+                        ]
+                    ];
+                }
+            }
+            
+            echo json_encode([
+                "success" => true,
+                "data" => [
+                    "product" => $product,
+                    "units" => $units
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage()
+            ]);
+        }
         break;
 
 } // End of switch statement

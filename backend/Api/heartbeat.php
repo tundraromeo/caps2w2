@@ -8,10 +8,8 @@
  * Frontend calls this every 30 seconds to maintain "online" status
  */
 
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-header('Content-Type: application/json');
+// Include proper CORS configuration
+require_once __DIR__ . '/cors.php';
 
 // Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

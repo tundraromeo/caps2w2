@@ -60,10 +60,23 @@ function handle_login($conn, $data) {
 
             // Log login activity to tbl_login
             try {
-                $loginStmt = $conn->prepare("
-                    INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id)
-                    VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id)
-                ");
+                // Check if last_seen column exists (backward compatibility)
+                $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'last_seen'");
+                $hasLastSeen = $checkColumn->rowCount() > 0;
+                
+                if ($hasLastSeen) {
+                    // NEW VERSION: With status and last_seen fields
+                    $loginStmt = $conn->prepare("
+                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status, last_seen)
+                        VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online', NOW())
+                    ");
+                } else {
+                    // OLD VERSION: With status field only
+                    $loginStmt = $conn->prepare("
+                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status)
+                        VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online')
+                    ");
+                }
 
                 $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
@@ -166,18 +179,15 @@ function handle_login($conn, $data) {
 
             // Log login activity to system activity logs
             try {
-                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())");
                 $logStmt->execute([
                     ':user_id' => $user['emp_id'],
                     ':username' => $user['username'],
-                    ':employee_name' => $user['Fname'] . ' ' . $user['Lname'],
                     ':role' => $user['role'],
                     ':activity_type' => 'LOGIN',
                     ':activity_description' => "User logged in successfully from {$terminal_name}",
-                    ':module' => 'Authentication',
-                    ':action' => 'LOGIN',
-                    ':location' => $terminal_name,
-                    ':terminal_id' => $terminal_id
+                    ':table_name' => 'tbl_login',
+                    ':record_id' => $login_id_inserted
                 ]);
             } catch (Exception $activityLogError) {
                 error_log("Activity logging error: " . $activityLogError->getMessage());
@@ -260,10 +270,23 @@ function handle_login($conn, $data) {
 
             // Log login activity to tbl_login
             try {
-                $loginStmt = $conn->prepare("
-                    INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id)
-                    VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id)
-                ");
+                // Check if last_seen column exists (backward compatibility)
+                $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'last_seen'");
+                $hasLastSeen = $checkColumn->rowCount() > 0;
+                
+                if ($hasLastSeen) {
+                    // NEW VERSION: With status and last_seen fields
+                    $loginStmt = $conn->prepare("
+                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status, last_seen)
+                        VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online', NOW())
+                    ");
+                } else {
+                    // OLD VERSION: With status field only
+                    $loginStmt = $conn->prepare("
+                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status)
+                        VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online')
+                    ");
+                }
 
                 $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
@@ -366,18 +389,15 @@ function handle_login($conn, $data) {
 
             // Log login activity to system activity logs
             try {
-                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW()), CURTIME())");
+                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())");
                 $logStmt->execute([
                     ':user_id' => $user['emp_id'],
                     ':username' => $user['username'],
-                    ':employee_name' => $user['Fname'] . ' ' . $user['Lname'],
                     ':role' => $user['role'],
                     ':activity_type' => 'LOGIN',
                     ':activity_description' => "User logged in successfully from {$terminal_name}",
-                    ':module' => 'Authentication',
-                    ':action' => 'LOGIN',
-                    ':location' => $terminal_name,
-                    ':terminal_id' => $terminal_id
+                    ':table_name' => 'tbl_login',
+                    ':record_id' => $login_id_inserted
                 ]);
             } catch (Exception $activityLogError) {
                 error_log("Activity logging error: " . $activityLogError->getMessage());
@@ -398,8 +418,7 @@ function handle_login($conn, $data) {
             echo json_encode(["success" => false, "message" => "Invalid username or password"]);
         }
 
-    }
-    catch (Exception $e) {
+    } catch (Exception $e) {
         echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
     }
 }
@@ -468,16 +487,15 @@ function handle_logout($conn, $data) {
                 $empData = $empStmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($empData) {
-                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, employee_name, role, activity_type, activity_description, module, action, location, terminal_id, date_created, time_created, created_at) VALUES (:user_id, :username, :employee_name, :role, :activity_type, :activity_description, :module, :action, :location, :terminal_id, CURDATE(), CURTIME(), NOW())");
+                    $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())");
                     $logStmt->execute([
                         ':user_id' => $empId,
                         ':username' => $empData['username'],
-                        ':employee_name' => $empData['Fname'] . ' ' . $empData['Lname'],
                         ':role' => $empData['role'],
                         ':activity_type' => 'LOGOUT',
                         ':activity_description' => 'User logged out from system',
-                        ':module' => 'Authentication',
-                        ':action' => 'LOGOUT'
+                        ':table_name' => 'tbl_login',
+                        ':record_id' => $_SESSION['login_id'] ?? null
                     ]);
                 }
             } catch (Exception $activityLogError) {

@@ -13,7 +13,7 @@ const NotificationSystem = ({ products = [], onAlertCountChange }) => {
   const createDismissibleToast = (type, message, toastId, productNames = [], autoClose = 5000) => {
     const toastOptions = {
       autoClose,
-      toastId,
+      toastId,  
       closeOnClick: true,
       draggable: true,
       closeButton: true,

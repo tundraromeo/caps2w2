@@ -113,6 +113,7 @@ const AlertReports = () => {
 
   return (
     <div className="p-6 space-y-6" style={{ backgroundColor: theme.bg.primary }}>
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -351,6 +352,7 @@ const AlertReports = () => {
         >
           Clear Alert History
         </button>
+      </div>
       </div>
     </div>
   );

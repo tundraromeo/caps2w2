@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { fetchWithCORS } from '../lib/fetchWrapper';
+import { API_BASE_URL } from '../lib/apiConfig';
 
 export default function ReturnApprovalManager() {
   const [pendingReturns, setPendingReturns] = useState([]);
@@ -21,9 +23,8 @@ export default function ReturnApprovalManager() {
   const loadPendingReturns = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const response = await fetchWithCORS(`${API_BASE_URL}/sales_api.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'get_pending_returns',
           limit: 50
@@ -45,9 +46,8 @@ export default function ReturnApprovalManager() {
 
   const getReturnDetails = async (returnId) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetchWithCORS(`${API_BASE_URL}/pos_return_api.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'get_return_details',
           return_id: returnId
@@ -77,9 +77,8 @@ export default function ReturnApprovalManager() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const response = await fetchWithCORS(`${API_BASE_URL}/sales_api.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'approve_return',
           return_id: selectedReturn.return_id,
@@ -121,9 +120,8 @@ export default function ReturnApprovalManager() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const response = await fetchWithCORS(`${API_BASE_URL}/sales_api.php`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'reject_return',
           return_id: selectedReturn.return_id,
@@ -162,6 +160,7 @@ export default function ReturnApprovalManager() {
 
   return (
     <div className="p-6">
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Return Approval Manager</h1>
         <button
@@ -419,6 +418,7 @@ export default function ReturnApprovalManager() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

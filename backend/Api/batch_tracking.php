@@ -4,20 +4,8 @@
  * Handles all FIFO batch tracking operations
  */
 
-// Enable CORS for all requests
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Cache-Control");
-header("Access-Control-Max-Age: 86400");
-
-// Handle preflight OPTIONS request
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-// Set content type to JSON
-header('Content-Type: application/json');
+// Use centralized CORS configuration
+require_once __DIR__ . '/cors.php';
 
 require_once 'conn.php';
 
@@ -341,14 +329,31 @@ function updateProductStock($conn, $data) {
         // Create batch record if batch reference is provided
         $batch_id = null;
         if ($batch_reference) {
-            $batchStmt = $conn->prepare("
-                INSERT INTO tbl_batch (
-                    batch, supplier_id, location_id, entry_date, entry_time, 
-                    entry_by, order_no
-                ) VALUES (?, ?, ?, CURDATE(), CURTIME(), ?, ?)
+            // Check if batch reference already exists to prevent duplicates
+            $checkBatchStmt = $conn->prepare("
+                SELECT batch_id FROM tbl_batch 
+                WHERE batch_reference = ? 
+                LIMIT 1
             ");
-            $batchStmt->execute([$batch_reference, $productDetails['supplier_id'], $productDetails['location_id'], $entry_by, '']);
-            $batch_id = $conn->lastInsertId();
+            $checkBatchStmt->execute([$batch_reference]);
+            $existingBatch = $checkBatchStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingBatch) {
+                // Use existing batch
+                $batch_id = $existingBatch['batch_id'];
+                error_log("✅ Using existing batch - Batch ID: $batch_id, Reference: $batch_reference");
+            } else {
+                // Create new batch
+                $batchStmt = $conn->prepare("
+                    INSERT INTO tbl_batch (
+                        batch, supplier_id, location_id, entry_date, entry_time, 
+                        entry_by, order_no
+                    ) VALUES (?, ?, ?, CURDATE(), CURTIME(), ?, ?)
+                ");
+                $batchStmt->execute([$batch_reference, $productDetails['supplier_id'], $productDetails['location_id'], $entry_by, '']);
+                $batch_id = $conn->lastInsertId();
+                error_log("✅ New batch created - Batch ID: $batch_id, Reference: $batch_reference");
+            }
         }
         
         // NO LONGER UPDATE tbl_product.quantity - it doesn't exist anymore!
@@ -928,17 +933,22 @@ function getPharmacyProducts($conn, $data) {
                 p.barcode,
                 c.category_name,
                 b.brand,
-                p.unit_price,
                 COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as srp,
                 COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity,
+                COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as total_quantity,
                 p.status,
                 s.supplier_name,
                 p.expiration,
                 l.location_name,
-                COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), (SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1)) as first_batch_srp
+                COALESCE(NULLIF(first_transfer_batch.first_batch_srp, 0), (SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1)) as first_batch_srp,
+                CASE
+                    WHEN COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) = 0 THEN 'out of stock'
+                    WHEN COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) <= 10 THEN 'low stock'
+                    ELSE 'in stock'
+                END as stock_status
             FROM tbl_product p
             LEFT JOIN tbl_category c ON p.category_id = c.category_id
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN (
@@ -1030,22 +1040,27 @@ function getLocationProducts($conn, $data) {
                 p.barcode,
                 c.category_name,
                 b.brand,
-                p.unit_price,
                 COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as srp,
                 COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as quantity,
+                COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) as total_quantity,
                 p.status,
                 s.supplier_name,
                 p.expiration,
                 l.location_name,
-                COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_srp_value
+                COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_srp_value,
+                CASE
+                    WHEN COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) = 0 THEN 'out of stock'
+                    WHEN COALESCE((SELECT SUM(fs.available_quantity) FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id), 0) <= 10 THEN 'low stock'
+                    ELSE 'in stock'
+                END as stock_status
             FROM tbl_product p
             LEFT JOIN tbl_category c ON p.category_id = c.category_id
-                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+            LEFT JOIN tbl_location l ON p.location_id = l.location_id
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
             LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id
             WHERE $where
-            GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.unit_price, p.status, s.supplier_name, p.expiration, l.location_name
+            GROUP BY p.product_id, p.product_name, p.barcode, c.category_name, b.brand, p.status, s.supplier_name, p.expiration, l.location_name
             ORDER BY p.product_name ASC
         ");
         $stmt->execute($params);

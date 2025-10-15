@@ -1,7 +1,4 @@
 <?php
-// Include CORS and configuration
-require_once __DIR__ . '/cors.php';
-
 require_once __DIR__ . '/modules/products.php';
 require_once __DIR__ . '/conn.php';
 

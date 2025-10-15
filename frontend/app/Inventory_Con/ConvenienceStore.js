@@ -697,6 +697,7 @@ function ConvenienceInventory() {
 
   return (
     <div className="min-h-screen w-full" style={{ backgroundColor: theme.bg.primary }}>
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       <NotificationSystem 
         products={products} 
         onAlertCountChange={setAlertCount}
@@ -716,27 +717,6 @@ function ConvenienceInventory() {
           
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
-            {/* Batch Transfer Button */}
-            <button
-              onClick={openBatchTransferModal}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors"
-              style={{ 
-                borderColor: theme.colors.accent,
-                backgroundColor: theme.colors.accent + '10',
-                color: theme.colors.accent
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = theme.colors.accent + '20';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = theme.colors.accent + '10';
-              }}
-            >
-              <Package className="h-4 w-4" />
-              <span className="text-sm font-medium">Batch Transfers</span>
-            </button>
-
-
             {/* Notification Bell */}
             <div className="relative notification-dropdown">
               <button
@@ -1221,53 +1201,23 @@ function ConvenienceInventory() {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                {/* Product Info Card */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-gray-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-gray-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">{selectedProductForBatch.product_name}</h4>
-                      <p className="text-sm text-gray-600">Product ID: {selectedProductForBatch.product_id}</p>
-                      <p className="text-lg font-bold text-gray-600">Transfer ID: TR-{selectedProductForBatch.transfer_id || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
 
                 {/* Transfer Details Card */}
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-lg">
+                    <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
                       <CheckCircle className="h-6 w-6 text-green-600" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForBatch.total_quantity || selectedProductForBatch.quantity || 0} pieces</p>
-                      <p className="text-sm text-green-600">From: {selectedProductForBatch.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600">To: Convenience Store</p>
+                      <p className="text-sm text-green-600 break-words">Quantity: {selectedProductForBatch.total_quantity || selectedProductForBatch.quantity || 0} pieces</p>
+                      <p className="text-sm text-green-600 break-words">From: {selectedProductForBatch.source_location || 'Warehouse'}</p>
+                      <p className="text-sm text-green-600 break-words">To: Convenience Store</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Date Info Card */}
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-purple-100 p-2 rounded-lg">
-                      <Clock className="h-6 w-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Transfer Date</h4>
-                      <p className="text-sm text-purple-600">
-                        {selectedProductForBatch.transfer_date && selectedProductForBatch.transfer_date !== 'null' ? new Date(selectedProductForBatch.transfer_date).toLocaleDateString() : 'Not Set'}
-                      </p>
-                      <p className="text-sm text-purple-600">
-                        {selectedProductForBatch.transfer_date && selectedProductForBatch.transfer_date !== 'null' ? new Date(selectedProductForBatch.transfer_date).toLocaleTimeString() : 'Not Set'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Batch Info Card */}
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
@@ -1369,7 +1319,7 @@ function ConvenienceInventory() {
               {/* Summary */}
               <div className="mt-6 p-4 rounded-lg bg-gray-50">
                 <h4 className="font-semibold mb-2 text-gray-900">Transfer Summary</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
                     <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
@@ -1377,12 +1327,6 @@ function ConvenienceInventory() {
                   <div>
                     <span className="text-gray-600">Batches Used:</span>
                     <span className="ml-2 font-semibold text-gray-900">{batchData.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Transfer Date:</span>
-                    <span className="ml-2 font-semibold text-gray-900">
-                      {selectedProductForBatch.transfer_date && selectedProductForBatch.transfer_date !== 'null' ? new Date(selectedProductForBatch.transfer_date).toLocaleDateString() : 'Not Set'}
-                    </span>
                   </div>
                   <div>
                     <span className="text-gray-600">FIFO Order:</span>
@@ -1418,53 +1362,23 @@ function ConvenienceInventory() {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                {/* Product Info Card */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-gray-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-gray-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">{selectedProductForHistory.product_name}</h4>
-                      <p className="text-sm text-gray-600">Product ID: {selectedProductForHistory.product_id}</p>
-                      <p className="text-lg font-bold text-gray-600">Transfer ID: TR-{selectedProductForHistory.transfer_id || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
 
                 {/* Transfer Details Card */}
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-lg">
+                    <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
                       <CheckCircle className="h-6 w-6 text-green-600" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</p>
-                      <p className="text-sm text-green-600">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600">To: Convenience Store</p>
+                      <p className="text-sm text-green-600 break-words">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</p>
+                      <p className="text-sm text-green-600 break-words">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
+                      <p className="text-sm text-green-600 break-words">To: Convenience Store</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Date Info Card */}
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-purple-100 p-2 rounded-lg">
-                      <Clock className="h-6 w-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Transfer Date</h4>
-                      <p className="text-sm text-purple-600" id="transfer-date">
-                        {selectedProductForHistory.transfer_date && selectedProductForHistory.transfer_date !== 'null' ? new Date(selectedProductForHistory.transfer_date).toLocaleDateString() : 'Not Set'}
-                      </p>
-                      <p className="text-sm text-purple-600" id="transfer-time">
-                        {selectedProductForHistory.transfer_date && selectedProductForHistory.transfer_date !== 'null' ? new Date(selectedProductForHistory.transfer_date).toLocaleTimeString() : 'Not Set'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Batch Info Card */}
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
@@ -1566,7 +1480,7 @@ function ConvenienceInventory() {
               {/* Summary */}
               <div className="mt-6 p-4 rounded-lg bg-gray-50">
                 <h4 className="font-semibold mb-2 text-gray-900">Transfer Summary</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
                     <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
@@ -1614,7 +1528,7 @@ function ConvenienceInventory() {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
                 {/* Total Transfers */}
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <div className="flex items-center gap-3">
@@ -1771,6 +1685,7 @@ function ConvenienceInventory() {
         </div>
       )}
 
+      </div>
     </div>
     </div>
   );

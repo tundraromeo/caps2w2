@@ -84,6 +84,11 @@ const PharmacyStore = () => {
           response = await api.getFIFOStock(data.product_id, data.location_id);
           break;
           
+        case 'get_pharmacy_batch_details':
+          // Use pharmacy_api.php for batch details
+          response = await api.callGenericAPI('pharmacy_api.php', action, data);
+          break;
+          
         default:
           // For batch tracking specific actions, use the centralized API with batch_tracking.php endpoint
           response = await api.callGenericAPI('batch_tracking.php', action, data);
@@ -103,31 +108,6 @@ const PharmacyStore = () => {
   }
 
 
-  // Function to fetch transferred batches using the centralized API system
-  async function fetchTransferredBatches(data = {}) {
-    try {
-      const response = await api.callGenericAPI('get_transferred_batches_api.php', 'get_transferred_batches', data);
-      console.log("✅ Transferred Batches API Success Response:", response);
-      return response;
-    } catch (error) {
-      console.error("❌ Transferred Batches API Call Error:", error);
-      throw error;
-    }
-  }
-
-  // Function to populate missing batch details using centralized API
-  async function populateMissingBatchDetails() {
-    try {
-      const response = await api.callGenericAPI('get_transferred_batches_api.php', 'populate_missing_batch_details', {
-        location_name: 'pharmacy'
-      });
-      console.log("✅ Populate Missing Batch Details API Response:", response);
-      return response;
-    } catch (error) {
-      console.error("❌ Populate Missing Batch Details API Call Error:", error);
-      throw error;
-    }
-  }
 
   // Calculate notifications for expiring and low stock products
   const calculateNotifications = (productList) => {
@@ -139,12 +119,12 @@ const PharmacyStore = () => {
     });
     
     const lowStock = productList.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return isStockLow(quantity) && settings.lowStockAlerts;
     });
     
     const outOfStock = productList.filter(product => {
-      const quantity = parseInt(product.quantity || 0);
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
       return quantity === 0;
     });
     
@@ -162,10 +142,10 @@ const PharmacyStore = () => {
   function checkAutoReorder(products) {
     if (!settings.autoReorder) return;
     
-    const lowStockProducts = products.filter(product => 
-      parseInt(product.quantity || 0) <= settings.lowStockThreshold && 
-      parseInt(product.quantity || 0) > 0
-    );
+    const lowStockProducts = products.filter(product => {
+      const quantity = parseInt(product.total_quantity || product.quantity || 0);
+      return quantity <= settings.lowStockThreshold && quantity > 0;
+    });
     
     if (lowStockProducts.length > 0) {
       const productNames = lowStockProducts.map(p => p.product_name).join(', ');
@@ -197,52 +177,90 @@ const PharmacyStore = () => {
   // Function to get pharmacy location using centralized API
   const loadPharmacyLocation = async () => {
     try {
+      console.log("🔍 Loading pharmacy location...");
       const response = await api.getLocations();
+      console.log("📍 Locations response:", response);
+      
       if (response.success && response.data) {
         const pharmacy = response.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
+        console.log("🏥 Found pharmacy location:", pharmacy);
+        
         if (pharmacy) {
           setPharmacyLocationId(pharmacy.location_id);
+          console.log("✅ Set pharmacy location ID:", pharmacy.location_id);
+          return pharmacy.location_id;
+        } else {
+          console.warn("⚠️ No pharmacy location found in:", response.data);
+          toast.error("Pharmacy location not found. Please check database.");
+          return null;
         }
-        
-        return pharmacy?.location_id || null;
+      } else {
+        console.error("❌ Failed to load locations:", response.message);
+        toast.error("Failed to load locations: " + (response.message || "Unknown error"));
+        return null;
       }
     } catch (error) {
-      console.error("Error loading pharmacy location:", error);
-      toast.error("Failed to load pharmacy location");
+      console.error("❌ Error loading pharmacy location:", error);
+      toast.error("Failed to load pharmacy location: " + error.message);
+      return null;
     }
-    return null;
   };
 
   // Function to load products using centralized API
   const loadProducts = async () => {
-    if (!pharmacyLocationId) return;
+    if (!pharmacyLocationId) {
+      console.log("⚠️ No pharmacy location ID, skipping product load");
+      return;
+    }
     
     setIsLoading(true);
     try {
+      console.log("🔄 Loading pharmacy products for location ID:", pharmacyLocationId);
+      
       const response = await api.getPharmacyProducts({
-        location_name: 'pharmacy'
+        location_name: 'pharmacy',
+        location_id: pharmacyLocationId
       });
       
+      console.log("📦 API Response:", response);
+      
       if (response.success && response.data) {
-        // Filter out archived products
-        const activeProducts = response.data.filter(product => 
-          product.status !== 'archived'
-        );
+        // Filter out archived products and products with 0 quantity
+        const activeProducts = response.data.filter(product => {
+          const quantity = parseInt(product.total_quantity || product.quantity || 0);
+          const isActive = product.status !== 'archived';
+          const hasQuantity = quantity > 0;
+          
+          if (!isActive) console.log("❌ Filtered out archived:", product.product_name);
+          if (!hasQuantity) console.log("⚠️ Product with 0 quantity:", product.product_name, "- keeping for visibility");
+          
+          // Show all active products even if quantity is 0
+          return isActive;
+        });
+        
+        console.log(`✅ Loaded ${activeProducts.length} active products out of ${response.data.length} total`);
         
         // Debug: Log first few products to check SRP values
         console.log("🔍 First 3 products with SRP data:", activeProducts.slice(0, 3).map(p => ({
           name: p.product_name,
           srp: p.srp,
           first_batch_srp: p.first_batch_srp,
-          total_srp_value: p.total_srp_value
+          total_quantity: p.total_quantity,
+          quantity: p.quantity
         })));
         
         setInventory(activeProducts);
         setFilteredInventory(activeProducts);
+        calculateNotifications(activeProducts);
+      } else {
+        console.error("❌ API Error:", response.message);
+        toast.error(response.message || "Failed to load products");
+        setInventory([]);
+        setFilteredInventory([]);
       }
     } catch (error) {
-      console.error("Error loading products:", error);
-      toast.error("Failed to load products");
+      console.error("❌ Error loading products:", error);
+      toast.error("Failed to load products: " + error.message);
       setInventory([]);
       setFilteredInventory([]);
     } finally {
@@ -253,9 +271,14 @@ const PharmacyStore = () => {
   // Initialize component
   useEffect(() => {
     const initialize = async () => {
+      console.log("🚀 Initializing Pharmacy Inventory...");
       const locationId = await loadPharmacyLocation();
+      console.log("📍 Pharmacy Location ID:", locationId);
       if (locationId) {
         await loadProducts();
+      } else {
+        console.error("❌ Failed to get pharmacy location ID");
+        toast.error("Failed to load pharmacy location. Please check if pharmacy location exists.");
       }
     };
     initialize();
@@ -421,15 +444,8 @@ const PharmacyStore = () => {
       console.log("Loading batch transfer details for product ID:", productId);
       console.log("Pharmacy location ID:", pharmacyLocationId);
       
-      // First, try to populate missing batch details
-      try {
-        await populateMissingBatchDetails();
-      } catch (error) {
-        console.warn("Failed to populate missing batch details:", error);
-      }
-      
-      // Get batch transfer details using the new API
-      const response = await fetchTransferredBatches({
+      // Use same logic as Convenience Store - call get_pharmacy_batch_details
+      const response = await handleApiCall("get_pharmacy_batch_details", {
         location_id: pharmacyLocationId,
         product_id: productId
       });
@@ -437,12 +453,12 @@ const PharmacyStore = () => {
       console.log("Batch transfer details response:", response);
       
       if (response.success && response.data) {
-        const batchDetails = response.data || [];
-        const summary = response.summary || {};
+        console.log("Transfer data received:", response.data);
+        const batchDetails = response.data.batch_details || [];
+        const summary = response.data.summary || {};
         
-        console.log("Batch transfer data received:", response.data);
-        console.log("Batch details:", batchDetails);
-        console.log("Summary:", summary);
+        console.log("Batch details extracted:", batchDetails);
+        console.log("Summary extracted:", summary);
         
         if (batchDetails.length > 0) {
           console.log("✅ Found batch transfer details");
@@ -484,11 +500,13 @@ const PharmacyStore = () => {
     }
     return null;
   }).filter(Boolean))];
-  const pages = Math.ceil(filteredInventory.length / rowsPerPage);
-  const items = filteredInventory.slice((page - 1) * rowsPerPage, page * rowsPerPage);
-
+  
   // Update uniqueProducts for both table and stats
   const uniqueProducts = Array.from(new Map(filteredInventory.map(item => [item.product_name, item])).values());
+  
+  // Fix pagination to use uniqueProducts
+  const pages = Math.ceil(uniqueProducts.length / rowsPerPage);
+  const items = uniqueProducts.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   return (
     <div className="p-6 space-y-6" style={{ backgroundColor: theme.bg.primary }}>
@@ -500,21 +518,6 @@ const PharmacyStore = () => {
           <p style={{ color: theme.text.secondary }}>Manage pharmaceutical products and medications</p>
         </div>
         
-        {/* Manual Refresh Button */}
-        <button
-          onClick={() => {
-            console.log("🔄 Manual refresh triggered");
-            loadProducts();
-          }}
-          disabled={isLoading}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
-          title="Refresh inventory to sync with POS sales"
-        >
-          <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          {isLoading ? 'Refreshing...' : 'Refresh'}
-        </button>
         
         {/* Notification Bell */}
         <div className="relative notification-dropdown">
@@ -540,7 +543,7 @@ const PharmacyStore = () => {
           {/* Notification Dropdown */}
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-96 rounded-lg shadow-2xl border z-50 max-h-96 overflow-y-auto" 
-                 style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+                 style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
               <div className="p-4 border-b" style={{ borderColor: theme.border.default }}>
                 <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Notifications</h3>
                 <p className="text-sm" style={{ color: theme.text.secondary }}>
@@ -642,7 +645,7 @@ const PharmacyStore = () => {
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
             <Package className="h-8 w-8" style={{ color: theme.colors.accent }} />
             <div className="ml-4">
@@ -651,7 +654,7 @@ const PharmacyStore = () => {
             </div>
           </div>
         </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
             <CheckCircle className="h-8 w-8" style={{ color: theme.colors.success }} />
             <div className="ml-4">
@@ -662,7 +665,7 @@ const PharmacyStore = () => {
             </div>
           </div>
         </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
             <AlertCircle className="h-8 w-8" style={{ color: theme.colors.warning }} />
             <div className="ml-4">
@@ -673,13 +676,13 @@ const PharmacyStore = () => {
             </div>
           </div>
         </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
             <Truck className="h-8 w-8" style={{ color: theme.colors.info }} />
             <div className="ml-4">
               <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
               <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                ₱{inventory.reduce((sum, p) => sum + Number(p.first_batch_srp || 0), 0).toFixed(2)}
+                ₱{inventory.reduce((sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.total_quantity || p.quantity || 0)), 0).toFixed(2)}
               </p>
             </div>
           </div>
@@ -687,7 +690,7 @@ const PharmacyStore = () => {
       </div>
 
       {/* Filters and Search */}
-      <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+      <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
@@ -731,12 +734,12 @@ const PharmacyStore = () => {
       </div>
 
       {/* Inventory Table */}
-      <div className="rounded-3xl shadow-xl" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+      <div className="rounded-3xl shadow-xl" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
         <div className="px-6 py-4 border-b" style={{ borderColor: theme.border.default }}>
           <div className="flex justify-between items-center">
             <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Products</h3>
             <div className="text-sm" style={{ color: theme.text.secondary }}>
-              {filteredInventory.length} products found
+              {uniqueProducts.length} unique products found ({filteredInventory.length} total entries)
             </div>
           </div>
         </div>
@@ -781,9 +784,9 @@ const PharmacyStore = () => {
                   </td>
                 </tr>
               ) : items.length > 0 ? (
-                // Remove duplicates by product_name
-                uniqueProducts.map((item, index) => {
-                  const quantity = parseInt(item.quantity || 0);
+                // Display paginated unique products
+                items.map((item, index) => {
+                  const quantity = parseInt(item.total_quantity || item.quantity || 0);
                   
                   return (
                     <tr key={`${item.product_id}-${index}`} className="hover:bg-opacity-50" style={{ backgroundColor: 'transparent', hoverBackgroundColor: theme.bg.hover }}>
@@ -797,7 +800,7 @@ const PharmacyStore = () => {
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
-                          {item.category}
+                          {item.category || item.category_name || 'Uncategorized'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
@@ -805,11 +808,20 @@ const PharmacyStore = () => {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
-                          {quantity || 0}
+                          {item.total_quantity || item.quantity || 0}
                         </div>
+                        {/* Show breakdown if multiple batches */}
+                        {item.total_batches > 1 && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            ({item.total_batches} batches)
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
-                        ₱{Number.parseFloat(item.first_batch_srp || 0).toFixed(2)}
+                        ₱{(() => {
+                          const srpValue = Number.parseFloat(item.first_batch_srp || item.srp || 0);
+                          return srpValue > 0 ? srpValue.toFixed(2) : '0.00';
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                         {item.supplier_name || "N/A"}
@@ -917,7 +929,7 @@ const PharmacyStore = () => {
           <div className="backdrop-blur-md rounded-xl shadow-2xl p-6 border w-96" style={{ 
             backgroundColor: theme.bg.card + 'F0', 
             borderColor: theme.border.default,
-            boxShadow: `0 25px 50px ${theme.shadow}`
+            boxShadow: `0 25px 50px ${theme.shadow.lg}`
           }}>
             <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Confirm Archive</h3>
             <p className="mb-4" style={{ color: theme.text.secondary }}>Are you sure you want to archive this product?</p>
@@ -971,64 +983,32 @@ const PharmacyStore = () => {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                {/* Product Info Card */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-blue-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">{selectedProductForHistory.product_name}</h4>
-                      <p className="text-sm text-gray-600">Product ID: {selectedProductForHistory.product_id}</p>
-                      <p className="text-lg font-bold text-blue-600">Transfer ID: TR-{selectedProductForHistory.transfer_id || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
                 {/* Transfer Details Card */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-lg">
-                      <CheckCircle className="h-6 w-6 text-green-600" />
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.quantity || 0} units</p>
-                      <p className="text-sm text-green-600">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600">To: Pharmacy</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Date Info Card */}
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-purple-100 p-2 rounded-lg">
-                      <Clock className="h-6 w-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Transfer Date</h4>
-                      <p className="text-sm text-purple-600">
-                        {selectedProductForHistory.date_added ? new Date(selectedProductForHistory.date_added).toLocaleDateString() : 'Not Set'}
-                      </p>
-                      <p className="text-sm text-purple-600">
-                        {selectedProductForHistory.entry_time ? new Date(`2000-01-01T${selectedProductForHistory.entry_time}`).toLocaleTimeString() : 'Not Set'}
-                      </p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Transfer Details</h4>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} units</p>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">To: Pharmacy</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Batch Info Card */}
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-orange-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-orange-600" />
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="bg-orange-100 p-2 rounded-lg flex-shrink-0">
+                      <Package className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Batch Information</h4>
-                      <p className="text-sm text-orange-600">Batches Transferred: {quantityHistoryData.length}</p>
-                      <p className="text-sm text-orange-600">FIFO Order: Active</p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Batch Information</h4>
+                      <p className="text-xs sm:text-sm text-orange-600 truncate">Batches Transferred: {quantityHistoryData.length}</p>
+                      <p className="text-xs sm:text-sm text-orange-600 truncate">FIFO Order: Active</p>
                     </div>
                   </div>
                 </div>
@@ -1160,7 +1140,7 @@ const PharmacyStore = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForHistory.quantity || 0} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Transferred:</span>

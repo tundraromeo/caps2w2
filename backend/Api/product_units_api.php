@@ -4,10 +4,8 @@
  * Handles multi-unit product operations (tablets, packs, boxes)
  */
 
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-header('Content-Type: application/json');
+// Include proper CORS configuration
+require_once __DIR__ . '/cors.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -239,6 +237,82 @@ try {
                 echo json_encode([
                     "success" => true,
                     "message" => "Product units saved successfully"
+                ]);
+                
+            } catch (Exception $e) {
+                $conn->rollBack();
+                throw $e;
+            }
+            break;
+            
+        /**
+         * Bulk add standard units for all medicine products
+         */
+        case 'bulk_add_standard_units':
+            $conn->beginTransaction();
+            
+            try {
+                // First, ensure all medicine products have allow_multi_unit enabled
+                $updateProduct = $conn->prepare("
+                    UPDATE tbl_product 
+                    SET allow_multi_unit = 1, default_unit = 'tablet'
+                    WHERE product_type = 'Medicine'
+                ");
+                $updateProduct->execute();
+                
+                // Remove any existing units for medicine products to avoid duplicates
+                $deleteUnits = $conn->prepare("
+                    DELETE FROM tbl_product_units 
+                    WHERE product_id IN (
+                        SELECT product_id FROM tbl_product WHERE product_type = 'Medicine'
+                    )
+                ");
+                $deleteUnits->execute();
+                
+                // Add Tablet as base unit (quantity = 1)
+                $insertTablet = $conn->prepare("
+                    INSERT INTO tbl_product_units (product_id, unit_name, unit_quantity, is_base_unit, status)
+                    SELECT product_id, 'tablet', 1, 1, 'active' 
+                    FROM tbl_product 
+                    WHERE product_type = 'Medicine'
+                ");
+                $insertTablet->execute();
+                
+                // Add Strip unit (quantity = 10 tablets)
+                $insertStrip = $conn->prepare("
+                    INSERT INTO tbl_product_units (product_id, unit_name, unit_quantity, is_base_unit, status)
+                    SELECT product_id, 'strip', 10, 0, 'active' 
+                    FROM tbl_product 
+                    WHERE product_type = 'Medicine'
+                ");
+                $insertStrip->execute();
+                
+                // Add Box unit (quantity = 100 tablets)
+                $insertBox = $conn->prepare("
+                    INSERT INTO tbl_product_units (product_id, unit_name, unit_quantity, is_base_unit, status)
+                    SELECT product_id, 'box', 100, 0, 'active' 
+                    FROM tbl_product 
+                    WHERE product_type = 'Medicine'
+                ");
+                $insertBox->execute();
+                
+                // Get count of products updated
+                $countStmt = $conn->prepare("
+                    SELECT COUNT(DISTINCT p.product_id) as products_updated,
+                           COUNT(pu.unit_id) as total_units_added
+                    FROM tbl_product p
+                    JOIN tbl_product_units pu ON p.product_id = pu.product_id
+                    WHERE p.product_type = 'Medicine'
+                ");
+                $countStmt->execute();
+                $result = $countStmt->fetch(PDO::FETCH_ASSOC);
+                
+                $conn->commit();
+                
+                echo json_encode([
+                    "success" => true,
+                    "message" => "Standard units (Tablet, Strip, Box) added successfully for all medicine products",
+                    "data" => $result
                 ]);
                 
             } catch (Exception $e) {

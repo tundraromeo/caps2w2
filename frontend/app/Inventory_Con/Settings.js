@@ -330,6 +330,7 @@ const Settings = () => {
 
   return (
     <div className="p-6 space-y-6 min-h-screen" style={themeStyles.container}>
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -679,7 +680,7 @@ const Settings = () => {
         </div>
       </div>
 
-
+      </div>
     </div>
   );
 };

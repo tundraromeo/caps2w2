@@ -161,7 +161,7 @@ function TransactionManager() {
             className="rounded-lg shadow-md p-4"
             style={{
               backgroundColor: theme.bg.card,
-              boxShadow: `0 10px 25px ${theme.shadow}`
+              boxShadow: `0 10px 25px ${theme.shadow.lg}`
             }}
           >
             <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>Date Range</h3>
@@ -225,7 +225,7 @@ function TransactionManager() {
         {/* Summary Cards */}
         {summary && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🛒</div>
                 <div>
@@ -234,7 +234,7 @@ function TransactionManager() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">💰</div>
                 <div>
@@ -243,7 +243,7 @@ function TransactionManager() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📊</div>
                 <div>
@@ -252,7 +252,7 @@ function TransactionManager() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">👥</div>
                 <div>
@@ -261,7 +261,7 @@ function TransactionManager() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">🖥️</div>
                 <div>
@@ -280,7 +280,7 @@ function TransactionManager() {
               className="rounded-lg shadow-md p-4"
               style={{
                 backgroundColor: theme.bg.card,
-                boxShadow: `0 10px 25px ${theme.shadow}`
+                boxShadow: `0 10px 25px ${theme.shadow.lg}`
               }}
             >
               <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>Payment Method Breakdown</h3>
@@ -307,7 +307,7 @@ function TransactionManager() {
           className="rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
           style={{
             backgroundColor: theme.bg.card,
-            boxShadow: `0 10px 25px ${theme.shadow}`
+            boxShadow: `0 10px 25px ${theme.shadow.lg}`
           }}
         >
           <div className="p-6">

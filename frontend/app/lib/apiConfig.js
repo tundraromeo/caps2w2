@@ -11,7 +11,18 @@
  */
 
 // Get base URL from environment variable with fallback
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api';
+// FORCE HTTP to avoid SSL certificate errors with XAMPP
+const getBaseUrl = () => {
+  // Use environment variable if set
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  
+  // Default to HTTP (XAMPP doesn't have valid SSL by default)
+  return 'http://localhost/caps2w2/backend/Api';
+};
+
+export const API_BASE_URL = getBaseUrl();
 
 /**
  * Get full API URL for a specific endpoint
@@ -21,7 +32,14 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://loca
 export const getApiUrl = (endpoint) => {
   // Remove leading slash if present
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
-  return `${API_BASE_URL}/${cleanEndpoint}`;
+  const fullUrl = `${API_BASE_URL}/${cleanEndpoint}`;
+  
+  // Debug log to verify URL is correct
+  if (typeof window !== 'undefined') {
+    console.log(`🔗 API URL: ${fullUrl}`);
+  }
+  
+  return fullUrl;
 };
 
 /**
@@ -69,6 +87,7 @@ export const API_ENDPOINTS = {
   
   // Other
   BARCODE: 'barcode_api.php',
+  WAREHOUSE_PRODUCT_NAME: 'warehouse_product_name_api.php',
   INVENTORY: 'inventory_api.php',
   PRODUCTS: 'products_api.php',
   BATCH_FUNCTIONS: 'batch_functions_api.php',

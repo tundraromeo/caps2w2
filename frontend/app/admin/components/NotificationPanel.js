@@ -157,6 +157,7 @@ const NotificationPanel = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-gray-200 bg-opacity-50 z-50 flex items-center justify-center">
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
       <div 
         className="w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto rounded-lg shadow-lg"
         style={{ backgroundColor: theme.bg.card }}
@@ -270,6 +271,7 @@ const NotificationPanel = ({ isOpen, onClose }) => {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

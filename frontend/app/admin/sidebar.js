@@ -225,6 +225,13 @@ const Sidebar = ({
       className={`fixed inset-y-0 left-0 z-40 h-full transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:flex-col md:z-auto ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} ${isCollapsed ? 'w-16' : 'w-64'}`}
       style={{ backgroundColor: theme.bg.card, borderRight: `1px solid ${theme.border.default}` }}
     >
+      {/* Zoom wrapper */}
+      <div style={{
+        transform: 'scale(0.9)',
+        transformOrigin: 'top left',
+        height: '111%',
+        width: '111%'
+      }}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 md:hidden" style={{ borderBottom: `1px solid ${theme.border.default}` }}>
         <div className="font-semibold" style={{ color: theme.text.primary }}>Menu</div>
@@ -461,6 +468,8 @@ const Sidebar = ({
           )}
         </button>
       </div>
+      </div>
+      {/* End zoom wrapper */}
 
       {/* Notification Panel */}
       <NotificationPanel 

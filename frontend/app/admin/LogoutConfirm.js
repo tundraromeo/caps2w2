@@ -13,7 +13,7 @@ const LogoutConfirm = ({ onConfirm, onCancel }) => {
         style={{ 
           backgroundColor: theme.bg.modal,
           border: `1px solid ${theme.border.default}`,
-          boxShadow: `0 25px 50px ${theme.shadow}`
+          boxShadow: `0 25px 50px ${theme.shadow.lg}`
         }}
       >
         <div className="flex items-center justify-between mb-4">

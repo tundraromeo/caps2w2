@@ -11,32 +11,31 @@
 
 require_once __DIR__ . '/config.php';
 
-// Get allowed origins from configuration (comma-separated)
-$allowedOrigins = Config::get('CORS_ALLOWED_ORIGINS');
-$originsArray = array_map('trim', explode(',', $allowedOrigins));
+// Get allowed origins from configuration
+$allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://localhost:3000',
+    'https://localhost:3001',
+];
 
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $originsArray)) {
-    header("Access-Control-Allow-Origin: $origin");
-} elseif (Config::isDebug()) {
-    // In development, allow the first origin as fallback
-    header("Access-Control-Allow-Origin: " . $originsArray[0]);
+// Get the request origin
+$requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+
+// Check if the origin is allowed
+if (in_array($requestOrigin, $allowedOrigins)) {
+    $corsOrigin = $requestOrigin;
 } else {
-    // In production, do not set Allow-Origin if not in list
-    header("Access-Control-Allow-Origin: none");
+    // Fallback to config or first allowed origin
+    $corsOrigin = Config::get('CORS_ORIGIN', $allowedOrigins[0]);
 }
 
+// Set CORS headers
+header("Access-Control-Allow-Origin: $corsOrigin");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Max-Age: 86400"); // Cache preflight for 24 hours
-
-// Security headers
-header("X-Content-Type-Options: nosniff");
-header("X-Frame-Options: DENY");
-header("X-XSS-Protection: 1; mode=block");
-header("Strict-Transport-Security: max-age=31536000; includeSubDomains");
-
 header("Content-Type: application/json; charset=utf-8");
 
 // Handle preflight OPTIONS requests

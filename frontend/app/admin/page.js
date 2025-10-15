@@ -55,46 +55,69 @@ const logoutUser = async () => {
       try {
         const user = JSON.parse(userData);
         empId = user.user_id || user.emp_id || null;
+        console.log('Admin Logout - Parsed user data:', user);
+        console.log('Admin Logout - Found emp_id:', empId);
       } catch (e) {
         console.error('Failed to parse user data:', e);
       }
     }
     
-    // Call logout API
-    const response = await fetch(LOGIN_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        action: 'logout',
-        emp_id: empId 
-      })
-    });
-    
-    const result = await response.json();
-    
-    
-    if (result.success) {
-      // Clear all stored data
-      sessionStorage.clear();
-      localStorage.removeItem('pos-terminal');
-      localStorage.removeItem('pos-cashier');
-      localStorage.removeItem('pos-emp-id');
-      
-      // Redirect to login page
-      window.location.href = '/';
-      return true;
-    } else {
-      
-      // Still clear local data and redirect even if API fails
-      sessionStorage.clear();
-      localStorage.removeItem('pos-terminal');
-      localStorage.removeItem('pos-cashier');
-      localStorage.removeItem('pos-emp-id');
-      window.location.href = '/';
-      return false;
+    // Fallback: Try to get emp_id from localStorage
+    if (!empId) {
+      const localEmpId = localStorage.getItem('pos-emp-id');
+      if (localEmpId) {
+        empId = parseInt(localEmpId);
+        console.log('Admin Logout - Using emp_id from localStorage:', empId);
+      }
     }
-  } catch (error) {
     
+    console.log('Admin Logout attempt - Final Emp ID:', empId);
+    
+    // Call logout API if we have an empId
+    if (empId) {
+      try {
+        // Call logout API with credentials to include session cookies
+        const response = await fetch(LOGIN_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // Include session cookies
+          body: JSON.stringify({ 
+            action: 'logout',
+            emp_id: empId 
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log('✅ Admin logout successful - Server confirmed logout');
+        } else {
+          console.warn('⚠️ Admin logout warning:', result.message);
+        }
+      } catch (apiError) {
+        console.warn('⚠️ Admin logout API error:', apiError);
+        console.log('📍 Proceeding with local cleanup even though API call failed');
+        // Continue with local cleanup even if API fails
+      }
+    } else {
+      console.warn('⚠️ No employee ID found in session or local storage');
+      console.log('📍 Clearing local session data and redirecting to login');
+    }
+    
+    // Always clear all stored data and redirect
+    console.log('🧹 Cleaning up: Clearing all session and local storage');
+    sessionStorage.clear();
+    localStorage.removeItem('pos-terminal');
+    localStorage.removeItem('pos-cashier');
+    localStorage.removeItem('pos-emp-id');
+    console.log('✅ Cleanup complete, redirecting to login page');
+    
+    // Redirect to login page
+    window.location.href = '/';
+    return true;
+  } catch (error) {
+    console.error('❌ Logout error:', error);
+    console.log('📍 Proceeding with local logout despite errors');
     // Clear local data and redirect even if there's an error
     sessionStorage.clear();
     localStorage.removeItem('pos-terminal');
@@ -169,26 +192,27 @@ async function recordLogin({ loginType = 'LOGIN', status = 'SUCCESS' }) {
 // Mobile Header with Notifications Component
 function MobileHeaderWithNotifications({ onMenuClick, onNotificationClick }) {
   const { hasAnyNotifications } = useNotification();
+  const { theme } = useTheme();
   
   return (
-    <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: 'var(--admin-bg-secondary)', borderBottom: '1px solid var(--admin-border)' }}>
+    <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: theme.bg.secondary, borderBottom: `1px solid ${theme.border.default}` }}>
       <button
         onClick={onMenuClick}
         className="p-2 rounded"
         aria-label="Open menu"
-        style={{ color: 'var(--admin-text-primary)' }}
+        style={{ color: theme.text.primary }}
       >
         {/* simple hamburger */}
-        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--admin-text-primary)' }}></span>
-        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--admin-text-primary)' }}></span>
-        <span className="block w-6 h-0.5" style={{ backgroundColor: 'var(--admin-text-primary)' }}></span>
+        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: theme.text.primary }}></span>
+        <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: theme.text.primary }}></span>
+        <span className="block w-6 h-0.5" style={{ backgroundColor: theme.text.primary }}></span>
       </button>
-      <div className="font-semibold" style={{ color: 'var(--admin-text-primary)' }}>Admin</div>
+      <div className="font-semibold" style={{ color: theme.text.primary }}>Admin</div>
       <button
         onClick={onNotificationClick}
         className="p-2 rounded relative"
         aria-label="Notification Center"
-        style={{ color: 'var(--admin-text-primary)' }}
+        style={{ color: theme.text.primary }}
       >
         <FaBell />
         {hasAnyNotifications() && (
@@ -237,10 +261,51 @@ function AdminContent() {
       setIsAuthenticated(true);
       setIsLoading(false);
 
+      // Add automatic logout on tab close
+      const handleBeforeUnload = async (event) => {
+        console.log('🚪 Tab closing - Auto logout triggered');
+        
+        // Stop heartbeat immediately
+        HeartbeatService.stop();
+        
+        // Perform logout API call
+        try {
+          const response = await fetch(LOGIN_API_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              action: 'logout',
+              emp_id: user.user_id || user.emp_id
+            })
+          });
+          
+          if (response.ok) {
+            console.log('✅ Auto logout successful');
+          } else {
+            console.log('⚠️ Auto logout failed, but continuing...');
+          }
+        } catch (error) {
+          console.log('⚠️ Auto logout error:', error.message);
+        }
+        
+        // Clear session storage
+        sessionStorage.clear();
+        localStorage.removeItem('pos-terminal');
+        localStorage.removeItem('pos-cashier');
+        localStorage.removeItem('pos-emp-id');
+      };
+
+      // Add event listener for tab close
+      window.addEventListener('beforeunload', handleBeforeUnload);
+
       // Cleanup: Stop heartbeat when component unmounts
       return () => {
         console.log('💔 Stopping heartbeat service (component unmount)');
         HeartbeatService.stop();
+        window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     } catch (e) {
       console.error('❌ Failed to parse user data:', e);
@@ -323,18 +388,21 @@ function AdminContent() {
 
   // Show loading screen while checking authentication
   if (isLoading) {
+    const { theme } = useTheme();
     return (
-      <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--admin-bg-primary)' }}>
+      <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Verifying authentication...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderBottomColor: theme.colors.accent }}></div>
+          <p style={{ color: theme.text.secondary }}>Verifying authentication...</p>
         </div>
       </div>
     );
   }
 
+  const { theme } = useTheme();
+  
   return (
-    <div className="flex h-screen" style={{ backgroundColor: 'var(--admin-bg-primary)' }}>
+    <div className="flex h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Notification Services */}
       <NotificationManager />
       <RealtimeNotificationService />
@@ -368,18 +436,23 @@ function AdminContent() {
         />
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pt-16 md:pt-6" style={{ backgroundColor: 'var(--admin-bg-secondary)' }}>
-          <div className="w-full min-w-0 overflow-x-auto md:overflow-visible">
-            {componentMap[activeComponent] || <Dashboard />}
-          </div>
-        </main>
-
-        {/* Theme Toggle Button */}
-        <ThemeToggle />
-      </div>
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Content Area */}
+          <main className="flex-1 overflow-y-auto" style={{ backgroundColor: theme.bg.secondary }}>
+            <div className="w-full min-w-0 overflow-x-auto md:overflow-visible" style={{ 
+              transform: 'scale(0.8)', 
+              transformOrigin: 'top left',
+              width: '125%',
+              height: '125%'
+            }}>
+              {componentMap[activeComponent] || <Dashboard />}
+            </div>
+          </main>
+          
+          {/* Theme Toggle Button */}
+          <ThemeToggle />
+        </div>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

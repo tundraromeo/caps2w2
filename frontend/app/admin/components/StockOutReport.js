@@ -66,48 +66,35 @@ function StockOutReport() {
       setLoading(true);
       setError(null);
       
-      // Use the same API call as inventory stock adjustment but filter for stock-out only
-      const result = await handleApiCall('get_stock_adjustments', {
-        search: '',
-        type: 'OUT', // Only get stock-out movements
-        status: 'all',
-        page: 1,
-        limit: 1000 // Get all records for the date range
+      // Use the dedicated stock out report API with proper date filtering
+      const result = await handleApiCall('get_report_data', {
+        report_type: 'stock_out',
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate
       });
       
       // Debug: Log all data first
       console.log('Raw API response:', result.data);
       console.log('Date range:', dateRange);
       
-      // Filter by date range on the frontend since the API doesn't support date filtering
-      let filteredData = result.data.filter(item => {
-        const itemDate = new Date(item.date);
-        const startDate = new Date(dateRange.startDate);
-        const endDate = new Date(dateRange.endDate);
-        
-        console.log('Item date:', item.date, 'Item parsed:', itemDate);
-        console.log('Start date:', dateRange.startDate, 'Start parsed:', startDate);
-        console.log('End date:', dateRange.endDate, 'End parsed:', endDate);
-        console.log('Is within range:', itemDate >= startDate && itemDate <= endDate);
-        
-        return itemDate >= startDate && itemDate <= endDate;
-      });
-
-      // CRITICAL: Remove duplicates based on reference_no to prevent same transaction showing multiple times
-      const seenReferences = new Set();
-      filteredData = filteredData.filter(item => {
-        const referenceNo = item.reference_no;
-        if (seenReferences.has(referenceNo)) {
-          console.log('Removing duplicate entry with reference:', referenceNo);
+      // The API already filters by date range, so we can use the data directly
+      let stockOutData = result.data || [];
+      
+      // CRITICAL: Remove duplicates based on movement_id to prevent same transaction showing multiple times
+      const seenMovementIds = new Set();
+      stockOutData = stockOutData.filter(item => {
+        const movementId = item.movement_id || item.id;
+        if (seenMovementIds.has(movementId)) {
+          console.log('Removing duplicate entry with movement_id:', movementId);
           return false; // Skip this duplicate entry
         }
-        seenReferences.add(referenceNo);
+        seenMovementIds.add(movementId);
         return true;
       });
       
-      setStockOutData(filteredData);
+      setStockOutData(stockOutData);
       setError(null);
-      console.log('Stock-out data fetched successfully:', filteredData.length, 'records out of', result.data.length, 'total');
+      console.log('Stock-out data fetched successfully:', stockOutData.length, 'records');
       
     } catch (error) {
       console.error('Error fetching stock-out data:', error);
@@ -162,14 +149,73 @@ function StockOutReport() {
         reportTypes.find(t => t.id === type)?.name || type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
       ).join(', ');
       
+      // Generate report data table HTML
+      const generateReportDataTable = () => {
+        if (stockOutData.length === 0) {
+          return '<div style="text-align: center; padding: 20px; color: #666;">No stock-out data found for the selected date range</div>';
+        }
+
+        let tableHTML = `
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px;">
+            <thead>
+              <tr style="background-color: #f8f9fa;">
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Date</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Time</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Product Name</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Product ID</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: center;">Type</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: center;">Quantity</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Reason</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Adjusted By</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Reference No</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        stockOutData.forEach((row, index) => {
+          const date = row.date ? new Date(row.date).toLocaleDateString('en-PH') : 'N/A';
+          const time = row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+          const productName = row.product_name || 'Generic Product';
+          const productId = row.barcode || row.product_id || 'No ID';
+          const quantity = row.quantity || '0';
+          const reason = row.reason || row.notes || 'System Adjustment';
+          const adjustedBy = row.adjusted_by || row.adjusted_by_detailed || row.created_by || 'Unknown User';
+          const referenceNo = row.reference_no || 'Auto-Generated';
+
+          tableHTML += `
+            <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
+              <td style="border: 1px solid #000; padding: 6px;">${date}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${time}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${productName}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${productId}</td>
+              <td style="border: 1px solid #000; padding: 6px; text-align: center;">Stock Out</td>
+              <td style="border: 1px solid #000; padding: 6px; text-align: center;">${quantity}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${reason}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${adjustedBy}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${referenceNo}</td>
+            </tr>
+          `;
+        });
+
+        tableHTML += '</tbody></table>';
+        return tableHTML;
+      };
+
+      // Generate summary statistics
+      const totalItems = stockOutData.length;
+      const totalQuantity = stockOutData.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+      const uniqueProducts = new Set(stockOutData.map(item => item.product_name).filter(Boolean)).size;
+      const approvedAdjustments = stockOutData.filter(item => item.status === 'Approved' || item.status === 'Completed').length;
+
       tempDiv.innerHTML = `
         <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: #f8fafc; border: 2px solid #000000;">
           <div style="font-size: 24px; font-weight: bold; color: #000000; margin-bottom: 5px;">ENGUIO PHARMACY SYSTEM</div>
-          <div style="font-size: 14px; color: #000000;">Combined Reports</div>
+          <div style="font-size: 14px; color: #000000;">Stock Out Report</div>
         </div>
         
         <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #000000;">
-          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Combined Reports</div>
+          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Stock Out Report</div>
           <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated on: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}</div>
           <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated by: Admin</div>
         </div>
@@ -178,8 +224,8 @@ function StockOutReport() {
           <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Information</div>
           <div style="display: table; width: 100%;">
             <div style="display: table-row;">
-              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Types:</div>
-              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reportNames}</div>
+              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Type:</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">Stock Out Reports</div>
             </div>
             <div style="display: table-row;">
               <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
@@ -191,13 +237,36 @@ function StockOutReport() {
             </div>
           </div>
         </div>
-        
-        <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border: 1px solid #000000;">
-          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
-          <div style="font-size: 11px; color: #000000; line-height: 1.6;">
-            This combined report contains data from multiple report types for the specified date range. 
-            Each report type provides detailed information about different aspects of the inventory management system.
+
+        <div style="margin-bottom: 20px; padding: 15px; background: #fef2f2; border-left: 4px solid #ef4444;">
+          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Summary Statistics</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
+            <div style="display: table; width: 100%;">
+              <div style="display: table-row;">
+                <div style="display: table-cell; font-weight: bold; color: #000000; padding: 2px 10px 2px 0; width: 50%;">Total Stock-Out Items:</div>
+                <div style="display: table-cell; color: #000000; padding: 2px 0;">${totalItems}</div>
+              </div>
+              <div style="display: table-row;">
+                <div style="display: table-cell; font-weight: bold; color: #000000; padding: 2px 10px 2px 0; width: 50%;">Total Quantity:</div>
+                <div style="display: table-cell; color: #000000; padding: 2px 0;">${totalQuantity.toLocaleString()}</div>
+              </div>
+            </div>
+            <div style="display: table; width: 100%;">
+              <div style="display: table-row;">
+                <div style="display: table-cell; font-weight: bold; color: #000000; padding: 2px 10px 2px 0; width: 50%;">Unique Products:</div>
+                <div style="display: table-cell; color: #000000; padding: 2px 0;">${uniqueProducts}</div>
+              </div>
+              <div style="display: table-row;">
+                <div style="display: table-cell; font-weight: bold; color: #000000; padding: 2px 10px 2px 0; width: 50%;">Approved Adjustments:</div>
+                <div style="display: table-cell; color: #000000; padding: 2px 0;">${approvedAdjustments}</div>
+              </div>
+            </div>
           </div>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <div style="font-size: 16px; font-weight: bold; color: #000000; margin-bottom: 10px;">Stock Out Details</div>
+          ${generateReportDataTable()}
         </div>
       `;
       
@@ -301,175 +370,78 @@ function StockOutReport() {
           </span>
         );
       case 'reason':
-        // Map notes field to reason with appropriate values
+        // Use the new API response structure for reason
+        const reason = row['reason'] || '';
         const notes = row['notes'] || '';
-        // Prioritize POS Sale detection
-        if (notes.includes('POS Sale') || notes.includes('FIFO Consumption') || notes.includes('sold')) {
+        
+        // Use reason field first, then fallback to notes
+        const reasonText = reason || notes;
+        
+        if (reasonText.includes('POS Sale') || reasonText.includes('FIFO Consumption') || reasonText.includes('sold')) {
           return '🛒 POS Sale';
-        } else if (notes.includes('Transfer') || notes.includes('transfer')) {
+        } else if (reasonText.includes('Transfer') || reasonText.includes('transfer')) {
           return '🚚 Transfer Product from Warehouse to Convenience/Pharmacy';
-        } else if (notes.includes('Synced')) {
+        } else if (reasonText.includes('Synced')) {
           return '🔄 System Sync';
-        } else if (notes) {
-          return notes;
+        } else if (reasonText.includes('Manual')) {
+          return '🔧 Manual Adjustment';
+        } else if (reasonText) {
+          return reasonText;
         }
         return '📝 System Adjustment';
       case 'adjusted_by':
-        // Get all available employee information from API response
-        const adjustedBy = row['adjusted_by'] || ''; // Complete employee name from API
-        const employeeId = row['employee_id'] || '';
-        const employeeUsername = row['employee_username'] || '';
-        const loggedInUser = row['logged_in_user'] || ''; // Who was logged in at the time
-        const loginFname = row['login_fname'] || '';
-        const loginLname = row['login_lname'] || '';
-        const loginUsername = row['login_username'] || '';
-        
-        // Get role and shift information
-        const userRole = row['user_role'] || '';
-        const loginRole = row['login_role'] || '';
-        const displayRole = row['display_role'] || '';
-        const shiftName = row['shift_name'] || '';
-        const shiftStart = row['shift_start'] || '';
-        const shiftEnd = row['shift_end'] || '';
-        
-        // Get terminal and location information
-        const terminalName = row['terminal_name'] || '';
-        const posTerminalName = row['pos_terminal_name'] || '';
-        const assignedLocation = row['assigned_location'] || '';
-        const loginLocation = row['login_location'] || '';
-        
-        // Get original created_by value for fallback
+        // Use the new API response structure for adjusted_by information
+        const adjustedBy = row['adjusted_by'] || '';
+        const adjustedByDetailed = row['adjusted_by_detailed'] || '';
         const createdBy = row['created_by'] || '';
         
-        // Determine the best employee information to display
-        const getUserDisplay = () => {
-          const notes = row['notes'] || '';
-          const isPOSSale = notes.includes('POS Sale') || notes.includes('FIFO Consumption') || notes.includes('sold');
-          
-          // For POS sales, prioritize cashier/POS terminal users
-          if (isPOSSale) {
-            // 1. Priority for POS sales: Look for POS terminal users first
-            if (loggedInUser && loggedInUser.trim() !== '' && (loginRole?.toLowerCase().includes('cashier') || posTerminalName)) {
-              const role = getRoleDisplay(loginRole || displayRole || userRole);
-              const shiftInfo = getShiftDisplay();
-              return `👤 ${role}${role ? ' ' : ''}${loggedInUser.trim()}${shiftInfo}`;
-            }
-            
-            // 2. Priority for POS sales: Use adjusted_by if it's a cashier
-            if (adjustedBy && adjustedBy.trim() !== '' && (displayRole?.toLowerCase().includes('cashier') || userRole?.toLowerCase().includes('cashier'))) {
-              const role = getRoleDisplay(displayRole || loginRole || userRole);
-              const shiftInfo = getShiftDisplay();
-              return `👤 ${role}${role ? ' ' : ''}${adjustedBy.trim()}${shiftInfo}`;
-            }
-          }
-          
-          // 1. Priority: Use adjusted_by field (complete employee name from API)
-          if (adjustedBy && adjustedBy.trim() !== '') {
-            const role = getRoleDisplay(displayRole || loginRole || userRole);
-            const shiftInfo = getShiftDisplay();
-            return `👤 ${role}${role ? ' ' : ''}${adjustedBy.trim()}${shiftInfo}`;
-          }
-          
-          // 2. Priority: Use logged_in_user (who was logged in at the time)
-          if (loggedInUser && loggedInUser.trim() !== '') {
-            const role = getRoleDisplay(loginRole || displayRole || userRole);
-            const shiftInfo = getShiftDisplay();
-            return `👤 ${role}${role ? ' ' : ''}${loggedInUser.trim()}${shiftInfo}`;
-          }
-          
-          // 3. Priority: Use login employee name parts
-          if (loginFname && loginLname) {
-            const fullName = `${loginFname} ${loginLname}`;
-            const role = getRoleDisplay(loginRole || displayRole || userRole);
-            const shiftInfo = getShiftDisplay();
-            return `👤 ${role}${role ? ' ' : ''}${fullName}${shiftInfo}`;
-          }
-          
-          // 4. Priority: Use employee username
-          if (employeeUsername && employeeUsername.trim() !== '') {
-            const role = getRoleDisplay(displayRole || loginRole || userRole);
-            const shiftInfo = getShiftDisplay();
-            return `👤 ${role}${role ? ' ' : ''}${employeeUsername.trim()}${shiftInfo}`;
-          }
-          
-          // 5. Priority: Use login username
-          if (loginUsername && loginUsername.trim() !== '') {
-            const role = getRoleDisplay(loginRole || displayRole || userRole);
-            const shiftInfo = getShiftDisplay();
-            return `👤 ${role}${role ? ' ' : ''}${loginUsername.trim()}${shiftInfo}`;
-          }
-          
-          // 6. Fallback: Map created_by to known employees
-          if (createdBy === 'admin') {
-            return `👤 Admin System`;
-          }
-          
-          if (createdBy === 'inventory') {
-            return `👤 Inventory Staff`;
-          }
-          
-          if (createdBy === 'POS System' || createdBy === 'POS') {
-            const shiftInfo = getShiftDisplay();
-            return `👤 POS Cashier${shiftInfo}`;
-          }
-          
-          if (createdBy === 'pharmacist') {
-            return `👤 Pharmacist`;
-          }
-          
-          if (createdBy === 'cashier') {
-            const shiftInfo = getShiftDisplay();
-            return `👤 Cashier${shiftInfo}`;
-          }
-          
-          // 7. Final fallback
-          if (createdBy && createdBy.trim() !== '') {
-            return `👤 ${createdBy.trim()}`;
-          }
-          
-          return '👤 Unknown User';
-        };
+        // Use the detailed version if available, otherwise use the simple version
+        const displayName = adjustedByDetailed || adjustedBy;
         
-        // Helper function to format role display
-        const getRoleDisplay = (role) => {
-          if (!role) return '';
-          const roleLower = role.toLowerCase();
-          if (roleLower.includes('admin')) return 'Admin';
-          if (roleLower.includes('inventory')) return 'Inventory Staff';
-          if (roleLower.includes('cashier')) return 'Cashier';
-          if (roleLower.includes('pharmacist')) return 'Pharmacist';
-          if (roleLower.includes('manager')) return 'Manager';
-          if (roleLower.includes('supervisor')) return 'Supervisor';
-          return role;
-        };
-        
-        // Helper function to format shift display
-        const getShiftDisplay = () => {
-          if (shiftName) {
-            if (shiftStart && shiftEnd) {
-              // Format time nicely
-              const startTime = shiftStart.includes(':') ? shiftStart.substring(11, 16) : shiftStart;
-              const endTime = shiftEnd.includes(':') ? shiftEnd.substring(11, 16) : shiftEnd;
-              return ` - ${shiftName} (${startTime}-${endTime})`;
-            }
-            return ` - ${shiftName}`;
+        if (displayName && displayName.trim() !== '') {
+          // Add appropriate emoji based on the type
+          if (displayName.toLowerCase().includes('cashier')) {
+            return `💰 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('admin')) {
+            return `👑 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('inventory')) {
+            return `📦 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('pharmacy')) {
+            return `💊 ${displayName.trim()}`;
+          } else if (displayName.toLowerCase().includes('pos system')) {
+            return `🤖 POS System`;
+          } else {
+            return `👤 ${displayName.trim()}`;
           }
-          return '';
-        };
+        }
         
-        const userDisplay = getUserDisplay();
+        // Fallback to created_by mapping
+        if (createdBy === 'admin') {
+          return `👤 Admin System`;
+        }
         
-        // Add context information (terminal and location)
-        const contextParts = [];
-        const terminalInfo = posTerminalName || terminalName;
-        if (terminalInfo) contextParts.push(terminalInfo);
+        if (createdBy === 'inventory') {
+          return `👤 Inventory Staff`;
+        }
         
-        const locationInfo = loginLocation || assignedLocation;
-        if (locationInfo) contextParts.push(`@ ${locationInfo}`);
+        if (createdBy === 'POS System' || createdBy === 'POS') {
+          return `👤 POS Cashier`;
+        }
         
-        const contextDisplay = contextParts.length > 0 ? ` (${contextParts.join(' ')})` : '';
+        if (createdBy === 'pharmacist') {
+          return `👤 Pharmacist`;
+        }
         
-        return `${userDisplay}${contextDisplay}`;
+        if (createdBy === 'cashier') {
+          return `👤 Cashier`;
+        }
+        
+        // Final fallback
+        if (createdBy && createdBy.trim() !== '') {
+          return `👤 ${createdBy.trim()}`;
+        }
+        
+        return '👤 Unknown User';
       case 'status':
         return (
           <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>
@@ -479,7 +451,7 @@ function StockOutReport() {
       case 'product_name':
         return row[columnKey] || '📦 Generic Product';
       case 'product_id':
-        return row[columnKey] || '📱 No ID';
+        return row['barcode'] || row[columnKey] || '📱 No ID';
       case 'reference_no':
         return row[columnKey] || '📋 Auto-Generated';
       default:
@@ -493,14 +465,14 @@ function StockOutReport() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
-      <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
+      <div className="p-3" style={{ backgroundColor: theme.bg.card }}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center space-x-6 mb-4">
-              <span className="text-4xl">📤</span>
+            <div className="flex items-center space-x-4 mb-2">
+              <span className="text-2xl">📤</span>
               <div>
-                <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Stock Out Report</h1>
-                <p className="text-lg" style={{ color: theme.text.secondary }}>Stock-Out Adjustments from Inventory System</p>
+                <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>Stock Out Report</h1>
+                <p className="text-sm" style={{ color: theme.text.secondary }}>Stock-Out Adjustments from Inventory System</p>
               </div>
             </div>
           </div>
@@ -508,10 +480,10 @@ function StockOutReport() {
             <button
               onClick={openCombineModal}
               disabled={loading}
-              className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2"
+              className="px-3 py-1 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2 text-sm"
               style={{
                 backgroundColor: theme.bg.hover,
-                color: theme.text.secondary,
+                color: theme.text.primary,
                 border: `1px solid ${theme.border.default}`
               }}
             >
@@ -529,7 +501,7 @@ function StockOutReport() {
             className="rounded-lg shadow-md p-4"
             style={{
               backgroundColor: theme.bg.card,
-              boxShadow: `0 10px 25px ${theme.shadow}`
+              boxShadow: `0 10px 25px ${theme.shadow.lg}`
             }}
           >
             <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>Filter by Date Range</h3>
@@ -569,7 +541,7 @@ function StockOutReport() {
         {/* Summary Cards */}
         {stockOutData.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📤</div>
                 <div>
@@ -578,7 +550,7 @@ function StockOutReport() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">📊</div>
                 <div>
@@ -589,7 +561,7 @@ function StockOutReport() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">👥</div>
                 <div>
@@ -600,7 +572,7 @@ function StockOutReport() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+            <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
               <div className="flex items-center">
                 <div className="text-3xl mr-3">✅</div>
                 <div>
@@ -619,7 +591,7 @@ function StockOutReport() {
           className="rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
           style={{
             backgroundColor: theme.bg.card,
-            boxShadow: `0 10px 25px ${theme.shadow}`
+            boxShadow: `0 10px 25px ${theme.shadow.lg}`
           }}
         >
           <div className="p-6">
@@ -688,7 +660,8 @@ function StockOutReport() {
       {showCombineModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div 
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-red-300"
+            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
+            style={{ backgroundColor: theme.bg.card, borderColor: theme.colors.danger }}
             style={{ 
               backgroundColor: theme.bg.card,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(239, 68, 68, 0.2)'

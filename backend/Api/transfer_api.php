@@ -1,5 +1,5 @@
 <?php
-// Include CORS and configuration
+// Use centralized CORS configuration
 require_once __DIR__ . '/cors.php';
 
 // Proxy-only router to preserve existing logic in Api/backend.php for transfer/FIFO

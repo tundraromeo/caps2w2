@@ -2,13 +2,8 @@
 // Dashboard Sales Data API
 // This file provides real sales data for the dashboard
 
-// CORS headers
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin");
-header("Access-Control-Allow-Credentials: true");
-header("Access-Control-Max-Age: 86400");
-header("Content-Type: application/json");
+// Include proper CORS configuration
+require_once __DIR__ . '/cors.php';
 
 // Handle preflight OPTIONS requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -198,10 +193,28 @@ function getSalesSummary($conn, $data = []) {
  */
 function getPaymentMethods($conn, $data = []) {
     try {
-        $days = $data['days'] ?? $_POST['days'] ?? 30; // Default to 30 days
-        $days = max(1, min(365, (int)$days)); // Limit between 1-365 days - sanitized as integer
+        // Support both period and days parameters for backwards compatibility
+        $period = $data['period'] ?? null;
         
-        // Note: MySQL doesn't support parameter binding in INTERVAL, so we use the sanitized integer directly
+        // If period is not provided, convert days to period for legacy support
+        if (!$period) {
+            $days = $data['days'] ?? $_POST['days'] ?? 30;
+            // Convert days to period for legacy compatibility
+            if ($days <= 1) {
+                $period = 'today';
+            } else if ($days <= 7) {
+                $period = 'week';
+            } else if ($days <= 30) {
+                $period = 'month';
+            } else {
+                $period = 'all';
+            }
+        }
+        
+        // Use DateFilterHelper for consistent filtering
+        require_once __DIR__ . '/utils/DateFilterHelper.php';
+        $dateCondition = DateFilterHelper::getTransactionDateCondition($period);
+        
         $sql = "
             SELECT 
                 pt.payment_type,
@@ -209,12 +222,12 @@ function getPaymentMethods($conn, $data = []) {
                 COALESCE(SUM(psh.total_amount), 0) as total_amount
             FROM tbl_pos_transaction pt
             JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
-            WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL " . $days . " DAY)
+            WHERE 1=1 {$dateCondition['condition']}
             GROUP BY pt.payment_type
             ORDER BY total_amount DESC
         ";
         
-        $stmt = $conn->query($sql); // Use query() instead of prepare() since no parameters
+        $stmt = $conn->query($sql);
         $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Calculate total for percentage
@@ -245,7 +258,8 @@ function getPaymentMethods($conn, $data = []) {
         echo json_encode([
             'success' => true,
             'data' => $paymentMethods,
-            'period_days' => $days
+            'period' => $period,
+            'debug' => DateFilterHelper::getDebugInfo($period)
         ]);
         
     } catch (PDOException $e) {
@@ -274,6 +288,29 @@ function getTopSellingProducts($conn, $data = []) {
         $limit = $data['limit'] ?? $_POST['limit'] ?? 5; // Default to 5 products
         $limit = max(1, min(20, (int)$limit)); // Limit between 1-20 products
         
+        // Support period filtering
+        $period = $data['period'] ?? 'all';
+        
+        // Use DateFilterHelper for consistent filtering
+        require_once __DIR__ . '/utils/DateFilterHelper.php';
+        
+        // Get date condition for transaction table
+        $dateCondition = '';
+        switch ($period) {
+            case 'today':
+                $dateCondition = "AND DATE(psh.date_created) = CURDATE()";
+                break;
+            case 'week':
+                $dateCondition = "AND psh.date_created >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)";
+                break;
+            case 'month':
+                $dateCondition = "AND psh.date_created >= DATE_SUB(CURDATE(), INTERVAL DAYOFMONTH(CURDATE())-1 DAY)";
+                break;
+            default: // 'all'
+                $dateCondition = '';
+                break;
+        }
+        
         $sql = "
             SELECT 
                 p.product_name,
@@ -284,7 +321,7 @@ function getTopSellingProducts($conn, $data = []) {
             FROM tbl_pos_sales_details psd
             JOIN tbl_pos_sales_header psh ON psd.sales_header_id = psh.sales_header_id
             JOIN tbl_product p ON psd.product_id = p.product_id
-            WHERE p.status IS NULL OR p.status <> 'archived'
+            WHERE (p.status IS NULL OR p.status <> 'archived') $dateCondition
             GROUP BY p.product_id, p.product_name, p.status, p.stock_status
             ORDER BY total_quantity_sold DESC
             LIMIT :limit
@@ -308,7 +345,9 @@ function getTopSellingProducts($conn, $data = []) {
         echo json_encode([
             'success' => true,
             'data' => $topProducts,
-            'limit' => $limit
+            'limit' => $limit,
+            'period' => $period,
+            'debug' => DateFilterHelper::getDebugInfo($period)
         ]);
         
     } catch (Exception $e) {

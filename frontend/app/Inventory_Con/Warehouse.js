@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
 import NotificationSystem from "./NotificationSystem";
-
+import { getApiEndpointForAction } from '../lib/apiHandler';
+import apiHandler from '../lib/apiHandler';
+import { getApiUrl } from '../lib/apiConfig';
+import { fetchWithCORS } from '../lib/fetchWrapper';
 import {
   ChevronUp,
   ChevronDown,
@@ -60,9 +63,6 @@ function resetErrorToast() {
 }
 
 
-import { getApiEndpointForAction } from '../lib/apiHandler';
-import apiHandler from '../lib/apiHandler';
-import { getApiUrl } from '../lib/apiConfig';
 
 // API function - Updated to use centralized API handler
 async function handleApiCall(action, data = {}) {
@@ -70,6 +70,12 @@ async function handleApiCall(action, data = {}) {
     const endpoint = getApiEndpointForAction(action);
     console.log(`🔗 Making API call: ${action} -> ${endpoint}`, data);
     console.log(`🔗 Full endpoint URL: ${process.env.NEXT_PUBLIC_API_BASE_URL}/${endpoint}`);
+    
+    // DEBUG: Special handling for check_product_name
+    if (action === 'check_product_name') {
+      console.log(`🔍 DEBUG: check_product_name should use warehouse_product_name_api.php`);
+      console.log(`🔍 DEBUG: getApiEndpointForAction returned: ${endpoint}`);
+    }
     
     const response = await apiHandler.callAPI(endpoint, action, data);
     
@@ -96,10 +102,20 @@ async function handleApiCall(action, data = {}) {
       message: error.message,
       stack: error.stack
     });
+    
+    // Show user-friendly error message for network errors
+    let errorMessage = "Failed to connect to server. Please check your network connection.";
+    if (error.message && error.message.includes("Network Error")) {
+      errorMessage = "Network error. Please check if the server is running and your internet connection is active.";
+    } else if (error.message && error.message.includes("timeout")) {
+      errorMessage = "Request timeout. The server is taking too long to respond.";
+    }
+    
     return {
       success: false,
-      message: error.message,
-      error: "REQUEST_ERROR",
+      message: errorMessage,
+      originalError: error.message,
+      error: "NETWORK_ERROR",
     };
   }
 }
@@ -108,13 +124,31 @@ async function handleApiCall(action, data = {}) {
 async function checkProductNameExists(productName) {
   try {
     console.log("🔍 Calling checkProductNameExists with product name:", productName);
-    const response = await handleApiCall("check_product_name", { product_name: productName });
-    console.log("🔍 checkProductNameExists response:", response);
-    return response;
+    
+    // FORCE: Directly call the new warehouse API endpoint
+    const apiUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL}/warehouse_product_name_api.php`;
+    console.log("🔍 FORCE: Directly calling warehouse API:", apiUrl);
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'check_product_name',
+        product_name: productName,
+        location_name: "WAREHOUSE"
+      })
+    });
+    
+    const data = await response.json();
+    console.log("🔍 FORCE: Direct API response:", data);
+    
+    return data;
   } catch (error) {
     console.error("❌ Error in checkProductNameExists:", error);
-    safeToast("error", "Error checking product name:", error);
-    return { success: false, error: error.message };
+    safeToast("error", "Error checking product name: " + error.message);
+    return { success: false, error: error.message, networkError: true };
   }
 }
 
@@ -122,16 +156,31 @@ async function checkProductNameExists(productName) {
 async function checkBarcodeExists(barcode) {
   try {
     console.log("🔍 Calling checkBarcodeExists with barcode:", barcode);
-    const response = await handleApiCall("check_barcode", { barcode: barcode });
+    const response = await handleApiCall("check_barcode", { 
+      barcode: barcode,
+      location_name: "WAREHOUSE" // Add location filter for warehouse
+    });
     console.log("🔍 checkBarcodeExists RAW response:", JSON.stringify(response, null, 2));
     console.log("🔍 checkBarcodeExists response.success:", response.success);
     console.log("🔍 checkBarcodeExists response.found:", response.found);
     console.log("🔍 checkBarcodeExists response.product:", response.product);
+    
+    // Handle network errors
+    if (response.error === "NETWORK_ERROR") {
+      safeToast("error", response.message || "Network error checking barcode");
+      return { 
+        success: false, 
+        error: response.error,
+        message: response.message,
+        networkError: true 
+      };
+    }
+    
     return response;
   } catch (error) {
     console.error("❌ Error in checkBarcodeExists:", error);
-    safeToast("error", "Error checking barcode:", error);
-    return { success: false, error: error.message };
+    safeToast("error", "Error checking barcode: " + error.message);
+    return { success: false, error: error.message, networkError: true };
   }
 }
 
@@ -193,9 +242,8 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
     if (response.success) {
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch(getApiUrl('backend.php'), {
+        await fetchWithCORS(getApiUrl('backend.php'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'log_activity',
             activity_type: 'WAREHOUSE_FIFO_BATCH_CREATED',
@@ -221,9 +269,8 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
     
     // Log the error
     try {
-      await fetch(getApiUrl('backend.php'), {
+      await fetchWithCORS(getApiUrl('backend.php'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'log_activity',
           activity_type: 'WAREHOUSE_FIFO_BATCH_ERROR',
@@ -258,6 +305,9 @@ async function duplicateProductBatches(productId, batchIds = [22, 23]) {
 function Warehouse() {
   const { theme } = useTheme();
   const { settings, isProductExpiringSoon, isProductExpired, getExpiryStatus, isStockLow } = useSettings();
+  
+  // Refs for auto-focusing barcode inputs
+  const newProductBarcodeInputRef = useRef(null);
 
   // Smart product type detection function
   function detectProductType(productName) {
@@ -377,9 +427,6 @@ function Warehouse() {
     const [fifoStockData, setFifoStockData] = useState([]);
     const [allBatchesData, setAllBatchesData] = useState([]);
     
-    // Expiring batch modal states
-    const [showExpiringBatchModal, setShowExpiringBatchModal] = useState(false);
-    const [selectedExpiringProduct, setSelectedExpiringProduct] = useState(null);
     const [selectedProductForFifo, setSelectedProductForFifo] = useState(null);
     const [showQuantityHistoryModal, setShowQuantityHistoryModal] = useState(false);
     const [selectedProductForHistory, setSelectedProductForHistory] = useState(null);
@@ -520,33 +567,59 @@ function Warehouse() {
     const handleKeyDown = (e) => {
       if (!scannerActive) return;
   
-      // Skip navigation keys and form controls to avoid interfering with normal form usage
+      // Skip navigation keys
       const navigationKeys = ['Tab', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
       const isNavigationKey = navigationKeys.includes(e.key);
       const isFormElement = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
       
-      // Don't interfere with navigation or form elements
-      if (isNavigationKey || isFormElement) {
+      // Don't interfere with navigation keys
+      if (isNavigationKey) {
+        return;
+      }
+      
+      // Check if the focused element is a barcode input field (should accept scans)
+      const isBarcodeInput = isFormElement && (
+        e.target.placeholder?.toLowerCase().includes('barcode') ||
+        e.target.placeholder?.toLowerCase().includes('scan') ||
+        e.target.name === 'barcode' ||
+        e.target.id === 'barcode' ||
+        e.target.className?.includes('barcode-input')
+      );
+      
+      // Allow barcode scanning in barcode input fields, block in other form elements
+      if (isFormElement && !isBarcodeInput) {
+        // Don't interfere with regular form inputs (except barcode fields)
         return;
       }
   
-      // "Key pressed:", e.key, "KeyCode:", e.keyCode, "Scanner active:", scannerActive);
+      console.log("📟 Barcode scanner active - Key pressed:", e.key, "Target:", e.target.tagName, "Is barcode input:", isBarcodeInput);
   
       if (timeout) clearTimeout(timeout);
   
       // Accept Enter key to complete scan
       if (e.key === "Enter") {
         if (buffer.length > 0) {
-          // "Barcode scanned:", buffer);
+          console.log("✅ Barcode scanned:", buffer);
+          
+          // If scanning into a barcode input field, update it directly
+          if (isBarcodeInput) {
+            // Update the input value directly
+            e.target.value = buffer;
+            // Trigger change event to update React state
+            const event = new Event('input', { bubbles: true });
+            e.target.dispatchEvent(event);
+          }
+          
+          // Also call the scanner operation handler
           handleScannerOperation("SCAN_COMPLETE", { barcode: buffer });
           buffer = "";
         }
-      } else {
-        // Accept all characters (not just numbers) for barcode scanning
+      } else if (e.key.length === 1) {
+        // Only accept single character keys (not Shift, Control, etc.)
         buffer += e.key;
-        // "Buffer updated:", buffer);
+        console.log("📝 Buffer updated:", buffer);
         timeout = setTimeout(() => {
-          // "Buffer cleared due to timeout");
+          console.log("⏱️ Buffer cleared due to timeout");
           buffer = ""; // Clear buffer after inactivity
         }, 1000); // Increased timeout to 1 second
       }
@@ -909,13 +982,14 @@ function Warehouse() {
                     // "📦 Products with batch info loaded:", productsWithBatchInfo.length);
                     
                     // Filter out archived products
+// TEMPORARY DEBUG: Show ALL products including archived
 const activeProducts = productsWithBatchInfo.filter(
-  (product) => (product.status || "").toLowerCase() !== "archived"
+  (product) => true // ✅ Show ALL (including archived) for debugging
+  // Uncomment below to hide archived again:
+  // (product) => (product.status || "").toLowerCase() !== "archived"
 );
-// "🔍 Active products after filtering:", activeProducts.length);
-// "🔍 Products with batch info and expiration data loaded");
-// "📅 Sample product expiration data:", activeProducts[0]?.expiration || "No expiration data");
-
+console.log("🔍 All products (including archived):", activeProducts.length);
+console.log("🔍 Products with archived status:", activeProducts.filter(p => p.status === 'archived').length);
 console.log("Active products after filtering:", activeProducts);
 setInventoryData(activeProducts);
 await calculateNotifications(activeProducts);
@@ -1104,198 +1178,14 @@ calculateLowStockAndExpiring(activeProducts);
     // Enhanced Product Name/Barcode Checking Functions
   async function handleProductNameCheck(input) {
     if (!input || input.trim() === "") {
-      setProductNameStatusMessage("❌ Please enter a product name or barcode");
+      setProductNameStatusMessage("❌ Please enter a product name");
       return;
     }
 
     setIsCheckingProductName(true);
     
-    // Smart detection: Check if input looks like a barcode (numbers/alphanumeric without spaces)
-    const looksLikeBarcode = /^[A-Za-z0-9-_]+$/.test(input.trim()) && input.trim().length >= 6;
-    
-    if (looksLikeBarcode) {
-      setProductNameStatusMessage("🔍 Detecting barcode format - checking barcode...");
-      console.log("🔍 Input detected as BARCODE:", input);
-      
-      try {
-        // Search by barcode first in local inventory
-        const existingProductInInventory = inventoryData.find(product => 
-          product.barcode && product.barcode === input.trim()
-        );
-        
-        if (existingProductInInventory) {
-          console.log("✅ Product found by barcode in inventory data:", existingProductInInventory);
-          
-          // Use stored product_type from database, with fallback to auto-detection
-          let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
-          
-          if (!existingProductInInventory.product_type) {
-            console.log("🔍 Barcode check: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
-            
-            // Auto-detection logic
-            const medicineCategories = [
-              "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
-              "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
-              "Vitamins", "Supplements", "Health", "Medical"
-            ];
-            const categoryName = existingProductInInventory.category_name || existingProductInInventory.category || "";
-            
-            if (medicineCategories.some(medCat => 
-              categoryName.toLowerCase().includes(medCat.toLowerCase())
-            )) {
-              productType = "Medicine";
-              console.log("🔍 Barcode check: Auto-detected Medicine product based on category:", categoryName);
-            } else {
-              const medicineKeywords = [
-                "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
-                "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
-                "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
-                "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
-              ];
-              const productName = (existingProductInInventory.product_name || "").toLowerCase();
-              
-              if (medicineKeywords.some(keyword => productName.includes(keyword))) {
-                productType = "Medicine";
-                console.log("🔍 Barcode check: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
-              } else {
-                productType = "Non-Medicine";
-                console.log("🔍 Barcode check: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
-              }
-            }
-          } else {
-            console.log("🔍 Barcode check: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
-          }
-          
-          // Add product_type to the product object
-          const productWithType = {
-            ...existingProductInInventory,
-            product_type: productType
-          };
-          
-          console.log("🔍 Barcode check: Final product type determined:", productType);
-          setExistingProduct(productWithType);
-          setNewStockQuantity("");
-          
-          const hasBulkFields = existingProductInInventory.boxes || existingProductInInventory.strips_per_box || 
-                                existingProductInInventory.tablets_per_strip || 
-                                existingProductInInventory.pieces_per_pack;
-          setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
-          
-          setShowUpdateStockModal(true);
-          setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
-        } else {
-          console.log("🔍 Product not in inventory data, checking API by barcode...");
-          // Check API by barcode
-          const barcodeCheck = await checkBarcodeExists(input.trim());
-          console.log("🔍 Barcode check result:", barcodeCheck);
-          console.log("🔍 MANUAL BARCODE CHECK - product object:", barcodeCheck.product);
-          console.log("🔍 MANUAL BARCODE CHECK - product exists:", !!barcodeCheck.product);
-          
-          // SIMPLE CHECK - if product exists in response, it was found
-          const productFound = barcodeCheck.product !== null && barcodeCheck.product !== undefined && typeof barcodeCheck.product === 'object';
-          console.log("🔍 MANUAL BARCODE CHECK - productFound:", productFound);
-          
-          if (productFound) {
-            console.log("✅ Product found by barcode via API:", barcodeCheck.product);
-            
-            // Use stored product_type from database, with fallback to auto-detection
-            let productType = barcodeCheck.product.product_type || detectProductType(barcodeCheck.product.product_name);
-            
-            if (!barcodeCheck.product.product_type) {
-              console.log("🔍 Manual barcode API check: No stored product_type, using auto-detection for:", barcodeCheck.product.product_name);
-              
-              // Auto-detection logic
-              const medicineCategories = [
-                "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
-                "Over-the-Counter", "Tablets", "Capsules", "Syrup", "Injection",
-                "Vitamins", "Supplements", "Health", "Medical"
-              ];
-              const categoryName = barcodeCheck.product.category_name || barcodeCheck.product.category || "";
-              
-              if (medicineCategories.some(medCat => 
-                categoryName.toLowerCase().includes(medCat.toLowerCase())
-              )) {
-                productType = "Medicine";
-                console.log("🔍 Manual barcode API check: Auto-detected Medicine product based on category:", categoryName);
-              } else {
-                const medicineKeywords = [
-                  "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
-                  "vitamin", "vitamins", "supplement", "medicine", "drug", "pharma",
-                  "paracetamol", "ibuprofen", "aspirin", "multivitamin", "calcium",
-                  "iron", "folic", "ascorbic", "vitamin c", "vitamin d", "vitamin b"
-                ];
-                const productName = (barcodeCheck.product.product_name || "").toLowerCase();
-                
-                if (medicineKeywords.some(keyword => productName.includes(keyword))) {
-                  productType = "Medicine";
-                  console.log("🔍 Manual barcode API check: Auto-detected Medicine product based on product name:", barcodeCheck.product.product_name);
-                } else {
-                  productType = "Non-Medicine";
-                  console.log("🔍 Manual barcode API check: Auto-detected Non-Medicine product for:", barcodeCheck.product.product_name);
-                }
-              }
-            } else {
-              console.log("🔍 Manual barcode API check: Using stored product_type:", barcodeCheck.product.product_type, "for:", barcodeCheck.product.product_name);
-            }
-            
-            // Add product_type to the product object
-            const productWithType = {
-              ...barcodeCheck.product,
-              product_type: productType
-            };
-            
-            console.log("🔍 Manual barcode API check: Final product type determined:", productType);
-            setExistingProduct(productWithType);
-            setNewStockQuantity("");
-            
-            const hasBulkFields = barcodeCheck.product.boxes || barcodeCheck.product.strips_per_box || 
-                                  barcodeCheck.product.tablets_per_strip || 
-                                  barcodeCheck.product.pieces_per_pack;
-            setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
-            
-            setShowUpdateStockModal(true);
-            setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
-          } else {
-            console.log("❌ Barcode not found, opening new product modal");
-            setNewProductForm({
-              product_name: "",
-              category_id: "",
-              product_type: "",
-              configMode: "bulk",
-              barcode: input.trim(), // Pre-fill barcode
-              description: "",
-              srp: "",
-              brand_id: "",
-              brand_search: "",
-              supplier_id: "",
-              expiration: "",
-              date_added: new Date().toISOString().split('T')[0],
-              batch: generateBatchRef(),
-              order_number: "",
-              prescription: 0,
-              bulk: 0,
-              boxes: "",
-              strips_per_box: "",
-              tablets_per_strip: "",
-              total_tablets: "",
-              pieces_per_pack: "",
-              total_pieces: ""
-            });
-            setShowNewProductModal(true);
-            setProductNameStatusMessage("✅ New barcode detected! Opening new product modal.");
-          }
-        }
-      } catch (error) {
-        safeToast("error", "Error checking barcode:", error);
-        setProductNameStatusMessage("❌ Error checking barcode. Please try again.");
-      } finally {
-        setIsCheckingProductName(false);
-        setTimeout(() => {
-          setProductNameStatusMessage("📝 Enter product name or barcode to check");
-        }, 3000);
-      }
-      return;
-    }
+    // Only check product names, no barcode detection
+    // Skip barcode checking entirely
     
     // If not barcode format, treat as product name
     setProductNameStatusMessage("🔍 Checking if product name exists...");
@@ -1309,6 +1199,8 @@ calculateLowStockAndExpiring(activeProducts);
       
       if (existingProductInInventory) {
         console.log("✅ Product found in inventory data:", existingProductInInventory);
+        console.log("🚪 LOCAL INVENTORY: ABOUT TO CALL setShowUpdateStockModal(true)");
+        console.log("🚪 LOCAL INVENTORY: CURRENT MODAL STATES - UpdateStock:", showUpdateStockModal, "NewProduct:", showNewProductModal);
         
         // Use stored product_type from database, with fallback to auto-detection
         let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
@@ -1367,12 +1259,29 @@ calculateLowStockAndExpiring(activeProducts);
         setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
         
         setShowUpdateStockModal(true);
+        setShowNewProductModal(false); // FORCE CLOSE new product modal
+        console.log("🚪 LOCAL INVENTORY: setShowUpdateStockModal(true) CALLED");
+        console.log("🚪 LOCAL INVENTORY: setShowNewProductModal(false) CALLED");
+        console.log("🚪 LOCAL INVENTORY: AFTER CALL - UpdateStock:", showUpdateStockModal, "NewProduct:", showNewProductModal);
         setProductNameStatusMessage("✅ Product found! Opening update stock modal.");
       } else {
         console.log("🔍 Product not in inventory data, checking API...");
         // If not in inventory, check API
         const productNameCheck = await checkProductNameExists(input);
         console.log("🔍 Product name check result:", productNameCheck);
+        
+        // Handle network errors
+        if (productNameCheck.networkError) {
+          setProductNameStatusMessage("❌ Network error. Please check your connection and try again.");
+          setIsCheckingProductName(false);
+          return;
+        }
+        
+        // DEBUG: Log the full API response
+        console.log("🔍 FULL API RESPONSE:", JSON.stringify(productNameCheck, null, 2));
+        console.log("🔍 productNameCheck.success:", productNameCheck.success);
+        console.log("🔍 productNameCheck.found:", productNameCheck.found);
+        console.log("🔍 productNameCheck.product:", productNameCheck.product);
         
         // Handle both API response formats:
         // 1. sales_api.php: { success: true, found: true, product: {...} }
@@ -1381,8 +1290,12 @@ calculateLowStockAndExpiring(activeProducts);
                              (productNameCheck.found === true || (productNameCheck.found === undefined && productNameCheck.product)) && 
                              productNameCheck.product;
         
+        console.log("🔍 productFound result:", productFound);
+        
         if (productFound) {
           console.log("✅ Product found via API, opening update stock modal:", productNameCheck.product);
+          console.log("🚪 ABOUT TO CALL setShowUpdateStockModal(true)");
+          console.log("🚪 CURRENT MODAL STATES - UpdateStock:", showUpdateStockModal, "NewProduct:", showNewProductModal);
           
           // Use stored product_type from database, with fallback to auto-detection
           let productType = productNameCheck.product.product_type || detectProductType(productNameCheck.product.product_name);
@@ -1441,9 +1354,15 @@ calculateLowStockAndExpiring(activeProducts);
           setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
           
           setShowUpdateStockModal(true);
+          setShowNewProductModal(false); // FORCE CLOSE new product modal
+          console.log("🚪 setShowUpdateStockModal(true) CALLED");
+          console.log("🚪 setShowNewProductModal(false) CALLED");
+          console.log("🚪 AFTER CALL - UpdateStock:", showUpdateStockModal, "NewProduct:", showNewProductModal);
           setProductNameStatusMessage("✅ Product found! Opening update stock modal.");
         } else {
           console.log("❌ Product not found, opening new product modal");
+          console.log("🚪 ABOUT TO CALL setShowNewProductModal(true)");
+          console.log("🚪 CURRENT MODAL STATES - UpdateStock:", showUpdateStockModal, "NewProduct:", showNewProductModal);
           // Product doesn't exist - show new product modal
           setNewProductForm({
             product_name: input, // Pre-fill with entered product name
@@ -1458,7 +1377,7 @@ calculateLowStockAndExpiring(activeProducts);
             supplier_id: "",
             expiration: "",
             date_added: new Date().toISOString().split('T')[0], // Auto-set current date
-            batch: generateBatchRef(), // Auto-generate batch
+            batch: currentBatchNumber, // Use current batch number to group with previous stock update
             order_number: "",
             prescription: 0,
             bulk: 0,
@@ -1472,6 +1391,10 @@ calculateLowStockAndExpiring(activeProducts);
             total_pieces: ""
           });
           setShowNewProductModal(true);
+          setShowUpdateStockModal(false); // FORCE CLOSE update stock modal
+          console.log("🚪 setShowNewProductModal(true) CALLED");
+          console.log("🚪 setShowUpdateStockModal(false) CALLED");
+          console.log("🚪 AFTER CALL - UpdateStock:", showUpdateStockModal, "NewProduct:", showNewProductModal);
           setProductNameStatusMessage("✅ New product detected! Opening new product modal.");
         }
       }
@@ -1484,7 +1407,7 @@ calculateLowStockAndExpiring(activeProducts);
       
       // Reset product name status after a delay
       setTimeout(() => {
-        setProductNameStatusMessage("📝 Enter product name or barcode to check");
+          setProductNameStatusMessage("📝 Enter product name to check");
       }, 3000);
     }
   }
@@ -1584,6 +1507,17 @@ calculateLowStockAndExpiring(activeProducts);
             console.log("🔍 barcodeCheck.found:", barcodeCheck.found);
             console.log("🔍 barcodeCheck.product:", barcodeCheck.product);
             
+            // Handle network errors
+            if (barcodeCheck.networkError) {
+              setScannerStatusMessage("❌ Network error. Please check your connection.");
+              safeToast("error", "Network error while checking barcode. Please check your connection.");
+              // Reset scanner status after delay
+              setTimeout(() => {
+                setScannerStatusMessage("🔍 Scanner is ready and active - Scan any barcode to continue");
+              }, 3000);
+              return;
+            }
+            
             // EXTREME DEBUGGING - Log EVERYTHING
             console.log("🔍 ========== BARCODE CHECK DETAILS ==========");
             console.log("🔍 barcodeCheck object:", barcodeCheck);
@@ -1679,7 +1613,7 @@ calculateLowStockAndExpiring(activeProducts);
                 supplier_id: "",
                 expiration: "",
                 date_added: new Date().toISOString().split('T')[0], // Auto-set current date
-                batch: generateBatchRef(), // Auto-generate batch
+                batch: currentBatchNumber, // Use current batch number to group with previous stock update
                 order_number: "",
                 prescription: 0,
                 bulk: 0,
@@ -2067,10 +2001,14 @@ calculateLowStockAndExpiring(activeProducts);
     // New function to load products with their oldest batch information
     async function loadProductsWithOldestBatch() {
       try {
-        // "🔄 Loading warehouse products with oldest batch info...");
-        const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
-const response = await handleApiCall("get_products_oldest_batch", { location_id: locationId, role: userRole, user_id: currentUser });
-console.log("API response for products:", response);
+        // TEMPORARY DEBUG: Load ALL locations to find missing products
+        const locationId = null; // ✅ Set to null to load ALL locations!
+        // Original: const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
+        
+        console.log("🔍 Loading products from location:", locationId === null ? "ALL LOCATIONS" : locationId);
+        const response = await handleApiCall("get_products_oldest_batch", { location_id: locationId, role: userRole, user_id: currentUser });
+        console.log("📊 API response for products:", response);
+        console.log("📦 Total products loaded:", response.data?.length || 0);
         
         if (response.success && Array.isArray(response.data)) {
           // "✅ Products with oldest batch loaded:", response.data.length, "products");
@@ -2132,6 +2070,27 @@ console.log("API response for products:", response);
           console.log("🔍 Oldest batch SRP:", processedProducts[0]?.oldest_batch_srp);
           console.log("🔍 Product quantity:", processedProducts[0]?.quantity);
           console.log("🔍 Product SRP:", processedProducts[0]?.srp);
+          
+          // DEBUG: Show products by location
+          const productsByLocation = processedProducts.reduce((acc, p) => {
+            const loc = p.location_name || p.location_id || 'Unknown';
+            acc[loc] = (acc[loc] || 0) + 1;
+            return acc;
+          }, {});
+          console.log("📍 Products by location:", productsByLocation);
+          
+          // DEBUG: Check if Cream Silk is in the list
+          const creamSilk = processedProducts.find(p => 
+            p.product_name?.toLowerCase().includes('cream')
+          );
+          if (creamSilk) {
+            console.log("✅ CREAM SILK FOUND:", creamSilk);
+            console.log("   - Location:", creamSilk.location_name || creamSilk.location_id);
+            console.log("   - Status:", creamSilk.status);
+            console.log("   - Quantity:", creamSilk.total_quantity || creamSilk.quantity);
+          } else {
+            console.log("❌ CREAM SILK NOT FOUND in API response!");
+          }
           
           return processedProducts;
         } else {
@@ -2383,19 +2342,6 @@ console.log("API response for product quantities:", response);
       setAllBatchesData([]);
     }
 
-      // Functions for expiring batch modal
-  function openExpiringBatchModal(product) {
-    setSelectedExpiringProduct(product);
-    setShowExpiringBatchModal(true);
-    // Load FIFO data for the product
-    loadFifoStock(product.product_id);
-  }
-
-  function closeExpiringBatchModal() {
-    setShowExpiringBatchModal(false);
-    setSelectedExpiringProduct(null);
-    setFifoStockData([]);
-  }
 
     function openQuantityHistoryModal(product) {
       console.log("🔄 Opening quantity history modal for product:", product.product_name, "ID:", product.product_id);
@@ -2758,7 +2704,8 @@ console.log("API response for product quantities:", response);
         batch: currentBatchNumber, // Use the same batch number for all products
         temp_id: Date.now(), // Unique temporary ID
         status: "pending",
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        bulk: newProductForm.configMode === "bulk" ? 1 : 0 // Set bulk flag based on config mode
       };
 
       setTemporaryProducts(prev => [...prev, tempProduct]);
@@ -2822,6 +2769,7 @@ console.log("API response for product quantities:", response);
         // Process stock updates first - creates NEW FIFO batch entries
         let stockUpdateSuccess = true;
         let failedUpdates = [];
+        let batchCreated = false; // Track if batch has been created for stock updates
         
         for (const stockUpdate of stockUpdates) {
           console.log("🔄 Processing stock update for:", stockUpdate.product_name);
@@ -2874,11 +2822,38 @@ console.log("API response for product quantities:", response);
             continue;
           }
           
+          // FIX: ALWAYS use currentBatchNumber for all stock updates
+          // This ensures all products in the same transaction have the same batch number
+          let batchRefForStockUpdate = currentBatchNumber; // ✅ ALWAYS use currentBatchNumber!
+          
+          console.log("🔍 Stock update batch reference:", batchRefForStockUpdate);
+          console.log("🔍 Current batch number:", currentBatchNumber);
+          console.log("🔍 Has new products:", newProducts.length > 0);
+          console.log("🔍 Batch created flag:", batchCreated);
+          
+          // Set flag to prevent duplicate batch creation
+          if (!batchCreated) {
+            batchCreated = true;
+            console.log("✅ First stock update - will create batch entry");
+          } else {
+            console.log("✅ Subsequent stock update - will reuse existing batch");
+          }
+          
           // Create new FIFO batch entry
+          console.log("📤 Calling updateProductStock with:", {
+            product_id: stockUpdate.product_id,
+            product_name: stockUpdate.product_name,
+            quantity: stockUpdate.quantity_to_add,
+            batch_reference: batchRefForStockUpdate, // ✅ Should be BR-... not empty!
+            expiration: stockUpdate.expiration,
+            srp: batchSrp,
+            entry_by: currentUser
+          });
+          
           const response = await updateProductStock(
             stockUpdate.product_id,
             stockUpdate.quantity_to_add,
-            currentBatchNumber,
+            batchRefForStockUpdate, // ✅ Now always has currentBatchNumber
             stockUpdate.expiration,
             batchSrp, // unit_cost
             batchSrp, // new_srp - this is the SRP for this FIFO batch
@@ -2905,24 +2880,35 @@ console.log("API response for product quantities:", response);
             batch_reference: currentBatchNumber,
             batch_date: new Date().toISOString().split('T')[0],
             batch_time: new Date().toLocaleTimeString(),
-            total_products: newProducts.length,
+            total_products: newProducts.length + stockUpdates.length, // Include stock updates in count
             total_quantity: newProducts.reduce((sum, p) => {
               const totalPieces = p.product_type === "Medicine" 
                 ? parseInt(p.total_tablets || 0)
                 : parseInt(p.total_pieces || 0);
               // Ensure we don&apos;t add NaN or invalid values
               return sum + (isNaN(totalPieces) || totalPieces <= 0 ? 1 : totalPieces);
-            }, 0),
+            }, 0) + stockUpdates.reduce((sum, s) => sum + (parseInt(s.quantity_to_add) || 0), 0), // Add stock update quantities
             total_value: newProducts.reduce((sum, p) => {
               const totalPieces = p.product_type === "Medicine" 
                 ? parseInt(p.total_tablets || 0)
                 : parseInt(p.total_pieces || 0);
               const validPieces = isNaN(totalPieces) || totalPieces <= 0 ? 1 : totalPieces;
               return sum + ((parseFloat(p.srp || 0) * validPieces));
-            }, 0),
+            }, 0) + stockUpdates.reduce((sum, s) => {
+              const srp = s.new_srp || s.srp || s.unit_price || 0;
+              const qty = parseInt(s.quantity_to_add) || 0;
+              return sum + (parseFloat(srp) * qty);
+            }, 0), // Add stock update values
             location: "Warehouse",
             entry_by: currentUser,
             status: "active",
+            stock_updates: stockUpdates.map(update => ({
+              product_id: update.product_id,
+              product_name: update.product_name,
+              quantity_added: update.quantity_to_add,
+              srp: update.new_srp || update.srp || update.unit_price || 0,
+              expiration: update.expiration
+            })), // Include stock updates in batch data
             products: newProducts.map(product => ({
               product_name: product.product_name,
               category_id: product.category_id,
@@ -2970,6 +2956,43 @@ console.log("API response for product quantities:", response);
           
           if (!response.success) {
             safeToast("error", response.message || "Failed to save new products");
+            setLoading(false);
+            return;
+          }
+        } else if (stockUpdates.length > 0 && newProducts.length === 0) {
+          // Only stock updates, no new products - create a batch entry for stock updates only
+          console.log("🔄 Creating batch entry for stock updates only");
+          
+          const stockUpdateBatchData = {
+            batch_reference: currentBatchNumber,
+            batch_date: new Date().toISOString().split('T')[0],
+            batch_time: new Date().toLocaleTimeString(),
+            total_products: stockUpdates.length,
+            total_quantity: stockUpdates.reduce((sum, s) => sum + (parseInt(s.quantity_to_add) || 0), 0),
+            total_value: stockUpdates.reduce((sum, s) => {
+              const srp = s.new_srp || s.srp || s.unit_price || 0;
+              const qty = parseInt(s.quantity_to_add) || 0;
+              return sum + (parseFloat(srp) * qty);
+            }, 0),
+            location: "Warehouse",
+            entry_by: currentUser,
+            status: "active",
+            stock_updates: stockUpdates.map(update => ({
+              product_id: update.product_id,
+              product_name: update.product_name,
+              quantity_added: update.quantity_to_add,
+              srp: update.new_srp || update.srp || update.unit_price || 0,
+              expiration: update.expiration
+            })),
+            products: [] // No new products
+          };
+          
+          console.log("🚀 Saving stock updates batch:", stockUpdateBatchData);
+          
+          const response = await handleApiCall("add_batch_entry", stockUpdateBatchData);
+          
+          if (!response.success) {
+            safeToast("error", response.message || "Failed to save stock updates batch");
             setLoading(false);
             return;
           }
@@ -3119,6 +3142,38 @@ console.log("API response for product quantities:", response);
       }
     }
 
+    // Clean up duplicate batch entries with the same batch reference
+    async function cleanupDuplicateBatches() {
+      setLoading(true);
+      try {
+        console.log("🧹 Cleaning up duplicate batch entries...");
+        
+        const response = await fetchWithCORS(getApiUrl('cleanup_duplicate_batches.php'), {
+          method: 'GET'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          safeToast("success", data.message || "Duplicate batches cleaned up successfully!");
+          console.log("✅ Cleanup details:", data);
+          
+          // Refresh data to show cleaned up batches
+          await loadData("products");
+          await loadData("all");
+          await loadAllBatches();
+          
+        } else {
+          safeToast("error", data.message || "Failed to cleanup duplicate batches");
+        }
+      } catch (error) {
+        console.error("❌ Cleanup error:", error);
+        safeToast("error", "Failed to cleanup duplicate batches: " + error.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
 
     // New function to handle batch duplication
     async function handleDuplicateBatches(productId, batchIds = [22, 23]) {
@@ -3263,6 +3318,17 @@ console.log("API response for product quantities:", response);
       setScannerActive(settings.barcodeScanning);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
     }, [settings.barcodeScanning]);
+    
+    // Auto-focus barcode input when "Add New Product" modal opens
+    useEffect(() => {
+      if (showNewProductModal && newProductBarcodeInputRef.current) {
+        // Small delay to ensure modal is fully rendered
+        setTimeout(() => {
+          newProductBarcodeInputRef.current?.focus();
+          console.log("🎯 Auto-focused barcode input field in Add New Product modal");
+        }, 100);
+      }
+    }, [showNewProductModal]);
 
     // Update form batch number when currentBatchNumber changes (only if form is open)
     useEffect(() => {
@@ -3334,6 +3400,7 @@ console.log("API response for product quantities:", response);
 
     return (
       <div className="min-h-screen w-full" style={{ backgroundColor: theme.bg.primary }}>
+        <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
         <NotificationSystem 
           products={inventoryData} 
           onAlertCountChange={setAlertCount}
@@ -3434,7 +3501,6 @@ console.log("API response for product quantities:", response);
                               e.target.style.backgroundColor = 'transparent';
                               e.target.style.color = theme.text.primary;
                             }}
-                            onClick={() => openExpiringBatchModal(product)}
                           >
                             <div className="flex flex-col">
                               <span className="text-sm" style={{ color: 'inherit' }}>{product.product_name}</span>
@@ -3483,14 +3549,13 @@ console.log("API response for product quantities:", response);
                               e.target.style.backgroundColor = 'transparent';
                               e.target.style.color = theme.text.primary;
                             }}
-                            onClick={() => openExpiringBatchModal(product)}
                           >
                             <span className="text-sm" style={{ color: 'inherit' }}>{product.product_name}</span>
                             <span className="text-xs px-2 py-1 rounded" style={{ 
                               backgroundColor: theme.colors.warning + '20', 
                               color: theme.colors.warning 
                             }}>
-                              {product.quantity} left
+                              {product.quantity} left 
                             </span>
                           </div>
                         ))}
@@ -3525,7 +3590,6 @@ console.log("API response for product quantities:", response);
                               e.target.style.backgroundColor = 'transparent';
                               e.target.style.color = theme.text.primary;
                             }}
-                            onClick={() => openExpiringBatchModal(product)}
                           >
                             <span className="text-sm" style={{ color: 'inherit' }}>{product.product_name}</span>
                             <span className="text-xs px-2 py-1 rounded" style={{ 
@@ -3561,8 +3625,8 @@ console.log("API response for product quantities:", response);
         {/* Status Bar */}
         <div className="rounded-lg border mb-6" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default }}>
           <div className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4 lg:gap-6">
                 <div className="flex items-center space-x-2">
                   <MapPin className="h-4 w-4" style={{ color: theme.colors.accent }} />
                   <span className="text-sm font-medium" style={{ color: theme.text.primary }}>Current Location:</span>
@@ -3618,17 +3682,17 @@ console.log("API response for product quantities:", response);
                   </div>
                 </div>
               </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2" style={{ color: theme.colors.success }}>
-                  <Camera className="h-4 w-4" />
-                  <span className="text-sm font-medium">Scanner Active</span>
-                </div>
-                <div className="text-sm max-w-md" style={{ color: theme.text.secondary }}>
-                  {scannerStatusMessage}
+              <div className="flex flex-col space-y-3 w-full lg:w-auto">
+                {/* Scanner Status Message */}
+                <div className="flex items-center space-x-2">
+                  <Camera className="h-4 w-4" style={{ color: theme.colors.success }} />
+                  <div className="text-sm max-w-full lg:max-w-md" style={{ color: theme.text.secondary }}>
+                    {scannerStatusMessage}
+                  </div>
                 </div>
 
                 {/* Manual Entry Section - Smart Detection: Barcode or Product Name */}
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                   <input
                     type="text"
                     placeholder="Enter barcode or product name..."
@@ -3639,7 +3703,7 @@ console.log("API response for product quantities:", response);
                         handleProductNameCheck(productNameInput);
                       }
                     }}
-                    className="px-3 py-1 text-sm border rounded focus:outline-none focus:ring-1 w-56"
+                    className="px-3 py-1 text-sm border rounded focus:outline-none focus:ring-1 w-full sm:w-56"
                     style={{ 
                       borderColor: theme.border.default,
                       backgroundColor: theme.bg.secondary,
@@ -3652,7 +3716,7 @@ console.log("API response for product quantities:", response);
                   <button
                     onClick={() => handleProductNameCheck(productNameInput)}
                     disabled={isCheckingProductName || !productNameInput.trim()}
-                    className="px-3 py-1 rounded flex items-center text-sm font-medium transition-colors"
+                    className="px-3 py-1 rounded flex items-center justify-center text-sm font-medium transition-colors w-full sm:w-auto"
                     style={{ 
                       backgroundColor: isCheckingProductName || !productNameInput.trim() 
                         ? theme.bg.muted 
@@ -3670,7 +3734,7 @@ console.log("API response for product quantities:", response);
                     {isCheckingProductName ? 'Checking...' : 'Check'}
                   </button>
                 </div>
-                <div className="text-sm max-w-md" style={{ color: theme.text.secondary }}>
+                <div className="text-sm max-w-full lg:max-w-md" style={{ color: theme.text.secondary }}>
                   {productNameStatusMessage}
                 </div>
               </div>
@@ -3793,28 +3857,6 @@ console.log("API response for product quantities:", response);
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Products</h3>
             <div className="flex items-center space-x-3">
-              <div className="text-sm" style={{ color: theme.text.secondary }}>
-                {inventoryData.length} products found
-              </div>
-              <div className="text-sm font-medium px-3 py-1 rounded-md" 
-                   style={{ 
-                     backgroundColor: theme.colors.primary + '15', 
-                     color: theme.colors.primary,
-                     border: `1px solid ${theme.colors.primary}30`
-                   }}>
-                Total Qty: {stats.totalQuantity || 0}
-              </div>
-              <div className="px-3 py-1 text-xs rounded-md font-bold" 
-                   style={{ 
-                     backgroundColor: theme.colors.success + '20', 
-                     color: theme.colors.success,
-                     border: `1px solid ${theme.colors.success}40`
-                   }}>
-                📦 TOTAL PRODUCTS: {inventoryData.length} | TOTAL QUANTITY: {inventoryData.reduce((sum, product) => {
-                  const qty = product.total_quantity || product.product_quantity || product.quantity || 0;
-                  return sum + parseInt(qty);
-                }, 0)} units
-              </div>
               <div className="flex space-x-2">
                 <button
                   onClick={() => setFilterOptions(prev => ({ ...prev, stockStatus: 'all' }))}
@@ -3847,6 +3889,7 @@ console.log("API response for product quantities:", response);
                   Out of Stock
                 </button>
               </div>
+              <div className="flex space-x-2">
                 <button
                   onClick={syncFifoStock}
                   className="p-2 rounded-md transition-colors"
@@ -3872,6 +3915,14 @@ console.log("API response for product quantities:", response);
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+                <button
+                  onClick={cleanupDuplicateBatches}
+                  className="p-2 text-purple-500 hover:text-purple-700 hover:bg-purple-100 rounded-md transition-colors"
+                  title="Clean Up Duplicate Batch Entries"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3922,7 +3973,7 @@ console.log("API response for product quantities:", response);
                       const searchLower = searchTerm.toLowerCase();
                       const matchesSearch = 
                         product.product_name?.toLowerCase().includes(searchLower) ||
-                        product.barcode?.toLowerCase().includes(searchLower) ||
+                        String(product.barcode || "").toLowerCase().includes(searchLower) ||
                         product.category?.toLowerCase().includes(searchLower) ||
                         product.category_name?.toLowerCase().includes(searchLower) ||
                         product.brand?.toLowerCase().includes(searchLower) ||
@@ -4130,9 +4181,6 @@ console.log("API response for product quantities:", response);
                       <div className="flex justify-center gap-1">
                         <button onClick={() => openQuantityHistoryModal(product)} className="p-1" style={{ color: theme.colors.success }} title="View Quantity History">
                           <Package className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => openExpiringBatchModal(product)} className="p-1" style={{ color: theme.colors.info }} title="View Batch Details">
-                          <Calendar className="h-4 w-4" />
                         </button>
                         <button onClick={() => openEditProductModal(product)} className="p-1" style={{ color: theme.colors.accent }} title="Edit Product">
                           <Edit className="h-4 w-4" />
@@ -4964,7 +5012,7 @@ console.log("API response for product quantities:", response);
   )}
   
 
-  {showUpdateStockModal && existingProduct && (
+  {showUpdateStockModal && existingProduct && !showNewProductModal && (
     <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
       <div 
         className="backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[95vh] border"
@@ -5987,7 +6035,7 @@ console.log("API response for product quantities:", response);
       </div>
     </div>
   )}
-            {showNewProductModal && (
+            {showNewProductModal && !showUpdateStockModal && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div 
             className="backdrop-blur-md rounded-xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden border"
@@ -6042,12 +6090,13 @@ console.log("API response for product quantities:", response);
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Barcode</label>
               <input
+                ref={newProductBarcodeInputRef}
                 key="barcode_input"
                 type="text"
                 value={newProductForm.barcode || ""}
                 onChange={(e) => handleNewProductInputChange("barcode", e.target.value)}
                 placeholder="Scan or enter barcode"
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 barcode-input"
                 style={{ 
                   borderColor: theme.border.default,
                   backgroundColor: theme.bg.secondary,
@@ -6867,7 +6916,12 @@ console.log("API response for product quantities:", response);
                 disabled={loading || (() => {
                   // Basic required fields
                   if (!newProductForm.product_name || !newProductForm.category_id || !newProductForm.product_type || !newProductForm.srp) {
-                    return true;
+                    return true; // Disabled - missing required fields
+                  }
+                  
+                  // Expiration date is required
+                  if (!newProductForm.expiration) {
+                    return true; // Disabled - missing expiration
                   }
                   
                   // Product type specific validation
@@ -6885,7 +6939,7 @@ console.log("API response for product quantities:", response);
                     }
                   }
                   
-                  return true; // Disable if no product type selected
+                  return false; // ✅ ENABLED - all validations passed!
                 })()}
                 className="px-4 py-2 text-white rounded-md disabled:opacity-50 hover:opacity-80 transition-opacity"
                 style={{ backgroundColor: theme.colors.success }}
@@ -6894,6 +6948,7 @@ console.log("API response for product quantities:", response);
                   if (!newProductForm.category_id) return "Please select category";
                   if (!newProductForm.product_type) return "Please select product type";
                   if (!newProductForm.srp) return "Please enter SRP";
+                  if (!newProductForm.expiration) return "Please enter expiration date (REQUIRED for FIFO)";
                   
                   if (newProductForm.product_type === "Medicine") {
                     if (newProductForm.configMode === "bulk") {
@@ -6912,7 +6967,7 @@ console.log("API response for product quantities:", response);
                     }
                   }
                   
-                  return "Fill in all required fields to enable button";
+                  return "✅ Add product to batch";
                 })()}
               >
                 {loading ? "Adding..." : "Add to Batch"}
@@ -7577,7 +7632,7 @@ console.log("API response for product quantities:", response);
                       className="text-sm mt-2"
                       style={{ color: theme.text.muted }}
                     >
-                      Add products using the &quot;Add New Product&quot; modal.
+                      Add products using the "Add New Product" modal.
                     </p>
                   </div>
                 ) : (
@@ -8254,200 +8309,7 @@ console.log("API response for product quantities:", response);
                   </div>
                 )}
 
-      {/* Expiring Batch Modal */}
-      {showExpiringBatchModal && selectedExpiringProduct && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
-            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: theme.border.default }}>
-              <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                Expiring Batch Details - {selectedExpiringProduct.product_name}
-              </h3>
-              <button onClick={closeExpiringBatchModal} className="text-gray-400 hover:text-gray-600">
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-
-            <div className="p-6">
-              {selectedExpiringProduct.expiring_batch ? (
-                <div className="space-y-4">
-                  <div className="rounded-lg p-4" style={{ backgroundColor: theme.colors.warning + '20', borderColor: theme.colors.warning + '40', border: '1px solid' }}>
-                    <h4 className="font-medium mb-2" style={{ color: theme.colors.warning }}>⚠️ Expiring Batch Information</h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Batch Number:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.expiring_batch.batch_number || selectedExpiringProduct.expiring_batch.batch_id}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Batch Reference:</span>
-                        <span className="ml-2 font-mono" style={{ color: theme.text.primary }}>{selectedExpiringProduct.expiring_batch.batch_reference}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Quantity:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.expiring_batch.quantity} units</span>
-                      </div>
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Days Until Expiry:</span>
-                        <span className="ml-2 font-bold" style={{ color: theme.colors.danger }}>{selectedExpiringProduct.expiring_batch.days_until_expiry} days</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg p-4" style={{ backgroundColor: theme.colors.info + '20', borderColor: theme.colors.info + '40', border: '1px solid' }}>
-                    <h4 className="font-medium mb-2" style={{ color: theme.colors.info }}>📋 Product Information</h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Product Name:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.product_name}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Category:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.category}</span>
-                      </div>
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>Total Stock:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>{selectedExpiringProduct.quantity} units</span>
-                      </div>
-                      <div>
-                        <span className="font-medium" style={{ color: theme.text.secondary }}>SRP:</span>
-                        <span className="ml-2" style={{ color: theme.text.primary }}>₱{selectedExpiringProduct.srp || selectedExpiringProduct.unit_price || 0}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg p-4" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default, border: '1px solid' }}>
-                    <h4 className="font-medium mb-2" style={{ color: theme.text.primary }}>💡 Recommended Actions</h4>
-                    <ul className="text-sm space-y-1" style={{ color: theme.text.secondary }}>
-                      <li>• Consider moving this batch to the front for immediate sale</li>
-                      <li>• Check if this batch can be transferred to other locations</li>
-                      <li>• Review if the product needs to be discounted for quick sale</li>
-                      <li>• Monitor daily sales to ensure this batch is consumed first</li>
-                    </ul>
-                  </div>
-
-                  <div className="flex justify-end space-x-3">
-                    <button
-                      onClick={() => {
-                        closeExpiringBatchModal();
-                        openFifoModal(selectedExpiringProduct);
-                      }}
-                      className="px-4 py-2 rounded-md transition-colors"
-                      style={{ backgroundColor: theme.colors.primary, color: 'white' }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme.colors.primary + 'dd'}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = theme.colors.primary}
-                    >
-                      View All Batches
-                    </button>
-                    <button
-                      onClick={closeExpiringBatchModal}
-                      className="px-4 py-2 rounded-md transition-colors"
-                      style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary, border: `1px solid ${theme.border.default}` }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.primary}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.secondary}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              ) : fifoStockData && fifoStockData.length > 0 ? (
-                <div className="space-y-4">
-                  <div className="rounded-lg p-4" style={{ backgroundColor: theme.colors.info + '20', borderColor: theme.colors.info + '40', border: '1px solid' }}>
-                    <h4 className="font-medium mb-2" style={{ color: theme.colors.info }}>📦 Available Batches</h4>
-                    <div className="text-sm" style={{ color: theme.text.secondary }}>
-                      Found {fifoStockData.length} batch(es) for this product
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg p-4" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default, border: '1px solid' }}>
-                    <h4 className="font-medium mb-4" style={{ color: theme.text.primary }}>Current FIFO Batches</h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr style={{ borderBottom: `1px solid ${theme.border.default}` }}>
-                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Batch #</th>
-                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Reference</th>
-                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Quantity</th>
-                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Expiry Date</th>
-                            <th className="text-left py-2" style={{ color: theme.text.secondary }}>Days Left</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {fifoStockData.map((batch, index) => {
-                            const daysLeft = batch.expiration_date ? 
-                              Math.ceil((new Date(batch.expiration_date) - new Date()) / (1000 * 60 * 60 * 24)) : 
-                              null;
-                            return (
-                              <tr key={index} style={{ borderBottom: `1px solid ${theme.border.light}` }}>
-                                <td className="py-2" style={{ color: theme.text.primary }}>{batch.batch_number || batch.batch_id || index + 1}</td>
-                                <td className="py-2 font-mono text-xs" style={{ color: theme.text.primary }}>{batch.batch_reference || 'N/A'}</td>
-                                <td className="py-2" style={{ color: theme.text.primary }}>{batch.available_quantity || batch.quantity || 0} units</td>
-                                <td className="py-2" style={{ color: theme.text.primary }}>
-                                  {batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}
-                                </td>
-                                <td className="py-2">
-                                  {daysLeft !== null ? (
-                                    <span style={{ 
-                                      color: daysLeft < 0 ? theme.colors.danger : 
-                                             daysLeft <= 30 ? theme.colors.warning : 
-                                             theme.text.primary 
-                                    }}>
-                                      {daysLeft < 0 ? `Expired ${Math.abs(daysLeft)} days ago` : 
-                                       daysLeft === 0 ? 'Expires today' : 
-                                       `${daysLeft} days`}
-                                    </span>
-                                  ) : (
-                                    <span style={{ color: theme.text.muted }}>No expiry</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end space-x-3">
-                    <button
-                      onClick={() => {
-                        closeExpiringBatchModal();
-                        openFifoModal(selectedExpiringProduct);
-                      }}
-                      className="px-4 py-2 rounded-md transition-colors"
-                      style={{ backgroundColor: theme.colors.primary, color: 'white' }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme.colors.primary + 'dd'}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = theme.colors.primary}
-                    >
-                      View Detailed FIFO
-                    </button>
-                    <button
-                      onClick={closeExpiringBatchModal}
-                      className="px-4 py-2 rounded-md transition-colors"
-                      style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary, border: `1px solid ${theme.border.default}` }}
-                      onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.primary}
-                      onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.secondary}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p style={{ color: theme.text.secondary }}>No batch information available for this product.</p>
-                  <button
-                    onClick={closeExpiringBatchModal}
-                    className="mt-4 px-4 py-2 rounded-md transition-colors"
-                    style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary, border: `1px solid ${theme.border.default}` }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.primary}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.secondary}
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
-      )}
             </div>
        
    )

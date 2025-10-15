@@ -188,7 +188,12 @@ class ReportsModule {
             $outOfStockItems = $stmt->fetch()['total'];
             
             // Total inventory value
-            $stmt = $this->conn->prepare("SELECT COALESCE(SUM(quantity * srp), 0) as total FROM tbl_product WHERE status IS NULL OR status <> 'archived'");
+            $stmt = $this->conn->prepare("
+                SELECT COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total 
+                FROM tbl_fifo_stock fs 
+                JOIN tbl_product p ON fs.product_id = p.product_id 
+                WHERE (p.status IS NULL OR p.status <> 'archived') AND fs.available_quantity > 0
+            ");
             $stmt->execute();
             $totalValue = $stmt->fetch()['total'];
             
@@ -246,8 +251,8 @@ class ReportsModule {
                 p.product_name,
                 p.barcode,
                 sm.quantity,
-                sm.srp as unit_price,
-                (sm.quantity * sm.srp) as total_value,
+                COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
+                (sm.quantity * COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0)) as total_value,
                 s.supplier_name,
                 sm.reference_no,
                 sm.notes,
@@ -274,8 +279,8 @@ class ReportsModule {
                 p.product_name,
                 p.barcode,
                 sm.quantity,
-                sm.srp as unit_price,
-                (sm.quantity * sm.srp) as total_value,
+                COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
+                (sm.quantity * COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0)) as total_value,
                 sm.reference_no,
                 sm.notes as customer_info,
                 sm.movement_id,
@@ -385,10 +390,34 @@ class ReportsModule {
                 pt.date,
                 pt.time,
                 psh.transaction_id,
-                psh.total_amount,
+                CASE 
+                    WHEN psh.reference_number LIKE '%_RETURNED' THEN 
+                        COALESCE(
+                            (SELECT pr.total_refund FROM tbl_pos_returns pr WHERE BINARY pr.original_transaction_id = REPLACE(psh.reference_number, '_RETURNED', '')),
+                            psh.total_amount
+                        )
+                    ELSE psh.total_amount
+                END as total_amount,
                 psh.reference_number as reference_no,
-                COUNT(psd.product_id) as items_sold,
-                GROUP_CONCAT(CONCAT(COALESCE(p.product_name, CONCAT('Product ID: ', psd.product_id)), ' (', psd.quantity, 'x ₱', psd.price, ')') SEPARATOR ', ') as products,
+                CASE 
+                    WHEN psh.reference_number LIKE '%_RETURNED' THEN 0
+                    ELSE COUNT(psd.product_id)
+                END as items_sold,
+                CASE 
+                    WHEN psh.reference_number LIKE '%_RETURNED' THEN 
+                        CONCAT('RETURNED: ', 
+                            COALESCE(
+                                (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, CONCAT('Product ID: ', pri.product_id)), ' (', pri.quantity, 'x ₱', pri.price, ')') SEPARATOR ', ')
+                                 FROM tbl_pos_return_items pri
+                                 LEFT JOIN tbl_product p2 ON pri.product_id = p2.product_id
+                                 WHERE BINARY pri.return_id = (SELECT pr.return_id FROM tbl_pos_returns pr WHERE BINARY pr.original_transaction_id = REPLACE(psh.reference_number, '_RETURNED', ''))
+                                ), 
+                                'Product details not available'
+                            )
+                        )
+                    WHEN COUNT(psd.product_id) = 0 THEN 'N/A'
+                    ELSE GROUP_CONCAT(CONCAT(COALESCE(p.product_name, CONCAT('Product ID: ', psd.product_id)), ' (', psd.quantity, 'x ₱', psd.price, ')') SEPARATOR ', ')
+                END as products,
                 COALESCE(t.terminal_name, CONCAT('Terminal ', psh.terminal_id)) as terminal,
                 pt.payment_type,
                 CONCAT(COALESCE(e.Fname, ''), ' ', COALESCE(e.Lname, '')) as cashier_name,
@@ -434,10 +463,34 @@ class ReportsModule {
                     pt.date,
                     pt.time,
                     psh.transaction_id,
-                    psh.total_amount,
+                    CASE 
+                        WHEN psh.reference_number LIKE '%_RETURNED' THEN 
+                            COALESCE(
+                                (SELECT pr.total_refund FROM tbl_pos_returns pr WHERE BINARY pr.original_transaction_id = REPLACE(psh.reference_number, '_RETURNED', '')),
+                                psh.total_amount
+                            )
+                        ELSE psh.total_amount
+                    END as total_amount,
                     psh.reference_number as reference_no,
-                    COUNT(psd.product_id) as items_sold,
-                    GROUP_CONCAT(CONCAT(COALESCE(p.product_name, CONCAT('Product ID: ', psd.product_id)), ' (', psd.quantity, 'x ₱', psd.price, ')') SEPARATOR ', ') as products,
+                    CASE 
+                        WHEN psh.reference_number LIKE '%_RETURNED' THEN 0
+                        ELSE COUNT(psd.product_id)
+                    END as items_sold,
+                    CASE 
+                        WHEN psh.reference_number LIKE '%_RETURNED' THEN
+                        CONCAT('RETURNED: ', 
+                            COALESCE(
+                                (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, CONCAT('Product ID: ', pri.product_id)), ' (', pri.quantity, 'x ₱', pri.price, ')') SEPARATOR ', ')
+                                 FROM tbl_pos_return_items pri
+                                 LEFT JOIN tbl_product p2 ON pri.product_id = p2.product_id
+                                 WHERE BINARY pri.return_id = (SELECT pr.return_id FROM tbl_pos_returns pr WHERE BINARY pr.original_transaction_id = REPLACE(psh.reference_number, '_RETURNED', ''))
+                                ), 
+                                'Product details not available'
+                            )
+                        )
+                    WHEN COUNT(psd.product_id) = 0 THEN 'N/A'
+                        ELSE GROUP_CONCAT(CONCAT(COALESCE(p.product_name, CONCAT('Product ID: ', psd.product_id)), ' (', psd.quantity, 'x ₱', psd.price, ')') SEPARATOR ', ')
+                    END as products,
                     COALESCE(t.terminal_name, CONCAT('Terminal ', psh.terminal_id)) as terminal,
                     pt.payment_type,
                     CONCAT(COALESCE(e.Fname, ''), ' ', COALESCE(e.Lname, '')) as cashier_name,
@@ -630,12 +683,12 @@ class ReportsModule {
         // REAL-TIME: User is online if last_seen within 2 minutes (120 seconds) - if column exists
         
         if ($hasLastSeen) {
-            // NEW VERSION: With heartbeat detection
+            // NEW VERSION: With heartbeat detection - SHOW ALL USERS WITH THEIR LATEST STATUS
             $onlineStmt = $this->conn->prepare("
                 SELECT 
-                    l.login_date as date,
-                    l.login_time as time,
-                    l.username,
+                    COALESCE(l.login_date, CURDATE()) as date,
+                    COALESCE(l.login_time, '00:00:00') as time,
+                    COALESCE(l.username, e.username) as username,
                     CONCAT(e.Fname, ' ', COALESCE(e.Mname, ''), ' ', e.Lname) as employee_name,
                     r.role,
                     CASE 
@@ -652,8 +705,8 @@ class ReportsModule {
                         THEN 'LOGIN'
                         ELSE 'LOGOUT'
                     END as action,
-                    l.location,
-                    COALESCE(t.terminal_name, CONCAT('Terminal ', l.terminal_id)) as terminal,
+                    COALESCE(l.location, 'Not specified') as location,
+                    COALESCE(t.terminal_name, CONCAT('Terminal ', l.terminal_id), 'No terminal') as terminal,
                     l.logout_time,
                     l.logout_date,
                     l.ip_address,
@@ -665,7 +718,9 @@ class ReportsModule {
                              AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
                              AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
                         THEN '🔓 Currently logged in'
-                        ELSE CONCAT('🔒 Logged out at ', TIME_FORMAT(COALESCE(l.logout_time, l.login_time), '%h:%i %p'))
+                        WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00'
+                        THEN CONCAT('🔒 Logged out at ', TIME_FORMAT(l.logout_time, '%h:%i %p'))
+                        ELSE '🔒 Never logged in'
                     END as description,
                     CASE 
                         WHEN l.status = 'online' 
@@ -676,34 +731,49 @@ class ReportsModule {
                         THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), CONCAT(COALESCE(l.logout_date, l.login_date), ' ', l.logout_time))
                         ELSE 0
                     END as session_duration_minutes
-                FROM tbl_login l
-                LEFT JOIN tbl_employee e ON l.emp_id = e.emp_id
-                LEFT JOIN tbl_role r ON l.role_id = r.role_id
+                FROM tbl_employee e
+                LEFT JOIN tbl_role r ON e.role_id = r.role_id
+                LEFT JOIN tbl_login l ON e.emp_id = l.emp_id 
+                    AND l.login_id IN (
+                        SELECT MAX(login_id) 
+                        FROM tbl_login l2 
+                        WHERE l2.emp_id = e.emp_id 
+                        AND l2.login_date BETWEEN ? AND ?
+                    )
                 LEFT JOIN tbl_pos_terminal t ON l.terminal_id = t.terminal_id
-                WHERE l.login_date BETWEEN ? AND ?
-                ORDER BY l.login_date DESC, l.login_time DESC, l.created_at DESC
+                WHERE e.status = 'Active'
+                ORDER BY 
+                    CASE 
+                        WHEN l.status = 'online' 
+                             AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
+                             AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
+                        THEN 0
+                        ELSE 1
+                    END,
+                    e.Fname, e.Lname
             ");
         } else {
-            // OLD VERSION: Without heartbeat (backward compatible)
+            // OLD VERSION: Without heartbeat - SIMPLE STATUS CHECK - SHOW ALL USERS WITH THEIR LATEST STATUS
+            // Just check if status = 'online' - that's it!
             $onlineStmt = $this->conn->prepare("
                 SELECT 
-                    l.login_date as date,
-                    l.login_time as time,
-                    l.username,
+                    COALESCE(l.login_date, CURDATE()) as date,
+                    COALESCE(l.login_time, '00:00:00') as time,
+                    COALESCE(l.username, e.username) as username,
                     CONCAT(e.Fname, ' ', COALESCE(e.Mname, ''), ' ', e.Lname) as employee_name,
                     r.role,
                     CASE 
-                        WHEN l.status = 'online' AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
+                        WHEN l.status = 'online'
                         THEN 'ONLINE'
                         ELSE 'OFFLINE'
                     END as login_status,
                     CASE 
-                        WHEN l.status = 'online' AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
+                        WHEN l.status = 'online'
                         THEN 'LOGIN'
                         ELSE 'LOGOUT'
                     END as action,
-                    l.location,
-                    COALESCE(t.terminal_name, CONCAT('Terminal ', l.terminal_id)) as terminal,
+                    COALESCE(l.location, 'Not specified') as location,
+                    COALESCE(t.terminal_name, CONCAT('Terminal ', l.terminal_id), 'No terminal') as terminal,
                     l.logout_time,
                     l.logout_date,
                     l.ip_address,
@@ -711,23 +781,37 @@ class ReportsModule {
                     NULL as last_seen,
                     0 as seconds_since_seen,
                     CASE 
-                        WHEN l.status = 'online' AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
+                        WHEN l.status = 'online'
                         THEN '🔓 Currently logged in'
-                        ELSE CONCAT('🔒 Logged out at ', TIME_FORMAT(COALESCE(l.logout_time, l.login_time), '%h:%i %p'))
+                        WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00'
+                        THEN CONCAT('🔒 Logged out at ', TIME_FORMAT(l.logout_time, '%h:%i %p'))
+                        ELSE '🔒 Never logged in'
                     END as description,
                     CASE 
-                        WHEN l.status = 'online' AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
+                        WHEN l.status = 'online'
                         THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), NOW())
                         WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00'
                         THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), CONCAT(COALESCE(l.logout_date, l.login_date), ' ', l.logout_time))
                         ELSE 0
                     END as session_duration_minutes
-                FROM tbl_login l
-                LEFT JOIN tbl_employee e ON l.emp_id = e.emp_id
-                LEFT JOIN tbl_role r ON l.role_id = r.role_id
+                FROM tbl_employee e
+                LEFT JOIN tbl_role r ON e.role_id = r.role_id
+                LEFT JOIN tbl_login l ON e.emp_id = l.emp_id 
+                    AND l.login_id IN (
+                        SELECT MAX(login_id) 
+                        FROM tbl_login l2 
+                        WHERE l2.emp_id = e.emp_id 
+                        AND l2.login_date BETWEEN ? AND ?
+                    )
                 LEFT JOIN tbl_pos_terminal t ON l.terminal_id = t.terminal_id
-                WHERE l.login_date BETWEEN ? AND ?
-                ORDER BY l.login_date DESC, l.login_time DESC, l.created_at DESC
+                WHERE e.status = 'Active'
+                ORDER BY 
+                    CASE 
+                        WHEN l.status = 'online'
+                        THEN 0
+                        ELSE 1
+                    END,
+                    e.Fname, e.Lname
             ");
         }
         
@@ -1079,16 +1163,40 @@ class ReportsModule {
         $summaryStmt->execute([$cashierId, $startDate, $endDate]);
         $summary = $summaryStmt->fetch();
         
-        // Get detailed sales data
+        // Get detailed sales data with return information
         $salesStmt = $this->conn->prepare("
             SELECT 
                 pt.date,
                 pt.time,
                 psh.reference_number as reference_no,
-                psh.total_amount,
-                COUNT(psd.product_id) as items_sold,
+                CASE 
+                    WHEN psh.reference_number LIKE '%_RETURNED' THEN 
+                        COALESCE(
+                            (SELECT pr.total_refund FROM tbl_pos_returns pr WHERE BINARY pr.original_transaction_id = REPLACE(psh.reference_number, '_RETURNED', '')),
+                            psh.total_amount
+                        )
+                    ELSE psh.total_amount
+                END as total_amount,
+                CASE 
+                    WHEN psh.reference_number LIKE '%_RETURNED' THEN 0
+                    ELSE COUNT(psd.product_id)
+                END as items_sold,
                 pt.payment_type,
-                GROUP_CONCAT(CONCAT(COALESCE(p.product_name, CONCAT('Product ID: ', psd.product_id)), ' (', psd.quantity, 'x ₱', psd.price, ')') SEPARATOR ', ') as products
+                CASE 
+                    WHEN psh.reference_number LIKE '%_RETURNED' THEN 
+                        CONCAT('RETURNED: ', 
+                            COALESCE(
+                                (SELECT GROUP_CONCAT(CONCAT(COALESCE(p2.product_name, CONCAT('Product ID: ', pri.product_id)), ' (', pri.quantity, 'x ₱', pri.price, ')') SEPARATOR ', ')
+                                 FROM tbl_pos_return_items pri
+                                 LEFT JOIN tbl_product p2 ON pri.product_id = p2.product_id
+                                 WHERE BINARY pri.return_id = (SELECT pr.return_id FROM tbl_pos_returns pr WHERE BINARY pr.original_transaction_id = REPLACE(psh.reference_number, '_RETURNED', ''))
+                                ), 
+                                'Product details not available'
+                            )
+                        )
+                    WHEN COUNT(psd.product_id) = 0 THEN 'N/A'
+                    ELSE GROUP_CONCAT(CONCAT(COALESCE(p.product_name, CONCAT('Product ID: ', psd.product_id)), ' (', psd.quantity, 'x ₱', psd.price, ')') SEPARATOR ', ')
+                END as products
             FROM tbl_pos_transaction pt
             LEFT JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
             LEFT JOIN tbl_pos_sales_details psd ON psh.sales_header_id = psd.sales_header_id
@@ -1135,9 +1243,10 @@ function get_warehouse_kpis($conn, $data) {
         
         // Get total stock value
         $stockValueStmt = $conn->prepare("
-            SELECT COALESCE(SUM(quantity * srp), 0) as total_value 
-            FROM tbl_product 
-            WHERE status = 'active' AND location_id = ?
+            SELECT COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_value 
+            FROM tbl_fifo_stock fs 
+            JOIN tbl_product p ON fs.product_id = p.product_id 
+            WHERE p.status = 'active' AND p.location_id = ? AND fs.available_quantity > 0
         ");
         $stockValueStmt->execute([$location_id]);
         $totalValue = $stockValueStmt->fetchColumn();

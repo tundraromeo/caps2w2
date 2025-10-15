@@ -569,6 +569,7 @@ function StockSummary() {
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -762,6 +763,7 @@ function StockSummary() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

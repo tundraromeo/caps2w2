@@ -7,11 +7,8 @@ ob_start();
 
 session_start();
 
-// CORS and content-type headers
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
-header("Content-Type: application/json");
+// Use centralized CORS configuration
+require_once __DIR__ . '/cors.php';
 
 // Disable error display to prevent HTML in JSON response
 ini_set('display_errors', 0);
@@ -419,7 +416,7 @@ switch ($action) {
             
             // Get products without stock movements
             $productsStmt = $conn->prepare("
-                SELECT p.product_id, p.product_name, p.quantity, p.srp as unit_price, p.srp, 
+                SELECT p.product_id, p.product_name, p.quantity, COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price, COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as srp, 
                        p.location_id, p.batch_id, p.expiration, p.date_added
                 FROM tbl_product p
                 LEFT JOIN tbl_stock_movements sm ON p.product_id = sm.product_id

@@ -509,33 +509,18 @@ const PharmacyInventory = () => {
   const items = uniqueProducts.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   return (
-    <div className="p-6 space-y-6" style={{ backgroundColor: theme.bg.primary }}>
+    <div className="p-4 space-y-4" style={{ backgroundColor: theme.bg.primary }}>
+      <div style={{ transform: 'scale(0.85)', transformOrigin: 'top left', width: '117%', minHeight: '120vh' }}>
       <NotificationSystem products={inventory} />
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Pharmacy Inventory</h1>
-          <p style={{ color: theme.text.secondary }}>Manage pharmaceutical products and medications</p>
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl md:text-3xl font-bold" style={{ color: theme.text.primary }}>Pharmacy Inventory</h1>
+          <p className="text-sm md:text-base" style={{ color: theme.text.secondary }}>Manage pharmaceutical products and medications</p>
         </div>
         
-        {/* Manual Refresh Button */}
-        <button
-          onClick={() => {
-            console.log("🔄 Manual refresh triggered");
-            loadProducts();
-          }}
-          disabled={isLoading}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
-          title="Refresh inventory to sync with POS sales"
-        >
-          <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          {isLoading ? 'Refreshing...' : 'Refresh'}
-        </button>
-        
         {/* Notification Bell */}
-        <div className="relative notification-dropdown">
+        <div className="relative notification-dropdown flex-shrink-0 ml-4">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="relative p-2 rounded-full hover:bg-opacity-10 hover:bg-gray-500 transition-colors"
@@ -659,44 +644,44 @@ const PharmacyInventory = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
           <div className="flex items-center">
-            <Package className="h-8 w-8" style={{ color: theme.colors.accent }} />
-            <div className="ml-4">
-              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Products</p>
-              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{uniqueProducts.length}</p>
+            <Package className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.accent }} />
+            <div className="ml-2 md:ml-4">
+              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>Total Products</p>
+              <p className="text-lg md:text-2xl font-bold" style={{ color: theme.text.primary }}>{uniqueProducts.length}</p>
             </div>
           </div>
         </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
           <div className="flex items-center">
-            <CheckCircle className="h-8 w-8" style={{ color: theme.colors.success }} />
-            <div className="ml-4">
-              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>In Stock</p>
-              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+            <CheckCircle className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.success }} />
+            <div className="ml-2 md:ml-4">
+              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>In Stock</p>
+              <p className="text-lg md:text-2xl font-bold" style={{ color: theme.text.primary }}>
                 {inventory.filter(p => p.stock_status === 'in stock').length}
               </p>
             </div>
           </div>
         </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
           <div className="flex items-center">
-            <AlertCircle className="h-8 w-8" style={{ color: theme.colors.warning }} />
-            <div className="ml-4">
-              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Low Stock</p>
-              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+            <AlertCircle className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.warning }} />
+            <div className="ml-2 md:ml-4">
+              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>Low Stock</p>
+              <p className="text-lg md:text-2xl font-bold" style={{ color: theme.text.primary }}>
                 {inventory.filter(p => p.stock_status === 'low stock').length}
               </p>
             </div>
           </div>
         </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
           <div className="flex items-center">
-            <Truck className="h-8 w-8" style={{ color: theme.colors.info }} />
-            <div className="ml-4">
-              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
-              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+            <Truck className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.info }} />
+            <div className="ml-2 md:ml-4">
+              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
+              <p className="text-sm md:text-2xl font-bold break-words" style={{ color: theme.text.primary }}>
                 ₱{inventory.reduce((sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.total_quantity || p.quantity || 0)), 0).toFixed(2)}
               </p>
             </div>
@@ -705,8 +690,8 @@ const PharmacyInventory = () => {
       </div>
 
       {/* Filters and Search */}
-      <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
-        <div className="flex flex-col md:flex-row gap-4">
+      <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <div className="flex flex-col md:flex-row gap-3 md:gap-4">
           <div className="flex-1">
             <div className="relative">
               <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4" style={{ color: theme.text.muted }} />
@@ -749,11 +734,11 @@ const PharmacyInventory = () => {
       </div>
 
       {/* Inventory Table */}
-      <div className="rounded-3xl shadow-xl" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
-        <div className="px-6 py-4 border-b" style={{ borderColor: theme.border.default }}>
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Products</h3>
-            <div className="text-sm" style={{ color: theme.text.secondary }}>
+      <div className="rounded-xl shadow-lg" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <div className="px-4 md:px-6 py-3 md:py-4 border-b" style={{ borderColor: theme.border.default }}>
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+            <h3 className="text-lg md:text-xl font-semibold" style={{ color: theme.text.primary }}>Products</h3>
+            <div className="text-xs md:text-sm" style={{ color: theme.text.secondary }}>
               {uniqueProducts.length} unique products found ({filteredInventory.length} total entries)
             </div>
           </div>
@@ -998,64 +983,34 @@ const PharmacyInventory = () => {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                {/* Product Info Card */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-blue-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">{selectedProductForHistory.product_name}</h4>
-                      <p className="text-sm text-gray-600">Product ID: {selectedProductForHistory.product_id}</p>
-                      <p className="text-lg font-bold text-blue-600">Transfer ID: TR-{selectedProductForHistory.transfer_id || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
 
                 {/* Transfer Details Card */}
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-lg">
+                    <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
                       <CheckCircle className="h-6 w-6 text-green-600" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} units</p>
-                      <p className="text-sm text-green-600">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600">To: Pharmacy</p>
+                      <p className="text-sm text-green-600 break-words">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} units</p>
+                      <p className="text-sm text-green-600 break-words">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
+                      <p className="text-sm text-green-600 break-words">To: Pharmacy</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Date Info Card */}
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-purple-100 p-2 rounded-lg">
-                      <Clock className="h-6 w-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Transfer Date</h4>
-                      <p className="text-sm text-purple-600">
-                        {selectedProductForHistory.date_added ? new Date(selectedProductForHistory.date_added).toLocaleDateString() : 'Not Set'}
-                      </p>
-                      <p className="text-sm text-purple-600">
-                        {selectedProductForHistory.entry_time ? new Date(`2000-01-01T${selectedProductForHistory.entry_time}`).toLocaleTimeString() : 'Not Set'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Batch Info Card */}
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                   <div className="flex items-center gap-3">
-                    <div className="bg-orange-100 p-2 rounded-lg">
+                    <div className="bg-orange-100 p-2 rounded-lg flex-shrink-0">
                       <Package className="h-6 w-6 text-orange-600" />
                     </div>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <h4 className="font-semibold text-gray-900">Batch Information</h4>
-                      <p className="text-sm text-orange-600">Batches Transferred: {quantityHistoryData.length}</p>
-                      <p className="text-sm text-orange-600">FIFO Order: Active</p>
+                      <p className="text-sm text-orange-600 break-words">Batches Transferred: {quantityHistoryData.length}</p>
+                      <p className="text-sm text-orange-600 break-words">FIFO Order: Active</p>
                     </div>
                   </div>
                 </div>
@@ -1210,7 +1165,7 @@ const PharmacyInventory = () => {
         </div>
       )}
 
-
+      </div>
     </div>
   );
 };

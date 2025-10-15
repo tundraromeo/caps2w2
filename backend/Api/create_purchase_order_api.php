@@ -1,20 +1,11 @@
 <?php
-// Enable CORS for development
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-header('Content-Type: application/json');
+// Use centralized CORS configuration
+require_once __DIR__ . '/cors.php';
 
 // Prevent PHP warnings/notices from breaking JSON responses
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/php_errors.log');
-
-// Handle preflight OPTIONS request
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
 
 // Include database connection
 require_once 'conn.php';
@@ -231,4 +222,3 @@ function addSupplier($conn) {
 }
 
 $conn = null; // Close connection
-?>

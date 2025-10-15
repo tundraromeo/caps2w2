@@ -5,7 +5,6 @@ import { toast } from "react-toastify";
 import { 
   FaPlus, 
   FaSearch, 
-  FaEdit, 
   FaTrash, 
   FaEye, 
   FaFilter, 
@@ -35,15 +34,16 @@ const StockAdjustment = () => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [selectedLocationFilter, setSelectedLocationFilter] = useState(null);
+  const [availableLocations, setAvailableLocations] = useState([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
   
   // Ensure page is always a positive integer
   const setPageSafe = (newPage) => {
     const pageNum = Math.max(1, parseInt(newPage) || 1);
     setPage(pageNum);
   };
-  const [editingAdjustment, setEditingAdjustment] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingAdjustment, setViewingAdjustment] = useState(null);
@@ -107,6 +107,46 @@ const StockAdjustment = () => {
     }
   };
 
+  // Stock Adjustment API Functions
+  const handleStockAdjustmentApiCall = async (action, data = {}) => {
+    try {
+      console.log(`🔄 Stock Adjustment API Call: ${action}`, data);
+      console.log(`🔄 API Endpoint: stock_adjustment_api.php`);
+      console.log(`🔄 Full URL: http://localhost/caps2w2/backend/Api/stock_adjustment_api.php`);
+      
+      // Use direct fetch instead of API handler to avoid network issues
+      const url = 'http://localhost/caps2w2/backend/Api/stock_adjustment_api.php';
+      console.log(`🔄 Making direct fetch to: ${url}`);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: action,
+          ...data
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log(`✅ Stock Adjustment API Success: ${action}`, result);
+      return result;
+    } catch (error) {
+      console.error(`❌ Stock Adjustment API Error (${action}):`, error);
+      console.error(`❌ Error details:`, {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      throw error;
+    }
+  };
+
   // Batch Adjustment API Functions
   const handleBatchApiCall = async (action, data = {}) => {
     try {
@@ -126,8 +166,8 @@ const StockAdjustment = () => {
     try {
       console.log('🔄 Fetching batch adjustment data...');
       
-      // Use the batch adjustment API to get adjustment history
-      const result = await handleBatchApiCall('get_batch_adjustment_history', {
+      // Use the stock adjustment API to get adjustment history
+      const result = await handleStockAdjustmentApiCall('get_batch_adjustment_history', {
         page: page,
         limit: rowsPerPage
       });
@@ -153,13 +193,22 @@ const StockAdjustment = () => {
           status: 'Approved', // Batch adjustments are automatically approved
           product_name: item.product_name,
           product_id: item.product_id,
-          batch_reference: item.batch_reference,
+          batch_reference: item.batch_reference || 'N/A',
           expiration_date: item.expiration_date
         }));
         
-        setAdjustments(processedData);
-        setFilteredAdjustments(processedData);
-        setTotalRecords(result.total || processedData.length);
+        // Remove duplicates based on log_id (additional safeguard)
+        const uniqueData = processedData.filter((item, index, self) => 
+          index === self.findIndex(t => t.id === item.id && t.created_at === item.created_at)
+        );
+        
+        console.log('📊 Original data length:', processedData.length);
+        console.log('📊 Unique data length:', uniqueData.length);
+        console.log('📊 Sample processed data:', processedData.slice(0, 2));
+        
+        setAdjustments(uniqueData);
+        setFilteredAdjustments(uniqueData);
+        setTotalRecords(result.total || uniqueData.length);
         
         console.log('✅ Batch adjustments fetched successfully:', processedData.length, 'records');
       } else {
@@ -179,7 +228,7 @@ const StockAdjustment = () => {
   // Fetch statistics
   const fetchStats = async () => {
     try {
-      const result = await handleBatchApiCall('get_batch_adjustment_stats');
+      const result = await handleStockAdjustmentApiCall('get_batch_adjustment_stats');
       if (result.success && result.data) {
         setStats({
           total_adjustments: result.data.total_adjustments || 0,
@@ -225,39 +274,126 @@ const StockAdjustment = () => {
     toast.warning('Batch adjustments cannot be deleted. They are permanent records for audit purposes.');
   };
 
-  // Load products for batch adjustment
-  const fetchProducts = async () => {
-    setLoadingProducts(true);
+  // Fetch available locations from tbl_location
+  const fetchLocations = async () => {
+    setLoadingLocations(true);
     try {
-      const result = await handleApiCall('get_products_oldest_batch', {
-        status: 'active',
-        limit: 1000,
-        location_id: currentLocation
-      });
+      console.log('🔄 Fetching locations from tbl_location...');
+      // Use backend.php for get_locations endpoint
+      const result = await apiHandler.callGenericAPI('backend.php', 'get_locations', {});
+      console.log('📥 Locations API response:', result);
       
-      if (result.success) {
-        setProducts(result.data || []);
+      if (result.success && result.data && result.data.length > 0) {
+        console.log('✅ Locations fetched successfully:', result.data);
+        setAvailableLocations(result.data);
+      } else {
+        console.log('⚠️ No locations data, using fallback locations');
+        setAvailableLocations([
+          { location_id: 1, location_name: 'Main Warehouse' },
+          { location_id: 2, location_name: 'Warehouse' },
+          { location_id: 3, location_name: 'Pharmacy Store' },
+          { location_id: 4, location_name: 'Convenience Store' }
+        ]);
       }
     } catch (error) {
-      console.error('Error fetching products:', error);
+      console.error('❌ Error fetching locations:', error);
+      // Fallback to default locations if API fails
+      setAvailableLocations([
+        { location_id: 1, location_name: 'Main Warehouse' },
+        { location_id: 2, location_name: 'Warehouse' },
+        { location_id: 3, location_name: 'Pharmacy Store' },
+        { location_id: 4, location_name: 'Convenience Store' }
+      ]);
+    } finally {
+      setLoadingLocations(false);
+    }
+  };
+
+  // Load products for batch adjustment
+  const fetchProducts = async (specificLocationId = null) => {
+    setLoadingProducts(true);
+    try {
+      const locationToUse = specificLocationId || selectedLocationFilter || currentLocation;
+      console.log('🔄 Fetching products for location:', locationToUse);
+      console.log('📍 specificLocationId:', specificLocationId);
+      console.log('📍 selectedLocationFilter:', selectedLocationFilter);
+      console.log('📍 currentLocation:', currentLocation);
+      
+      // Try the new stock adjustment API first (gets products from actual locations)
+      console.log('🔄 Calling get_products_for_stock_adjustment with location_id:', locationToUse);
+      let result = await handleStockAdjustmentApiCall('get_products_for_stock_adjustment', {
+        location_id: locationToUse
+      });
+      
+      console.log('📥 Products API response (stock_adjustment):', result);
+      console.log('📊 Result success:', result.success);
+      console.log('📊 Result data length:', result.data ? result.data.length : 'no data');
+      
+      // If no products found, try get_products_oldest_batch as fallback
+      if (!result.success || !result.data || result.data.length === 0) {
+        console.log('🔄 No products from stock_adjustment, trying oldest_batch...');
+        result = await handleApiCall('get_products_oldest_batch', {
+          status: 'active',
+          limit: 1000,
+          location_id: locationToUse
+        });
+        console.log('📥 Products API response (oldest_batch):', result);
+      }
+      
+      // If still no products found, try regular get_products endpoint
+      if (!result.success || !result.data || result.data.length === 0) {
+        console.log('🔄 No products from oldest_batch, trying regular get_products...');
+        result = await handleApiCall('get_products', {
+          location_id: locationToUse
+        });
+        console.log('📥 Products API response (regular):', result);
+      }
+      
+      if (result.success) {
+        const productsData = result.data || [];
+        console.log('✅ Products fetched successfully:', productsData.length, 'products');
+        console.log('📦 Sample products:', productsData.slice(0, 3));
+        console.log('📍 Products for location:', locationToUse);
+        console.log('📦 All products:', productsData);
+        setProducts(productsData);
+      } else {
+        console.log('⚠️ No products data received from both endpoints');
+        setProducts([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching products:', error);
       toast.error('Failed to fetch products');
+      setProducts([]);
     } finally {
       setLoadingProducts(false);
     }
   };
 
   // Load batches for selected product
-  const fetchProductBatches = async (productId) => {
+  const fetchProductBatches = async (productId, specificLocationId = null) => {
     setLoadingBatches(true);
     try {
-      const result = await handleBatchApiCall('get_product_batches_for_adjustment', {
+      const locationToUse = specificLocationId || selectedLocationFilter || currentLocation;
+      const result = await handleStockAdjustmentApiCall('get_product_batches_for_adjustment', {
         product_id: productId,
-        location_id: currentLocation
+        location_id: locationToUse
       });
       
       if (result.success) {
-        setProductBatches(result.data.batches || []);
-        setSelectedProduct(result.data.product);
+        const batches = result.data.batches || [];
+        const product = result.data.product;
+        
+        // Calculate total quantity from batches
+        const totalQuantity = batches.reduce((sum, batch) => sum + (parseFloat(batch.current_qty) || 0), 0);
+        
+        // Add total_quantity to product data
+        const productWithTotal = {
+          ...product,
+          total_quantity: totalQuantity
+        };
+        
+        setProductBatches(batches);
+        setSelectedProduct(productWithTotal);
       }
     } catch (error) {
       console.error('Error fetching product batches:', error);
@@ -299,6 +435,20 @@ const StockAdjustment = () => {
       reason: "",
       notes: ""
     });
+    setShowBatchAdjustmentModal(true);
+  };
+
+  // Handle opening batch adjustment modal
+  const handleOpenBatchAdjustmentModal = async () => {
+    console.log('🔄 Opening batch adjustment modal...');
+    console.log('📍 Current availableLocations:', availableLocations);
+    
+    // Fetch locations if not already loaded
+    if (availableLocations.length === 0) {
+      console.log('📍 No locations loaded, fetching...');
+      await fetchLocations();
+    }
+    
     setShowBatchAdjustmentModal(true);
   };
 
@@ -393,7 +543,7 @@ const StockAdjustment = () => {
       
       console.log('📤 Sending request data:', requestData);
       
-      const result = await handleBatchApiCall('create_batch_stock_adjustment', requestData);
+      const result = await handleStockAdjustmentApiCall('create_batch_stock_adjustment', requestData);
       
       console.log('📥 Received response:', result);
 
@@ -455,8 +605,20 @@ const StockAdjustment = () => {
       fetchAdjustments();
       fetchStats();
       fetchProducts();
+      fetchLocations();
     }
   }, [currentLocation]);
+
+  // Reload products when location filter changes
+  useEffect(() => {
+    if (currentLocation !== null && selectedLocationFilter !== null) {
+      fetchProducts();
+      // Reset selected product and batches when location changes
+      setSelectedProduct(null);
+      setProductBatches([]);
+      setSelectedBatch(null);
+    }
+  }, [selectedLocationFilter]);
 
   // Auto-refresh functionality
   useEffect(() => {
@@ -553,17 +715,6 @@ const StockAdjustment = () => {
     }
   };
 
-  const handleEdit = (adjustment) => {
-    setEditingAdjustment(adjustment);
-    setShowModal(true);
-  };
-
-  const handleSave = async () => {
-    if (editingAdjustment) {
-      await updateAdjustment(editingAdjustment);
-    }
-  };
-
   const handleDelete = async (id) => {
     await deleteAdjustment(id);
   };
@@ -590,6 +741,7 @@ const StockAdjustment = () => {
 
   return (
     <div className={`p-6 space-y-6 ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-50'}`}>
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -598,7 +750,7 @@ const StockAdjustment = () => {
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={() => setShowBatchAdjustmentModal(true)}
+            onClick={handleOpenBatchAdjustmentModal}
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
           >
             <FaBoxOpen className="h-4 w-4" />
@@ -683,7 +835,7 @@ const StockAdjustment = () => {
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="md:col-span-2">
             <div className="relative">
               <FaSearch className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
@@ -695,6 +847,20 @@ const StockAdjustment = () => {
                 className={`pl-10 pr-4 py-2 w-full border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'}`}
               />
             </div>
+          </div>
+          <div>
+            <select
+              value={selectedLocationFilter || ''}
+              onChange={(e) => setSelectedLocationFilter(e.target.value ? parseInt(e.target.value) : null)}
+              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+            >
+              <option value="">All Locations</option>
+              {availableLocations.map((location) => (
+                <option key={location.location_id} value={location.location_id}>
+                  {location.location_name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <select
@@ -728,6 +894,11 @@ const StockAdjustment = () => {
         <div className={`mt-4 px-4 py-2 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
           <div className="flex justify-between items-center text-sm">
             <div className="flex items-center gap-4">
+              {selectedLocationFilter && (
+                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded ${isDark ? 'bg-purple-900 text-purple-200' : 'bg-purple-100 text-purple-800'}`}>
+                  📍 {availableLocations.find(loc => loc.location_id === selectedLocationFilter)?.location_name}
+                </span>
+              )}
               <span className={`${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
                 Auto-refresh: {autoRefresh ? 'ON' : 'OFF'}
               </span>
@@ -788,9 +959,6 @@ const StockAdjustment = () => {
                   STATUS
                 </th>
                 <th className={`px-6 py-3 text-center text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-300' : 'text-gray-500'}`}>
-                  EXPIRATION
-                </th>
-                <th className={`px-6 py-3 text-center text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-300' : 'text-gray-500'}`}>
                   SOURCE
                 </th>
                 <th className={`px-6 py-3 text-center text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-300' : 'text-gray-500'}`}>
@@ -801,19 +969,19 @@ const StockAdjustment = () => {
             <tbody className={`${isDark ? 'bg-gray-800 divide-gray-700' : 'bg-white divide-gray-200'} divide-y`}>
               {isLoading ? (
                 <tr>
-                  <td colSpan="10" className={`px-6 py-4 text-center ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <td colSpan="9" className={`px-6 py-4 text-center ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                     Loading adjustments...
                   </td>
                 </tr>
               ) : filteredAdjustments.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className={`px-6 py-4 text-center ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <td colSpan="9" className={`px-6 py-4 text-center ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                     No adjustments found
                   </td>
                 </tr>
               ) : (
                 filteredAdjustments.map((item, index) => (
-                  <tr key={`${item.source || 'unknown'}-${item.id}-${index}`} className={`hover:${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                  <tr key={`adjustment-${item.id}-${item.product_id}-${item.created_at || item.full_date}-${index}`} className={`hover:${isDark ? 'bg-gray-700' : 'bg-gray-50'}`}>
                     <td className="px-6 py-4">
                       <div>
                         <div className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{item.product_name}</div>
@@ -849,25 +1017,12 @@ const StockAdjustment = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {item.expiration_date ? 
-                          new Date(item.expiration_date).toLocaleDateString() : 'N/A'
-                        }
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
                       <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${getSourceColor(item.source)}`}>
                         {getSourceIcon(item.source)} {getSourceText(item.source)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center gap-2">
-                        <button 
-                          onClick={() => handleEdit(item)}
-                          className="text-blue-600 hover:text-blue-900 p-1"
-                        >
-                          <FaEdit className="h-4 w-4" />
-                        </button>
                         <button 
                           onClick={() => handleView(item)}
                           className="text-green-600 hover:text-green-900 p-1"
@@ -1044,136 +1199,9 @@ const StockAdjustment = () => {
             </div>
           </div>
         </div>
-      )}
 
-      {/* Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
-          <div className={`${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto`}>
-            <div className={`px-6 py-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-              <div className="flex justify-between items-center">
-                <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Edit Adjustment</h3>
-                <button 
-                  onClick={() => setShowModal(false)}
-                  className={`${isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div className="p-6">
-              {editingAdjustment && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Product Name</label>
-                      <input
-                        type="text"
-                        value={editingAdjustment.product_name || ''}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, product_name: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Product ID</label>
-                      <input
-                        type="text"
-                        value={editingAdjustment.product_id || ''}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, product_id: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Adjustment Type</label>
-                      <select
-                        value={editingAdjustment.adjustment_type}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, adjustment_type: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      >
-                        <option value="Stock In">Stock In</option>
-                        <option value="Stock Out">Stock Out</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Quantity</label>
-                      <input
-                        type="number"
-                        value={editingAdjustment.quantity}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, quantity: parseInt(e.target.value)})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Reason</label>
-                      <input
-                        type="text"
-                        value={editingAdjustment.reason || ''}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, reason: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>SRP</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editingAdjustment.srp || 0}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, srp: safeParseFloat(e.target.value)})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Expiration Date</label>
-                      <input
-                        type="date"
-                        value={editingAdjustment.expiration_date || ''}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, expiration_date: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Adjusted By</label>
-                      <input
-                        type="text"
-                        value={editingAdjustment.adjusted_by || ''}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, adjusted_by: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Status</label>
-                      <select
-                        value={editingAdjustment.status}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, status: e.target.value})}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                      >
-                        <option value="Approved">Approved</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Rejected">Rejected</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Notes</label>
-                      <textarea
-                        value={editingAdjustment.notes || ''}
-                        onChange={(e) => setEditingAdjustment({...editingAdjustment, notes: e.target.value})}
-                        placeholder="Additional notes..."
-                        rows={3}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'}`}
-                      />
-                  </div>
-                </div>
               )}
-            </div>
+            
             <div className={`px-6 py-4 border-t flex justify-end gap-3 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
               <button 
                 onClick={() => setShowModal(false)}
@@ -1181,16 +1209,9 @@ const StockAdjustment = () => {
               >
                 Cancel
               </button>
-              <button 
-                onClick={handleSave}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Save Changes
-              </button>
+          
             </div>
-          </div>
-        </div>
-      )}
+     
 
       {/* View Modal */}
       {showViewModal && (
@@ -1315,11 +1336,48 @@ const StockAdjustment = () => {
               <div className="flex justify-between items-center">
                 <div>
                   <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>Batch Stock Adjustment</h3>
-                  {currentLocation && (
-                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'} mt-1`}>
-                      Location: {currentLocation === 2 ? 'Warehouse' : currentLocation === 3 ? 'Pharmacy Store' : currentLocation === 4 ? 'Convenience Store' : `Location ${currentLocation}`}
-                    </p>
-                  )}
+                  <div className="mt-2">
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      📍 Select Location
+                    </label>
+                    <select
+                      value={selectedLocationFilter || currentLocation || ''}
+                      onChange={async (e) => {
+                        const locationId = e.target.value ? parseInt(e.target.value) : null;
+                        console.log('📍 Location selected:', locationId, e.target.value);
+                        setSelectedLocationFilter(locationId);
+                        // Reset product selection when location changes
+                        setSelectedProduct(null);
+                        setProductBatches([]);
+                        setSelectedBatch(null);
+                        
+                        // Fetch products for the selected location
+                        if (locationId) {
+                          console.log('🔄 Fetching products for location:', locationId);
+                          await fetchProducts(locationId);
+                        }
+                      }}
+                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                    >
+                      <option value="">Choose a location...</option>
+                      {loadingLocations ? (
+                        <option value="" disabled>Loading locations...</option>
+                      ) : availableLocations.length > 0 ? (
+                        availableLocations.map((location) => (
+                          <option key={location.location_id} value={location.location_id}>
+                            {location.location_name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No locations available</option>
+                      )}
+                    </select>
+                    {availableLocations.length > 0 && (
+                      <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        📍 {availableLocations.length} locations loaded
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <button 
                   onClick={() => {
@@ -1341,13 +1399,13 @@ const StockAdjustment = () => {
                 <div className="space-y-4">
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      🔍 Search Product Name / SKU / Barcode
+                      🔍 Search Product Name / Barcode
                     </label>
                     <div className="relative">
                       <FaSearch className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
                       <input
                         type="text"
-                        placeholder="Type product name, SKU, or barcode..."
+                        placeholder="Type product name or barcode..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className={`pl-10 pr-4 py-2 w-full border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'}`}
@@ -1360,21 +1418,37 @@ const StockAdjustment = () => {
                       disabled={loadingProducts}
                     >
                       <option value="">Choose a product...</option>
-                      {products
-                        .filter(product => 
-                          !searchTerm || 
-                          product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          product.barcode?.toString().includes(searchTerm) ||
-                          product.product_id.toString().includes(searchTerm)
-                        )
-                        .map((product, index) => (
-                        <option key={`${product.product_id}-${index}`} value={product.product_id}>
-                          {product.product_name} (ID: {product.product_id}) - {product.barcode}
-                        </option>
-                      ))}
+                      {loadingProducts ? (
+                        <option value="" disabled>Loading products...</option>
+                      ) : products.length > 0 ? (
+                        products
+                          .filter(product => 
+                            !searchTerm || 
+                            product.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            product.barcode?.toString().includes(searchTerm) ||
+                            product.product_id.toString().includes(searchTerm)
+                          )
+                          .map((product, index) => (
+                          <option key={`${product.product_id}-${index}`} value={product.product_id}>
+                            {product.product_name} - {product.barcode} ({product.total_quantity || product.quantity || 0} pcs)
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No products available for this location</option>
+                      )}
                     </select>
                     {loadingProducts && (
                       <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Loading products...</p>
+                    )}
+                    {!loadingProducts && products.length > 0 && (
+                      <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        📦 {products.length} products available
+                      </p>
+                    )}
+                    {!loadingProducts && products.length === 0 && selectedLocationFilter && (
+                      <p className={`text-sm mt-1 text-red-500`}>
+                        ⚠️ No products found for this location
+                      </p>
                     )}
                   </div>
 
@@ -1397,7 +1471,7 @@ const StockAdjustment = () => {
                         </div>
                         <div>
                           <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Total Stock:</span>
-                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.quantity || 0} units</p>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.total_quantity || selectedProduct.quantity || 0} units</p>
                         </div>
                       </div>
                     </div>
@@ -1429,8 +1503,8 @@ const StockAdjustment = () => {
                               </tr>
                             </thead>
                             <tbody>
-                              {productBatches.map((batch) => (
-                                <tr key={batch.batch_id} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                              {productBatches.map((batch, index) => (
+                                <tr key={`batch-${batch.batch_id}-${batch.batch_reference}-${index}`} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                                   <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
                                     {batch.batch_reference}
                                   </td>
@@ -1451,7 +1525,7 @@ const StockAdjustment = () => {
                                       onClick={() => handleBatchAdjust(batch)}
                                       className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
                                     >
-                                      <FaEdit className="h-3 w-3" />
+                                      <FaMinus className="h-3 w-3" />
                                       Adjust
                                     </button>
                                   </td>
@@ -1635,8 +1709,8 @@ const StockAdjustment = () => {
 
       {/* Adjustment History Modal */}
       {showAdjustmentHistory && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className={`${isDark ? 'bg-gray-800' : 'bg-white'} rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden`}>
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div className={`${isDark ? 'bg-gray-800 border-2 border-blue-400' : 'bg-white border-2 border-blue-500'} rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden ring-4 ring-blue-200`}>
             <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
               <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 📜 View Adjustment History
@@ -1666,8 +1740,8 @@ const StockAdjustment = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {adjustments.slice(0, 20).map((adjustment) => (
-                      <tr key={adjustment.id} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                    {adjustments.slice(0, 20).map((adjustment, index) => (
+                      <tr key={`adjustment-${adjustment.id}-${adjustment.product_id}-${adjustment.created_at || adjustment.full_date}-${index}`} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                         <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {adjustment.date} {adjustment.time}
                         </td>
@@ -1709,7 +1783,8 @@ const StockAdjustment = () => {
       )}
 
     </div>
+    </div>
   );
-};
+}
 
 export default StockAdjustment; 

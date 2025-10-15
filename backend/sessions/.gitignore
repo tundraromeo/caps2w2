@@ -1,0 +1,9 @@
+# Ignore all session files
+*
+
+# Keep this .gitignore file
+!.gitignore
+
+# Keep README
+!README.md
+

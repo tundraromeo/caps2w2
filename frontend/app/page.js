@@ -32,9 +32,40 @@ export default function LoginForm() {
   const generateCaptcha = async () => {
     try {
       console.log('Generating captcha...');
-      const response = await axios.post(API_BASE_URL, {
-        action: "generate_captcha"
-      });
+      console.log('API URL:', API_BASE_URL);
+      
+      let response;
+      
+      // Try axios first
+      try {
+        response = await axios.post(API_BASE_URL, {
+          action: "generate_captcha"
+        }, {
+          timeout: 10000,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+      } catch (axiosError) {
+        console.warn('Axios failed, trying fetch:', axiosError.message);
+        
+        // Fallback to fetch API
+        const fetchResponse = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({ action: "generate_captcha" })
+        });
+        
+        if (!fetchResponse.ok) {
+          throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
+        }
+        
+        const data = await fetchResponse.json();
+        response = { data };
+      }
       
       console.log('Captcha API response:', response.data);
       
@@ -71,7 +102,7 @@ export default function LoginForm() {
     if (!username.trim() || !password.trim()) {
       const msg = "Both username and password are required";
       setError(msg);
-      toast.error(msg);
+      toast.error(msg, { autoClose: 2000 });
       return;
     }
 
@@ -86,7 +117,7 @@ export default function LoginForm() {
     if (!captchaInput.trim()) {
       const msg = "Please complete the captcha";
       setError(msg);
-      toast.error(msg);
+      toast.error(msg, { autoClose: 2000 });
       return;
     }
 
@@ -98,7 +129,7 @@ export default function LoginForm() {
     if (captchaInput.toString() !== captchaAnswer.toString()) {
       const msg = "Incorrect captcha answer. Please try again.";
       setError(msg);
-      toast.error(msg);
+      toast.error(msg, { autoClose: 2000 });
       setCaptchaInput("");
       generateCaptcha();
       return;
@@ -107,19 +138,51 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-
+      let res;
       
-      const res = await axios.post(API_BASE_URL, {
-        action: "login",
-        username: username,
-        password: password,
-        captcha: captchaInput,
-        captchaAnswer: captchaAnswer,
-        // Provide route hint so backend can map location/terminal and save shift
-        route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
-      });
-
-      
+      // Try axios first
+      try {
+        res = await axios.post(API_BASE_URL, {
+          action: "login",
+          username: username,
+          password: password,
+          captcha: captchaInput,
+          captchaAnswer: captchaAnswer,
+          // Provide route hint so backend can map location/terminal and save shift
+          route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
+        }, {
+          timeout: 10000,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+      } catch (axiosError) {
+        console.warn('Axios failed for login, trying fetch:', axiosError.message);
+        
+        // Fallback to fetch API
+        const fetchResponse = await fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            action: "login",
+            username: username,
+            password: password,
+            captcha: captchaInput,
+            captchaAnswer: captchaAnswer,
+            route: typeof window !== 'undefined' ? window.location.pathname || '/admin' : '/admin'
+          })
+        });
+        
+        if (!fetchResponse.ok) {
+          throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
+        }
+        
+        const data = await fetchResponse.json();
+        res = { data };
+      }
 
       if (res.data.success) {
         const role = res.data.role;
@@ -143,7 +206,7 @@ export default function LoginForm() {
           if (res.data.user_id) localStorage.setItem('pos-emp-id', String(res.data.user_id));
         }
 
-        toast.success(`Login successful. Welcome ${res.data.full_name}!`);
+        toast.success('return Successfully', { autoClose: 2000 });
         
 
         // Robust role-based redirect (map pharmacist into Inventory app)
@@ -159,7 +222,7 @@ export default function LoginForm() {
           // Unknown but present role → send to Inventory as safe default
           target = '/Inventory_Con';
         } else {
-          toast.warn('No role detected. Redirecting to admin.');
+          toast.warn('No role detected. Redirecting to admin.', { autoClose: 2000 });
         }
 
         // Terminal/location is now handled automatically in the login process
@@ -174,7 +237,7 @@ export default function LoginForm() {
       } else {
         const msg = res.data.message || "Invalid username or password.";
         setError(msg);
-        toast.error(msg === 'User is inactive. Please contact the administrator.' ? 'User is inactive. Please contact the administrator.' : msg);
+        toast.error(msg === 'User is inactive. Please contact the administrator.' ? 'User is inactive. Please contact the administrator.' : msg, { autoClose: 2000 });
         setPassword(""); // Clear password field on error
         setCaptchaInput(""); // Clear captcha input
         generateCaptcha(); // Generate new captcha
@@ -183,7 +246,7 @@ export default function LoginForm() {
       
       const msg = "An unexpected error occurred. Please check your connection.";
       setError(msg);
-      toast.error(msg);
+      toast.error(msg, { autoClose: 2000 });
       setPassword(""); // Clear password field on error
       setCaptchaInput(""); // Clear captcha input
       generateCaptcha(); // Generate new captcha
@@ -206,7 +269,7 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-white">
+    <div className="flex items-center justify-center min-h-screen bg-white" style={{ zoom: '0.8' }}>
       <div className="w-full max-w-md">
         <form
           onSubmit={handleSubmit}

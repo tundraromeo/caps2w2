@@ -31,7 +31,7 @@ import {
 import { getApiUrl } from "../lib/apiConfig";
 
 // Define API URLs using centralized configuration
-const API_BASE_SIMPLE = getApiUrl("purchase_order_api_simple.php");
+// All functionality now merged into single purchase_order_api.php
 const API_BASE = getApiUrl("purchase_order_api.php");
 const CREATE_PO_API = getApiUrl("create_purchase_order_api.php");
 
@@ -447,27 +447,64 @@ function CreatePurchaseOrder() {
     }
   };
 
-  // Purchase Order List functions
+  // Purchase Order List functions - Modified to fetch individual products
   const fetchPurchaseOrders = async (status = null) => {
     try {
-      let url = `${API_BASE_SIMPLE}?action=purchase_orders`;
-      if (status) {
-        url += `&status=${status}`;
-      }
+      // Always fetch ALL purchase orders and products, then filter on frontend
+      let url = `${API_BASE}?action=purchase_orders_with_products&_t=${Date.now()}&_r=${Math.random()}`;
       
       const response = await fetch(url);
       const data = await response.json();
       if (data.success) {
-        console.log('Fetched Purchase Orders:', {
-          status: status,
-          count: data.data.length,
-          sampleData: data.data.slice(0, 3).map(po => ({ 
+        console.log('Fetched All Purchase Orders with Products:', {
+          totalPOs: data.data.length,
+          sampleData: data.data.slice(0, 2).map(po => ({ 
             id: po.purchase_header_id, 
             status: po.status, 
-            po_number: po.po_number 
+            po_number: po.po_number,
+            products: po.products?.length || 0
           }))
         });
-        setPurchaseOrders(data.data);
+        
+        // If status filter is provided, filter products individually
+        let filteredData = data.data;
+        if (status) {
+          filteredData = data.data.map(po => ({
+            ...po,
+            products: po.products?.filter(product => {
+              // Calculate status if not available
+              let itemStatus = product.item_status;
+              
+              if (!itemStatus) {
+                const receivedQty = parseInt(product.received_qty) || 0;
+                const quantity = parseInt(product.quantity) || 0;
+                const missingQty = Math.max(0, quantity - receivedQty);
+                
+                if (missingQty === 0 && quantity > 0) {
+                  itemStatus = 'complete';
+                } else if (receivedQty > 0) {
+                  itemStatus = 'partial';
+                } else {
+                  itemStatus = 'pending';
+                }
+              }
+              
+              // If item_status is 'received', exclude from all tabs except when explicitly filtering for received
+              if (itemStatus === 'received' && status !== 'received') {
+                return false;
+              }
+              
+              // Map 'returned' status to 'return' filter
+              if (status === 'return') {
+                return itemStatus === 'returned';
+              }
+              
+              return itemStatus === status;
+            }) || []
+          })).filter(po => po.products.length > 0); // Only include POs that have products matching the status
+        }
+        
+        setPurchaseOrders(filteredData);
       } else {
         toast.error('Failed to load purchase orders');
       }
@@ -522,16 +559,19 @@ function CreatePurchaseOrder() {
   // Normalize orders and get counts for all statuses
   const [allPurchaseOrders, setAllPurchaseOrders] = useState([]);
   
-  // Fetch all purchase orders for counting (without status filter)
+  // Fetch all purchase orders for counting (without status filter) - Updated to use products endpoint
   const fetchAllPurchaseOrders = async () => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_orders`);
+      const response = await fetch(`${API_BASE}?action=purchase_orders_with_products`);
       const data = await response.json();
       if (data.success) {
-        console.log('Fetched All Purchase Orders:', {
+        console.log('Fetched All Purchase Orders with Products:', {
           count: data.data.length,
-          statuses: data.data.map(po => po.status),
-          uniqueStatuses: [...new Set(data.data.map(po => po.status))]
+          totalProducts: data.data.reduce((sum, po) => sum + (po.products?.length || 0), 0),
+          sampleProducts: data.data.slice(0, 2).map(po => ({
+            po_id: po.purchase_header_id,
+            products: po.products?.map(p => ({ name: p.product_name, status: p.item_status })) || []
+          }))
         });
         setAllPurchaseOrders(data.data);
       }
@@ -582,22 +622,64 @@ function CreatePurchaseOrder() {
   }, [purchaseOrders]);
 
   const poCounts = useMemo(() => {
+    // Count individual products by status instead of entire POs
     const counts = {
-      delivered: normalizedOrders.filter((po) => po.status === 'delivered').length,
-      partial_delivery: normalizedOrders.filter((po) => po.status === 'partial_delivery').length,
-      complete: normalizedOrders.filter((po) => po.status === 'complete').length,
-      return: normalizedOrders.filter((po) => po.status === 'return').length,
+      delivered: 0,
+      partial: 0,
+      complete: 0,
+      received: 0,
+      return: 0,
     };
     
+    // Count products from all purchase orders
+    allPurchaseOrders.forEach(po => {
+      if (po.products) {
+        po.products.forEach(product => {
+          // Calculate status based on received quantities if item_status is not available
+          let itemStatus = product.item_status;
+          
+          if (!itemStatus) {
+            const receivedQty = parseInt(product.received_qty) || 0;
+            const quantity = parseInt(product.quantity) || 0;
+            const missingQty = Math.max(0, quantity - receivedQty);
+            
+            if (missingQty === 0 && quantity > 0) {
+              itemStatus = 'complete';
+            } else if (receivedQty > 0) {
+              itemStatus = 'partial';
+            } else {
+              itemStatus = 'delivered';
+            }
+          }
+          
+          // Map 'returned' status to 'return' for the filter
+          if (itemStatus === 'returned') {
+            counts['return']++;
+          } else if (counts.hasOwnProperty(itemStatus)) {
+            counts[itemStatus]++;
+          }
+        });
+      }
+    });
+    
     // Debug logging
-    console.log('PO Counts Debug:', {
-      totalOrders: normalizedOrders.length,
+    console.log('Product Counts Debug:', {
+      totalPOs: allPurchaseOrders.length,
+      totalProducts: Object.values(counts).reduce((sum, count) => sum + count, 0),
       counts,
-      sampleStatuses: normalizedOrders.slice(0, 5).map(po => ({ id: po.purchase_header_id, status: po.status }))
+      sampleProducts: allPurchaseOrders.slice(0, 2).map(po => ({
+        po_id: po.purchase_header_id,
+        products: po.products?.map(p => ({ 
+          name: p.product_name, 
+          status: p.item_status,
+          received_qty: p.received_qty,
+          quantity: p.quantity
+        })) || []
+      }))
     });
     
     return counts;
-  }, [normalizedOrders]);
+  }, [allPurchaseOrders]);
 
   // Removed activeMenuPO memo (no 3-dots menu)
 
@@ -605,7 +687,7 @@ function CreatePurchaseOrder() {
   const autoReceiveAllItems = async (poId, fromCompleteStatus = false) => {
     try {
       // Get PO details first
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
       
       if (!data.success) {
@@ -669,7 +751,7 @@ function CreatePurchaseOrder() {
           }))
         };
         
-        const fbRes = await fetch(`${API_BASE_SIMPLE}?action=update_received_quantities`, {
+        const fbRes = await fetch(`${API_BASE}?action=update_received_quantities`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(fallback)
@@ -697,7 +779,7 @@ function CreatePurchaseOrder() {
       if (fromCompleteStatus) {
         // Coming from complete status - move to received
         try {
-          await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
+          await fetch(`${API_BASE}?action=update_po_status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -711,7 +793,7 @@ function CreatePurchaseOrder() {
       } else {
         // Coming from other statuses - move to complete first
         try {
-          await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
+          await fetch(`${API_BASE}?action=update_po_status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -750,7 +832,7 @@ function CreatePurchaseOrder() {
         requestBody.approval_notes = `Purchase order approved by ${currentUser.full_name}`;
       }
       
-      const response = await fetch(`${API_BASE_SIMPLE}?action=update_po_status`, {
+      const response = await fetch(`${API_BASE}?action=update_po_status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -799,7 +881,7 @@ function CreatePurchaseOrder() {
 
   const handleApprove = async (poId, action) => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=approve_purchase_order`, {
+      const response = await fetch(`${API_BASE}?action=approve_purchase_order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -828,7 +910,7 @@ function CreatePurchaseOrder() {
 
   const handleUpdateDelivery = async (poId, status) => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=update_delivery_status`, {
+      const response = await fetch(`${API_BASE}?action=update_delivery_status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -856,7 +938,7 @@ function CreatePurchaseOrder() {
 
   const viewDetails = async (poId) => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
       if (data.success) {
         setSelectedPO(data);
@@ -870,10 +952,345 @@ function CreatePurchaseOrder() {
     }
   };
 
+  // New function to view individual product details
+  const viewProductDetails = async (poId, productId) => {
+    try {
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
+      if (data.success) {
+        // Filter to show only the specific product
+        const filteredData = {
+          ...data,
+          details: data.details.filter(detail => detail.product_id === productId)
+        };
+        setSelectedPO(filteredData);
+        setShowDetails(true);
+      } else {
+        toast.error('Failed to load product details');
+      }
+    } catch (error) {
+      console.error('Error fetching product details:', error);
+      toast.error('Error loading product details');
+    }
+  };
+
+  // Function to receive all complete items in a PO
+  const handleReceiveCompleteItems = async (poId) => {
+    try {
+      // Get PO details first
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Filter only complete products
+        const completeProducts = data.details.filter(detail => {
+          const missingQty = detail.missing_qty ?? (detail.quantity - (detail.received_qty || 0));
+          return missingQty === 0;
+        });
+
+        if (completeProducts.length === 0) {
+          toast.warning("No complete products found in this PO to receive.");
+          return;
+        }
+
+        // Auto-receive all complete products
+        for (const product of completeProducts) {
+          await handleReceiveCompleteProduct(poId, product);
+        }
+
+        toast.success(`✅ ${completeProducts.length} product(s) received successfully!`);
+      } else {
+        toast.error('Failed to load PO details');
+      }
+    } catch (error) {
+      console.error('Error receiving complete items:', error);
+      toast.error('Error receiving items');
+    }
+  };
+
+  // Function to test backend connectivity
+  const testBackendConnectivity = async () => {
+    try {
+      console.log('🔍 Testing backend connectivity...');
+      const testUrl = `${API_BASE}?action=suppliers`;
+      console.log('Test URL:', testUrl);
+      
+      const response = await fetch(testUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      console.log('✅ Backend is accessible!', response);
+      return true;
+    } catch (error) {
+      console.error('❌ Backend connectivity test failed:', error);
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        cause: error.cause
+      });
+      return false;
+    }
+  };
+
+  // Function to run comprehensive backend diagnostics
+  const runBackendDiagnostics = async () => {
+    console.log('🔧 Running Backend Diagnostics...');
+    console.log('API_BASE:', API_BASE);
+    console.log('Current URL:', window.location.href);
+    
+    // Test 1: Basic connectivity
+    try {
+      const response = await fetch(`${API_BASE}?action=suppliers`);
+      console.log('✅ Test 1 - Basic connectivity: SUCCESS', response);
+    } catch (error) {
+      console.error('❌ Test 1 - Basic connectivity: FAILED', error);
+    }
+    
+    // Test 2: Check if file exists
+    try {
+      const response = await fetch(`${API_BASE}`);
+      console.log('✅ Test 2 - File exists: SUCCESS', response);
+    } catch (error) {
+      console.error('❌ Test 2 - File exists: FAILED', error);
+    }
+    
+    // Test 3: Test with different action
+    try {
+      const response = await fetch(`${API_BASE}?action=suppliers`);
+      console.log('✅ Test 3 - Suppliers action: SUCCESS', response);
+    } catch (error) {
+      console.error('❌ Test 3 - Suppliers action: FAILED', error);
+    }
+  };
+
+  // Custom confirmation function using toastify
+  const showReturnConfirmation = (productCount, poNumber) => {
+    return new Promise((resolve) => {
+      // Show confirmation toast with custom buttons
+      const toastId = toast(
+        <div className="flex flex-col gap-3 p-2">
+          <div className="text-sm font-medium text-gray-800">
+            Are you sure you want to return {productCount} complete product(s) from PO {poNumber}?
+          </div>
+          <div className="text-xs text-gray-600">
+            This will mark all products as returned.
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                toast.dismiss(toastId);
+                resolve(false);
+              }}
+              className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                toast.dismiss(toastId);
+                resolve(true);
+              }}
+              className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            >
+              Return Products
+            </button>
+          </div>
+        </div>,
+        {
+          position: "top-center",
+          autoClose: false,
+          closeOnClick: false,
+          draggable: false,
+          closeButton: false,
+          className: "custom-confirmation-toast"
+        }
+      );
+    });
+  };
+
+  // Custom confirmation function for canceling partial delivery
+  const showCancelConfirmation = (productCount, poNumber) => {
+    return new Promise((resolve) => {
+      // Show confirmation toast with custom buttons
+      const toastId = toast(
+        <div className="flex flex-col gap-3 p-2">
+          <div className="text-sm font-medium text-gray-800">
+            Are you sure you want to move {productCount} partial product(s) from PO {poNumber} to Complete?
+          </div>
+          <div className="text-xs text-gray-600">
+            This will keep the received quantities and move products to Complete table.
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                toast.dismiss(toastId);
+                resolve(false);
+              }}
+              className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+            >
+              Keep Partial
+            </button>
+            <button
+              onClick={() => {
+                toast.dismiss(toastId);
+                resolve(true);
+              }}
+              className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+            >
+              Move to Complete
+            </button>
+          </div>
+        </div>,
+        {
+          position: "top-center",
+          autoClose: false,
+          closeOnClick: false,
+          draggable: false,
+          closeButton: false,
+          className: "custom-confirmation-toast"
+        }
+      );
+    });
+  };
+
+  // Function to return all complete items in a PO
+  const handleReturnCompleteItems = async (poId) => {
+    try {
+      console.log('Starting return process for PO ID:', poId);
+      console.log('API_BASE URL:', API_BASE);
+      
+      // Test connectivity first
+      const isBackendAccessible = await testBackendConnectivity();
+      if (!isBackendAccessible) {
+        toast.error('❌ Backend server is not accessible. Please check XAMPP and try again.');
+        console.log('🔧 Running comprehensive diagnostics...');
+        await runBackendDiagnostics();
+        return;
+      }
+      
+      // Get PO details first
+      const url = `${API_BASE}?action=purchase_order_details&po_id=${poId}`;
+      console.log('Fetching URL:', url);
+      
+      // Add timeout and better error handling for fetch
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      console.log('Response received:', response);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Response data:', data);
+      
+      if (data.success) {
+        // Filter only complete products
+        const completeProducts = data.details.filter(detail => {
+          const missingQty = detail.missing_qty ?? (detail.quantity - (detail.received_qty || 0));
+          return missingQty === 0;
+        });
+
+        if (completeProducts.length === 0) {
+          toast.warning("No complete products found in this PO to return.");
+          return;
+        }
+
+        // Confirm return action using custom confirmation
+        const confirmReturn = await showReturnConfirmation(completeProducts.length, data.header.po_number);
+        
+        if (!confirmReturn) {
+          return;
+        }
+
+        // Update all complete products to 'returned' status
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const product of completeProducts) {
+          try {
+            const updateResponse = await fetch(`${API_BASE}?action=update_product_status`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                purchase_dtl_id: product.purchase_dtl_id,
+                item_status: 'returned'
+              })
+            });
+            
+            const updateResult = await updateResponse.json();
+            
+            if (updateResult.success) {
+              successCount++;
+            } else {
+              errorCount++;
+              console.error(`Failed to update ${product.product_name}:`, updateResult.error);
+            }
+          } catch (error) {
+            errorCount++;
+            console.error(`Error updating product ${product.product_name} status:`, error);
+          }
+        }
+
+        // Refresh data
+        await fetchPurchaseOrders(poFilter);
+        await fetchAllPurchaseOrders();
+        
+        if (successCount > 0) {
+          toast.success(`✅ ${successCount} product(s) returned successfully!`);
+        }
+        if (errorCount > 0) {
+          toast.warning(`⚠️ ${errorCount} product(s) failed to return.`);
+        }
+      } else {
+        toast.error('Failed to load PO details: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error returning complete items:', error);
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      // Provide more specific error messages
+      if (error.message.includes('Failed to fetch') || error.name === 'AbortError') {
+        toast.error('❌ Cannot connect to server. Please check if XAMPP is running and the backend is accessible.');
+        console.error('🔧 Troubleshooting steps:');
+        console.error('1. Make sure XAMPP is running');
+        console.error('2. Check if Apache is started');
+        console.error('3. Verify the URL:', API_BASE);
+        console.error('4. Try accessing the URL directly in browser');
+        console.error('5. Check if the backend file exists:', `${API_BASE}`);
+        
+        // Offer to test the URL manually
+        const testUrl = `${API_BASE}?action=purchase_order_details&po_id=${poId}`;
+        console.error('6. Test this URL in browser:', testUrl);
+        
+      } else if (error.message.includes('HTTP error')) {
+        toast.error('❌ Server error: ' + error.message);
+      } else {
+        toast.error('❌ Error returning items: ' + error.message);
+      }
+    }
+  };
+
   // Receive Items functions
   const fetchReceivingList = async () => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=receiving_list`);
+      const response = await fetch(`${API_BASE}?action=receiving_list`);
       const data = await response.json();
       if (data.success) {
         console.log('Receiving List Debug:', {
@@ -893,7 +1310,7 @@ function CreatePurchaseOrder() {
         
         for (const item of pendingItems) {
           try {
-            await fetch(`${API_BASE_SIMPLE}?action=update_receiving_status&receiving_id=${item.receiving_id}&status=completed`);
+            await fetch(`${API_BASE}?action=update_receiving_status&receiving_id=${item.receiving_id}&status=completed`);
           } catch (error) {
             console.warn(`Failed to update status for receiving ID ${item.receiving_id}:`, error);
           }
@@ -901,7 +1318,7 @@ function CreatePurchaseOrder() {
         
         // Refresh the list after status updates
         if (pendingItems.length > 0) {
-          const refreshResponse = await fetch(`${API_BASE_SIMPLE}?action=receiving_list`);
+          const refreshResponse = await fetch(`${API_BASE}?action=receiving_list`);
           const refreshData = await refreshResponse.json();
           if (refreshData.success) {
             setReceivingList(refreshData.data);
@@ -923,7 +1340,7 @@ function CreatePurchaseOrder() {
 
   const fetchReceivedItemsDetails = async (receivingId) => {
     try {
-      const response = await fetch(`${API_BASE_SIMPLE}?action=received_items_details&receiving_id=${receivingId}`);
+      const response = await fetch(`${API_BASE}?action=received_items_details&receiving_id=${receivingId}`);
       const data = await response.json();
       console.log('📦 Received Items Details API Response:', {
         success: data.success,
@@ -957,7 +1374,7 @@ function CreatePurchaseOrder() {
 
     try {
       // Try the simple API first
-      let response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      let response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       let data = await response.json();
 
       if (!data?.success) {
@@ -984,6 +1401,117 @@ function CreatePurchaseOrder() {
     } catch (error) {
       console.error('Error fetching PO details:', error);
       toast.error('Error loading purchase order details');
+    }
+  };
+
+  // Handle receiving complete products - Auto-receive without form
+  const handleReceiveCompleteProduct = async (poId, product) => {
+    try {
+      // Validate user is logged in
+      if (!currentUser.emp_id) {
+        toast.error("No active user session. Please login again.");
+        return;
+      }
+
+      // Prepare receive data for this specific product
+      const receiveData = {
+        purchase_header_id: poId,
+        received_by: currentUser.emp_id,
+        delivery_receipt_no: `AUTO-${Date.now()}`,
+        notes: `Auto-received complete product: ${product.product_name}`,
+        items: [{
+          purchase_dtl_id: product.purchase_dtl_id,
+          product_id: product.product_id,
+          received_qty: parseInt(product.received_qty) || 0,
+          missing_qty: 0 // Complete products have no missing items
+        }]
+      };
+
+      console.log('Auto-receiving complete product:', {
+        poId,
+        product: product.product_name,
+        received_qty: product.received_qty,
+        receiveData
+      });
+
+      // Call the receive items API
+      const response = await fetch(`${API_BASE}?action=receive_items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(receiveData)
+      });
+
+      let result;
+      try {
+        result = await response.clone().json();
+      } catch (parseErr) {
+        const raw = await response.text();
+        console.warn('Non-JSON response from receive_items. Using fallback. Raw:', raw);
+        
+        // Fallback: use simplified endpoint
+        const fallback = {
+          purchase_header_id: receiveData.purchase_header_id,
+          items: receiveData.items.map(i => ({
+            purchase_dtl_id: i.purchase_dtl_id,
+            received_qty: i.received_qty,
+            missing_qty: 0
+          }))
+        };
+        
+        const fbRes = await fetch(`${API_BASE}?action=update_received_quantities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(fallback)
+        });
+        
+        let fbJson;
+        try {
+          fbJson = await fbRes.json();
+        } catch (e) {
+          fbJson = { success: false };
+        }
+        
+        if (!fbJson.success) {
+          throw new Error('Fallback receive failed');
+        }
+        
+        result = { success: true, receiving_id: fbJson.receiving_id || 0 };
+      }
+
+      if (result.success) {
+        toast.success(`✅ ${product.product_name} received successfully! Check Receive Items tab.`);
+        
+        // Update the product status to 'received' in the backend
+        try {
+          await fetch(`${API_BASE}?action=update_product_status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              purchase_dtl_id: product.purchase_dtl_id,
+              item_status: 'received'
+            })
+          });
+        } catch (statusError) {
+          console.warn('Could not update product status to received:', statusError);
+        }
+
+        // Refresh all data to update the UI
+        await fetchPurchaseOrders(poFilter);
+        await fetchAllPurchaseOrders();
+        await fetchReceivingList();
+        
+        // Switch to Receive Items tab to show the newly received item
+        setActiveTab('receive');
+        
+      } else {
+        toast.error(result.error || "Failed to receive product");
+      }
+      
+    } catch (error) {
+      console.error('Error receiving complete product:', error);
+      toast.error("Error receiving product");
     }
   };
 
@@ -1072,7 +1600,7 @@ function CreatePurchaseOrder() {
             missing_qty: 0
           }))
         };
-        const fbRes = await fetch(`${API_BASE_SIMPLE}?action=update_received_quantities`, {
+        const fbRes = await fetch(`${API_BASE}?action=update_received_quantities`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(fallback)
@@ -1102,11 +1630,22 @@ function CreatePurchaseOrder() {
           await updatePOStatus(receiveData.purchase_header_id, 'received');
           // Optimistically remove from the current Complete list
           setPurchaseOrders((prev) => prev.filter((po) => po.purchase_header_id !== receiveData.purchase_header_id));
+          
+          // Force refresh all lists
           await fetchPurchaseOrders(poFilter);
           await fetchAllPurchaseOrders();
+          
+          // If we're on the Complete tab, force refresh it specifically
+          if (poFilter === 'complete') {
+            await fetchPurchaseOrders('complete');
+          }
+          
           toast.success('Purchase order moved to Received tab!');
         } catch (err) {
           console.warn('Could not update PO status after receiving:', err);
+          // Still refresh the lists even if status update fails
+          await fetchPurchaseOrders(poFilter);
+          await fetchAllPurchaseOrders();
         }
         
         // Move to Receive Items page and refresh lists
@@ -1127,7 +1666,7 @@ function CreatePurchaseOrder() {
   const handleCompleteItems = async (poId) => {
     try {
       // Get PO details for complete items
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
       if (data.success) {
         setSelectedPOForReceive(data);
@@ -1152,7 +1691,7 @@ function CreatePurchaseOrder() {
   const handleReceiveItems = async (poId) => {
     try {
       // Get PO details for receive items
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
       if (data.success) {
         setSelectedPOForReceive(data);
@@ -1177,86 +1716,178 @@ function CreatePurchaseOrder() {
 
 
 
-  // Handle Complete Items submit (NO DATABASE SAVE)
+  // NEW FUNCTION: Process individual product status based on received quantities
+  const processIndividualProductStatus = (items) => {
+    const categorizedProducts = {
+      complete: [],
+      partial: [],
+      delivered: []
+    };
+
+    items.forEach(item => {
+      const orderedQty = parseInt(item.ordered_qty || item.quantity) || 0;
+      const receivedQty = parseInt(item.received_qty) || 0;
+      const missingQty = Math.max(0, orderedQty - receivedQty);
+
+      if (receivedQty === 0) {
+        // No items received - delivered
+        categorizedProducts.delivered.push({
+          ...item,
+          status: 'delivered',
+          missing_qty: missingQty
+        });
+      } else if (missingQty === 0) {
+        // All items received - complete
+        categorizedProducts.complete.push({
+          ...item,
+          status: 'complete',
+          missing_qty: 0
+        });
+      } else {
+        // Some items received - partial
+        categorizedProducts.partial.push({
+          ...item,
+          status: 'partial_delivery',
+          missing_qty: missingQty
+        });
+      }
+    });
+
+    return categorizedProducts;
+  };
+
+  // Handle Complete Items submit - Updates product-level item_status INDIVIDUALLY
   const handleSubmitCompleteItems = async (e) => {
     e.preventDefault();
     
     try {
-      // Calculate if delivery is complete or partial
-      let isComplete = true;
-      let hasPartial = false;
+      // Prepare items with received quantities
+      const itemsWithQuantities = selectedPOForReceive.details.map(item => ({
+        purchase_dtl_id: item.purchase_dtl_id,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        ordered_qty: parseInt(item.quantity) || 0,
+        received_qty: parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0,
+        missing_qty: Math.max(0, (parseInt(item.quantity) || 0) - (parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0))
+      }));
+
+      // Categorize products individually
+      const categorized = processIndividualProductStatus(itemsWithQuantities);
       
-      selectedPOForReceive.details.forEach(item => {
-        const receivedQty = parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0;
-        const orderedQty = parseInt(item.quantity) || 0;
-        
-        if (receivedQty < orderedQty) {
-          isComplete = false;
-          if (receivedQty > 0) {
-            hasPartial = true;
-          }
-        }
+      console.log('📊 Individual Product Categorization:', {
+        complete: categorized.complete.length,
+        partial: categorized.partial.length,
+        delivered: categorized.delivered.length,
+        details: categorized
+      });
+
+      // Prepare data for updating received quantities (this will update item_status per product)
+      const receiveData = {
+        purchase_header_id: selectedPOForReceive.header.purchase_header_id,
+        delivery_receipt_no: `TEMP-${Date.now()}`, // Temporary receipt for tracking
+        notes: 'Items marked with individual status from Delivered tab',
+        items: itemsWithQuantities.map(item => ({
+          purchase_dtl_id: item.purchase_dtl_id,
+          product_id: item.product_id,
+          received_qty: item.received_qty,
+          missing_qty: item.missing_qty,
+          // Add individual product status
+          item_status: item.missing_qty === 0 ? 'complete' : 
+                      item.received_qty > 0 ? 'partial_delivery' : 'delivered'
+        }))
+      };
+      
+      // Call API to update product-level status (item_status)
+      const response = await fetch(`${API_BASE}?action=update_received_quantities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(receiveData)
       });
       
-      const currentStatus = selectedPOForReceive.header.status;
-      let newStatus = 'delivered';
-
-      if (isComplete) {
-        newStatus = 'complete';
-        toast.success('✅ Items marked as complete! Ready for final receiving.');
-      } else if (hasPartial) {
-        newStatus = 'partial_delivery';
-        toast.warning('⚠️ Partial delivery! Some items received, some missing.');
+      const result = await response.json();
+      
+      if (result.success) {
+        // Show detailed toast based on categorization
+        if (categorized.complete.length > 0 && categorized.partial.length > 0) {
+          toast.success(`✅ ${categorized.complete.length} product(s) marked as Complete, ${categorized.partial.length} as Partial!`);
+        } else if (categorized.complete.length > 0) {
+          toast.success(`✅ All ${categorized.complete.length} product(s) marked as Complete!`);
+        } else if (categorized.partial.length > 0) {
+          toast.warning(`⚠️ ${categorized.partial.length} product(s) marked as Partial Delivery!`);
+        }
+        
+        // Determine overall PO status based on product mix
+        let overallStatus = 'complete';
+        if (categorized.partial.length > 0 || categorized.delivered.length > 0) {
+          overallStatus = 'partial_delivery';
+        }
+        
+        // Update PO status based on individual product statuses
+        try {
+          await updatePOStatus(receiveData.purchase_header_id, overallStatus);
+        } catch (statusError) {
+          console.warn('Could not update PO status:', statusError);
+        }
+        
+        // Close form and refresh lists
+        setShowReceiveItemsForm(false);
+        setSelectedPOForReceive(null);
+        setReceiveItemsFormData({});
+        
+        // Remove PO from current view optimistically (it will re-appear in correct tab after refresh)
+        setPurchaseOrders((prev) => prev.filter((po) => po.purchase_header_id !== receiveData.purchase_header_id));
+        
+        // Refresh all purchase orders to update tab counts and visibility
+        await fetchPurchaseOrders(poFilter);
+        await fetchAllPurchaseOrders();
       } else {
-        toast.info('📦 No items received yet.');
-      }
-
-      // Update PO status only if it changes (NO DATABASE SAVE)
-      if (newStatus !== currentStatus) {
-        console.log('Completing items - updating status from', currentStatus, 'to', newStatus, '(NO DATABASE SAVE)');
-        await updatePOStatus(selectedPOForReceive.header.purchase_header_id, newStatus);
+        toast.error(result.error || 'Failed to update items');
       }
       
-      toast.success('Items marked as complete! Moved to Complete table.');
-      setShowReceiveItemsForm(false);
-      setSelectedPOForReceive(null);
-      setReceiveItemsFormData({});
-      await fetchPurchaseOrders(poFilter);
-      await fetchAllPurchaseOrders();
     } catch (error) {
       console.error('Error completing items:', error);
       toast.error('Error completing items');
     }
   };
 
-  // Handle Receive Items submit (WITH DATABASE SAVE)
+  // Handle Receive Items submit (WITH DATABASE SAVE) - Individual Product Status
   const handleSubmitReceiveItems = async (e) => {
     e.preventDefault();
     
     try {
-      // Calculate if delivery is complete or partial
-      let isComplete = true;
-      let hasPartial = false;
+      // Prepare items with received quantities
+      const itemsWithQuantities = selectedPOForReceive.details.map(item => ({
+        purchase_dtl_id: item.purchase_dtl_id,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        ordered_qty: parseInt(item.quantity) || 0,
+        received_qty: parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0,
+        missing_qty: Math.max(0, (parseInt(item.quantity) || 0) - (parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0))
+      }));
+
+      // Categorize products individually
+      const categorized = processIndividualProductStatus(itemsWithQuantities);
       
-      selectedPOForReceive.details.forEach(item => {
-        const receivedQty = parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0;
-        const orderedQty = parseInt(item.quantity) || 0;
-        
-        if (receivedQty < orderedQty) {
-          isComplete = false;
-          if (receivedQty > 0) {
-            hasPartial = true;
-          }
-        }
+      console.log('📊 Individual Product Categorization (Receive):', {
+        complete: categorized.complete.length,
+        partial: categorized.partial.length,
+        pending: categorized.pending.length,
+        details: categorized
       });
       
-      // Prepare the data to send
+      // Prepare the data to send with individual product status
       const receiveData = {
         purchase_header_id: selectedPOForReceive.header.purchase_header_id,
-        items: selectedPOForReceive.details.map(item => ({
+        items: itemsWithQuantities.map(item => ({
           purchase_dtl_id: item.purchase_dtl_id,
-          received_qty: parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0,
-          missing_qty: Math.max(0, (parseInt(item.quantity) || 0) - (parseInt(receiveItemsFormData[item.purchase_dtl_id]) || 0))
+          product_id: item.product_id,
+          received_qty: item.received_qty,
+          missing_qty: item.missing_qty,
+          // Add individual product status
+          item_status: item.missing_qty === 0 ? 'complete' : 
+                      item.received_qty > 0 ? 'partial_delivery' : 'delivered'
         }))
       };
       
@@ -1266,7 +1897,7 @@ function CreatePurchaseOrder() {
       // If coming from Delivered status, just update quantities locally and change status
       if (currentStatus === 'complete') {
         // Final receiving - save to database
-        const response = await fetch(`${API_BASE_SIMPLE}?action=update_received_quantities`, {
+        const response = await fetch(`${API_BASE}?action=update_received_quantities`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(receiveData)
@@ -1277,7 +1908,14 @@ function CreatePurchaseOrder() {
         if (result.success) {
           // Update status to received for final receiving
           await updatePOStatus(selectedPOForReceive.header.purchase_header_id, 'received');
+          
+          // Show detailed toast based on individual product categorization
+          if (categorized.complete.length > 0 && categorized.partial.length > 0) {
+            toast.success(`✅ ${categorized.complete.length} complete, ${categorized.partial.length} partial product(s) saved to database!`);
+          } else {
           toast.success('Items received and saved to database!');
+          }
+          
           setShowReceiveItemsForm(false);
           setSelectedPOForReceive(null);
           setReceiveItemsFormData({});
@@ -1288,26 +1926,30 @@ function CreatePurchaseOrder() {
           toast.error(result.error || 'Failed to update received quantities');
         }
       } else {
-        // Initial receiving from Delivered - just update quantities locally, don&apos;t save to database yet
-        let newStatus = 'delivered';
+        // Initial receiving from Delivered - just update quantities locally, don't save to database yet
+        // Determine overall PO status based on individual product statuses
+        let overallStatus = 'complete';
+        
+        if (categorized.partial.length > 0 || categorized.pending.length > 0) {
+          overallStatus = 'partial_delivery';
+        }
 
-        if (isComplete) {
-          newStatus = 'complete';
-          toast.success('✅ Items marked as complete! Ready for final receiving.');
-        } else if (hasPartial) {
-          newStatus = 'partial_delivery';
-          toast.warning('⚠️ Partial delivery! Some items received, some missing.');
+        // Show detailed toast based on categorization
+        if (overallStatus === 'complete') {
+          toast.success(`✅ All ${categorized.complete.length} product(s) marked as complete! Ready for final receiving.`);
+        } else if (categorized.partial.length > 0) {
+          toast.warning(`⚠️ Mixed delivery! ${categorized.complete.length} complete, ${categorized.partial.length} partial product(s).`);
         } else {
           toast.info('📦 No items received yet.');
         }
 
         // Update PO status only if it changes
-        if (newStatus !== currentStatus) {
-          console.log('Updating PO status from', currentStatus, 'to', newStatus, '(NO DATABASE SAVE)');
-          await updatePOStatus(selectedPOForReceive.header.purchase_header_id, newStatus);
+        if (overallStatus !== currentStatus) {
+          console.log('Updating PO status from', currentStatus, 'to', overallStatus, '(with individual product tracking)');
+          await updatePOStatus(selectedPOForReceive.header.purchase_header_id, overallStatus);
         }
         
-        toast.success('Quantities updated locally! Items moved to Complete table.');
+        toast.success('Individual product statuses updated! Check Complete/Partial tabs.');
         setShowReceiveItemsForm(false);
         setSelectedPOForReceive(null);
         setReceiveItemsFormData({});
@@ -1323,20 +1965,106 @@ function CreatePurchaseOrder() {
 
 
   // Partial Delivery Management functions
+  const handleCancelPartialDelivery = async (poId) => {
+    try {
+      // Get PO details first
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Filter only partial products (products with some received quantity but not complete)
+        const partialProducts = data.details.filter(detail => {
+          const receivedQty = detail.received_qty || 0;
+          const orderedQty = detail.quantity;
+          return receivedQty > 0 && receivedQty < orderedQty;
+        });
+
+        if (partialProducts.length === 0) {
+          toast.warning("No partial products found in this PO to cancel.");
+          return;
+        }
+
+        // Show confirmation using custom toastify confirmation
+        const confirmCancel = await showCancelConfirmation(partialProducts.length, data.header.po_number);
+        
+        if (!confirmCancel) {
+          return;
+        }
+
+        // Move partial products to complete status (keep received_qty as is)
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const product of partialProducts) {
+          try {
+            // Update product status to 'complete' while keeping the received_qty
+            const updateResponse = await fetch(`${API_BASE}?action=update_product_status`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                purchase_dtl_id: product.purchase_dtl_id,
+                item_status: 'complete'
+              })
+            });
+            
+            const updateResult = await updateResponse.json();
+            
+            if (updateResult.success) {
+              successCount++;
+            } else {
+              errorCount++;
+              console.error(`Failed to move ${product.product_name} to complete:`, updateResult.error);
+            }
+          } catch (error) {
+            errorCount++;
+            console.error(`Error moving product ${product.product_name} to complete:`, error);
+          }
+        }
+
+        // Refresh data
+        await fetchPurchaseOrders(poFilter);
+        await fetchAllPurchaseOrders();
+        
+        if (successCount > 0) {
+          toast.success(`✅ ${successCount} partial product(s) moved to Complete table successfully!`);
+        }
+        if (errorCount > 0) {
+          toast.warning(`⚠️ ${errorCount} product(s) failed to move to Complete.`);
+        }
+      } else {
+        toast.error('Failed to load PO details: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error canceling partial delivery:', error);
+      toast.error('Error canceling partial delivery: ' + error.message);
+    }
+  };
+
   const handleUpdatePartialDelivery = async (poId) => {
     try {
       // Get PO details for partial delivery update
-      const response = await fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${poId}`);
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
       if (data.success) {
+        // Filter out complete products (missing_qty = 0) from partial delivery modal
+        const incompleteProducts = data.details.filter(detail => {
+          const missingQty = detail.missing_qty ?? (detail.quantity - (detail.received_qty || 0));
+          return missingQty > 0; // Only show products that still have missing quantities
+        });
+
+        if (incompleteProducts.length === 0) {
+          toast.info("All products in this PO are already complete. No partial delivery update needed.");
+          return;
+        }
+
         setSelectedPOForPartialDelivery(data);
         setPartialDeliveryFormData({
-          items: data.details.map(detail => ({
+          items: incompleteProducts.map(detail => ({
             purchase_dtl_id: detail.purchase_dtl_id,
             product_name: detail.product_name,
             ordered_qty: detail.quantity,
             received_qty: detail.received_qty || 0,
-            missing_qty: detail.missing_qty || detail.quantity
+            missing_qty: detail.missing_qty ?? (detail.quantity - (detail.received_qty || 0))
           }))
         });
         setShowPartialDeliveryForm(true);
@@ -1375,12 +2103,30 @@ function CreatePurchaseOrder() {
     }
 
     try {
+      // Categorize products individually based on received quantities
+      const categorized = processIndividualProductStatus(partialDeliveryFormData.items);
+      
+      console.log('📊 Partial Delivery - Individual Product Categorization:', {
+        complete: categorized.complete.length,
+        partial: categorized.partial.length,
+        pending: categorized.pending.length,
+        details: categorized
+      });
+
       const partialDeliveryData = {
         purchase_header_id: selectedPOForPartialDelivery.header.purchase_header_id,
-        items: partialDeliveryFormData.items
+        items: partialDeliveryFormData.items.map(item => ({
+          purchase_dtl_id: item.purchase_dtl_id,
+          product_id: item.product_id,
+          received_qty: item.received_qty,
+          missing_qty: item.missing_qty,
+          // Add individual product status
+          item_status: item.missing_qty === 0 ? 'complete' : 
+                      item.received_qty > 0 ? 'partial_delivery' : 'delivered'
+        }))
       };
 
-      const response = await fetch(`${API_BASE_SIMPLE}?action=update_partial_delivery`, {
+      const response = await fetch(`${API_BASE}?action=update_partial_delivery`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1391,12 +2137,26 @@ function CreatePurchaseOrder() {
       const result = await response.json();
       
       if (result.success) {
-        toast.success(`Partial delivery updated successfully! New status: ${result.new_status}`);
+        // Show detailed toast based on individual product categorization
+        if (categorized.complete.length > 0 && categorized.partial.length > 0) {
+          toast.success(`✅ ${categorized.complete.length} product(s) complete, ${categorized.partial.length} still partial!`);
+        } else if (categorized.complete.length > 0) {
+          toast.success(`✅ All ${categorized.complete.length} product(s) now complete!`);
+        } else if (categorized.partial.length > 0) {
+          toast.warning(`⚠️ ${categorized.partial.length} product(s) still have missing items.`);
+        }
+        
+        // Close form
         setShowPartialDeliveryForm(false);
         setSelectedPOForPartialDelivery(null);
         setPartialDeliveryFormData({ items: [] });
-        fetchPurchaseOrders(poFilter); // Refresh the current filter
-        fetchAllPurchaseOrders(); // Refresh all orders for counts
+        
+        // Remove PO from current view optimistically
+        setPurchaseOrders((prev) => prev.filter((po) => po.purchase_header_id !== partialDeliveryData.purchase_header_id));
+        
+        // Refresh all purchase orders
+        await fetchPurchaseOrders(poFilter);
+        await fetchAllPurchaseOrders();
       } else {
         toast.error(result.error || "Error updating partial delivery");
       }
@@ -1419,6 +2179,7 @@ function CreatePurchaseOrder() {
 
   return (
     <div className="p-6 space-y-6 inventory-surface min-h-screen">
+      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -1513,7 +2274,7 @@ function CreatePurchaseOrder() {
                     type="button"
                     onClick={openSupplierModal}
                     className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onMouseEnter={(e) => handleMouseEnter(e, "Add new supplier")}
+                 
                     onMouseLeave={handleMouseLeave}
                   >
                     <FaPlus className="h-4 w-4" />
@@ -1586,7 +2347,7 @@ function CreatePurchaseOrder() {
                 type="button"
                 onClick={addProduct}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                onMouseEnter={(e) => handleMouseEnter(e, "Add a new product to the purchase order")}
+              
                 onMouseLeave={handleMouseLeave}
               >
                 <FaPlus className="h-4 w-4" />
@@ -1682,7 +2443,7 @@ function CreatePurchaseOrder() {
                          type="button"
                          onClick={() => removeProduct(index)}
                          className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
-                         onMouseEnter={(e) => handleMouseEnter(e, "Remove this product from the order")}
+                       
                          onMouseLeave={handleMouseLeave}
                        >
                          <FaTrash className="h-4 w-4" />
@@ -1731,7 +2492,7 @@ function CreatePurchaseOrder() {
                 setSelectedProducts([]);
               }}
               className="flex items-center gap-2 px-6 py-2 border rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500" style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
-              onMouseEnter={(e) => handleMouseEnter(e, "Clear all form data and start over")}
+             
               onMouseLeave={handleMouseLeave}
             >
               <FaTimes className="h-4 w-4" />
@@ -1741,7 +2502,7 @@ function CreatePurchaseOrder() {
               type="submit"
               disabled={loading}
               className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              onMouseEnter={(e) => handleMouseEnter(e, loading ? "Creating purchase order..." : "Create and submit the purchase order")}
+            
               onMouseLeave={handleMouseLeave}
             >
               <FaCheck className="h-4 w-4" />
@@ -1766,9 +2527,9 @@ function CreatePurchaseOrder() {
           <div className="bg-white rounded-3xl shadow p-3">
             <div className="flex overflow-x-auto no-scrollbar gap-6 px-2">
               {[
-                { key: 'delivered', label: 'Delivered' },
-                { key: 'partial_delivery', label: 'Partial Delivery' },
-                { key: 'complete', label: 'Complete' },
+                { key: 'delivered', label: 'Delivered Products' },
+                { key: 'partial', label: 'Partial Products' },
+                { key: 'complete', label: 'Complete Products' },
                 { key: 'return', label: 'Returns' },
               ].map((f) => (
                 <button
@@ -1803,150 +2564,219 @@ function CreatePurchaseOrder() {
                       PO Number
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
+                      Product
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
                       Supplier
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                      Date
+                      Ordered Qty
                     </th>
-                                         {/* Total Amount column removed as requested */}
-                                         <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                       Status
-                     </th>
-                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                       Actions
-                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
+                      Received Qty
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
+                      Missing Qty
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {filteredPurchaseOrders.map((po) => (
-                    <tr
-                      key={`po-${po.purchase_header_id}`}
-                      className="hover:bg-gray-50 cursor-pointer group transition-all duration-200 hover:shadow-sm"
-                      onClick={() => viewDetails(po.purchase_header_id)}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <div className="flex items-center gap-2">
-                          <span className="group-hover:!text-gray-900">{po.po_number || `PO-${po.purchase_header_id}`}</span>
-                          <FaEye className="h-3 w-3 inventory-muted group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <div className="flex flex-col">
+                  {filteredPurchaseOrders.map((po) => {
+                    // Calculate summary for this PO
+                    const products = po.products || [];
+                    const totalProducts = products.length;
+                    const deliveredProducts = products.filter(p => {
+                      const itemStatus = p.item_status || 'delivered';
+                      return itemStatus === 'delivered';
+                    }).length;
+                    const partialProducts = products.filter(p => {
+                      const itemStatus = p.item_status || 'delivered';
+                      return itemStatus === 'partial';
+                    }).length;
+                    const completeProducts = products.filter(p => {
+                      const itemStatus = p.item_status || 'delivered';
+                      return itemStatus === 'complete';
+                    }).length;
+                    const receivedProducts = products.filter(p => {
+                      const itemStatus = p.item_status || 'delivered';
+                      return itemStatus === 'received';
+                    }).length;
+
+                    // Determine overall PO status based on product mix
+                    let overallStatus = 'complete';
+                    if (deliveredProducts > 0 || partialProducts > 0) {
+                      overallStatus = partialProducts > 0 ? 'partial' : 'delivered';
+                    }
+
+                    return (
+                      <tr
+                        key={po.purchase_header_id}
+                        className="hover:bg-gray-50 group transition-all duration-200 hover:shadow-sm cursor-pointer"
+                        onClick={() => viewDetails(po.purchase_header_id)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                          <div className="flex items-center gap-2">
+                            <span className="group-hover:!text-gray-900">{po.po_number || `PO-${po.purchase_header_id}`}</span>
+                            <FaEye className="h-3 w-3 inventory-muted group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                          <div className="flex flex-col">
+                            <span className="group-hover:!text-gray-900">{totalProducts} product{totalProducts !== 1 ? 's' : ''}</span>
+                            <span className="text-xs inventory-muted group-hover:!text-gray-600">
+                              {deliveredProducts > 0 && `${deliveredProducts} delivered`}
+                              {partialProducts > 0 && `${partialProducts > 0 ? ', ' : ''}${partialProducts} partial`}
+                              {completeProducts > 0 && `${completeProducts > 0 ? ', ' : ''}${completeProducts} complete`}
+                              {receivedProducts > 0 && `${receivedProducts > 0 ? ', ' : ''}${receivedProducts} received`}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
                           <span className="group-hover:!text-gray-900">{po.supplier_name}</span>
-                          {po.products_summary && (
-                            <span className="text-xs inventory-muted truncate max-w-xs group-hover:!text-gray-600">{po.products_summary}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <span className="group-hover:!text-gray-900">{new Date(po.date).toLocaleDateString()}</span>
-                      </td>
-                                             {/* Total Amount display removed as requested */}
-                                             <td className="px-6 py-4 whitespace-nowrap">
-                         {getStatusBadge(po.status)}
-                       </td>
-                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {/* Actions menu with multiple options */}
-                        <div className="flex items-center gap-2">
-                          {/* View Details Button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              viewDetails(po.purchase_header_id);
-                            }}
-                            className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-                            onMouseEnter={(e) => handleMouseEnter(e, "View Details")}
-                            onMouseLeave={handleMouseLeave}
-                          >
-                            <FaEye className="h-3 w-3" />
-                          </button>
-                                                                                {/* Dynamic Actions */}
-                            {(() => { 
-                              if (po.status === 'delivered') {
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                          <span className="group-hover:!text-gray-900">
+                            {products.reduce((sum, p) => sum + (p.quantity || 0), 0)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                          <span className="group-hover:!text-gray-900">
+                            {products.reduce((sum, p) => sum + (p.received_qty || 0), 0)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                          <span className="group-hover:!text-gray-900">
+                            {products.reduce((sum, p) => {
+                              const missingQty = p.missing_qty ?? (p.quantity - (p.received_qty || 0));
+                              return sum + missingQty;
+                            }, 0)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {(() => {
+                            if (overallStatus === 'received') {
+                              return (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
+                                  Received
+                                </span>
+                              );
+                            } else if (overallStatus === 'complete') {
+                              return (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-accent)', color: 'white'}}>
+                                  Complete
+                                </span>
+                              );
+                            } else if (overallStatus === 'partial') {
+                              return (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-warning)', color: 'white'}}>
+                                  Partial
+                                </span>
+                              );
+                            } else {
+                              return (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-info)', color: 'white'}}>
+                                  Delivered
+                                </span>
+                              );
+                            }
+                          })()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex items-center gap-2">
+                            {/* View Details Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                viewDetails(po.purchase_header_id);
+                              }}
+                              className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                          
+                              onMouseLeave={handleMouseLeave}
+                            >
+                              <FaEye className="h-3 w-3" />
+                            </button>
+                            
+                            {/* PO-level Actions */}
+                            {(() => {
+                              if (overallStatus === 'complete') {
                                 return (
-                                  <div className="flex gap-2">
+                                  <div className="flex items-center gap-2">
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); removePoFromList(po.purchase_header_id); handleCompleteItems(po.purchase_header_id); }}
-                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Complete items (no database save yet)")}
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleReceiveCompleteItems(po.purchase_header_id); 
+                                      }}
+                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-green-600 text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-xs"
+                                    
                                       onMouseLeave={handleMouseLeave}
                                     >
-                                      Complete
+                                      Receive
                                     </button>
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); removePoFromList(po.purchase_header_id); updatePOStatus(po.purchase_header_id, 'return'); }}
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleReturnCompleteItems(po.purchase_header_id); 
+                                      }}
                                       className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Cancel PO (Problem with delivery)")}
-                                      onMouseLeave={handleMouseLeave}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                );
-                              } else if (po.status === 'approved') {
-                                // After approval, proceed with final receiving into inventory
-                                return (
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleReceive(po.purchase_header_id); }}
-                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-green-600 text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Receive to inventory (with DR, batch, expiry)")}
-                                      onMouseLeave={handleMouseLeave}
-                                    >
-                                      Received
-                                    </button>
-                                  </div>
-                                );
-                              } else if (po.status === 'partial_delivery') {
-                                return (
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); removePoFromList(po.purchase_header_id); handleUpdatePartialDelivery(po.purchase_header_id); }}
-                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Update when missing items arrive")}
-                                      onMouseLeave={handleMouseLeave}
-                                    >
-                                      Update Delivery
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); removePoFromList(po.purchase_header_id); updatePOStatus(po.purchase_header_id, 'return'); }}
-                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-green-600 text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Cancel PO (Supplier failed to deliver)")}
-                                      onMouseLeave={handleMouseLeave}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                );
-                              } else if (po.status === 'complete') {
-                                return (
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); removePoFromList(po.purchase_header_id); updatePOStatus(po.purchase_header_id, 'return'); }}
-                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-green-600 text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Return PO (Problem with delivery)")}
+                                      
                                       onMouseLeave={handleMouseLeave}
                                     >
                                       Return
                                     </button>
+                                  </div>
+                                );
+                              } else if (overallStatus === 'partial') {
+                                return (
+                                  <div className="flex items-center gap-2">
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); handleReceive(po.purchase_header_id); }}
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleUpdatePartialDelivery(po.purchase_header_id); 
+                                      }}
                                       className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-yellow-600 text-white hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 text-xs"
-                                      onMouseEnter={(e) => handleMouseEnter(e, "Mark as Received and move to Received tab")}
                                       onMouseLeave={handleMouseLeave}
                                     >
-                                      Received
+                                      Update
+                                    </button>
+                                    <button
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleCancelPartialDelivery(po.purchase_header_id); 
+                                      }}
+                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-gray-600 text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 text-xs"
+                                      onMouseLeave={handleMouseLeave}
+                                    >
+                                      Cancel
                                     </button>
                                   </div>
                                 );
+                              } else {
+                                return (
+                                  <button
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      handleCompleteItems(po.purchase_header_id); 
+                                    }}
+                                    className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                   
+                                    onMouseLeave={handleMouseLeave}
+                                  >
+                                    Complete
+                                  </button>
+                                );
                               }
-                              return null;
                             })()}
-
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1993,78 +2823,109 @@ function CreatePurchaseOrder() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {receivingList.map((item) => (
-                    <tr key={item.receiving_id || item.purchase_header_id} className="hover:bg-gray-50 group transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <span className="group-hover:!text-gray-900">
-                          {item.receiving_id ? 
-                            `RCV-${item.receiving_id.toString().padStart(6, '0')}` : 
-                            `PO-${item.purchase_header_id.toString().padStart(6, '0')}`
-                          }
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <span className="group-hover:!text-gray-900">{item.po_number || `PO-${item.purchase_header_id}`}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <span className="group-hover:!text-gray-900">{item.supplier_name}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <div className="group-hover:!text-gray-900">
-                          {item.receiving_date ? 
-                            new Date(item.receiving_date).toLocaleDateString() : 
-                            new Date(item.po_date).toLocaleDateString()}
-                          {item.receiving_time && (
-                            <div className="text-xs inventory-muted group-hover:!text-gray-600">
-                              {item.receiving_time}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm max-w-xs group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
-                        <button
-                          onClick={() => {
-                            if (item.receiving_id) {
-                              // Show received items details for items that have been received
-                              fetchReceivedItemsDetails(item.receiving_id);
-                            } else {
-                              // Fallback to PO details for items without receiving_id
-                              fetch(`${API_BASE_SIMPLE}?action=purchase_order_details&po_id=${item.purchase_header_id}`)
-                                .then(response => response.json())
-                                .then(data => {
-                                  if (data.success) {
-                                    setSelectedPO(data);
-                                    setShowDetails(true);
-                                  } else {
-                                    toast.error("Failed to fetch purchase order details");
-                                  }
-                                })
-                                .catch(error => {
-                                  toast.error("Error loading purchase order details");
-                                  console.error('Error:', error);
-                                });
-                            }
-                          }}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors text-sm font-medium"
-                          title="View received items details"
-                        >
-                          <FaEye className="h-3.5 w-3.5" />
-                          View Details
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          item.display_status === 'Complete' ? 'bg-green-100 text-green-800' :
-                          item.display_status === 'Partial' ? 'bg-orange-100 text-orange-800' :
-                          item.display_status === 'Ready' ? 'bg-blue-100 text-blue-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {item.display_status || 'Received'}
-                        </span>
-                      </td>
+                  {(() => {
+                    // Debug: Log the receiving list to see the current status values
+                    console.log('Current receiving list data:', receivingList);
+                    
+                    // Group receiving records by PO number to avoid duplicates
+                    const groupedByPO = receivingList.reduce((acc, item) => {
+                      const poKey = item.po_number || `PO-${item.purchase_header_id}`;
+                      if (!acc[poKey]) {
+                        acc[poKey] = [];
+                      }
+                      acc[poKey].push(item);
+                      return acc;
+                    }, {});
+
+                    // Convert to array and show only one row per PO with latest receiving info
+                    return Object.entries(groupedByPO).map(([poNumber, items]) => {
+                      // Sort by receiving_id descending to get the latest one
+                      const sortedItems = [...items].sort((a, b) => (b.receiving_id || 0) - (a.receiving_id || 0));
+                      const latestItem = sortedItems[0];
+                      const totalReceivings = items.length;
+
+                      // Use the most recent status from the latest item (which should have the updated status from backend)
+                      const displayStatus = latestItem.display_status;
                       
-                    </tr>
-                  ))}
+                      // Debug: Log the status for this PO
+                      console.log(`PO ${poNumber} (RCV-${latestItem.receiving_id}): display_status = "${displayStatus}"`);
+
+                      return (
+                        <tr key={poNumber} className="hover:bg-gray-50 group transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">
+                              {latestItem.receiving_id ? 
+                                `RCV-${latestItem.receiving_id.toString().padStart(6, '0')}` : 
+                                `PO-${latestItem.purchase_header_id.toString().padStart(6, '0')}`
+                              }
+                              {totalReceivings > 1 && (
+                                <div className="text-xs inventory-muted group-hover:!text-gray-600">
+                                  +{totalReceivings - 1} more
+                                </div>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">{poNumber}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">{latestItem.supplier_name}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <div className="group-hover:!text-gray-900">
+                              {latestItem.receiving_date ? 
+                                new Date(latestItem.receiving_date).toLocaleDateString() : 
+                                new Date(latestItem.po_date).toLocaleDateString()}
+                              {latestItem.receiving_time && (
+                                <div className="text-xs inventory-muted group-hover:!text-gray-600">
+                                  {latestItem.receiving_time}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm max-w-xs group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <button
+                              onClick={() => {
+                                if (latestItem.receiving_id) {
+                                  fetchReceivedItemsDetails(latestItem.receiving_id);
+                                } else {
+                                  fetch(`${API_BASE}?action=purchase_order_details&po_id=${latestItem.purchase_header_id}`)
+                                    .then(response => response.json())
+                                    .then(data => {
+                                      if (data.success) {
+                                        setSelectedPO(data);
+                                        setShowDetails(true);
+                                      } else {
+                                        toast.error("Failed to fetch purchase order details");
+                                      }
+                                    })
+                                    .catch(error => {
+                                      toast.error("Error loading purchase order details");
+                                      console.error('Error:', error);
+                                    });
+                                }
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-md transition-colors text-sm font-medium"
+                              title="View received items details"
+                            >
+                              <FaEye className="h-3.5 w-3.5" />
+                              View Details
+                            </button>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              displayStatus === 'Complete' ? 'bg-green-100 text-green-800' :
+                              displayStatus === 'Partial' ? 'bg-orange-100 text-orange-800' :
+                              displayStatus === 'Ready' ? 'bg-blue-100 text-blue-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {displayStatus || 'Received'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -2131,21 +2992,32 @@ function CreatePurchaseOrder() {
                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.quantity}</td>
                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.received_qty || 0}</td>
-                           <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.missing_qty || item.quantity}</td>
+                           <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.missing_qty ?? (item.quantity - (item.received_qty || 0))}</td>
                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
-                             {item.missing_qty === 0 ? (
-                               <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
-                                 Complete
-                               </span>
-                             ) : item.received_qty > 0 ? (
-                               <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-warning)', color: 'white'}}>
-                                 Partial
-                               </span>
-                             ) : (
-                               <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-info)', color: 'white'}}>
-                                 Pending
-                               </span>
-                             )}
+                             {(() => {
+                               const missingQty = item.missing_qty ?? (item.quantity - (item.received_qty || 0));
+                               const receivedQty = item.received_qty || 0;
+                               
+                               if (missingQty === 0) {
+                                 return (
+                                   <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
+                                     Complete
+                                   </span>
+                                 );
+                               } else if (receivedQty > 0) {
+                                 return (
+                                   <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-warning)', color: 'white'}}>
+                                     Partial
+                                   </span>
+                                 );
+                               } else {
+                                 return (
+                                   <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-info)', color: 'white'}}>
+                                     Pending
+                                   </span>
+                                 );
+                               }
+                             })()}
                            </td>
                          </tr>
                        ))}
@@ -2881,6 +3753,7 @@ function CreatePurchaseOrder() {
       )}
 
       {/* ToastContainer removed; it's provided globally in app/layout.js */}
+      </div>
     </div>
   );
 }

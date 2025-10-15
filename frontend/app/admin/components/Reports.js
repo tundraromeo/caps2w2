@@ -52,8 +52,13 @@ function Reports() {
   const fetchReports = async () => {
     try {
       setReportsLoading(true);
+      console.log('📊 Fetching reports from:', API_BASE_URL);
+      
       const res = await axios.post(API_BASE_URL, { action: 'get_reports_data' });
+      console.log('📊 Reports API Response:', res.data);
+      
       if (res.data?.success && Array.isArray(res.data.reports)) {
+        console.log('✅ Reports fetched successfully:', res.data.reports.length, 'reports');
         setReports(res.data.reports);
         setReportsPage(1);
         
@@ -79,9 +84,16 @@ function Reports() {
 
         updateReportsNotifications(hasNewReports, res.data.reports.length, subItemUpdates);
       } else {
+        console.warn('⚠️ No reports data or invalid response structure:', res.data);
         setReports([]);
       }
-    } catch (_) {
+    } catch (error) {
+      console.error('❌ Error fetching reports:', error);
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       setReports([]);
     } finally {
       setReportsLoading(false);
@@ -253,6 +265,33 @@ function Reports() {
 
   const generateCombinedPDF = async (reportTypes) => {
     try {
+      console.log('📄 Generating combined PDF for:', reportTypes);
+      
+      // Fetch data for all selected report types
+      const allReportsData = {};
+      for (const reportType of reportTypes) {
+        try {
+          console.log(`📊 Fetching data for ${reportType}...`);
+          const res = await axios.post(API_BASE_URL, {
+            action: 'get_report_data',
+            report_type: reportType,
+            start_date: combineDateRange.startDate,
+            end_date: combineDateRange.endDate
+          });
+          
+          if (res.data?.success) {
+            allReportsData[reportType] = res.data.data || [];
+            console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
+          } else {
+            allReportsData[reportType] = [];
+            console.warn(`⚠️ No data for ${reportType}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching ${reportType}:`, error);
+          allReportsData[reportType] = [];
+        }
+      }
+      
       // Create a temporary div for PDF generation
       const tempDiv = document.createElement('div');
       tempDiv.style.position = 'absolute';
@@ -262,52 +301,133 @@ function Reports() {
       tempDiv.style.backgroundColor = 'white';
       tempDiv.style.padding = '20px';
       tempDiv.style.fontFamily = 'Arial, sans-serif';
-      tempDiv.style.fontSize = '12px';
-      tempDiv.style.lineHeight = '1.4';
+      tempDiv.style.fontSize = '10px';
+      tempDiv.style.lineHeight = '1.3';
       
-      // Create PDF content
-      const reportNames = reportTypes.map(type => 
-        reportTypes.find(t => t.id === type)?.name || type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
-      ).join(', ');
+      // Get report type definitions (from the constant at top of component)
+      const reportTypesList = [
+        { id: 'stock_in', name: 'Stock In Report', icon: '📦' },
+        { id: 'stock_out', name: 'Stock Out Report', icon: '📤' },
+        { id: 'sales', name: 'Sales Report', icon: '💰' },
+        { id: 'inventory_balance', name: 'Inventory Balance Report', icon: '📋' },
+        { id: 'supplier', name: 'Supplier Report', icon: '🏢' },
+        { id: 'cashier_performance', name: 'Cashier Performance Report', icon: '👤' },
+        { id: 'login_logs', name: 'Login Logs Report', icon: '🔐' }
+      ];
       
-      tempDiv.innerHTML = `
-        <div style="text-align: center; margin-bottom: 30px; padding: 20px; background: #f8fafc; border: 2px solid #000000;">
-          <div style="font-size: 24px; font-weight: bold; color: #000000; margin-bottom: 5px;">ENGUIO PHARMACY SYSTEM</div>
-          <div style="font-size: 14px; color: #000000;">Combined Reports</div>
+      // Create report names list
+      const reportNames = reportTypes.map(typeId => {
+        const reportTypeInfo = reportTypesList.find(t => t.id === typeId);
+        return reportTypeInfo?.name || typeId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      }).join(', ');
+      
+      // Build HTML content with header
+      let htmlContent = `
+        <div style="text-align: center; margin-bottom: 20px; padding: 15px; background: #f8fafc; border: 2px solid #000000;">
+          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 3px;">ENGUIO PHARMACY SYSTEM</div>
+          <div style="font-size: 12px; color: #000000;">Combined Reports</div>
         </div>
         
-        <div style="text-align: center; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #000000;">
-          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 10px;">Combined Reports</div>
-          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated on: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}</div>
-          <div style="font-size: 12px; color: #000000; margin: 2px 0;">Generated by: Admin</div>
-        </div>
-        
-        <div style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-left: 4px solid #000000;">
-          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Information</div>
-          <div style="display: table; width: 100%;">
-            <div style="display: table-row;">
-              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Report Types:</div>
-              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${reportNames}</div>
-            </div>
-            <div style="display: table-row;">
-              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
-              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${combineDateRange.startDate} to ${combineDateRange.endDate}</div>
-            </div>
-            <div style="display: table-row;">
-              <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">File Format:</div>
-              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">PDF Document</div>
-            </div>
-          </div>
-        </div>
-        
-        <div style="margin-top: 30px; padding: 20px; background: #f8fafc; border: 1px solid #000000;">
-          <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Report Summary</div>
-          <div style="font-size: 11px; color: #000000; line-height: 1.6;">
-            This combined report contains data from multiple report types for the specified date range. 
-            Each report type provides detailed information about different aspects of the inventory management system.
+        <div style="margin-bottom: 15px; padding: 10px; background: #f1f5f9; border-left: 4px solid #000000;">
+          <div style="font-size: 11px; font-weight: bold; color: #000000; margin-bottom: 8px;">Report Information</div>
+          <div style="font-size: 9px; color: #000000; line-height: 1.5;">
+            <strong>Date Range:</strong> ${combineDateRange.startDate} to ${combineDateRange.endDate}<br>
+            <strong>Generated:</strong> ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}<br>
+            <strong>Generated by:</strong> Admin<br>
+            <strong>Report Types:</strong> ${reportNames}
           </div>
         </div>
       `;
+      
+      // Add each report's data
+      for (const reportType of reportTypes) {
+        const data = allReportsData[reportType] || [];
+        const reportInfo = reportTypesList.find(t => t.id === reportType);
+        const reportName = reportInfo?.name || reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        
+        htmlContent += `
+          <div style="page-break-before: auto; margin-top: 20px; margin-bottom: 15px;">
+            <div style="font-size: 13px; font-weight: bold; color: #000000; padding: 8px; background: #e2e8f0; border-left: 4px solid #000000; margin-bottom: 10px;">
+              ${reportInfo?.icon || '📊'} ${reportName}
+            </div>
+        `;
+        
+        if (data.length === 0) {
+          htmlContent += `
+            <div style="padding: 15px; text-align: center; color: #64748b; font-size: 9px;">
+              No data available for this report type in the selected date range.
+            </div>
+          `;
+        } else {
+          // Get columns for this report type
+          const columns = getReportColumns(reportType);
+          
+          // Create table
+          htmlContent += `
+            <table style="width: 100%; border-collapse: collapse; font-size: 8px; margin-bottom: 10px;">
+              <thead>
+                <tr style="background: #cbd5e1;">
+                  ${columns.map(col => `<th style="border: 1px solid #000; padding: 4px; text-align: left; font-weight: bold;">${col}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+          `;
+          
+          // Add rows (limit to 50 per report for PDF size)
+          const limitedData = data.slice(0, 50);
+          limitedData.forEach((row, index) => {
+            htmlContent += `<tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">`;
+            columns.forEach(column => {
+              const columnKey = column.toLowerCase().replace(/\s+/g, '_');
+              let cellValue = row[columnKey] || 'N/A';
+              
+              // Format values
+              if (columnKey.includes('total_value') || columnKey.includes('total_amount') || columnKey.includes('unit_price') || columnKey.includes('average_transaction')) {
+                cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
+              } else if (columnKey === 'date' && cellValue !== 'N/A') {
+                cellValue = new Date(cellValue).toLocaleDateString('en-PH');
+              } else if (columnKey === 'time' && cellValue !== 'N/A') {
+                try {
+                  cellValue = new Date(`2000-01-01T${cellValue}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+                } catch (e) {
+                  // Keep original if parsing fails
+                }
+              }
+              
+              htmlContent += `<td style="border: 1px solid #ddd; padding: 3px; font-size: 7px;">${cellValue}</td>`;
+            });
+            htmlContent += `</tr>`;
+          });
+          
+          htmlContent += `
+              </tbody>
+            </table>
+          `;
+          
+          if (data.length > 50) {
+            htmlContent += `
+              <div style="font-size: 8px; color: #64748b; text-align: center; margin-top: 5px;">
+                Showing 50 of ${data.length} records
+              </div>
+            `;
+          }
+          
+          // Add summary if it's stock_in report
+          if (reportType === 'stock_in' && data.length > 0) {
+            const totalQty = data.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+            const totalValue = data.reduce((sum, item) => sum + (parseFloat(item.total_value) || 0), 0);
+            htmlContent += `
+              <div style="margin-top: 10px; padding: 8px; background: #f1f5f9; font-size: 8px; border-left: 3px solid #000;">
+                <strong>Summary:</strong> Total Items: ${data.length} | Total Quantity: ${totalQty.toLocaleString()} | Total Value: ₱${totalValue.toFixed(2)}
+              </div>
+            `;
+          }
+        }
+        
+        htmlContent += `</div>`;
+      }
+      
+      tempDiv.innerHTML = htmlContent;
       
       // Add to DOM temporarily
       document.body.appendChild(tempDiv);
@@ -540,7 +660,7 @@ function Reports() {
                 style={{
                   backgroundColor: selectedReportType === type.id ? theme.colors.accent : theme.bg.card,
                   borderColor: theme.border.default,
-                  boxShadow: `0 4px 12px ${theme.shadow}`
+                  boxShadow: `0 4px 12px ${theme.shadow.lg}`
                 }}
               >
                 <button
@@ -594,7 +714,7 @@ function Reports() {
               className="rounded-lg shadow-md p-4"
               style={{
                 backgroundColor: theme.bg.card,
-                boxShadow: `0 10px 25px ${theme.shadow}`
+                boxShadow: `0 10px 25px ${theme.shadow.lg}`
               }}
             >
               <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>Date Range</h3>
@@ -649,7 +769,7 @@ function Reports() {
             className="rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
             style={{
               backgroundColor: theme.bg.card,
-              boxShadow: `0 10px 25px ${theme.shadow}`
+              boxShadow: `0 10px 25px ${theme.shadow.lg}`
             }}
           >
             <div className="p-6">
@@ -659,6 +779,22 @@ function Reports() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: theme.colors.accent }}></div>
                   <span className="ml-2" style={{ color: theme.text.secondary }}>Loading reports...</span>
+                </div>
+              ) : reports.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4">📊</div>
+                  <h3 className="text-xl font-semibold mb-2" style={{ color: theme.text.primary }}>No Reports Found</h3>
+                  <p className="mb-4" style={{ color: theme.text.secondary }}>
+                    There are no generated reports available yet. Reports are automatically created from stock movements and transfers.
+                  </p>
+                  <div className="text-sm" style={{ color: theme.text.muted }}>
+                    <p>💡 Tips:</p>
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      <li>Stock movements create reports automatically</li>
+                      <li>Transfer operations generate transfer reports</li>
+                      <li>Use the report type buttons above to generate specific reports</li>
+                    </ul>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -748,7 +884,7 @@ function Reports() {
             className="rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
             style={{
               backgroundColor: theme.bg.card,
-              boxShadow: `0 10px 25px ${theme.shadow}`
+              boxShadow: `0 10px 25px ${theme.shadow.lg}`
             }}
           >
             <div className="p-6">
@@ -782,7 +918,7 @@ function Reports() {
                   {/* Summary Cards for Stock In Report */}
                   {selectedReportType === 'stock_in' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                         <div className="flex items-center">
                           <div className="text-3xl mr-3">📦</div>
                           <div>
@@ -791,7 +927,7 @@ function Reports() {
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                         <div className="flex items-center">
                           <div className="text-3xl mr-3">📊</div>
                           <div>
@@ -802,7 +938,7 @@ function Reports() {
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                         <div className="flex items-center">
                           <div className="text-3xl mr-3">💰</div>
                           <div>
@@ -813,7 +949,7 @@ function Reports() {
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+                      <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
                         <div className="flex items-center">
                           <div className="text-3xl mr-3">🏢</div>
                           <div>
@@ -867,7 +1003,8 @@ function Reports() {
       {showGenerateModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div 
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-blue-300"
+            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
+            style={{ backgroundColor: theme.bg.card, borderColor: theme.colors.accent }}
             style={{ 
               backgroundColor: theme.bg.card,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(59, 130, 246, 0.2)'
@@ -885,7 +1022,10 @@ function Reports() {
               </div>
               <button
                 onClick={() => setShowGenerateModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="transition-colors"
+                style={{ color: theme.text.muted }}
+                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
+                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1014,7 +1154,8 @@ function Reports() {
       {showCombineModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div 
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 border-2 border-purple-300"
+            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
+            style={{ backgroundColor: theme.bg.card, borderColor: theme.colors.warning }}
             style={{ 
               backgroundColor: theme.bg.card,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(147, 51, 234, 0.2)'
@@ -1032,7 +1173,10 @@ function Reports() {
               </div>
               <button
                 onClick={() => setShowCombineModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="transition-colors"
+                style={{ color: theme.text.muted }}
+                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
+                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1127,7 +1271,8 @@ function Reports() {
                         type="checkbox"
                         checked={selectedReportTypes.includes(type.id)}
                         onChange={() => handleReportTypeChange(type.id)}
-                        className="rounded border-gray-300"
+                        className="rounded"
+                        style={{ borderColor: theme.border.default }}
                       />
                       <span className="text-sm" style={{ color: theme.text.secondary }}>
                         {type.name}

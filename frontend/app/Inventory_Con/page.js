@@ -55,10 +55,52 @@ export default function InventoryPage() {
     setIsAuthenticated(true);
     setIsLoading(false);
 
+    // Add automatic logout on tab close
+    const handleBeforeUnload = async (event) => {
+      console.log('🚪 Tab closing - Auto logout triggered');
+      
+      // Stop heartbeat immediately
+      HeartbeatService.stop();
+      
+      // Perform logout API call
+      try {
+        const logoutUrl = getApiUrl('login.php');
+        const response = await fetch(logoutUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'logout',
+            emp_id: user.user_id || user.emp_id
+          })
+        });
+        
+        if (response.ok) {
+          console.log('✅ Auto logout successful');
+        } else {
+          console.log('⚠️ Auto logout failed, but continuing...');
+        }
+      } catch (error) {
+        console.log('⚠️ Auto logout error:', error.message);
+      }
+      
+      // Clear session storage
+      sessionStorage.clear();
+      localStorage.removeItem('pos-terminal');
+      localStorage.removeItem('pos-cashier');
+      localStorage.removeItem('pos-emp-id');
+    };
+
+    // Add event listener for tab close
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     // Cleanup: Stop heartbeat when component unmounts
     return () => {
       console.log('💔 Stopping heartbeat service (component unmount)');
       HeartbeatService.stop();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [router]);
 
@@ -95,52 +137,79 @@ export default function InventoryPage() {
         try {
           const user = JSON.parse(userData);
           empId = user.user_id || user.emp_id || null;
+          console.log('Inventory Logout - Parsed user data:', user);
+          console.log('Inventory Logout - Found emp_id:', empId);
         } catch (e) {
           console.error('Failed to parse user data:', e);
         }
       }
       
-      console.log('Inventory Logout attempt - User data:', userData);
-      console.log('Inventory Logout attempt - Emp ID:', empId);
+      // Fallback: Try to get emp_id from localStorage
+      if (!empId) {
+        const localEmpId = localStorage.getItem('pos-emp-id');
+        if (localEmpId) {
+          empId = parseInt(localEmpId);
+          console.log('Inventory Logout - Using emp_id from localStorage:', empId);
+        }
+      }
       
-      // Call logout API using configured API URL
-      const logoutUrl = getApiUrl('login.php');
-      console.log('Logout API URL:', logoutUrl);
+      console.log('Inventory Logout attempt - Final Emp ID:', empId);
       
-      const response = await fetch(logoutUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'logout',
-          emp_id: empId 
-        })
-      });
-      
-      // Check if response is JSON
-      const contentType = response.headers.get('Content-Type');
-      console.log('Response Content-Type:', contentType);
-      
-      if (contentType && contentType.includes('application/json')) {
-        const result = await response.json();
-        console.log('Inventory Logout API response:', result);
-        
-        if (result.success) {
-          console.log('Inventory logout successful');
-        } else {
-          console.error('Inventory logout failed:', result.message);
+      // Call logout API if we have an empId
+      if (empId) {
+        try {
+          // Call logout API using configured API URL with credentials
+          const logoutUrl = getApiUrl('login.php');
+          console.log('Logout API URL:', logoutUrl);
+          
+          const response = await fetch(logoutUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // Include session cookies
+            body: JSON.stringify({ 
+              action: 'logout',
+              emp_id: empId 
+            })
+          });
+          
+          // Check if response is JSON
+          const contentType = response.headers.get('Content-Type');
+          
+          if (contentType && contentType.includes('application/json')) {
+            const result = await response.json();
+            console.log('Inventory Logout API response:', result);
+            
+            if (result.success) {
+              console.log('✅ Inventory logout successful - Server confirmed logout');
+            } else {
+              console.warn('⚠️ Inventory logout warning:', result.message);
+            }
+          } else {
+            // Response is not JSON (probably HTML error page)
+            const text = await response.text();
+            console.error('Logout API returned non-JSON response:', text.substring(0, 200));
+            console.warn('⚠️ Logout API returned HTML instead of JSON. Proceeding with local logout.');
+          }
+        } catch (apiError) {
+          console.warn('⚠️ Inventory logout API error:', apiError);
+          console.log('📍 Proceeding with local cleanup even though API call failed');
+          // Continue with local cleanup even if API fails
         }
       } else {
-        // Response is not JSON (probably HTML error page)
-        const text = await response.text();
-        console.error('Logout API returned non-JSON response:', text.substring(0, 200));
-        console.warn('⚠️ Logout API returned HTML instead of JSON. Proceeding with local logout.');
+        console.warn('⚠️ No employee ID found in session or local storage');
+        console.log('📍 Clearing local session data and redirecting to login');
       }
     } catch (error) {
-      console.error('Inventory logout error:', error);
-      console.warn('⚠️ Logout failed but proceeding with local logout.');
+      console.error('❌ Inventory logout error:', error);
+      console.log('📍 Proceeding with local logout despite errors');
     } finally {
       // Always clear session and redirect
-      sessionStorage.removeItem('user_data');
+      console.log('🧹 Cleaning up: Clearing all session and local storage');
+      sessionStorage.clear(); // Clear all session data
+      localStorage.removeItem('pos-terminal');
+      localStorage.removeItem('pos-cashier');
+      localStorage.removeItem('pos-emp-id');
+      console.log('✅ Cleanup complete, redirecting to login page');
       router.push('/');
     }
   };

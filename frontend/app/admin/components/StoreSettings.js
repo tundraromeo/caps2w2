@@ -24,7 +24,7 @@ function StoreSettings() {
     }
   });
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState('notifications');
 
   useEffect(() => {
     fetchSettings();
@@ -89,7 +89,6 @@ function StoreSettings() {
   };
 
   const tabs = [
-    { id: 'general', label: 'General', icon: '⚙️' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'system', label: 'System', icon: '💻' }
   ];
@@ -151,100 +150,6 @@ function StoreSettings() {
           }}
         >
           <div className="p-6">
-            {activeTab === 'general' && (
-              <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>General Information</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Store Name *</label>
-                    <input
-                      type="text"
-                      name="store_name"
-                      value={settings.store_name}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.input,
-                        color: theme.text.primary
-                      }}
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Phone Number *</label>
-                    <input
-                      type="tel"
-                      name="store_phone"
-                      value={settings.store_phone}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.input,
-                        color: theme.text.primary
-                      }}
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Email Address *</label>
-                    <input
-                      type="email"
-                      name="store_email"
-                      value={settings.store_email}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.input,
-                        color: theme.text.primary
-                      }}
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Tax Rate (%)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      name="tax_rate"
-                      value={settings.tax_rate}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.input,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                  
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Store Address *</label>
-                    <textarea
-                      name="store_address"
-                      value={settings.store_address}
-                      onChange={handleInputChange}
-                      rows="3"
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.input,
-                        color: theme.text.primary
-                      }}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-
             {activeTab === 'notifications' && (
               <div className="space-y-6">
                 <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Notification Settings</h3>

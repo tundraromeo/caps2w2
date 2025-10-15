@@ -1,6 +1,11 @@
 <?php
-// Include CORS and configuration
+// Include proper CORS configuration
 require_once __DIR__ . '/cors.php';
+
+// Handle preflight requests
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit(0);
+}
 
 require_once __DIR__ . '/conn.php';
 
