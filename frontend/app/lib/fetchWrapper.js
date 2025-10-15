@@ -34,11 +34,7 @@ export async function fetchWithCORS(url, options = {}) {
     const response = await fetch(url, finalOptions);
     return response;
   } catch (error) {
-    console.error('🚫 Fetch Error:', {
-      url,
-      error: error.message,
-      options: finalOptions,
-    });
+    // Network error occurred
     throw error;
   }
 }

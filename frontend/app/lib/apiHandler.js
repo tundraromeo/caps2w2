@@ -77,15 +77,6 @@ class APIHandler {
    * Make HTTP request with retry logic
    */
   async makeRequest(url, config, retryCount = 0, maxRetries = 2) {
-    // Debug logging - check what URL is being called
-    console.log('🔍 API Request Debug:', {
-      url: url,
-      baseUrl: this.baseUrl,
-      envVariable: process.env.NEXT_PUBLIC_API_BASE_URL,
-      method: config.method,
-      attempt: retryCount + 1
-    });
-
     try {
       const response = await fetch(url, config);
       
@@ -99,7 +90,6 @@ class APIHandler {
         const result = JSON.parse(text);
         return result;
       } catch (jsonError) {
-        console.error('❌ Invalid JSON response:', text.substring(0, 200));
         throw new Error('Server returned invalid JSON');
       }
     } catch (error) {
@@ -109,27 +99,11 @@ class APIHandler {
         // If we haven't exceeded max retries, try again after a delay
         if (retryCount < maxRetries) {
           const delayMs = 1000 * (retryCount + 1); // Exponential backoff: 1s, 2s
-          console.warn(`⚠️ Network error, retrying in ${delayMs}ms... (Attempt ${retryCount + 1}/${maxRetries})`);
-          
           await new Promise(resolve => setTimeout(resolve, delayMs));
           return this.makeRequest(url, config, retryCount + 1, maxRetries);
         }
         
-        console.error('❌ Network Error (All retries failed):', {
-          url,
-          baseUrl: this.baseUrl,
-          envVariable: process.env.NEXT_PUBLIC_API_BASE_URL,
-          message: 'Cannot reach the server. Please check:',
-          checks: [
-            '1. Is Apache/XAMPP running?',
-            '2. Is the backend URL correct?',
-            '3. Are there any CORS issues?',
-            '4. Is the network connection stable?',
-            '5. Did you RESTART Next.js after creating .env.local?'
-          ],
-          solution: 'RESTART Next.js: Press Ctrl+C, then run: npm run dev'
-        });
-        
+        // Network error - all retries failed
         // Return a safe empty response instead of throwing
         return {
           success: false,

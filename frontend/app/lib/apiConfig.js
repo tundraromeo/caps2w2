@@ -97,7 +97,6 @@ export const API_ENDPOINTS = {
 export const getNamedApiUrl = (endpointName) => {
   const endpoint = API_ENDPOINTS[endpointName];
   if (!endpoint) {
-    console.warn(`Unknown endpoint name: ${endpointName}`);
     return getApiUrl('backend.php'); // fallback
   }
   return getApiUrl(endpoint);
