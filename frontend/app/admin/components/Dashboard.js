@@ -951,8 +951,7 @@ function Dashboard() {
                   value={changeNameData.currentName}
                   readOnly
                   className="w-full px-3 py-2 border rounded-lg"
-                  style={{ backgroundColor: safeTheme.bg.hover }}
-                  style={{ borderColor: safeTheme.border.default }}
+                  style={{ backgroundColor: safeTheme.bg.hover, borderColor: safeTheme.border.default }}
                 />
               </div>
               <div>

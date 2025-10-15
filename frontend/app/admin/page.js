@@ -386,9 +386,10 @@ function AdminContent() {
     }
   }, [isAuthenticated]);
 
+  const { theme } = useTheme();
+  
   // Show loading screen while checking authentication
   if (isLoading) {
-    const { theme } = useTheme();
     return (
       <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
         <div className="text-center">
@@ -398,8 +399,6 @@ function AdminContent() {
       </div>
     );
   }
-
-  const { theme } = useTheme();
   
   return (
     <div className="flex h-screen" style={{ backgroundColor: theme.bg.primary }}>

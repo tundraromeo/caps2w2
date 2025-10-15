@@ -7632,7 +7632,7 @@ console.log("API response for product quantities:", response);
                       className="text-sm mt-2"
                       style={{ color: theme.text.muted }}
                     >
-                      Add products using the "Add New Product" modal.
+                      Add products using the &quot;Add New Product&quot; modal.
                     </p>
                   </div>
                 ) : (

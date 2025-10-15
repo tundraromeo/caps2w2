@@ -58,68 +58,7 @@ function handle_login($conn, $data) {
             $_SESSION['role'] = $user['role'];
             $_SESSION['full_name'] = $user['Fname'] . ' ' . $user['Lname'];
 
-            // Log login activity to tbl_login
-            try {
-                // Check if last_seen column exists (backward compatibility)
-                $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'last_seen'");
-                $hasLastSeen = $checkColumn->rowCount() > 0;
-                
-                if ($hasLastSeen) {
-                    // NEW VERSION: With status and last_seen fields
-                    $loginStmt = $conn->prepare("
-                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status, last_seen)
-                        VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online', NOW())
-                    ");
-                } else {
-                    // OLD VERSION: With status field only
-                    $loginStmt = $conn->prepare("
-                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status)
-                        VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online')
-                    ");
-                }
-
-                $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
-                $loginStmt->bindParam(':emp_id', $user['emp_id'], PDO::PARAM_INT);
-                $loginStmt->bindParam(':role_id', $user['role_id'], PDO::PARAM_INT);
-                $loginStmt->bindParam(':username', $user['username'], PDO::PARAM_STR);
-                $loginStmt->bindParam(':ip_address', $ip_address, PDO::PARAM_STR);
-                $loginStmt->bindParam(':location', $location_label, PDO::PARAM_STR);
-                $loginStmt->bindParam(':terminal_id', $terminal_id, PDO::PARAM_INT);
-                $loginStmt->bindParam(':shift_id', $user['shift_id'], PDO::PARAM_INT);
-
-                $loginStmt->execute();
-
-                // Store login_id in session for logout tracking
-                $_SESSION['login_id'] = $conn->lastInsertId();
-                $login_id_inserted = $_SESSION['login_id'];
-
-                // Log login activity to activity log
-                try {
-                    $activityStmt = $conn->prepare("
-                        INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at)
-                        VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())
-                    ");
-
-                    $activityStmt->execute([
-                        ':user_id' => $user['emp_id'],
-                        ':username' => $user['username'],
-                        ':role' => $user['role'],
-                        ':activity_type' => 'LOGIN',
-                        ':activity_description' => 'User logged in successfully',
-                        ':table_name' => 'tbl_login',
-                        ':record_id' => $login_id_inserted
-                    ]);
-                } catch (Exception $activityError) {
-                    error_log("Activity logging error: " . $activityError->getMessage());
-                }
-
-            } catch (Exception $loginLogError) {
-                error_log("Login logging error: " . $loginLogError->getMessage());
-                // Continue with login even if logging fails
-            }
-
-            // Terminal/location handling: prefer explicit route, else infer from role
+            // Determine terminal/location BEFORE inserting login record
             $route = strtolower(trim($data['route'] ?? ''));
             $location_label = null;
             $terminal_name = null;
@@ -140,133 +79,20 @@ function handle_login($conn, $data) {
             $terminal_id = null;
             if ($terminal_name) {
                 try {
-                    // Ensure terminal exists and update shift
-                    $termSel = $conn->prepare("SELECT terminal_id, shift_id FROM tbl_pos_terminal WHERE terminal_name = :name LIMIT 1");
+                    $termSel = $conn->prepare("SELECT terminal_id FROM tbl_pos_terminal WHERE terminal_name = :name LIMIT 1");
                     $termSel->execute([':name' => $terminal_name]);
                     $term = $termSel->fetch(PDO::FETCH_ASSOC);
-                    $user_shift_id = $user['shift_id'] ?? null;
                     if ($term) {
                         $terminal_id = (int)$term['terminal_id'];
-                        if ($user_shift_id && (int)$term['shift_id'] !== (int)$user_shift_id) {
-                            $upd = $conn->prepare("UPDATE tbl_pos_terminal SET shift_id = :shift WHERE terminal_id = :tid");
-                            $upd->execute([':shift' => $user_shift_id, ':tid' => $terminal_id]);
-                        }
                     } else {
                         $ins = $conn->prepare("INSERT INTO tbl_pos_terminal (terminal_name, shift_id) VALUES (:name, :shift)");
-                        $ins->execute([':name' => $terminal_name, ':shift' => $user_shift_id]);
+                        $ins->execute([':name' => $terminal_name, ':shift' => $user['shift_id']]);
                         $terminal_id = (int)$conn->lastInsertId();
                     }
-
-                    // Optionally annotate login row with location/terminal if columns exist
-                    if (!empty($login_id_inserted)) {
-                        try {
-                            $tryUpd = $conn->prepare("UPDATE tbl_login SET location = :loc WHERE login_id = :lid");
-                            $tryUpd->execute([':loc' => $location_label, ':lid' => $login_id_inserted]);
-                        } catch (Exception $ignore) {}
-                        try {
-                            $tryUpd2 = $conn->prepare("UPDATE tbl_login SET terminal_id = :tid WHERE login_id = :lid");
-                            $tryUpd2->execute([':tid' => $terminal_id, ':lid' => $login_id_inserted]);
-                        } catch (Exception $ignore) {}
-                        try {
-                            $tryUpd3 = $conn->prepare("UPDATE tbl_login SET shift_id = :sid WHERE login_id = :lid");
-                            $tryUpd3->execute([':sid' => $user_shift_id, ':lid' => $login_id_inserted]);
-                        } catch (Exception $ignore) {}
-                    }
                 } catch (Exception $terminalError) {
-                    error_log('Terminal handling error: ' . $terminalError->getMessage());
+                    error_log('Terminal error: ' . $terminalError->getMessage());
                 }
             }
-
-            // Log login activity to system activity logs
-            try {
-                $logStmt = $conn->prepare("INSERT INTO tbl_activity_log (user_id, username, role, activity_type, activity_description, table_name, record_id, date_created, time_created, created_at) VALUES (:user_id, :username, :role, :activity_type, :activity_description, :table_name, :record_id, CURDATE(), CURTIME(), NOW())");
-                $logStmt->execute([
-                    ':user_id' => $user['emp_id'],
-                    ':username' => $user['username'],
-                    ':role' => $user['role'],
-                    ':activity_type' => 'LOGIN',
-                    ':activity_description' => "User logged in successfully from {$terminal_name}",
-                    ':table_name' => 'tbl_login',
-                    ':record_id' => $login_id_inserted
-                ]);
-            } catch (Exception $activityLogError) {
-                error_log("Activity logging error: " . $activityLogError->getMessage());
-            }
-
-            echo json_encode([
-                "success" => true,
-                "message" => "Login successful",
-                "role" => $user['role'],
-                "user_id" => $user['emp_id'],
-                "full_name" => $user['Fname'] . ' ' . $user['Lname'],
-                "terminal_id" => $terminal_id,
-                "terminal_name" => $terminal_name,
-                "location" => $location_label,
-                "shift_id" => $user['shift_id'] ?? null
-            ]);
-        } else {
-            echo json_encode(["success" => false, "message" => "Invalid username or password"]);
-        }
-
-    } catch (Exception $e) {
-        echo json_encode(["success" => false, "message" => "An error occurred: " . $e->getMessage()]);
-    }
-}
-    try {
-        $username = isset($data['username']) ? trim($data['username']) : '';
-        $password = isset($data['password']) ? trim($data['password']) : '';
-        $captcha = isset($data['captcha']) ? trim($data['captcha']) : '';
-        $captchaAnswer = isset($data['captchaAnswer']) ? trim($data['captchaAnswer']) : '';
-
-        // Validate inputs
-        if (empty($username) || empty($password)) {
-            echo json_encode(["success" => false, "message" => "Username and password are required"]);
-            exit;
-        }
-
-        // Verify captcha
-        if (empty($captcha) || empty($captchaAnswer) || $captcha !== $captchaAnswer) {
-            echo json_encode(["success" => false, "message" => "Invalid captcha"]);
-            exit;
-        }
-
-        // Check if user exists (regardless of status)
-        $stmt = $conn->prepare("
-            SELECT e.emp_id, e.username, e.password, e.status, e.Fname, e.Lname, e.role_id, e.shift_id, r.role
-            FROM tbl_employee e
-            JOIN tbl_role r ON e.role_id = r.role_id
-            WHERE e.username = :username
-        ");
-        $stmt->bindParam(":username", $username, PDO::PARAM_STR);
-        $stmt->execute();
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        // If user exists but is inactive, return a specific message
-        if ($user && strcasecmp($user['status'] ?? '', 'Active') !== 0) {
-            echo json_encode(["success" => false, "message" => "User is inactive. Please contact the administrator."]);
-            return;
-        }
-
-        // Check password - handle both hashed and plain text passwords
-        $passwordValid = false;
-        if ($user) {
-            // First try to verify as hashed password
-            if (password_verify($password, $user['password'])) {
-                $passwordValid = true;
-            }
-            // If that fails, check if it's a plain text password (for backward compatibility)
-            elseif ($password === $user['password']) {
-                $passwordValid = true;
-            }
-        }
-
-        if ($user && $passwordValid) {
-            // Start session and store user data
-            session_start();
-            $_SESSION['user_id'] = $user['emp_id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['role'] = $user['role'];
-            $_SESSION['full_name'] = $user['Fname'] . ' ' . $user['Lname'];
 
             // Log login activity to tbl_login
             try {
@@ -327,64 +153,6 @@ function handle_login($conn, $data) {
             } catch (Exception $loginLogError) {
                 error_log("Login logging error: " . $loginLogError->getMessage());
                 // Continue with login even if logging fails
-            }
-
-            // Terminal/location handling: prefer explicit route, else infer from role
-            $route = strtolower(trim($data['route'] ?? ''));
-            $location_label = null;
-            $terminal_name = null;
-            if ($route !== '') {
-                if (strpos($route, 'pos_convenience') !== false) { $location_label = 'convenience'; $terminal_name = 'Convenience POS'; }
-                elseif (strpos($route, 'pos_pharmacy') !== false) { $location_label = 'pharmacy'; $terminal_name = 'Pharmacy POS'; }
-                elseif (strpos($route, 'inventory_con') !== false) { $location_label = 'inventory'; $terminal_name = 'Inventory Terminal'; }
-                elseif (strpos($route, 'admin') !== false) { $location_label = 'admin'; $terminal_name = 'Admin Terminal'; }
-            }
-            if (!$terminal_name) {
-                $roleLower = strtolower((string)($user['role'] ?? ''));
-                if (strpos($roleLower, 'cashier') !== false || strpos($roleLower, 'pos') !== false) { $location_label = 'convenience'; $terminal_name = 'Convenience POS'; }
-                elseif (strpos($roleLower, 'pharmacist') !== false) { $location_label = 'pharmacy'; $terminal_name = 'Pharmacy POS'; }
-                elseif (strpos($roleLower, 'inventory') !== false) { $location_label = 'inventory'; $terminal_name = 'Inventory Terminal'; }
-                else { $location_label = 'admin'; $terminal_name = 'Admin Terminal'; }
-            }
-
-            $terminal_id = null;
-            if ($terminal_name) {
-                try {
-                    // Ensure terminal exists and update shift
-                    $termSel = $conn->prepare("SELECT terminal_id, shift_id FROM tbl_pos_terminal WHERE terminal_name = :name LIMIT 1");
-                    $termSel->execute([':name' => $terminal_name]);
-                    $term = $termSel->fetch(PDO::FETCH_ASSOC);
-                    $user_shift_id = $user['shift_id'] ?? null;
-                    if ($term) {
-                        $terminal_id = (int)$term['terminal_id'];
-                        if ($user_shift_id && (int)$term['shift_id'] !== (int)$user_shift_id) {
-                            $upd = $conn->prepare("UPDATE tbl_pos_terminal SET shift_id = :shift WHERE terminal_id = :tid");
-                            $upd->execute([':shift' => $user_shift_id, ':tid' => $terminal_id]);
-                        }
-                    } else {
-                        $ins = $conn->prepare("INSERT INTO tbl_pos_terminal (terminal_name, shift_id) VALUES (:name, :shift)");
-                        $ins->execute([':name' => $terminal_name, ':shift' => $user_shift_id]);
-                        $terminal_id = (int)$conn->lastInsertId();
-                    }
-
-                    // Optionally annotate login row with location/terminal if columns exist
-                    if (!empty($login_id_inserted)) {
-                        try {
-                            $tryUpd = $conn->prepare("UPDATE tbl_login SET location = :loc WHERE login_id = :lid");
-                            $tryUpd->execute([':loc' => $location_label, ':lid' => $login_id_inserted]);
-                        } catch (Exception $ignore) {}
-                        try {
-                            $tryUpd2 = $conn->prepare("UPDATE tbl_login SET terminal_id = :tid WHERE login_id = :lid");
-                            $tryUpd2->execute([':tid' => $terminal_id, ':lid' => $login_id_inserted]);
-                        } catch (Exception $ignore) {}
-                        try {
-                            $tryUpd3 = $conn->prepare("UPDATE tbl_login SET shift_id = :sid WHERE login_id = :lid");
-                            $tryUpd3->execute([':sid' => $user_shift_id, ':lid' => $login_id_inserted]);
-                        } catch (Exception $ignore) {}
-                    }
-                } catch (Exception $terminalError) {
-                    error_log('Terminal handling error: ' . $terminalError->getMessage());
-                }
             }
 
             // Log login activity to system activity logs

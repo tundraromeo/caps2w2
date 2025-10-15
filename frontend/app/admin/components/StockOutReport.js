@@ -661,9 +661,9 @@ function StockOutReport() {
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div 
             className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
-            style={{ backgroundColor: theme.bg.card, borderColor: theme.colors.danger }}
             style={{ 
               backgroundColor: theme.bg.card,
+              borderColor: theme.colors.danger,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(239, 68, 68, 0.2)'
             }}
           >

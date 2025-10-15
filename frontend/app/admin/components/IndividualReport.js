@@ -1508,7 +1508,6 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           <div 
             className="rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden"
             style={{ backgroundColor: theme.bg.card }}
-            style={{ backgroundColor: theme.bg.card }}
           >
             <div className="p-6 border-b" style={{ borderColor: theme.border.default }}>
               <div className="flex items-center justify-between">
@@ -1641,9 +1640,9 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div 
             className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
-            style={{ backgroundColor: theme.bg.card, borderColor: theme.colors.accent }}
             style={{ 
               backgroundColor: theme.bg.card,
+              borderColor: theme.colors.accent,
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(99, 102, 241, 0.2)'
             }}
           >
