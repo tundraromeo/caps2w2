@@ -2,12 +2,30 @@
 // Stock Adjustment API - Handles stock adjustment operations
 // Version: 2024-12-19
 
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+// CORS headers must be set first, before any output
+// Load environment variables for CORS configuration
+require_once __DIR__ . '/../simple_dotenv.php';
+$dotenv = new SimpleDotEnv(__DIR__ . '/..');
+$dotenv->load();
 
-// Handle preflight requests
+// Get allowed origins from environment variable (comma-separated) - PRODUCTION READY
+$corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'https://enguiostore.vercel.app,https://enguio.shop,http://localhost:3000,http://localhost:3001';
+$allowed_origins = array_map('trim', explode(',', $corsOriginsEnv));
+
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowed_origins)) {
+    header("Access-Control-Allow-Origin: $origin");
+} else {
+    // Fallback to production URL
+    header("Access-Control-Allow-Origin: https://enguiostore.vercel.app");
+}
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin, X-CSRF-Token");
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Max-Age: 86400");
+header("Content-Type: application/json; charset=utf-8");
+
+// Handle preflight OPTIONS requests immediately
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();

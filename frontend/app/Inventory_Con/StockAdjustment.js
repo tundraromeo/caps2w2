@@ -18,6 +18,7 @@ import {
 import { Package, TrendingUp, TrendingDown, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { useTheme } from "./ThemeContext";
 import apiHandler from "../lib/apiHandler";
+import { getApiUrl } from "../lib/apiConfig";
 
 const StockAdjustment = () => {
   const { isDarkMode } = useTheme();
@@ -111,12 +112,9 @@ const StockAdjustment = () => {
   const handleStockAdjustmentApiCall = async (action, data = {}) => {
     try {
       console.log(`🔄 Stock Adjustment API Call: ${action}`, data);
-      console.log(`🔄 API Endpoint: stock_adjustment_api.php`);
-      console.log(`🔄 Full URL: http://localhost/caps2w2/backend/Api/stock_adjustment_api.php`);
       
-      // Use direct fetch instead of API handler to avoid network issues
-      const url = 'http://localhost/caps2w2/backend/Api/stock_adjustment_api.php';
-      console.log(`🔄 Making direct fetch to: ${url}`);
+      // Use dynamic API URL from environment
+      const url = getApiUrl('stock_adjustment_api.php');
       
       const response = await fetch(url, {
         method: 'POST',

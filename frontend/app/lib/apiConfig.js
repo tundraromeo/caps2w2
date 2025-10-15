@@ -18,8 +18,8 @@ const getBaseUrl = () => {
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
   
-  // Default to HTTP (XAMPP doesn't have valid SSL by default)
-  return 'http://localhost/caps2w2/backend/Api';
+  // Production default (Vercel will always have env var, but this is fallback)
+  return 'https://enguio.shop/backend/Api';
 };
 
 export const API_BASE_URL = getBaseUrl();
