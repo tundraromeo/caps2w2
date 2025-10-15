@@ -36,7 +36,6 @@ ehthumbs.db
 Thumbs.db
 
 # Archive files
-*.zip
 *.rar
 *.7z
 *.tar.gz

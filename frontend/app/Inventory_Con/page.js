@@ -160,7 +160,6 @@ export default function InventoryPage() {
         try {
           // Call logout API using configured API URL with credentials
           const logoutUrl = getApiUrl('login.php');
-          console.log('Logout API URL:', logoutUrl);
           
           const response = await fetch(logoutUrl, {
             method: 'POST',

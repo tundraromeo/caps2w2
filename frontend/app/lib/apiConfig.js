@@ -34,11 +34,6 @@ export const getApiUrl = (endpoint) => {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
   const fullUrl = `${API_BASE_URL}/${cleanEndpoint}`;
   
-  // Debug log to verify URL is correct
-  if (typeof window !== 'undefined') {
-    console.log(`🔗 API URL: ${fullUrl}`);
-  }
-  
   return fullUrl;
 };
 

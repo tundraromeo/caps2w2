@@ -32,7 +32,6 @@ export default function LoginForm() {
   const generateCaptcha = async () => {
     try {
       console.log('Generating captcha...');
-      console.log('API URL:', API_BASE_URL);
       
       let response;
       
