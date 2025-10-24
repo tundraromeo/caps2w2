@@ -19,7 +19,7 @@ const getBaseUrl = () => {
   }
   
   // Production default (Vercel will always have env var, but this is fallback)
-  return 'https://enguio.shop/backend/Api';
+  return 'https://enguio.shop/Api';
 };
 
 export const API_BASE_URL = getBaseUrl();
