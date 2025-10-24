@@ -101,6 +101,16 @@ try {
                          )),
                         0
                     ) as total_quantity,
+                    -- Count total batches for this product
+                    COALESCE(
+                        (SELECT COUNT(DISTINCT tbd3.batch_id) 
+                         FROM tbl_transfer_batch_details tbd3 
+                         WHERE tbd3.product_id = p.product_id
+                         AND tbd3.location_id = (
+                             SELECT l3.location_id FROM tbl_location l3 WHERE l3.location_name LIKE '%convenience%' LIMIT 1
+                         )),
+                        0
+                    ) as total_batches,
                     MAX(p.status) as status,
                     s.supplier_name,
                     MAX(p.expiration) as expiration,
@@ -168,10 +178,25 @@ try {
                 break;
             }
             
-            // Update quantity field to use total_quantity
+            // Update quantity field to use total_quantity and ensure total_batches is set
             // AND add multi-unit information if available
             foreach ($rows as &$row) {
                 $row['quantity'] = $row['total_quantity'];
+                
+                // If total_batches is not set, calculate it
+                if (!isset($row['total_batches']) || $row['total_batches'] === null) {
+                    $batchCountStmt = $conn->prepare("
+                        SELECT COUNT(DISTINCT batch_id) as batch_count
+                        FROM tbl_transfer_batch_details 
+                        WHERE product_id = ? 
+                        AND location_id = (
+                            SELECT location_id FROM tbl_location WHERE location_name LIKE '%convenience%' LIMIT 1
+                        )
+                    ");
+                    $batchCountStmt->execute([$row['product_id']]);
+                    $batchCount = $batchCountStmt->fetch(PDO::FETCH_ASSOC);
+                    $row['total_batches'] = $batchCount['batch_count'] ?? 0;
+                }
                 
                 // Get product units if multi-unit is enabled
                 $unitsStmt = $conn->prepare("
@@ -327,9 +352,24 @@ try {
                 break;
             }
             
-            // Update quantity field to use total_quantity
+            // Update quantity field to use total_quantity and ensure total_batches is set
             foreach ($rows as &$row) {
                 $row['quantity'] = $row['total_quantity'];
+                
+                // If total_batches is not set, calculate it
+                if (!isset($row['total_batches']) || $row['total_batches'] === null) {
+                    $batchCountStmt = $conn->prepare("
+                        SELECT COUNT(DISTINCT batch_id) as batch_count
+                        FROM tbl_transfer_batch_details 
+                        WHERE product_id = ? 
+                        AND location_id = (
+                            SELECT location_id FROM tbl_location WHERE location_name LIKE '%convenience%' LIMIT 1
+                        )
+                    ");
+                    $batchCountStmt->execute([$row['product_id']]);
+                    $batchCount = $batchCountStmt->fetch(PDO::FETCH_ASSOC);
+                    $row['total_batches'] = $batchCount['batch_count'] ?? 0;
+                }
             }
             
             echo json_encode([
@@ -438,9 +478,24 @@ try {
                 break;
             }
             
-            // Update quantity field to use total_quantity
+            // Update quantity field to use total_quantity and ensure total_batches is set
             foreach ($rows as &$row) {
                 $row['quantity'] = $row['total_quantity'];
+                
+                // If total_batches is not set, calculate it
+                if (!isset($row['total_batches']) || $row['total_batches'] === null) {
+                    $batchCountStmt = $conn->prepare("
+                        SELECT COUNT(DISTINCT batch_id) as batch_count
+                        FROM tbl_transfer_batch_details 
+                        WHERE product_id = ? 
+                        AND location_id = (
+                            SELECT location_id FROM tbl_location WHERE location_name LIKE '%convenience%' LIMIT 1
+                        )
+                    ");
+                    $batchCountStmt->execute([$row['product_id']]);
+                    $batchCount = $batchCountStmt->fetch(PDO::FETCH_ASSOC);
+                    $row['total_batches'] = $batchCount['batch_count'] ?? 0;
+                }
             }
             
             echo json_encode([

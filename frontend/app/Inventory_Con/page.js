@@ -14,6 +14,7 @@ import ReturnManagement from "./ReturnManagement";
 import MovementHistory from "./MovementHistory";
 import Archive from "./Archive";
 import Settings from "./Settings";
+import StoreSettings from "./StoreSettings";
 import Sidebar from "./sidebar";
 import LogoutConfirm from "./LogoutConfirm";
 import { ThemeProvider } from "./ThemeContext";
@@ -105,7 +106,8 @@ export default function InventoryPage() {
     ReturnManagement: <ReturnManagement />,
     MovementHistory: <MovementHistory />,
     Archive: <Archive />,
-    Settings: <Settings />
+    Settings: <Settings />,
+    StoreSettings: <StoreSettings />
   };
 
   const handleLogout = () => {
@@ -220,68 +222,58 @@ export default function InventoryPage() {
         <NotificationProvider>
           <AlertManagerProvider>
             <div className="flex h-screen" style={{ backgroundColor: 'var(--inventory-bg-primary)' }}>
-        {/* Mobile top bar */}
-        <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 md:hidden" style={{ backgroundColor: 'var(--inventory-bg-secondary)', borderBottom: '1px solid var(--inventory-border)' }}>
-          <button
-            onClick={() => setIsMobileSidebarOpen(true)}
-            className="p-2 rounded"
-            aria-label="Open menu"
-            style={{ color: 'var(--inventory-text-primary)' }}
-          >
-            {/* simple hamburger */}
-            <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
-            <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
-            <span className="block w-6 h-0.5" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
-          </button>
-          <div className="font-semibold" style={{ color: 'var(--inventory-text-primary)' }}>Inventory</div>
-          <div className="w-8" />
-        </div>
+              {/* Sidebar */}
+              <div className="flex-shrink-0">
+                <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 md:hidden" style={{ backgroundColor: 'var(--inventory-bg-secondary)', borderBottom: '1px solid var(--inventory-border)' }}>
+                  <button
+                    onClick={() => setIsMobileSidebarOpen(true)}
+                    className="p-2 rounded"
+                    aria-label="Open menu"
+                    style={{ color: 'var(--inventory-text-primary)' }}
+                  >
+                    <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
+                    <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
+                    <span className="block w-6 h-0.5" style={{ backgroundColor: 'var(--inventory-text-primary)' }}></span>
+                  </button>
+                  <div className="font-semibold" style={{ color: 'var(--inventory-text-primary)' }}>Inventory</div>
+                  <div className="w-8" />
+                </div>
+                <Sidebar 
+                  activeComponent={activeComponent} 
+                  setActiveComponent={setActiveComponent}
+                  onLogout={handleLogout}
+                  isMobileOpen={isMobileSidebarOpen}
+                  onClose={() => setIsMobileSidebarOpen(false)}
+                  isCollapsed={isSidebarCollapsed}
+                  onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                />
+                {isMobileSidebarOpen && (
+                  <div
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                    className="fixed inset-0 z-30 md:hidden"
+                    style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
+                  />
+                )}
+              </div>
 
-        {/* Sidebar */}
-        <div className="flex-shrink-0">
-          <Sidebar 
-            activeComponent={activeComponent} 
-            setActiveComponent={setActiveComponent}
-            onLogout={handleLogout}
-            isMobileOpen={isMobileSidebarOpen}
-            onClose={() => setIsMobileSidebarOpen(false)}
-            isCollapsed={isSidebarCollapsed}
-            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          />
-        </div>
-
-        {/* Mobile overlay */}
-        {isMobileSidebarOpen && (
-          <div
-            onClick={() => setIsMobileSidebarOpen(false)}
-            className="fixed inset-0 z-30 md:hidden"
-            style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
-          />
-        )}
-        
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header */}
-
-                  {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pt-16 md:pt-6" style={{ backgroundColor: 'var(--inventory-bg-secondary)' }}>
-          <div className="w-full min-w-0 overflow-x-auto md:overflow-visible">
-            {componentMap[activeComponent] || <Dashboard />}
-          </div>
-        </main>
-        
-        {/* Theme Toggle Button */}
-        <ThemeToggle />
-        </div>
-
-        {/* Logout Confirmation Modal */}
-        {showLogoutConfirm && (
-          <LogoutConfirm
-            onConfirm={confirmLogout}
-            onCancel={cancelLogout}
-          />
-        )}
-        </div>
+              {/* Main Content */}
+              <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+                <main className="flex-1 overflow-y-auto responsive-padding pt-14 sm:pt-16 md:pt-6" style={{ backgroundColor: 'var(--inventory-bg-secondary)' }}>
+                  <div className="responsive-container">
+                    <div className="w-full min-w-0 overflow-x-auto md:overflow-visible">
+                      {componentMap[activeComponent] || <Dashboard />}
+                    </div>
+                  </div>
+                </main>
+                <ThemeToggle />
+                {showLogoutConfirm && (
+                  <LogoutConfirm
+                    onConfirm={confirmLogout}
+                    onCancel={cancelLogout}
+                  />
+                )}
+              </div>
+            </div>
           </AlertManagerProvider>
         </NotificationProvider>
       </SettingsProvider>

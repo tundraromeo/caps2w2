@@ -268,17 +268,17 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-white" style={{ zoom: '0.8' }}>
-      <div className="w-full max-w-md">
+    <div className="flex items-center justify-center min-h-screen bg-white p-4 sm:p-6 lg:p-8">
+      <div className="w-full max-w-sm sm:max-w-md lg:max-w-lg">
         <form
           onSubmit={handleSubmit}
-          className="bg-white rounded-xl shadow-2xl p-6 md:p-8 space-y-6 max-h-[85vh] overflow-y-auto"
+          className="bg-white rounded-xl shadow-2xl p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-h-[90vh] overflow-y-auto"
         >
           <div className="text-center flex flex-col items-center gap-2">
             <img
               src="/assets/enguio_logo.png"
               alt="logo"
-              className="w-30 h-30 object-contain mx-auto"
+              className="w-20 h-20 sm:w-24 sm:h-24 lg:w-30 lg:h-30 object-contain mx-auto"
             />
             <p className="text-gray-800">Please sign in to your account</p>
           </div>
@@ -299,7 +299,7 @@ export default function LoginForm() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              className="w-full px-4 py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 transition-colors text-gray-900 placeholder-gray-500 bg-white"
+              className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 transition-colors text-sm sm:text-base text-gray-900 placeholder-gray-500 bg-white min-h-[44px]"
               placeholder="Enter your username"
             />
           </div>
@@ -315,7 +315,7 @@ export default function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-3 pr-12 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 transition-colors text-gray-900 placeholder-gray-500 bg-white"
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 pr-10 sm:pr-12 border border-gray-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 transition-colors text-sm sm:text-base text-gray-900 placeholder-gray-500 bg-white min-h-[44px]"
                 placeholder="Enter your password"
               />
               <button
@@ -423,7 +423,7 @@ export default function LoginForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-4 py-3 text-white bg-gradient-to-r from-green-600 to-green-700 rounded-lg hover:from-green-700 hover:to-green-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-lg shadow-lg"
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base text-white bg-gradient-to-r from-green-600 to-green-700 rounded-lg hover:from-green-700 hover:to-green-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg min-h-[44px]"
           >
             {loading ? (
               <div className="flex items-center justify-center">

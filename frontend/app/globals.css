@@ -77,7 +77,7 @@ html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  scroll-behavior: smooth;
+  overflow-x: hidden !important;
 }
 
 /* Custom scrollbar */
@@ -124,6 +124,11 @@ html, body {
   --admin-shadow: rgba(0, 0, 0, 0.3);
 }
 
+.admin-dark-theme body {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
 .admin-light-theme {
   --admin-bg-primary: #ffffff;
   --admin-bg-secondary: #f8fafc;
@@ -135,6 +140,11 @@ html, body {
   --admin-border: #e2e8f0;
   --admin-border-light: #f1f5f9;
   --admin-shadow: rgba(0, 0, 0, 0.1);
+}
+
+.admin-light-theme body {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
 }
 
 /* Inventory Dark Theme Styles */
@@ -450,10 +460,369 @@ button:focus, input:focus, select:focus, textarea:focus {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* Responsive utilities and breakpoints */
+.responsive-container {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.responsive-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.responsive-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.responsive-text {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  line-height: 1.5;
+}
+
+.responsive-padding {
+  padding: clamp(0.5rem, 2vw, 2rem);
+}
+
+.responsive-margin {
+  margin: clamp(0.5rem, 2vw, 2rem);
+}
+
+/* Mobile-first responsive design */
+@media (max-width: 640px) {
+  .responsive-container {
+    padding: 0 0.5rem;
+  }
+  
+  .responsive-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .responsive-flex {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .responsive-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+@media (min-width: 1025px) {
+  .responsive-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+/* Responsive table utilities */
+.responsive-table {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.responsive-table table {
+  min-width: 600px;
+}
+
+@media (max-width: 768px) {
+  .responsive-table table {
+    min-width: 100%;
+    font-size: 0.875rem;
+  }
+  
+  .responsive-table th,
+  .responsive-table td {
+    padding: 0.5rem 0.25rem;
+  }
+}
+
+/* Responsive modal utilities */
+.responsive-modal {
+  width: 90%;
+  max-width: 500px;
+  margin: 1rem auto;
+}
+
+@media (max-width: 640px) {
+  .responsive-modal {
+    width: 95%;
+    margin: 0.5rem auto;
+  }
+}
+
+/* Responsive button utilities */
+.responsive-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  min-height: 44px; /* Touch-friendly minimum */
+}
+
+@media (max-width: 640px) {
+  .responsive-button {
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    min-height: 40px;
+  }
+}
+
+/* Responsive form utilities */
+.responsive-input {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .responsive-input {
+    padding: 0.625rem;
+    font-size: 0.875rem;
+    min-height: 40px;
+  }
+}
+
+/* Responsive sidebar utilities */
+.responsive-sidebar {
+  width: 250px;
+  min-width: 250px;
+}
+
+@media (max-width: 768px) {
+  .responsive-sidebar {
+    width: 100%;
+    min-width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease-in-out;
+  }
+  
+  .responsive-sidebar.open {
+    transform: translateX(0);
+  }
+}
+
+/* Responsive main content utilities */
+.responsive-main {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+@media (max-width: 768px) {
+  .responsive-main {
+    padding-top: 3rem; /* Account for mobile header */
+  }
+}
+
+/* 95% zoom for specific content elements in main content areas */
+.responsive-main h1,
+.responsive-main h2,
+.responsive-main h3,
+.responsive-main h4,
+.responsive-main h5,
+.responsive-main h6,
+.responsive-main p,
+.responsive-main span,
+.responsive-main label,
+.responsive-main td,
+.responsive-main th,
+.responsive-main table,
+.responsive-main .responsive-card,
+.responsive-main .responsive-text,
+.responsive-main .responsive-text-xs,
+.responsive-main .responsive-text-sm,
+.responsive-main .responsive-text-base,
+.responsive-main .responsive-text-lg,
+.responsive-main .responsive-text-xl,
+.responsive-main .responsive-text-2xl {
+  zoom: 0.95;
+  transform-origin: top left;
+}
+
+/* Also apply to main content containers */
+main h1,
+main h2,
+main h3,
+main h4,
+main h5,
+main h6,
+main p,
+main span,
+main label,
+main td,
+main th,
+main table,
+main .responsive-card,
+main .responsive-text,
+main .responsive-text-xs,
+main .responsive-text-sm,
+main .responsive-text-base,
+main .responsive-text-lg,
+main .responsive-text-xl,
+main .responsive-text-2xl {
+  zoom: 0.95;
+  transform-origin: top left;
+}
+
+/* Apply to specific main content areas */
+.flex-1 h1,
+.flex-1 h2,
+.flex-1 h3,
+.flex-1 h4,
+.flex-1 h5,
+.flex-1 h6,
+.flex-1 p,
+.flex-1 span,
+.flex-1 label,
+.flex-1 td,
+.flex-1 th,
+.flex-1 table,
+.flex-1 .responsive-card,
+.flex-1 .responsive-text,
+.flex-1 .responsive-text-xs,
+.flex-1 .responsive-text-sm,
+.flex-1 .responsive-text-base,
+.flex-1 .responsive-text-lg,
+.flex-1 .responsive-text-xl,
+.flex-1 .responsive-text-2xl {
+  zoom: 0.95;
+  transform-origin: top left;
+}
+
+/* Additional targeting for headers in main content areas */
+.responsive-container h1,
+.responsive-container h2,
+.responsive-container h3,
+.responsive-container h4,
+.responsive-container h5,
+.responsive-container h6,
+.responsive-container .responsive-text-lg,
+.responsive-container .responsive-text-xl,
+.responsive-container .responsive-text-2xl {
+  zoom: 0.95;
+  transform-origin: top left;
+}
+
+/* Target headers in any main content wrapper */
+[class*="main"] h1,
+[class*="main"] h2,
+[class*="main"] h3,
+[class*="main"] h4,
+[class*="main"] h5,
+[class*="main"] h6,
+[class*="content"] h1,
+[class*="content"] h2,
+[class*="content"] h3,
+[class*="content"] h4,
+[class*="content"] h5,
+[class*="content"] h6 {
+  zoom: 0.95;
+  transform-origin: top left;
+}
+
+/* Responsive card utilities */
+.responsive-card {
+  background: var(--bg-card);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+  .responsive-card {
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+}
+
+/* Responsive navigation utilities */
+.responsive-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .responsive-nav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Responsive layout utilities */
+.responsive-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .responsive-layout {
+    flex-direction: column;
+  }
+}
+
+/* Responsive spacing utilities */
+.responsive-spacing-xs { margin: 0.25rem; }
+.responsive-spacing-sm { margin: 0.5rem; }
+.responsive-spacing-md { margin: 1rem; }
+.responsive-spacing-lg { margin: 1.5rem; }
+.responsive-spacing-xl { margin: 2rem; }
+
+@media (max-width: 640px) {
+  .responsive-spacing-xs { margin: 0.125rem; }
+  .responsive-spacing-sm { margin: 0.25rem; }
+  .responsive-spacing-md { margin: 0.5rem; }
+  .responsive-spacing-lg { margin: 0.75rem; }
+  .responsive-spacing-xl { margin: 1rem; }
+}
+
+/* Responsive visibility utilities */
+.responsive-hidden-mobile {
+  display: block;
+}
+
+.responsive-hidden-desktop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .responsive-hidden-mobile {
+    display: none;
+  }
+  
+  .responsive-hidden-desktop {
+    display: block;
+  }
+}
+
+/* Responsive text utilities */
+.responsive-text-xs { font-size: 0.75rem; }
+.responsive-text-sm { font-size: 0.875rem; }
+.responsive-text-base { font-size: 1rem; }
+.responsive-text-lg { font-size: 1.125rem; }
+.responsive-text-xl { font-size: 1.25rem; }
+.responsive-text-2xl { font-size: 1.5rem; }
+
+@media (max-width: 640px) {
+  .responsive-text-xs { font-size: 0.625rem; }
+  .responsive-text-sm { font-size: 0.75rem; }
+  .responsive-text-base { font-size: 0.875rem; }
+  .responsive-text-lg { font-size: 1rem; }
+  .responsive-text-xl { font-size: 1.125rem; }
+  .responsive-text-2xl { font-size: 1.25rem; }
 }

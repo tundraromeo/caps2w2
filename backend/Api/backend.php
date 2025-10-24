@@ -168,6 +168,11 @@ try {
                 ? "WHERE 1=1 {$dateCondition['condition']}" 
                 : "WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)";
             
+            // For 'all' period, limit to last 30 days for chart readability but get all data
+            if ($period === 'all') {
+                $whereClause = "WHERE DATE(pt.date) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+            }
+            
             $sql = "
                 SELECT 
                     DATE(pt.date) as sales_date,
@@ -209,6 +214,11 @@ try {
                 ? "WHERE 1=1 {$dateCondition['condition']}" 
                 : "WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)";
             
+            // For 'all' period, limit to last 30 days for chart readability but get all data
+            if ($period === 'all') {
+                $whereClause = "WHERE DATE(date) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+            }
+            
             $sql = "
                 SELECT 
                     DATE(date) as transfer_date,
@@ -248,6 +258,11 @@ try {
             $dateFilter = !empty($dateCondition['condition']) 
                 ? $dateCondition['condition']
                 : "AND DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL $days DAY)";
+            
+            // For 'all' period, limit to last 30 days for chart readability but get all data
+            if ($period === 'all') {
+                $dateFilter = "AND DATE(pr.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+            }
             
             $sql = "
                 SELECT 
@@ -808,7 +823,7 @@ switch ($action) {
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
     
                 // If user exists but is inactive, return a specific message
-                if ($user && strcasecmp($user['status'] ?? '', 'Active') !== 0) {
+                if ($user && strcasecmp($user['status'] ?? '', 'active') !== 0) {
                     echo json_encode(["success" => false, "message" => "User is inactive. Please contact the administrator."]);
                     break;
                 }
@@ -1008,7 +1023,7 @@ switch ($action) {
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
             // If user exists but is inactive, return a specific message
-            if ($user && strcasecmp($user['status'] ?? '', 'Active') !== 0) {
+            if ($user && strcasecmp($user['status'] ?? '', 'active') !== 0) {
                 echo json_encode(["success" => false, "message" => "User is inactive. Please contact the administrator."]);
                 break;
             }
@@ -1939,6 +1954,36 @@ switch ($action) {
                 echo json_encode(["success" => true, "message" => "Status updated successfully"]);
             } else {
                 echo json_encode(["success" => false, "message" => "Failed to update status"]);
+            }
+        } catch (Exception $e) {
+            echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
+        }
+        break;
+
+    case 'toggle_employee_status':
+        try {
+            $emp_id = isset($data['emp_id']) ? trim($data['emp_id']) : '';
+            $newStatus = isset($data['status']) ? trim($data['status']) : '';
+
+            if (empty($emp_id)) {
+                echo json_encode(["success" => false, "message" => "Employee ID is required"]);
+                exit;
+            }
+
+            if (empty($newStatus)) {
+                echo json_encode(["success" => false, "message" => "Status is required"]);
+                exit;
+            }
+
+            $stmt = $conn->prepare("UPDATE tbl_employee SET status = :status WHERE emp_id = :emp_id");
+            $stmt->bindParam(":status", $newStatus, PDO::PARAM_STR);
+            $stmt->bindParam(":emp_id", $emp_id, PDO::PARAM_INT);
+
+            if ($stmt->execute()) {
+                $actionText = $newStatus === 'active' ? 'activated' : 'deactivated';
+                echo json_encode(["success" => true, "message" => "Employee {$actionText} successfully"]);
+            } else {
+                echo json_encode(["success" => false, "message" => "Failed to update employee status"]);
             }
         } catch (Exception $e) {
             echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
@@ -9401,6 +9446,119 @@ case 'get_products_oldest_batch_for_transfer':
         }
         break;
         
+    case 'check_database_data':
+        try {
+            $dataSummary = [];
+            
+            // Check stock movements
+            $stmt = $conn->prepare("SELECT COUNT(*) as count, MIN(DATE(movement_date)) as min_date, MAX(DATE(movement_date)) as max_date FROM tbl_stock_movements");
+            $stmt->execute();
+            $stockMovements = $stmt->fetch(PDO::FETCH_ASSOC);
+            $dataSummary['stock_movements'] = $stockMovements;
+            
+            // Check POS transactions
+            $stmt = $conn->prepare("SELECT COUNT(*) as count, MIN(date) as min_date, MAX(date) as max_date FROM tbl_pos_transaction");
+            $stmt->execute();
+            $posTransactions = $stmt->fetch(PDO::FETCH_ASSOC);
+            $dataSummary['pos_transactions'] = $posTransactions;
+            
+            // Check POS sales
+            $stmt = $conn->prepare("SELECT COUNT(*) as count, MIN(date) as min_date, MAX(date) as max_date FROM tbl_pos_sales_header");
+            $stmt->execute();
+            $posSales = $stmt->fetch(PDO::FETCH_ASSOC);
+            $dataSummary['pos_sales'] = $posSales;
+            
+            // Check products
+            $stmt = $conn->prepare("SELECT COUNT(*) as count FROM tbl_product WHERE status = 'active'");
+            $stmt->execute();
+            $products = $stmt->fetch(PDO::FETCH_ASSOC);
+            $dataSummary['products'] = $products;
+            
+            echo json_encode([
+                "success" => true,
+                "data_summary" => $dataSummary,
+                "message" => "Database data summary retrieved successfully"
+            ]);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error checking database data: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'add_test_data':
+        try {
+            // Add test stock movements
+            $stmt = $conn->prepare("INSERT INTO tbl_stock_movements (product_id, movement_type, quantity, movement_date, reference_no, notes) VALUES (?, ?, ?, ?, ?, ?)");
+            
+            // Add some stock-in movements
+            $stmt->execute([1, 'in', 50, date('Y-m-d'), 'TEST001', 'Test stock-in movement']);
+            $stmt->execute([2, 'in', 30, date('Y-m-d'), 'TEST002', 'Test stock-in movement']);
+            
+            // Add some stock-out movements  
+            $stmt->execute([1, 'out', 10, date('Y-m-d'), 'SALE001', 'Test stock-out movement']);
+            $stmt->execute([2, 'out', 5, date('Y-m-d'), 'SALE002', 'Test stock-out movement']);
+            
+            // Add test POS transactions
+            $stmt = $conn->prepare("INSERT INTO tbl_pos_transaction (transaction_id, total_amount, date, cashier_id) VALUES (?, ?, ?, ?)");
+            $stmt->execute(['TXN001', 250.00, date('Y-m-d'), 1]);
+            $stmt->execute(['TXN002', 150.00, date('Y-m-d'), 1]);
+            
+            // Add test POS sales
+            $stmt = $conn->prepare("INSERT INTO tbl_pos_sales_header (transaction_id, total_amount, date, cashier_id) VALUES (?, ?, ?, ?)");
+            $stmt->execute(['TXN001', 250.00, date('Y-m-d'), 1]);
+            $stmt->execute(['TXN002', 150.00, date('Y-m-d'), 1]);
+            
+            echo json_encode([
+                "success" => true,
+                "message" => "Test data added successfully! Added stock movements, transactions, and sales records for today."
+            ]);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error adding test data: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    case 'generate_report':
+        try {
+            require_once 'modules/reports.php';
+            
+            $reportType = $data['type'] ?? '';
+            $startDate = $data['from'] ?? date('Y-m-d', strtotime('-30 days'));
+            $endDate = $data['to'] ?? date('Y-m-d');
+            $userFilter = $data['user_filter'] ?? '';
+            $productFilter = $data['product_filter'] ?? '';
+            
+            if (empty($reportType)) {
+                throw new Exception('Report type is required');
+            }
+            
+            $reportsModule = new ReportsModule($conn);
+            $result = $reportsModule->generatePDFReport($reportType, $startDate, $endDate, $userFilter, $productFilter);
+            
+            if ($result['success']) {
+                // Set headers for PDF download
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: attachment; filename="' . $result['filename'] . '"');
+                header('Content-Length: ' . strlen($result['pdf_content']));
+                echo $result['pdf_content'];
+                exit;
+            } else {
+                throw new Exception($result['message']);
+            }
+            
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                "success" => false,
+                "message" => "Error generating PDF: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
     // Report Management
     case 'get_report_data':
         try {
@@ -9527,6 +9685,22 @@ case 'get_products_oldest_batch_for_transfer':
         break;
         
     case 'get_latest_sales_activity':
+        try {
+            require_once 'modules/reports.php';
+            
+            $minutes = $data['minutes'] ?? 5;
+            
+            $reportsModule = new ReportsModule($conn);
+            $result = $reportsModule->getLatestSalesActivity($minutes);
+            
+            echo json_encode($result);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error fetching latest sales activity: " . $e->getMessage()
+            ]);
+        }
+        break;
         try {
             require_once 'modules/reports.php';
             
@@ -9816,8 +9990,7 @@ case 'get_products_oldest_batch_for_transfer':
                     'notifications' => json_encode([
                         'low_stock' => true,
                         'expiry_alerts' => true,
-                        'sales_reports' => true,
-                        'system_updates' => true
+                        'movement_alerts' => true
                     ])
                 ];
                 
@@ -10008,6 +10181,30 @@ case 'get_products_oldest_batch_for_transfer':
                     $chartDays[] = date('d', strtotime($current));
                     $current = date('Y-m-d', strtotime($current . ' +1 day'));
                 }
+            } else if ($period === 'all') {
+                // For 'all' period, get actual days with data from database
+                // First get all unique days that have transactions
+                $stmt = $conn->prepare("
+                    SELECT DISTINCT DATE(pt.date) as transaction_date
+                    FROM tbl_pos_transaction pt
+                    JOIN tbl_pos_sales_header psh ON pt.transaction_id = psh.transaction_id
+                    ORDER BY DATE(pt.date) DESC
+                    LIMIT 30
+                ");
+                $stmt->execute();
+                $transactionDays = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                
+                // Convert to day format (dd) and limit to last 30 days for chart readability
+                foreach ($transactionDays as $date) {
+                    $chartDays[] = date('d', strtotime($date));
+                }
+                
+                // If no transaction days found, fall back to last 30 days
+                if (empty($chartDays)) {
+                    for ($i = 29; $i >= 0; $i--) {
+                        $chartDays[] = date('d', strtotime("-$i days"));
+                    }
+                }
             } else {
                 // Default: last 10 days
                 for ($i = 9; $i >= 0; $i--) {
@@ -10048,12 +10245,15 @@ case 'get_products_oldest_batch_for_transfer':
                     }
                 }
                 
-                $combinedChartData[] = [
-                    'day' => $day,
-                    'totalTransfer' => $transferAmount,
-                    'totalSales' => $salesAmount,
-                    'totalReturn' => $returnAmount
-                ];
+                // Only add data if there's actual transaction data
+                if ($salesAmount > 0 || $transferAmount > 0 || $returnAmount > 0) {
+                    $combinedChartData[] = [
+                        'day' => $day,
+                        'totalTransfer' => $transferAmount,
+                        'totalSales' => $salesAmount,
+                        'totalReturn' => $returnAmount
+                    ];
+                }
             }
 
             // Use the inventory alerts data we already fetched
@@ -10068,6 +10268,12 @@ case 'get_products_oldest_batch_for_transfer':
                     'topProducts' => $topProductsData,
                     'inventoryAlerts' => $inventoryAlerts,
                     'employeePerformance' => [] // Will be populated from actual employee data
+                ],
+                'debug' => [
+                    'period' => $period,
+                    'chart_data_count' => count($combinedChartData),
+                    'has_transactions' => count($combinedChartData) > 0,
+                    'date_filter_info' => DateFilterHelper::getDebugInfo($period)
                 ]
             ]);
             

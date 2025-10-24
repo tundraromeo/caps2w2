@@ -28,7 +28,9 @@ class ReportsModule {
                 break;
                 
             case 'stock_out':
+                error_log("DEBUG: Processing stock_out report request");
                 $reportData = $this->getStockOutReport($startDate, $endDate);
+                error_log("DEBUG: stock_out report data count: " . count($reportData));
                 break;
                 
             case 'sales':
@@ -246,6 +248,7 @@ class ReportsModule {
     private function getStockInReport($startDate, $endDate) {
         $stmt = $this->conn->prepare("
             SELECT 
+                sm.movement_id,
                 DATE(sm.movement_date) as date,
                 TIME(sm.movement_date) as time,
                 p.product_name,
@@ -272,6 +275,20 @@ class ReportsModule {
      * Get Stock Out Report Data
      */
     private function getStockOutReport($startDate, $endDate) {
+        error_log("DEBUG: getStockOutReport called with startDate: $startDate, endDate: $endDate");
+        
+        // First, let's check if there are any OUT movements at all
+        $checkStmt = $this->conn->prepare("SELECT COUNT(*) as total FROM tbl_stock_movements WHERE movement_type = 'OUT'");
+        $checkStmt->execute();
+        $totalOut = $checkStmt->fetch(PDO::FETCH_ASSOC)['total'];
+        error_log("DEBUG: Total OUT movements in database: $totalOut");
+        
+        // Check movements in date range
+        $rangeStmt = $this->conn->prepare("SELECT COUNT(*) as total FROM tbl_stock_movements WHERE movement_type = 'OUT' AND DATE(movement_date) BETWEEN ? AND ?");
+        $rangeStmt->execute([$startDate, $endDate]);
+        $rangeOut = $rangeStmt->fetch(PDO::FETCH_ASSOC)['total'];
+        error_log("DEBUG: OUT movements in date range $startDate to $endDate: $rangeOut");
+        
         $stmt = $this->conn->prepare("
             SELECT 
                 DATE(sm.movement_date) as date,
@@ -295,7 +312,7 @@ class ReportsModule {
                     WHEN sm.created_by = 'Inventory Manager' THEN 'Inventory Manager'
                     WHEN sm.created_by = 'Admin' THEN 'Admin'
                     ELSE COALESCE(sm.created_by, 'System')
-                END as adjusted_by,
+                END as cashier,
                 -- Additional context for better identification
                 CASE 
                     WHEN sm.created_by = 'POS System' AND pt.emp_id IS NOT NULL THEN 
@@ -331,7 +348,12 @@ class ReportsModule {
             ORDER BY sm.movement_date DESC
         ");
         $stmt->execute([$startDate, $endDate]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        error_log("DEBUG: getStockOutReport returning " . count($result) . " records");
+        if (count($result) > 0) {
+            error_log("DEBUG: Sample stock_out record: " . json_encode($result[0]));
+        }
+        return $result;
     }
     
     /**
@@ -555,6 +577,7 @@ class ReportsModule {
     private function getStockAdjustmentReport($startDate, $endDate) {
         $stmt = $this->conn->prepare("
             SELECT 
+                sm.movement_id,
                 DATE(sm.movement_date) as date,
                 TIME(sm.movement_date) as time,
                 p.product_name,

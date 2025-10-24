@@ -3,7 +3,7 @@ import React from 'react';
 export const Card = ({ className = '', children, ...props }) => {
   return (
     <div 
-      className={`bg-white rounded-lg border border-gray-200 shadow-sm ${className}`}
+      className={`w-full min-w-0 bg-white rounded-lg sm:rounded-xl border border-gray-200 shadow-sm ${className}`}
       {...props}
     >
       {children}
@@ -14,7 +14,7 @@ export const Card = ({ className = '', children, ...props }) => {
 export const CardHeader = ({ className = '', children, ...props }) => {
   return (
     <div 
-      className={`px-6 py-4 border-b border-gray-200 ${className}`}
+      className={`px-3 sm:px-4 lg:px-6 py-3 sm:py-4 border-b border-gray-200 ${className}`}
       {...props}
     >
       {children}
@@ -25,7 +25,7 @@ export const CardHeader = ({ className = '', children, ...props }) => {
 export const CardTitle = ({ className = '', children, ...props }) => {
   return (
     <h3 
-      className={`text-lg font-semibold text-gray-900 ${className}`}
+      className={`text-base sm:text-lg font-semibold text-gray-900 ${className}`}
       {...props}
     >
       {children}
@@ -36,7 +36,7 @@ export const CardTitle = ({ className = '', children, ...props }) => {
 export const CardContent = ({ className = '', children, ...props }) => {
   return (
     <div 
-      className={`px-6 py-4 ${className}`}
+      className={`px-3 sm:px-4 lg:px-6 py-3 sm:py-4 ${className}`}
       {...props}
     >
       {children}
@@ -47,7 +47,7 @@ export const CardContent = ({ className = '', children, ...props }) => {
 export const CardFooter = ({ className = '', children, ...props }) => {
   return (
     <div 
-      className={`px-6 py-4 border-t border-gray-200 ${className}`}
+      className={`px-3 sm:px-4 lg:px-6 py-3 sm:py-4 border-t border-gray-200 ${className}`}
       {...props}
     >
       {children}

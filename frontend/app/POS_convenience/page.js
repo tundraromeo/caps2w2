@@ -2950,17 +2950,11 @@ export default function POS() {
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }
-        button {
-          zoom: 0.8;
-        }
-        .fixed.inset-0 {
-          zoom: 0.8;
-        }
       `}</style>
-      <div className="flex h-screen bg-gray-50" style={{ zoom: '0.8' }}>
-        <main className="flex-1 p-8 pb-24 overflow-y-auto bg-white transition-all duration-300 ease-in-out">
+      <div className="flex h-screen bg-gray-50">
+        <main className="flex-1 responsive-padding pb-24 overflow-y-auto bg-white transition-all duration-300 ease-in-out">
           {/* Layout */}
-          <div className="flex flex-col md:flex-row flex-1">
+          <div className="responsive-flex flex-1">
             {/* Left Side - Product Search & Selection */}
             <div className="md:w-[85%] p-4 border-r">
               {/* Section 0: Search Bar */}

@@ -64,6 +64,10 @@ function ConvenienceInventory() {
     outOfStock: []
   });
   const [alertCount, setAlertCount] = useState(0);
+  
+  // Modal states
+  const [showLowStockModal, setShowLowStockModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   // API function - Updated to use centralized API handler
   async function handleApiCall(action, data = {}) {
@@ -779,26 +783,37 @@ function ConvenienceInventory() {
                   {/* Low Stock Products */}
                   {notifications.lowStock.length > 0 && (
                     <div className="p-4 border-b" style={{ borderColor: theme.border.light }}>
-                      <h4 className="font-medium mb-2 flex items-center" style={{ color: theme.colors.warning }}>
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        Low Stock ({notifications.lowStock.length})
-                      </h4>
-                      {notifications.lowStock && Array.isArray(notifications.lowStock) ? notifications.lowStock.slice(0, 5).filter(product => product && typeof product === 'object').map((product, index) => (
-                        <div key={index} className="flex justify-between items-center py-1">
-                          <span className="text-sm" style={{ color: theme.text.primary }}>{product.product_name}</span>
-                          <span className="text-xs px-2 py-1 rounded" style={{ 
-                            backgroundColor: theme.colors.warning + '20', 
-                            color: theme.colors.warning 
-                          }}>
-                            {product.quantity} left
-                          </span>
-                        </div>
-                      )) : null}
-                      {notifications.lowStock && notifications.lowStock.length > 5 && (
-                        <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
-                          +{notifications.lowStock.length - 5} more...
-                        </p>
-                      )}
+                      <div className="w-full">
+                        <h4 className="font-medium mb-2 flex items-center" style={{ color: theme.colors.warning }}>
+                          <AlertCircle className="h-4 w-4 mr-2" />
+                          Low Stock ({notifications.lowStock.length})
+                        </h4>
+                        {notifications.lowStock && Array.isArray(notifications.lowStock) ? notifications.lowStock.slice(0, 5).filter(product => product && typeof product === 'object').map((product, index) => (
+                          <button
+                            key={index}
+                            onClick={() => {
+                              setSelectedProduct(product);
+                              setShowLowStockModal(true);
+                            }}
+                            className="w-full text-left hover:bg-opacity-10 hover:bg-gray-500 rounded-md p-2 -m-2 transition-colors"
+                          >
+                            <div className="flex justify-between items-center py-1">
+                              <span className="text-sm" style={{ color: theme.text.primary }}>{product.product_name}</span>
+                              <span className="text-xs px-2 py-1 rounded" style={{ 
+                                backgroundColor: theme.colors.warning + '20', 
+                                color: theme.colors.warning 
+                              }}>
+                                {product.quantity} left
+                              </span>
+                            </div>
+                          </button>
+                        )) : null}
+                        {notifications.lowStock && notifications.lowStock.length > 5 && (
+                          <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
+                            +{notifications.lowStock.length - 5} more...
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -1679,6 +1694,145 @@ function ConvenienceInventory() {
                     <p className="text-sm">Batch transfers will appear here when products are transferred to convenience store</p>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Details Modal */}
+      {showLowStockModal && selectedProduct && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden border-2" 
+               style={{ 
+                 backgroundColor: theme.bg.card,
+                 borderColor: theme.colors.accent,
+                 boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px ${theme.colors.accent}20`
+               }}>
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <h2 className="text-xl font-semibold flex items-center" style={{ color: theme.text.primary }}>
+                <AlertCircle className="h-6 w-6 mr-2" style={{ color: theme.colors.warning }} />
+                Product Details - {selectedProduct.product_name}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowLowStockModal(false);
+                  setSelectedProduct(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                style={{ color: theme.text.secondary }}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="grid grid-cols-2 gap-6 mb-6">
+                {/* Product Information */}
+                <div>
+                  <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.secondary }}>Product Information</h4>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span style={{ color: theme.text.muted }}>Name:</span>
+                      <span style={{ color: theme.text.primary }}>{selectedProduct.product_name}</span>
+                    </div>
+                    {selectedProduct.barcode && (
+                      <div className="flex justify-between">
+                        <span style={{ color: theme.text.muted }}>Barcode:</span>
+                        <span className="font-mono text-xs" style={{ color: theme.text.primary }}>{selectedProduct.barcode}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span style={{ color: theme.text.muted }}>Category:</span>
+                      <span style={{ color: theme.text.primary }}>{selectedProduct.category_name || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ color: theme.text.muted }}>Brand:</span>
+                      <span style={{ color: theme.text.primary }}>{selectedProduct.brand || 'N/A'}</span>
+                    </div>
+                    {selectedProduct.srp && (
+                      <div className="flex justify-between">
+                        <span style={{ color: theme.text.muted }}>SRP:</span>
+                        <span className="font-semibold" style={{ color: theme.text.primary }}>₱{parseFloat(selectedProduct.srp).toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Stock Information */}
+                <div>
+                  <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.secondary }}>Stock Information</h4>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span style={{ color: theme.text.muted }}>Current Quantity:</span>
+                      <span 
+                        className="px-3 py-1 rounded text-sm font-semibold"
+                        style={{ 
+                          backgroundColor: theme.colors.warning + '20', 
+                          color: theme.colors.warning 
+                        }}
+                      >
+                        {selectedProduct.quantity}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ color: theme.text.muted }}>Status:</span>
+                      <span 
+                        className="px-3 py-1 rounded text-sm font-semibold"
+                        style={{ 
+                          backgroundColor: theme.colors.warning + '20', 
+                          color: theme.colors.warning 
+                        }}
+                      >
+                        Low Stock
+                      </span>
+                    </div>
+                    {selectedProduct.expiration_date && (
+                      <div className="flex justify-between">
+                        <span style={{ color: theme.text.muted }}>Earliest Expiry:</span>
+                        <span 
+                          className="px-3 py-1 rounded text-sm font-semibold"
+                          style={{ 
+                            backgroundColor: theme.colors.success + '20', 
+                            color: theme.colors.success 
+                          }}
+                        >
+                          {new Date(selectedProduct.expiration_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Alert Details */}
+              <div className="p-4 rounded mb-6" style={{ backgroundColor: theme.bg.hover }}>
+                <div className="flex items-center">
+                  <AlertCircle className="h-5 w-5 mr-3" style={{ color: theme.colors.warning }} />
+                  <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
+                    This product is running low on stock!
+                  </span>
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowLowStockModal(false);
+                    setSelectedProduct(null);
+                  }}
+                  className="px-6 py-2 text-sm font-medium rounded transition-colors"
+                  style={{ 
+                    backgroundColor: theme.bg.hover, 
+                    color: theme.text.primary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.secondary}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>

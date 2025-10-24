@@ -21,6 +21,7 @@ import {
   FaUndo,
   FaExclamationTriangle,
   FaAngleRight,
+  FaStoreAlt,
 } from "react-icons/fa";
 import { useTheme } from "./ThemeContext";
 import { useNotification } from "./NotificationContext";
@@ -84,6 +85,7 @@ const Sidebar = ({
     { label: "Movement History", icon: <FaHistory />, key: "MovementHistory" },
     { label: "Archive", icon: <FaArchive />, key: "Archive" },
     { label: "Settings", icon: <FaCog />, key: "Settings" },
+    { label: "Store Settings", icon: <FaStoreAlt />, key: "StoreSettings" },
   ];
 
   const handleNavigation = (componentKey) => {
@@ -93,12 +95,11 @@ const Sidebar = ({
 
   return (
     <div
-      className={`fixed inset-y-0 left-0 z-40 h-full transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:flex-col md:z-auto ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} ${isCollapsed ? 'w-16' : 'w-64'}`}
+      className={`fixed inset-y-0 left-0 z-40 h-full transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:flex-col md:z-auto ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} ${isCollapsed ? 'w-16' : 'w-64 sm:w-72 lg:w-auto'}`}
       style={{ backgroundColor: theme.bg.card, borderRight: `1px solid ${theme.border.default}` }}
     >
-      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', height: '125%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 md:hidden" style={{ borderBottom: `1px solid ${theme.border.default}` }}>
+      <div className="flex items-center justify-between p-3 sm:p-4 md:hidden" style={{ borderBottom: `1px solid ${theme.border.default}` }}>
         <div className="font-semibold" style={{ color: theme.text.primary }}>Menu</div>
         <button
           onClick={onClose}
@@ -111,7 +112,7 @@ const Sidebar = ({
       </div>
 
       {/* Profile Section */}
-      <div className="p-6" style={{ borderBottom: `1px solid ${theme.border.default}` }}>
+      <div className="p-4 sm:p-6" style={{ borderBottom: `1px solid ${theme.border.default}` }}>
         <div className="flex items-center justify-between">
           {!isCollapsed && (
             <div className="flex items-center space-x-3">
@@ -119,8 +120,8 @@ const Sidebar = ({
                 <span className="text-white font-bold text-lg">E</span>
               </div>
               <div>
-                <p className="font-semibold" style={{ color: theme.text.primary }}>Elmer Enguio</p>
-                <p className="text-sm" style={{ color: theme.text.secondary }}>Inventory Manager</p>
+                <p className="font-semibold text-sm sm:text-base" style={{ color: theme.text.primary }}>Elmer Enguio</p>
+                <p className="text-xs sm:text-sm" style={{ color: theme.text.secondary }}>Inventory Manager</p>
               </div>
             </div>
           )}
@@ -146,13 +147,13 @@ const Sidebar = ({
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4" style={{ maxHeight: 'calc(100vh - 200px)' }}>
         <nav className="space-y-2">
           {navigationItems.map((item) => (
             <button
               key={item.key}
               onClick={() => handleNavigation(item.key)}
-              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'justify-between px-4 py-3'} rounded-lg text-left transition-all duration-200 relative group`}
+              className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-2 sm:py-3' : 'justify-between px-3 sm:px-4 py-2 sm:py-3'} rounded-lg text-left transition-all duration-200 relative group min-h-[44px]`}
               style={{
                 backgroundColor: activeComponent === item.key ? theme.colors.accent + '20' : 'transparent',
                 color: activeComponent === item.key ? theme.colors.accent : theme.text.primary,
@@ -174,7 +175,7 @@ const Sidebar = ({
                 <span className="text-lg" style={{ color: activeComponent === item.key ? theme.colors.accent : theme.text.secondary }}>
                   {item.icon}
                 </span>
-                {!isCollapsed && <span className="font-medium">{item.label}</span>}
+                {!isCollapsed && <span className="font-medium text-sm sm:text-base">{item.label}</span>}
               </div>
               
               {!isCollapsed && (
@@ -226,10 +227,10 @@ const Sidebar = ({
       </div>
 
       {/* Logout Button */}
-      <div className="p-4" style={{ borderTop: `1px solid ${theme.border.default}` }}>
+      <div className="p-3 sm:p-4" style={{ borderTop: `1px solid ${theme.border.default}` }}>
         <button
           onClick={onLogout}
-          className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-3' : 'space-x-3 px-4 py-3'} rounded-lg text-left transition-all duration-200 relative group`}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2 py-2 sm:py-3' : 'space-x-3 px-3 sm:px-4 py-2 sm:py-3'} rounded-lg text-left transition-all duration-200 relative group min-h-[44px]`}
           style={{ color: theme.colors.danger }}
           onMouseEnter={(e) => {
             e.target.style.backgroundColor = theme.colors.danger + '20';
@@ -240,7 +241,7 @@ const Sidebar = ({
           title={isCollapsed ? "Logout" : undefined}
         >
           <FaSignOutAlt className="text-lg" />
-          {!isCollapsed && <span className="font-medium">Logout</span>}
+          {!isCollapsed && <span className="font-medium text-sm sm:text-base">Logout</span>}
           
           {/* Tooltip for collapsed state */}
           {isCollapsed && (
@@ -249,7 +250,6 @@ const Sidebar = ({
             </div>
           )}
         </button>
-      </div>
       </div>
     </div>
   );
