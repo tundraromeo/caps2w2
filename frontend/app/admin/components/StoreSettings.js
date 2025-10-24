@@ -1,14 +1,16 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import { useTheme } from './ThemeContext';
+import { useSettings } from './SettingsContext';
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
 
 function StoreSettings() {
   const { theme } = useTheme();
-  const [settings, setSettings] = useState({
+  const { settings: contextSettings, updateSetting } = useSettings();
+  const [storeSettings, setStoreSettings] = useState({
     store_name: '',
     store_address: '',
     store_phone: '',
@@ -19,16 +21,61 @@ function StoreSettings() {
     notifications: {
       low_stock: true,
       expiry_alerts: true,
-      sales_reports: true,
-      system_updates: true
+      movement_alerts: true
     }
   });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('notifications');
+  const syncTimeoutRef = useRef(null);
 
   useEffect(() => {
     fetchSettings();
   }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Sync notification settings with context settings when user toggles them
+  const syncWithContext = (newStoreSettings) => {
+    if (newStoreSettings.notifications) {
+      // Clear any existing timeout
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+      
+      // Debounce the sync to prevent rapid updates
+      syncTimeoutRef.current = setTimeout(() => {
+        updateSetting('lowStockAlerts', newStoreSettings.notifications.low_stock);
+        updateSetting('expiryAlerts', newStoreSettings.notifications.expiry_alerts);
+        updateSetting('movementAlerts', newStoreSettings.notifications.movement_alerts);
+        syncTimeoutRef.current = null;
+      }, 100);
+    }
+  };
+
+  // Helper functions for notification functionality
+  const handleExpiryAlertSettings = (days) => {
+    setStoreSettings(prev => ({
+      ...prev,
+      notifications: {
+        ...prev.notifications,
+        expiry_warning_days: days
+      }
+    }));
+    // Update context setting
+    updateSetting('expiryWarningDays', days);
+  };
+
+  const checkExpiringProducts = () => {
+    // This would typically check for products expiring within the warning period
+    toast.info('Expiry check functionality would be implemented here');
+  };
 
   const fetchSettings = async () => {
     try {
@@ -37,7 +84,21 @@ function StoreSettings() {
         action: "get_store_settings"
       });
       if (response.data.success) {
-        setSettings({ ...settings, ...response.data.settings });
+        // Merge database settings with context settings
+        const mergedSettings = {
+          ...storeSettings,
+          ...response.data.settings,
+          notifications: {
+            ...storeSettings.notifications,
+            ...response.data.settings.notifications,
+            // Use context settings if available, otherwise use database defaults
+            low_stock: contextSettings.lowStockAlerts !== undefined ? contextSettings.lowStockAlerts : response.data.settings.notifications?.low_stock ?? true,
+            expiry_alerts: contextSettings.expiryAlerts !== undefined ? contextSettings.expiryAlerts : response.data.settings.notifications?.expiry_alerts ?? true,
+            movement_alerts: contextSettings.movementAlerts !== undefined ? contextSettings.movementAlerts : response.data.settings.notifications?.movement_alerts ?? true
+          }
+        };
+        
+        setStoreSettings(mergedSettings);
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -51,15 +112,21 @@ function StoreSettings() {
     
     if (name.includes('.')) {
       const [parent, child] = name.split('.');
-      setSettings(prev => ({
-        ...prev,
+      const newSettings = {
+        ...storeSettings,
         [parent]: {
-          ...prev[parent],
+          ...storeSettings[parent],
           [child]: type === 'checkbox' ? checked : value
         }
-      }));
+      };
+      setStoreSettings(newSettings);
+      
+      // If it's a notification setting, sync with context immediately
+      if (parent === 'notifications') {
+        syncWithContext(newSettings);
+      }
     } else {
-      setSettings(prev => ({
+      setStoreSettings(prev => ({
         ...prev,
         [name]: type === 'checkbox' ? checked : value
       }));
@@ -72,10 +139,13 @@ function StoreSettings() {
       setLoading(true);
       const response = await axios.post(API_BASE_URL, {
         action: "update_store_settings",
-        ...settings
+        ...storeSettings
       });
       
       if (response.data.success) {
+        // Sync with context settings
+        syncWithContext(storeSettings);
+        
         toast.success('Settings saved successfully!');
       } else {
         toast.error(response.data.message || 'Failed to save settings');
@@ -94,22 +164,17 @@ function StoreSettings() {
   ];
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
+    <div className="responsive-container" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
-      <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
-        <div className="flex items-center justify-between">
+      <div className="responsive-padding" style={{ backgroundColor: theme.bg.primary }}>
+        <div className="responsive-flex justify-between">
           <div>
-            <div className="flex items-center space-x-6 mb-4">
-              <span className="border-b-2 pb-1" style={{ color: theme.text.primary, borderColor: theme.text.primary }}>Store Settings</span>
-              <span style={{ color: theme.text.secondary }}>Configuration</span>
-              <span style={{ color: theme.text.secondary }}>System Preferences</span>
-            </div>
-            <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Store Settings</h1>
+            <h1 className="responsive-text-2xl font-bold" style={{ color: theme.text.primary }}>Store Settings</h1>
           </div>
           <button
             onClick={handleSaveSettings}
             disabled={loading}
-            className="px-6 py-3 rounded-lg text-white font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
+            className="responsive-button rounded-lg text-white font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
             style={{ backgroundColor: theme.colors.success }}
           >
             {loading ? 'Saving...' : 'Save Settings'}
@@ -118,14 +183,14 @@ function StoreSettings() {
       </div>
 
       {/* Content */}
-      <div className="p-6">
+      <div className="responsive-padding">
         {/* Tabs */}
-        <div className="flex items-center gap-2 mb-6">
+        <div className="responsive-nav mb-6">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
+              className={`responsive-button rounded-lg font-medium transition-all duration-200 flex items-center gap-2 ${
                 activeTab === tab.id 
                   ? 'text-white' 
                   : 'hover:bg-gray-100'
@@ -143,29 +208,30 @@ function StoreSettings() {
 
         {/* Tab Content */}
         <div 
-          className="rounded-lg border overflow-hidden"
+          className="responsive-card rounded-lg border overflow-hidden"
           style={{
             backgroundColor: theme.bg.card,
             borderColor: theme.border.default
           }}
         >
-          <div className="p-6">
+          <div className="responsive-padding">
             {activeTab === 'notifications' && (
               <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Notification Settings</h3>
+                <h3 className="responsive-text-lg font-semibold" style={{ color: theme.text.primary }}>Notification Settings</h3>
                 
                 <div className="space-y-4">
-                  {Object.entries(settings.notifications).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between p-4 border rounded-lg" style={{ borderColor: theme.border.default }}>
+                  {Object.entries(storeSettings.notifications).filter(([key]) => ['low_stock', 'expiry_alerts', 'movement_alerts'].includes(key)).map(([key, value]) => (
+                    <div key={key} className="responsive-flex justify-between responsive-padding border rounded-lg" style={{ borderColor: theme.border.default, backgroundColor: theme.bg.card }}>
                       <div>
-                        <h4 className="font-medium capitalize" style={{ color: theme.text.primary }}>
-                          {key.replace('_', ' ')}
+                        <h4 className="responsive-text-base font-medium capitalize" style={{ color: theme.text.primary }}>
+                          {key === 'low_stock' && 'Low Stock'}
+                          {key === 'expiry_alerts' && 'Expiry Alerts'}
+                          {key === 'movement_alerts' && 'Movement Alerts'}
                         </h4>
-                        <p className="text-sm" style={{ color: theme.text.secondary }}>
+                        <p className="responsive-text-sm" style={{ color: theme.text.secondary }}>
                           {key === 'low_stock' && 'Get notified when inventory is running low'}
                           {key === 'expiry_alerts' && 'Receive alerts for products nearing expiration'}
-                          {key === 'sales_reports' && 'Get daily/weekly sales reports'}
-                          {key === 'system_updates' && 'Receive notifications about system updates'}
+                          {key === 'movement_alerts' && 'Get notified about stock movements and transfers'}
                         </p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
@@ -177,12 +243,20 @@ function StoreSettings() {
                           className="sr-only peer"
                         />
                         <div 
-                          className="w-11 h-6 peer-focus:outline-none peer-focus:ring-4 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:border after:rounded-full after:h-5 after:w-5 after:transition-all"
-                          style={{
-                            backgroundColor: theme.bg.hover,
-                            '--tw-ring-color': theme.colors.accent
-                          }}
-                        ></div>
+                          className={`w-11 h-6 rounded-full transition-all duration-200 ease-in-out ${
+                            value 
+                              ? 'bg-blue-600' 
+                              : 'bg-gray-300'
+                          }`}
+                        >
+                          <div 
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-all duration-200 ease-in-out ${
+                              value 
+                                ? 'translate-x-5' 
+                                : 'translate-x-0'
+                            }`}
+                          ></div>
+                        </div>
                       </label>
                     </div>
                   ))}
@@ -192,16 +266,16 @@ function StoreSettings() {
 
             {activeTab === 'system' && (
               <div className="space-y-6">
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>System Settings</h3>
+                <h3 className="responsive-text-lg font-semibold" style={{ color: theme.text.primary }}>System Settings</h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="responsive-grid">
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Currency</label>
+                    <label className="block responsive-text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Currency</label>
                     <select
                       name="currency"
-                      value={settings.currency}
+                      value={storeSettings.currency}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="responsive-input rounded-lg border focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       style={{
                         backgroundColor: theme.bg.input,
                         borderColor: theme.border.input,
@@ -209,18 +283,17 @@ function StoreSettings() {
                       }}
                     >
                       <option value="PHP">Philippine Peso (₱)</option>
-                      <option value="USD">US Dollar ($)</option>
-                      <option value="EUR">Euro (€)</option>
+                  
                     </select>
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Timezone</label>
+                    <label className="block responsive-text-sm font-medium mb-2" style={{ color: theme.text.primary }}>Timezone</label>
                     <select
                       name="timezone"
-                      value={settings.timezone}
+                      value={storeSettings.timezone}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="responsive-input rounded-lg border focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       style={{
                         backgroundColor: theme.bg.input,
                         borderColor: theme.border.input,
@@ -228,8 +301,7 @@ function StoreSettings() {
                       }}
                     >
                       <option value="Asia/Manila">Asia/Manila (GMT+8)</option>
-                      <option value="UTC">UTC (GMT+0)</option>
-                      <option value="America/New_York">America/New_York (GMT-5)</option>
+                      
                     </select>
                   </div>
                 </div>

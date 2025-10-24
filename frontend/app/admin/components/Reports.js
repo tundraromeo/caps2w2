@@ -1,13 +1,17 @@
+
 "use client";
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { toast } from 'react-toastify';
 import { useTheme } from './ThemeContext';
 import { useNotification } from './NotificationContext';
+import CombinedReports from './CombinedReports';
 
 // Use environment-based API base URL
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/backend.php`;
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/backend.php`;
 
 function Reports() {
   const { theme } = useTheme();
@@ -19,23 +23,36 @@ function Reports() {
   const [reportData, setReportData] = useState([]);
   const [reportDataLoading, setReportDataLoading] = useState(false);
   const [reportError, setReportError] = useState(null);
-  const [dateRange, setDateRange] = useState({
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+  const [dateRange, setDateRange] = useState(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return {
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    };
   });
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [selectedGenerateReportType, setSelectedGenerateReportType] = useState('');
-  const [generateDateRange, setGenerateDateRange] = useState({
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+  const [generateDateRange, setGenerateDateRange] = useState(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return {
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    };
   });
   const [showCombineModal, setShowCombineModal] = useState(false);
   const [selectedCombineReportType, setSelectedCombineReportType] = useState('');
   const [selectedReportTypes, setSelectedReportTypes] = useState(['all']);
-  const [combineDateRange, setCombineDateRange] = useState({
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+  const [combineDateRange, setCombineDateRange] = useState(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return {
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    };
   });
+  const [viewMode, setViewMode] = useState('individual'); // 'individual' or 'combined'
   const itemsPerPage = 12;
 
   const reportTypes = [
@@ -46,7 +63,8 @@ function Reports() {
     { id: 'inventory_balance', name: 'Inventory Balance Report', icon: '📋' },
     { id: 'supplier', name: 'Supplier Report', icon: '🏢' },
     { id: 'cashier_performance', name: 'Cashier Performance Report', icon: '👤' },
-    { id: 'login_logs', name: 'Login Logs Report', icon: '🔐' }
+    { id: 'login_logs', name: 'Login Logs Report', icon: '🔐' },
+    { id: 'stock_adjustment', name: 'Stock Adjustment Report', icon: '⚖️' }
   ];
 
   const fetchReports = async () => {
@@ -104,6 +122,12 @@ function Reports() {
     try {
       setReportDataLoading(true);
       setReportError(null);
+      
+      console.log('📊 Fetching report data with date range:', {
+        reportType,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate
+      });
       
       const requestData = { 
         action: 'get_report_data',
@@ -233,32 +257,109 @@ function Reports() {
 
   const openGenerateModal = (reportType) => {
     setSelectedGenerateReportType(reportType);
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     setGenerateDateRange({
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0]
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
     });
     setShowGenerateModal(true);
   };
 
   const combineIndividualReports = async () => {
     try {
+      console.log('🎯 Download button clicked!');
+      console.log('🎯 Current state:', {
+        reportDataLoading,
+        selectedReportTypes,
+        combineDateRange,
+        API_BASE_URL
+      });
+      
       setReportDataLoading(true);
+      setReportError(null);
+      
+      // Validate date range
+      if (!combineDateRange.startDate || !combineDateRange.endDate) {
+        throw new Error('Please select both start and end dates.');
+      }
+      
+      if (new Date(combineDateRange.startDate) > new Date(combineDateRange.endDate)) {
+        throw new Error('Start date cannot be later than end date.');
+      }
       
       // Convert selected report types to API format
       let reportTypesToCombine = selectedReportTypes;
       if (selectedReportTypes.includes('all')) {
-        reportTypesToCombine = ['stock_in', 'stock_out', 'sales', 'cashier_performance', 'inventory_balance'];
+        // Include ALL available report types for comprehensive reporting
+        reportTypesToCombine = [
+          'stock_in', 
+          'stock_out', 
+          'sales', 
+          'inventory_balance', 
+          'supplier', 
+          'cashier_performance', 
+          'login_logs',
+          'stock_adjustment'
+        ];
       }
+      
+      // Validate that at least one report type is selected
+      if (reportTypesToCombine.length === 0) {
+        throw new Error('Please select at least one report type to combine.');
+      }
+      
+      console.log('🚀 Starting PDF generation for:', reportTypesToCombine);
+      console.log('🚀 Original selectedReportTypes:', selectedReportTypes);
+      console.log('🚀 Date range:', combineDateRange);
+      console.log('🚀 API URL:', API_BASE_URL);
+      
+      // Show loading toast
+      toast.info('📄 Generating PDF... Please wait.', {
+        position: "top-right",
+        autoClose: 3000,
+      });
       
       // Generate PDF directly
       await generateCombinedPDF(reportTypesToCombine);
+      
+      console.log('✅ PDF generation completed successfully');
       
       // Close modal
       setShowCombineModal(false);
       
     } catch (error) {
-      console.error('Error combining reports:', error);
+      console.error('❌ Error combining reports:', error);
+      console.error('❌ Error stack:', error.stack);
+      
+      let errorMessage = 'Failed to generate PDF. Please try again.';
+      
+      // Provide specific error messages based on error type
+      if (error.message.includes('Network Error') || error.message.includes('ECONNREFUSED')) {
+        errorMessage = 'Cannot connect to server. Please ensure XAMPP services (Apache & MySQL) are running.';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'Request timeout. The server may be slow. Please try again.';
+      } else if (error.message.includes('No data found')) {
+        errorMessage = 'No data found for the selected date range. Please try a different date range.';
+      } else if (error.message.includes('API URL')) {
+        errorMessage = 'Configuration error. Please refresh the page and try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setReportError(errorMessage);
+      
+      // Show user-friendly error message
+      toast.error(`❌ PDF Generation Failed: ${errorMessage}`, {
+        position: "top-right",
+        autoClose: 8000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
     } finally {
+      console.log('🏁 Setting loading to false');
       setReportDataLoading(false);
     }
   };
@@ -266,9 +367,24 @@ function Reports() {
   const generateCombinedPDF = async (reportTypes) => {
     try {
       console.log('📄 Generating combined PDF for:', reportTypes);
+      console.log('📄 API URL being used:', API_BASE_URL);
+      
+      // Validate API URL
+      if (!API_BASE_URL || API_BASE_URL.includes('undefined')) {
+        throw new Error('API URL is not properly configured. Please check your environment settings.');
+      }
+      
+      // Check if jsPDF is available
+      if (typeof jsPDF === 'undefined') {
+        throw new Error('PDF library not loaded. Please refresh the page and try again.');
+      }
+      
+      console.log('✅ API URL validation passed');
       
       // Fetch data for all selected report types
       const allReportsData = {};
+      let hasAnyData = false;
+      
       for (const reportType of reportTypes) {
         try {
           console.log(`📊 Fetching data for ${reportType}...`);
@@ -277,67 +393,114 @@ function Reports() {
             report_type: reportType,
             start_date: combineDateRange.startDate,
             end_date: combineDateRange.endDate
+          }, {
+            timeout: 10000,
+            headers: {
+              'Content-Type': 'application/json',
+            }
           });
           
           if (res.data?.success) {
             allReportsData[reportType] = res.data.data || [];
             console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
+            console.log(`📊 Sample data for ${reportType}:`, allReportsData[reportType].length > 0 ? allReportsData[reportType][0] : 'No data');
+            
+            if (allReportsData[reportType].length > 0) {
+              hasAnyData = true;
+            }
           } else {
             allReportsData[reportType] = [];
-            console.warn(`⚠️ No data for ${reportType}`);
+            console.warn(`⚠️ No data for ${reportType}:`, res.data?.message);
+            console.warn(`⚠️ Full response for ${reportType}:`, res.data);
           }
         } catch (error) {
           console.error(`❌ Error fetching ${reportType}:`, error);
           allReportsData[reportType] = [];
+          
+          if (error.code === 'ECONNREFUSED' || error.message.includes('Network Error')) {
+            throw new Error(`Cannot connect to server. Please ensure XAMPP services (Apache & MySQL) are running.`);
+          }
         }
       }
       
-      // Create a temporary div for PDF generation
-      const tempDiv = document.createElement('div');
-      tempDiv.style.position = 'absolute';
-      tempDiv.style.left = '-9999px';
-      tempDiv.style.top = '-9999px';
-      tempDiv.style.width = '210mm'; // A4 width
-      tempDiv.style.backgroundColor = 'white';
-      tempDiv.style.padding = '20px';
-      tempDiv.style.fontFamily = 'Arial, sans-serif';
-      tempDiv.style.fontSize = '10px';
-      tempDiv.style.lineHeight = '1.3';
+      // Check if we have any data to generate PDF
+      if (!hasAnyData) {
+        throw new Error('No data found for the selected date range and report types. Please try a different date range or check if there are any reports available.');
+      }
       
-      // Get report type definitions (from the constant at top of component)
+      console.log('📄 Creating PDF document...');
+      
+      // Create PDF with autoTable plugin
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // Header
+      pdf.setFontSize(16);
+      pdf.setFont(undefined, 'bold');
+      pdf.text('ENGUIO PHARMACY SYSTEM', 20, 20);
+      
+      pdf.setFontSize(12);
+      pdf.text('Combined Reports', 20, 30);
+      
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, 'normal');
+      pdf.text(`Date Range: ${combineDateRange.startDate} to ${combineDateRange.endDate}`, 20, 40);
+      pdf.text(`Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 20, 45);
+      pdf.text(`Generated by: Admin`, 20, 50);
+      
+      // Add comprehensive summary
+      let yPosition = 60;
+      
+      // Summary section
+      pdf.setFontSize(12);
+      pdf.setFont(undefined, 'bold');
+      pdf.text('📊 COMPREHENSIVE REPORT SUMMARY', 20, yPosition);
+      yPosition += 10;
+      
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, 'normal');
+      
+      // Calculate totals across all reports
+      let totalRecords = 0;
+      let totalValue = 0;
+      let reportsWithData = 0;
+      
+      for (const reportType of reportTypes) {
+        const data = allReportsData[reportType] || [];
+        if (data.length > 0) {
+          reportsWithData++;
+          totalRecords += data.length;
+          
+          // Calculate value for reports that have monetary data
+          if (reportType === 'stock_in' || reportType === 'stock_out' || reportType === 'sales') {
+            const reportValue = data.reduce((sum, item) => {
+              return sum + (parseFloat(item.total_value || item.total_amount || 0) || 0);
+            }, 0);
+            totalValue += reportValue;
+          }
+        }
+      }
+      
+      pdf.text(`📈 Total Reports Generated: ${reportsWithData}`, 20, yPosition);
+      yPosition += 6;
+      pdf.text(`📊 Total Records: ${totalRecords.toLocaleString()}`, 20, yPosition);
+      yPosition += 6;
+      pdf.text(`💰 Total Value: ₱${totalValue.toFixed(2)}`, 20, yPosition);
+      yPosition += 6;
+      pdf.text(`📅 Report Period: ${combineDateRange.startDate} to ${combineDateRange.endDate}`, 20, yPosition);
+      yPosition += 6;
+      pdf.text(`⏰ Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 20, yPosition);
+      yPosition += 15;
+      
+      // Get report type definitions - ALL AVAILABLE REPORTS
       const reportTypesList = [
         { id: 'stock_in', name: 'Stock In Report', icon: '📦' },
         { id: 'stock_out', name: 'Stock Out Report', icon: '📤' },
         { id: 'sales', name: 'Sales Report', icon: '💰' },
         { id: 'inventory_balance', name: 'Inventory Balance Report', icon: '📋' },
-        { id: 'supplier', name: 'Supplier Report', icon: '🏢' },
         { id: 'cashier_performance', name: 'Cashier Performance Report', icon: '👤' },
-        { id: 'login_logs', name: 'Login Logs Report', icon: '🔐' }
+        { id: 'login_logs', name: 'Login Logs Report', icon: '🔐' },
+        { id: 'stock_adjustment', name: 'Stock Adjustment Report', icon: '⚖️' }
       ];
-      
-      // Create report names list
-      const reportNames = reportTypes.map(typeId => {
-        const reportTypeInfo = reportTypesList.find(t => t.id === typeId);
-        return reportTypeInfo?.name || typeId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      }).join(', ');
-      
-      // Build HTML content with header
-      let htmlContent = `
-        <div style="text-align: center; margin-bottom: 20px; padding: 15px; background: #f8fafc; border: 2px solid #000000;">
-          <div style="font-size: 20px; font-weight: bold; color: #000000; margin-bottom: 3px;">ENGUIO PHARMACY SYSTEM</div>
-          <div style="font-size: 12px; color: #000000;">Combined Reports</div>
-        </div>
-        
-        <div style="margin-bottom: 15px; padding: 10px; background: #f1f5f9; border-left: 4px solid #000000;">
-          <div style="font-size: 11px; font-weight: bold; color: #000000; margin-bottom: 8px;">Report Information</div>
-          <div style="font-size: 9px; color: #000000; line-height: 1.5;">
-            <strong>Date Range:</strong> ${combineDateRange.startDate} to ${combineDateRange.endDate}<br>
-            <strong>Generated:</strong> ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}<br>
-            <strong>Generated by:</strong> Admin<br>
-            <strong>Report Types:</strong> ${reportNames}
-          </div>
-        </div>
-      `;
       
       // Add each report's data
       for (const reportType of reportTypes) {
@@ -345,39 +508,64 @@ function Reports() {
         const reportInfo = reportTypesList.find(t => t.id === reportType);
         const reportName = reportInfo?.name || reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         
-        htmlContent += `
-          <div style="page-break-before: auto; margin-top: 20px; margin-bottom: 15px;">
-            <div style="font-size: 13px; font-weight: bold; color: #000000; padding: 8px; background: #e2e8f0; border-left: 4px solid #000000; margin-bottom: 10px;">
-              ${reportInfo?.icon || '📊'} ${reportName}
-            </div>
-        `;
+        console.log(`📊 Processing ${reportType}:`, {
+          reportName,
+          dataLength: data.length,
+          hasData: data.length > 0,
+          sampleData: data.length > 0 ? data[0] : null
+        });
+        
+        // Check if we need a new page
+        if (yPosition > 250) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+        
+        // Report header
+        pdf.setFontSize(12);
+        pdf.setFont(undefined, 'bold');
+        pdf.text(`${reportName}`, 20, yPosition);
+        yPosition += 10;
         
         if (data.length === 0) {
-          htmlContent += `
-            <div style="padding: 15px; text-align: center; color: #64748b; font-size: 9px;">
-              No data available for this report type in the selected date range.
-            </div>
-          `;
+          pdf.setFontSize(9);
+          pdf.setFont(undefined, 'normal');
+          pdf.text('No data available for this report type in the selected date range.', 20, yPosition);
+          yPosition += 15;
         } else {
+          // Add report-specific summary
+          pdf.setFontSize(9);
+          pdf.setFont(undefined, 'bold');
+          pdf.text(`📊 ${data.length} records found`, 20, yPosition);
+          yPosition += 5;
+          
+          // Add specific summaries based on report type
+          if (reportType === 'stock_in' && data.length > 0) {
+            const totalQty = data.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+            const totalValue = data.reduce((sum, item) => sum + (parseFloat(item.total_value) || 0), 0);
+            pdf.text(`📦 Total Quantity: ${totalQty.toLocaleString()} | 💰 Total Value: ₱${totalValue.toFixed(2)}`, 20, yPosition);
+            yPosition += 5;
+          } else if (reportType === 'sales' && data.length > 0) {
+            const totalSales = data.reduce((sum, item) => sum + (parseFloat(item.total_amount) || 0), 0);
+            const totalItems = data.reduce((sum, item) => sum + (parseInt(item.items_sold) || 0), 0);
+            pdf.text(`💰 Total Sales: ₱${totalSales.toFixed(2)} | 📦 Total Items Sold: ${totalItems.toLocaleString()}`, 20, yPosition);
+            yPosition += 5;
+          } else if (reportType === 'cashier_performance' && data.length > 0) {
+            const totalTransactions = data.reduce((sum, item) => sum + (parseInt(item.transactions_count) || 0), 0);
+            const totalSales = data.reduce((sum, item) => sum + (parseFloat(item.total_sales) || 0), 0);
+            pdf.text(`👤 Total Transactions: ${totalTransactions.toLocaleString()} | 💰 Total Sales: ₱${totalSales.toFixed(2)}`, 20, yPosition);
+            yPosition += 5;
+          }
+          
           // Get columns for this report type
           const columns = getReportColumns(reportType);
           
-          // Create table
-          htmlContent += `
-            <table style="width: 100%; border-collapse: collapse; font-size: 8px; margin-bottom: 10px;">
-              <thead>
-                <tr style="background: #cbd5e1;">
-                  ${columns.map(col => `<th style="border: 1px solid #000; padding: 4px; text-align: left; font-weight: bold;">${col}</th>`).join('')}
-                </tr>
-              </thead>
-              <tbody>
-          `;
+          // Limit data for PDF size but show more for comprehensive report
+          const limitedData = data.slice(0, 30);
           
-          // Add rows (limit to 50 per report for PDF size)
-          const limitedData = data.slice(0, 50);
-          limitedData.forEach((row, index) => {
-            htmlContent += `<tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">`;
-            columns.forEach(column => {
+          // Prepare table data
+          const tableData = limitedData.map(row => {
+            return columns.map(column => {
               const columnKey = column.toLowerCase().replace(/\s+/g, '_');
               let cellValue = row[columnKey] || 'N/A';
               
@@ -394,80 +582,141 @@ function Reports() {
                 }
               }
               
-              htmlContent += `<td style="border: 1px solid #ddd; padding: 3px; font-size: 7px;">${cellValue}</td>`;
+              return cellValue.toString().substring(0, 25); // Limit cell content length
             });
-            htmlContent += `</tr>`;
           });
           
-          htmlContent += `
-              </tbody>
-            </table>
-          `;
-          
-          if (data.length > 50) {
-            htmlContent += `
-              <div style="font-size: 8px; color: #64748b; text-align: center; margin-top: 5px;">
-                Showing 50 of ${data.length} records
-              </div>
-            `;
+          // Add table using autoTable (with fallback)
+          try {
+            autoTable(pdf, {
+              head: [columns],
+              body: tableData,
+              startY: yPosition,
+              styles: {
+                fontSize: 8,
+                cellPadding: 2,
+              },
+              headStyles: {
+                fillColor: [200, 200, 200],
+                textColor: [0, 0, 0],
+                fontStyle: 'bold',
+              },
+              alternateRowStyles: {
+                fillColor: [245, 245, 245],
+              },
+              margin: { left: 20, right: 20 },
+              tableWidth: 'auto',
+              columnStyles: {
+                // Make certain columns narrower
+                0: { cellWidth: 20 },
+                1: { cellWidth: 20 },
+                2: { cellWidth: 30 },
+                3: { cellWidth: 20 },
+                4: { cellWidth: 15 },
+                5: { cellWidth: 20 },
+                6: { cellWidth: 25 },
+                7: { cellWidth: 20 },
+                8: { cellWidth: 20 },
+                9: { cellWidth: 20 },
+                10: { cellWidth: 20 }
+              }
+            });
+            
+            // Get the final Y position after the table
+            yPosition = pdf.lastAutoTable.finalY + 10;
+          } catch (autoTableError) {
+            console.warn('AutoTable failed, using fallback method:', autoTableError);
+            
+            // Fallback: Simple text-based table
+            pdf.setFontSize(8);
+            pdf.setFont(undefined, 'bold');
+            
+            // Add header
+            let xPos = 20;
+            const colWidth = 15;
+            columns.forEach((column, colIndex) => {
+              pdf.text(column.substring(0, 12), xPos, yPosition);
+              xPos += colWidth;
+            });
+            yPosition += 8;
+            
+            // Add data rows
+            pdf.setFont(undefined, 'normal');
+            limitedData.forEach((row, rowIndex) => {
+              xPos = 20;
+              columns.forEach((column, colIndex) => {
+                const columnKey = column.toLowerCase().replace(/\s+/g, '_');
+                let cellValue = row[columnKey] || 'N/A';
+                
+                // Format values
+                if (columnKey.includes('total_value') || columnKey.includes('total_amount') || columnKey.includes('unit_price') || columnKey.includes('average_transaction')) {
+                  cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
+                } else if (columnKey === 'date' && cellValue !== 'N/A') {
+                  cellValue = new Date(cellValue).toLocaleDateString('en-PH');
+                }
+                
+                pdf.text(cellValue.toString().substring(0, 12), xPos, yPosition);
+                xPos += colWidth;
+              });
+              yPosition += 6;
+              
+              // Check if we need a new page
+              if (yPosition > 280) {
+                pdf.addPage();
+                yPosition = 20;
+              }
+            });
+            
+            yPosition += 10;
           }
           
-          // Add summary if it's stock_in report
+          if (data.length > 30) {
+            pdf.setFontSize(8);
+            pdf.setFont(undefined, 'normal');
+            pdf.text(`Showing 30 of ${data.length} records`, 20, yPosition);
+            yPosition += 10;
+          }
+          
+          // Add summary for stock_in report
           if (reportType === 'stock_in' && data.length > 0) {
             const totalQty = data.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
             const totalValue = data.reduce((sum, item) => sum + (parseFloat(item.total_value) || 0), 0);
-            htmlContent += `
-              <div style="margin-top: 10px; padding: 8px; background: #f1f5f9; font-size: 8px; border-left: 3px solid #000;">
-                <strong>Summary:</strong> Total Items: ${data.length} | Total Quantity: ${totalQty.toLocaleString()} | Total Value: ₱${totalValue.toFixed(2)}
-              </div>
-            `;
+            pdf.setFontSize(9);
+            pdf.setFont(undefined, 'bold');
+            pdf.text(`Summary: Total Items: ${data.length} | Total Quantity: ${totalQty.toLocaleString()} | Total Value: ₱${totalValue.toFixed(2)}`, 20, yPosition);
+            yPosition += 15;
           }
         }
-        
-        htmlContent += `</div>`;
-      }
-      
-      tempDiv.innerHTML = htmlContent;
-      
-      // Add to DOM temporarily
-      document.body.appendChild(tempDiv);
-      
-      // Generate canvas from HTML
-      const canvas = await html2canvas(tempDiv, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff'
-      });
-      
-      // Remove temporary div
-      document.body.removeChild(tempDiv);
-      
-      // Create PDF
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210;
-      const pageHeight = 295;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      
-      let position = 0;
-      
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-      
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
       }
       
       // Save PDF
       const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
-      pdf.save(fileName);
       
-      console.log(`PDF downloaded successfully: ${fileName}`);
+      console.log('💾 Saving PDF:', fileName);
+      console.log('📊 PDF document info:', {
+        totalPages: pdf.internal.getNumberOfPages(),
+        pageSize: pdf.internal.pageSize,
+        version: pdf.internal.version
+      });
+      
+      // Simple save method
+      try {
+        pdf.save(fileName);
+        console.log(`✅ PDF downloaded successfully: ${fileName}`);
+        
+        // Show success message
+        toast.success(`📥 PDF downloaded successfully: ${fileName}`, {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      } catch (saveError) {
+        console.error('❌ Error saving PDF:', saveError);
+        throw new Error('Failed to save PDF file. Please check your browser settings and try again.');
+      }
       
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -476,11 +725,18 @@ function Reports() {
   };
 
   const openCombineModal = (reportType) => {
+    console.log('🔧 Opening combine modal for report type:', reportType);
     setSelectedCombineReportType(reportType);
     setSelectedReportTypes(['all']); // Reset to all reports selected
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     setCombineDateRange({
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0]
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    });
+    console.log('🔧 Set date range to:', {
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
     });
     setShowCombineModal(true);
   };
@@ -500,8 +756,29 @@ function Reports() {
     }
   };
 
+  // Add test function to window for debugging
+  window.testStockOutReport = async () => {
+    try {
+      console.log('🧪 Testing stock_out report directly...');
+      const res = await axios.post(API_BASE_URL, {
+        action: 'get_report_data',
+        report_type: 'stock_out',
+        start_date: combineDateRange.startDate,
+        end_date: combineDateRange.endDate
+      });
+      console.log('🧪 Stock Out Report Response:', res.data);
+      return res.data;
+    } catch (error) {
+      console.error('🧪 Stock Out Report Error:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     // Initial fetch
+    console.log('🔧 Reports component loaded with report types:', reportTypes);
+    console.log('🔧 Initial date range:', dateRange);
+    console.log('🔧 Initial combine date range:', combineDateRange);
     fetchReports();
     
     // Auto-clear notifications when Reports component is viewed
@@ -513,7 +790,26 @@ function Reports() {
       fetchReports();
     }, 10000);
 
-    return () => clearInterval(refreshInterval);
+    // Listen for PDF opened messages
+    const handleMessage = (event) => {
+      if (event.data.type === 'pdf-opened') {
+        toast.info(`📄 ${event.data.message}`, {
+          position: "top-right",
+          autoClose: 6000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      clearInterval(refreshInterval);
+      window.removeEventListener('message', handleMessage);
+    };
   }, []);
 
   // Check for actual system updates (no automatic triggering)
@@ -577,12 +873,12 @@ function Reports() {
         return ['Date', 'Time', 'Transaction ID', 'Total Amount', 'Items Sold', 'Products', 'Terminal'];
       case 'inventory_balance':
         return ['Product Name', 'Barcode', 'Category', 'Current Stock', 'Unit Price', 'Total Value', 'Location', 'Supplier', 'Brand', 'Expiration', 'Status'];
-      case 'supplier':
-        return ['Supplier Name', 'Contact', 'Email', 'Products Supplied', 'Total Stock', 'Total Value', 'Deliveries Count'];
       case 'cashier_performance':
         return ['Date', 'Cashier Name', 'Transactions Count', 'Total Sales', 'Average Transaction', 'Unique Products Sold'];
       case 'login_logs':
         return ['Date', 'Time', 'Username', 'Role', 'Action', 'Description'];
+      case 'stock_adjustment':
+        return ['Date', 'Time', 'Product Name', 'Barcode', 'Previous Quantity', 'New Quantity', 'Adjustment', 'Reason', 'Adjusted By', 'Reference No'];
       default:
         return [];
     }
@@ -632,8 +928,49 @@ function Reports() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
-      {/* Header */}
-      <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
+      {/* View Mode Toggle */}
+      <div className="p-3" style={{ backgroundColor: theme.bg.card }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <span className="text-2xl">📊</span>
+            <div>
+              <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>Reports Dashboard</h1>
+              <p className="text-sm" style={{ color: theme.text.secondary }}>
+                {viewMode === 'individual' ? 'Individual Report Management' : 'Unified Report View'}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setViewMode(viewMode === 'individual' ? 'combined' : 'individual')}
+              className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center gap-2"
+              style={{
+                backgroundColor: theme.colors.accent,
+                color: theme.text.primary
+              }}
+            >
+              {viewMode === 'individual' ? (
+                <>
+                  🔗 Switch to Combined View
+                </>
+              ) : (
+                <>
+                  📋 Switch to Individual View
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Conditional Rendering */}
+      {viewMode === 'combined' ? (
+        <CombinedReports />
+      ) : (
+        <>
+          {/* Individual Reports Content */}
+          {/* Header */}
+          <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center space-x-6 mb-4">
@@ -648,6 +985,45 @@ function Reports() {
 
       {/* Reports Content */}
       <div className="p-6">
+        {/* Quick Download All Reports Button */}
+        <div className="mb-6">
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={() => {
+                // Set to current month and open combine modal with all reports selected
+                const today = new Date();
+                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                setCombineDateRange({
+                  startDate: firstDay.toISOString().split('T')[0],
+                  endDate: today.toISOString().split('T')[0]
+                });
+                setSelectedReportTypes(['all']);
+                setShowCombineModal(true);
+              }}
+              disabled={reportDataLoading}
+              className="px-8 py-4 rounded-lg font-bold text-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-3 shadow-lg"
+              style={{
+                backgroundColor: theme.colors.accent,
+                color: theme.text.primary,
+                boxShadow: `0 10px 25px ${theme.shadow.lg}`
+              }}
+            >
+              📊 Download All Reports (This Month)
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-lg font-medium transition-all duration-200 hover:scale-105 flex items-center gap-2"
+              style={{
+                backgroundColor: theme.bg.hover,
+                color: theme.text.secondary,
+                border: `1px solid ${theme.border.default}`
+              }}
+            >
+              🔄 Refresh Page
+            </button>
+          </div>
+        </div>
+
         {/* Report Type Selection */}
         <div className="mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1044,21 +1420,43 @@ function Reports() {
                     { label: 'Yesterday', days: -1 },
                     { label: 'This Week', days: -7 },
                     { label: 'Last Week', days: -14 },
-                    { label: 'This Month', days: -30 },
-                    { label: 'Last Month', days: -60 }
+                    { label: 'This Month', days: 'this_month' },
+                    { label: 'Last Month', days: 'last_month' }
                   ].map((option) => (
                     <button
                       key={option.label}
                       onClick={() => {
                         const today = new Date();
-                        const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
-                        const dateStr = targetDate.toISOString().split('T')[0];
                         
                         if (option.days === 0) {
+                          // Today
+                          const dateStr = today.toISOString().split('T')[0];
                           setGenerateDateRange({ startDate: dateStr, endDate: dateStr });
                         } else if (option.days === -1) {
+                          // Yesterday
+                          const yesterday = new Date(today.getTime() - (24 * 60 * 60 * 1000));
+                          const dateStr = yesterday.toISOString().split('T')[0];
                           setGenerateDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else if (option.days === 'this_month') {
+                          // This Month - from 1st of current month to today
+                          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                          const lastDay = today;
+                          setGenerateDateRange({ 
+                            startDate: firstDay.toISOString().split('T')[0], 
+                            endDate: lastDay.toISOString().split('T')[0] 
+                          });
+                        } else if (option.days === 'last_month') {
+                          // Last Month - from 1st to last day of previous month
+                          const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                          const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+                          setGenerateDateRange({ 
+                            startDate: firstDayLastMonth.toISOString().split('T')[0], 
+                            endDate: lastDayLastMonth.toISOString().split('T')[0] 
+                          });
                         } else {
+                          // Other periods (weeks)
+                          const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
+                          const dateStr = targetDate.toISOString().split('T')[0];
                           setGenerateDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
                         }
                       }}
@@ -1152,7 +1550,7 @@ function Reports() {
 
       {/* Individual Combine Reports Modal */}
       {showCombineModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
+        <div className="fixed inset-0 flex items-center justify-center z-50" key={`combine-modal-${Date.now()}`}>
           <div 
             className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
             style={{ 
@@ -1165,10 +1563,10 @@ function Reports() {
             <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
               <div>
                 <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                  Combine Reports
+                  📊 COMPREHENSIVE REPORTS DOWNLOAD v2.0
                 </h3>
                 <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
-                  Select date range and report types to download as a single PDF
+                  Download ALL 8 report types as a single comprehensive PDF file
                 </p>
               </div>
               <button
@@ -1195,21 +1593,43 @@ function Reports() {
                     { label: 'Yesterday', days: -1 },
                     { label: 'This Week', days: -7 },
                     { label: 'Last Week', days: -14 },
-                    { label: 'This Month', days: -30 },
-                    { label: 'Last Month', days: -60 }
+                    { label: 'This Month', days: 'this_month' },
+                    { label: 'Last Month', days: 'last_month' }
                   ].map((option) => (
                     <button
                       key={option.label}
                       onClick={() => {
                         const today = new Date();
-                        const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
-                        const dateStr = targetDate.toISOString().split('T')[0];
                         
                         if (option.days === 0) {
+                          // Today
+                          const dateStr = today.toISOString().split('T')[0];
                           setCombineDateRange({ startDate: dateStr, endDate: dateStr });
                         } else if (option.days === -1) {
+                          // Yesterday
+                          const yesterday = new Date(today.getTime() - (24 * 60 * 60 * 1000));
+                          const dateStr = yesterday.toISOString().split('T')[0];
                           setCombineDateRange({ startDate: dateStr, endDate: dateStr });
+                        } else if (option.days === 'this_month') {
+                          // This Month - from 1st of current month to today
+                          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                          const lastDay = today;
+                          setCombineDateRange({ 
+                            startDate: firstDay.toISOString().split('T')[0], 
+                            endDate: lastDay.toISOString().split('T')[0] 
+                          });
+                        } else if (option.days === 'last_month') {
+                          // Last Month - from 1st to last day of previous month
+                          const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                          const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+                          setCombineDateRange({ 
+                            startDate: firstDayLastMonth.toISOString().split('T')[0], 
+                            endDate: lastDayLastMonth.toISOString().split('T')[0] 
+                          });
                         } else {
+                          // Other periods (weeks)
+                          const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
+                          const dateStr = targetDate.toISOString().split('T')[0];
                           setCombineDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
                         }
                       }}
@@ -1264,6 +1684,9 @@ function Reports() {
               {/* Report Type Selection */}
               <div className="mb-6">
                 <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Types to Combine</h4>
+                <div className="text-xs mb-2" style={{ color: theme.text.muted }}>
+                  Debug: Selected types: {JSON.stringify(selectedReportTypes)} | Date range: {combineDateRange.startDate} to {combineDateRange.endDate}
+                </div>
                 <div className="space-y-2">
                   {reportTypes.filter(type => type.id !== 'all').map((type) => (
                     <label key={type.id} className="flex items-center space-x-2">
@@ -1286,12 +1709,26 @@ function Reports() {
                       onChange={() => handleReportTypeChange('all')}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
-                      All Reports
+                    <span className="text-sm font-bold" style={{ color: theme.text.primary }}>
+                      📊 ALL REPORTS (8 Types) - RECOMMENDED
                     </span>
                   </label>
                 </div>
               </div>
+
+              {/* Error Display */}
+              {reportError && (
+                <div className="mb-4 p-3 rounded-md border" style={{ 
+                  backgroundColor: theme.colors.dangerBg || '#fef2f2', 
+                  borderColor: theme.colors.danger || '#fecaca',
+                  color: theme.colors.danger || '#dc2626'
+                }}>
+                  <div className="flex items-center">
+                    <span className="text-sm font-medium">⚠️ Error:</span>
+                    <span className="ml-2 text-sm">{reportError}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex gap-3">
@@ -1311,9 +1748,135 @@ function Reports() {
                     </>
                   ) : (
                     <>
-                      📋 Download PDF
+                      📥 DOWNLOAD COMPREHENSIVE PDF (ALL REPORTS)
                     </>
                   )}
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      console.log('📊 Generating CSV export...');
+                      setReportDataLoading(true);
+                      
+                      // Fetch data for all selected report types
+                      const allReportsData = {};
+                      let reportTypesToCombine = selectedReportTypes;
+                      if (selectedReportTypes.includes('all')) {
+                        // Include ALL available report types for comprehensive reporting
+                        reportTypesToCombine = [
+                          'stock_in', 
+                          'stock_out', 
+                          'sales', 
+                          'inventory_balance', 
+                          'supplier', 
+                          'cashier_performance', 
+                          'login_logs',
+                          'stock_adjustment'
+                        ];
+                      }
+                      
+                      for (const reportType of reportTypesToCombine) {
+                        try {
+                          const res = await axios.post(API_BASE_URL, {
+                            action: 'get_report_data',
+                            report_type: reportType,
+                            start_date: combineDateRange.startDate,
+                            end_date: combineDateRange.endDate
+                          }, {
+                            timeout: 10000,
+                            headers: {
+                              'Content-Type': 'application/json',
+                            }
+                          });
+                          
+                          if (res.data?.success) {
+                            allReportsData[reportType] = res.data.data || [];
+                          }
+                        } catch (error) {
+                          console.error(`Error fetching ${reportType}:`, error);
+                          allReportsData[reportType] = [];
+                        }
+                      }
+                      
+                      // Create CSV content
+                      let csvContent = 'ENGUIO PHARMACY SYSTEM - COMBINED REPORTS\n';
+                      csvContent += `Date Range: ${combineDateRange.startDate} to ${combineDateRange.endDate}\n`;
+                      csvContent += `Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}\n`;
+                      csvContent += `Generated by: Admin\n\n`;
+                      
+                      // Add each report's data
+                      for (const reportType of reportTypesToCombine) {
+                        const data = allReportsData[reportType] || [];
+                        if (data.length > 0) {
+                          const reportInfo = reportTypes.find(t => t.id === reportType);
+                          const reportName = reportInfo?.name || reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                          
+                          csvContent += `\n${reportName}\n`;
+                          csvContent += '='.repeat(reportName.length) + '\n';
+                          
+                          // Get columns
+                          const columns = getReportColumns(reportType);
+                          csvContent += columns.join(',') + '\n';
+                          
+                          // Add data rows
+                          data.forEach(row => {
+                            const rowData = columns.map(column => {
+                              const columnKey = column.toLowerCase().replace(/\s+/g, '_');
+                              let cellValue = row[columnKey] || 'N/A';
+                              
+                              // Format values
+                              if (columnKey.includes('total_value') || columnKey.includes('total_amount') || columnKey.includes('unit_price') || columnKey.includes('average_transaction')) {
+                                cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
+                              } else if (columnKey === 'date' && cellValue !== 'N/A') {
+                                cellValue = new Date(cellValue).toLocaleDateString('en-PH');
+                              }
+                              
+                              // Escape CSV values
+                              if (cellValue.toString().includes(',')) {
+                                cellValue = `"${cellValue}"`;
+                              }
+                              return cellValue;
+                            });
+                            csvContent += rowData.join(',') + '\n';
+                          });
+                        }
+                      }
+                      
+                      // Create and download CSV
+                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      const url = URL.createObjectURL(blob);
+                      link.setAttribute('href', url);
+                      link.setAttribute('download', `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.csv`);
+                      link.style.visibility = 'hidden';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      
+                      toast.success('📊 CSV exported successfully!', {
+                        position: "top-right",
+                        autoClose: 3000,
+                      });
+                      
+                    } catch (error) {
+                      console.error('Error generating CSV:', error);
+                      toast.error('❌ CSV export failed: ' + error.message, {
+                        position: "top-right",
+                        autoClose: 5000,
+                      });
+                    } finally {
+                      setReportDataLoading(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.secondary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                >
+                  📊 Export CSV
                 </button>
                 <button
                   onClick={() => setShowCombineModal(false)}
@@ -1331,6 +1894,8 @@ function Reports() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

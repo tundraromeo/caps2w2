@@ -29,7 +29,6 @@ import StockInReport from './components/StockInReport';
 import StockOutReport from './components/StockOutReport';
 import SalesReport from './components/SalesReport';
 import InventoryBalanceReport from './components/InventoryBalanceReport';
-import SupplierReport from './components/SupplierReport';
 import CashierPerformanceReport from './components/CashierPerformanceReport';
 import LoginLogsReport from './components/LoginLogsReport';
 import ActivityLogsReport from './components/ActivityLogsReport';
@@ -194,7 +193,7 @@ function MobileHeaderWithNotifications({ onMenuClick, onNotificationClick }) {
         onClick={onMenuClick}
         className="p-2 rounded"
         aria-label="Open menu"
-        style={{ color: theme.text.primary }}
+        style={{ color: theme.text.primary, backgroundColor: 'transparent' }}
       >
         {/* simple hamburger */}
         <span className="block w-6 h-0.5 mb-1" style={{ backgroundColor: theme.text.primary }}></span>
@@ -206,7 +205,7 @@ function MobileHeaderWithNotifications({ onMenuClick, onNotificationClick }) {
         onClick={onNotificationClick}
         className="p-2 rounded relative"
         aria-label="Notification Center"
-        style={{ color: theme.text.primary }}
+        style={{ color: theme.text.primary, backgroundColor: 'transparent' }}
       >
         <FaBell />
         {hasAnyNotifications() && (
@@ -315,7 +314,6 @@ function AdminContent() {
     "Stock Out Report": <StockOutReport />,
     "Sales Report": <SalesReport />,
     "Inventory Balance Report": <InventoryBalanceReport />,
-    "Supplier Report": <SupplierReport />,
     "Cashier Performance Report": <CashierPerformanceReport />,
     "Login Logs": <LoginLogsReport />,
     "Activity Logs": <ActivityLogsReport />,
@@ -387,17 +385,13 @@ function AdminContent() {
   
   return (
     <div className="flex h-screen" style={{ backgroundColor: theme.bg.primary }}>
-      {/* Notification Services */}
-      <NotificationManager />
-      
-      {/* Mobile top bar */}
-      <MobileHeaderWithNotifications 
-        onMenuClick={() => setIsMobileSidebarOpen(true)}
-        onNotificationClick={handleNotificationClick}
-      />
-
       {/* Sidebar */}
       <div className="flex-shrink-0">
+        <NotificationManager />
+        <MobileHeaderWithNotifications 
+          onMenuClick={() => setIsMobileSidebarOpen(true)}
+          onNotificationClick={handleNotificationClick}
+        />
         <Sidebar
           activeComponent={activeComponent}
           setActiveComponent={handleSelectFeature}
@@ -407,48 +401,36 @@ function AdminContent() {
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         />
+        {isMobileSidebarOpen && (
+          <div
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="fixed inset-0 z-30 md:hidden"
+            style={{ backgroundColor: theme.isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.1)' }}
+          />
+        )}
       </div>
 
-      {/* Mobile overlay */}
-      {isMobileSidebarOpen && (
-        <div
-          onClick={() => setIsMobileSidebarOpen(false)}
-          className="fixed inset-0 z-30 md:hidden"
-          style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}
-        />
-      )}
-
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Content Area */}
-          <main className="flex-1 overflow-y-auto" style={{ backgroundColor: theme.bg.secondary }}>
-            <div className="w-full min-w-0 overflow-x-auto md:overflow-visible" style={{ 
-              transform: 'scale(0.8)', 
-              transformOrigin: 'top left',
-              width: '125%',
-              height: '125%'
-            }}>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <main className="flex-1 overflow-y-auto responsive-padding pt-14 sm:pt-16 md:pt-6" style={{ backgroundColor: theme.bg.secondary }}>
+          <div className="responsive-container">
+            <div className="w-full min-w-0 overflow-x-auto md:overflow-visible">
               {componentMap[activeComponent] || <Dashboard />}
             </div>
-          </main>
-          
-          {/* Theme Toggle Button */}
-          <ThemeToggle />
-        </div>
-
-      {/* Logout Confirmation Modal */}
-      {showLogoutConfirm && (
-        <LogoutConfirm
-          onConfirm={confirmLogout}
-          onCancel={cancelLogout}
+          </div>
+        </main>
+        <ThemeToggle />
+        {showLogoutConfirm && (
+          <LogoutConfirm
+            onConfirm={confirmLogout}
+            onCancel={cancelLogout}
+          />
+        )}
+        <NotificationPanel 
+          isOpen={showNotificationPanel} 
+          onClose={() => setShowNotificationPanel(false)} 
         />
-      )}
-
-      {/* Notification Panel */}
-      <NotificationPanel 
-        isOpen={showNotificationPanel} 
-        onClose={() => setShowNotificationPanel(false)} 
-      />
+      </div>
     </div>
   );
 }

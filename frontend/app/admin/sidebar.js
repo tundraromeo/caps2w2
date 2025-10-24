@@ -129,13 +129,6 @@ const Sidebar = ({
           notificationCount: (notifications.reports.subItems['Inventory Balance Report']?.count || 0) + (systemUpdates.hasUpdates ? 1 : 0)
         },
         { 
-          label: "Supplier Report", 
-          icon: <FaBuilding />, 
-          key: "Supplier Report",
-          hasNotifications: hasSubItemUpdates('reports', 'Supplier Report') || systemUpdates.hasUpdates,
-          notificationCount: (notifications.reports.subItems['Supplier Report']?.count || 0) + (systemUpdates.hasUpdates ? 1 : 0)
-        },
-        { 
           label: "Cashier Performance Report", 
           icon: <FaUserTie />, 
           key: "Cashier Performance Report",
@@ -225,13 +218,6 @@ const Sidebar = ({
       className={`fixed inset-y-0 left-0 z-40 h-full transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 md:flex md:flex-col md:z-auto ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} ${isCollapsed ? 'w-16' : 'w-64'}`}
       style={{ backgroundColor: theme.bg.card, borderRight: `1px solid ${theme.border.default}` }}
     >
-      {/* Zoom wrapper */}
-      <div style={{
-        transform: 'scale(0.9)',
-        transformOrigin: 'top left',
-        height: '111%',
-        width: '111%'
-      }}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 md:hidden" style={{ borderBottom: `1px solid ${theme.border.default}` }}>
         <div className="font-semibold" style={{ color: theme.text.primary }}>Menu</div>
@@ -283,7 +269,7 @@ const Sidebar = ({
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4" style={{ maxHeight: 'calc(100vh - 200px)' }}>
         <nav className="space-y-2">
           {navigationItems.map((item) => (
             <div key={item.key}>
@@ -468,8 +454,6 @@ const Sidebar = ({
           )}
         </button>
       </div>
-      </div>
-      {/* End zoom wrapper */}
 
       {/* Notification Panel */}
       <NotificationPanel 

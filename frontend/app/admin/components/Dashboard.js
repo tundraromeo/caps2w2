@@ -186,43 +186,6 @@ function Dashboard() {
     }
   };
 
-  // Fetch cashier performance data with global period filter
-  const fetchCashierPerformance = async () => {
-    try {
-      console.log('🔍 Fetching cashier performance with period:', globalPeriod);
-      const perfRes = await fetch(`${getApiUrl('employee_manager.php')}?_t=${Date.now()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'get_cashier_performance',
-          period: globalPeriod
-        })
-      });
-      
-      console.log('📡 Response status:', perfRes.status);
-      
-      if (perfRes.ok) {
-        const perfData = await perfRes.json();
-        console.log('📊 Cashier performance data:', perfData);
-        
-        if (perfData.success && perfData.performance) {
-          const cashierRows = perfData.performance.map(perf => ({
-            name: perf.cashier_name || perf.username || 'Unknown',
-            refund: parseFloat(perf.total_returns || 0).toFixed(2),
-            sales: parseFloat(perf.total_sales || 0).toFixed(2)
-          }));
-          console.log('✅ Mapped cashier rows:', cashierRows);
-          setDashboardData(prev => ({ ...prev, employeePerformance: cashierRows }));
-        } else {
-          console.warn('⚠️ No performance data or API failed:', perfData);
-        }
-      } else {
-        console.error('❌ Response not OK:', perfRes.status);
-      }
-    } catch (err) {
-      console.error('❌ Failed to fetch cashier performance data:', err);
-    }
-  };
 
   // Fetch employee data from database
   const fetchEmployeeData = async () => {
@@ -332,27 +295,57 @@ function Dashboard() {
     }
   };
 
-  // Fetch dashboard data from API
+  // Fetch dashboard data from API (uses current globalPeriod)
   const fetchDashboardData = async () => {
+    await fetchDashboardDataWithPeriod(globalPeriod);
+  };
+
+  // Handle payment period change (legacy - no longer used)
+  const handlePaymentPeriodChange = async (newPeriod) => {
+    // This function is no longer used since Payment Methods now uses global filter
+    console.log('Payment period change deprecated - using global filter instead');
+  };
+
+  // Handle global period change
+  const handleGlobalPeriodChange = async (newPeriod) => {
+    console.log('📅 Global period changing from', globalPeriod, 'to', newPeriod);
+    if (newPeriod !== globalPeriod) {
+      setGlobalPeriod(newPeriod);
+      // Trigger immediate data fetch with new period
+      await fetchDashboardDataWithPeriod(newPeriod);
+    }
+  };
+
+  // Fetch dashboard data with specific period
+  const fetchDashboardDataWithPeriod = async (period) => {
     try {
       setLoading(true);
-      console.log('🔄 Fetching dashboard data with period:', globalPeriod);
-      console.log('📅 Period filter applied:', globalPeriod);
+      console.log('🔄 Fetching dashboard data with period:', period);
+      console.log('📅 Period filter applied:', period);
       
       const response = await fetch(`${getApiUrl('backend.php')}?_t=${Date.now()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           action: 'get_dashboard_data',
-          period: globalPeriod
+          period: period
         })
       });
       
       const result = await response.json();
       console.log('📊 Dashboard data received:', result);
       
-      // Fetch payment methods data using global period filter
-      const paymentMethodsData = await fetchPaymentMethodsWithPeriod(globalPeriod);
+      // Log debug information if available
+      if (result.debug) {
+        console.log('🔍 Debug info:', result.debug);
+        console.log('📅 Period filter:', result.debug.period);
+        console.log('📈 Chart data count:', result.debug.chart_data_count);
+        console.log('💼 Has transactions:', result.debug.has_transactions);
+        console.log('📅 Date filter info:', result.debug.date_filter_info);
+      }
+      
+      // Fetch payment methods data using specific period
+      const paymentMethodsData = await fetchPaymentMethodsWithPeriod(period);
       console.log('💳 Payment methods data:', paymentMethodsData);
       
       if (result.success) {
@@ -365,31 +358,61 @@ function Dashboard() {
           employeePerformance: [] // Will be populated by fetchCashierPerformance
         });
 
-        // Fetch actual cashier performance data with period filter
-        await fetchCashierPerformance();
+        // Fetch actual cashier performance data with specific period
+        await fetchCashierPerformanceWithPeriod(period);
         
-        console.log('✅ Dashboard data loaded successfully with period:', globalPeriod);
+        console.log('✅ Dashboard data loaded successfully with period:', period);
       } else {
         console.error('❌ API Error:', result.message);
+        toast.error('Failed to load dashboard data: ' + result.message);
       }
     } catch (error) {
       console.error('❌ Error fetching dashboard data:', error);
+      toast.error('Network error occurred while loading dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle payment period change (legacy - no longer used)
-  const handlePaymentPeriodChange = async (newPeriod) => {
-    // This function is no longer used since Payment Methods now uses global filter
-    console.log('Payment period change deprecated - using global filter instead');
-  };
-
-  // Handle global period change
-  const handleGlobalPeriodChange = async (newPeriod) => {
-    console.log('📅 Global period changing from', globalPeriod, 'to', newPeriod);
-    setGlobalPeriod(newPeriod);
-    // Note: fetchDashboardData will be triggered by useEffect when globalPeriod changes
+  // Fetch cashier performance data with specific period
+  const fetchCashierPerformanceWithPeriod = async (period) => {
+    try {
+      console.log('🔍 Fetching cashier performance with period:', period);
+      const perfRes = await fetch(`${getApiUrl('employee_manager.php')}?_t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'get_cashier_performance',
+          period: period
+        })
+      });
+      
+      console.log('📡 Response status:', perfRes.status);
+      
+      if (perfRes.ok) {
+        const perfData = await perfRes.json();
+        console.log('📊 Cashier performance data:', perfData);
+        
+        if (perfData.success && perfData.performance) {
+          const cashierRows = perfData.performance.map(perf => ({
+            name: perf.cashier_name || perf.username || 'Unknown',
+            refund: parseFloat(perf.total_returns || 0).toFixed(2),
+            sales: parseFloat(perf.total_sales || 0).toFixed(2)
+          }));
+          console.log('✅ Mapped cashier rows:', cashierRows);
+          setDashboardData(prev => ({ ...prev, employeePerformance: cashierRows }));
+        } else {
+          console.warn('⚠️ No performance data or API failed:', perfData);
+          setDashboardData(prev => ({ ...prev, employeePerformance: [] }));
+        }
+      } else {
+        console.error('❌ Response not OK:', perfRes.status);
+        setDashboardData(prev => ({ ...prev, employeePerformance: [] }));
+      }
+    } catch (err) {
+      console.error('❌ Failed to fetch cashier performance data:', err);
+      setDashboardData(prev => ({ ...prev, employeePerformance: [] }));
+    }
   };
 
   // Profile menu handlers
@@ -427,7 +450,7 @@ function Dashboard() {
     fetchDashboardData();
     fetchEmployeeData(); // Fetch admin employee data on component load
     recordActivity({ activityType: 'DASHBOARD_VIEW', description: 'Dashboard loaded' });
-  }, [globalPeriod]); // Refresh when global period changes
+  }, []); // Only run on component mount
 
   return (
     <div className="min-h-screen pb-16" style={{ backgroundColor: safeTheme.bg.primary }}>
@@ -595,7 +618,15 @@ function Dashboard() {
             style={{ backgroundColor: safeTheme.bg.card, borderColor: safeTheme.border.default }}
           >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold" style={{ color: safeTheme.text.primary }}>Sales performance</h3>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: safeTheme.text.primary }}>Sales performance</h3>
+                <p className="text-sm" style={{ color: safeTheme.text.muted }}>
+                  {globalPeriod === 'today' ? 'Today' : 
+                   globalPeriod === 'week' ? 'This Week' : 
+                   globalPeriod === 'month' ? 'This Month' : 
+                   'All Time'}
+                </p>
+              </div>
             </div>
             
              {/* Simple Chart Representation */}
@@ -610,19 +641,36 @@ function Dashboard() {
                      <div className="w-4 h-3 rounded animate-pulse" style={{ backgroundColor: safeTheme.bg.hover }}></div>
                    </div>
                  ))
-               ) : dashboardData.salesData.length > 0 ? (
-                 dashboardData.salesData.map((data, index) => {
-                   const maxValue = Math.max(...dashboardData.salesData.map(d => Math.max(d.totalTransfer || 0, d.totalSales || 0, d.totalReturn || 0)));
+               ) : dashboardData.salesData.length > 0 ? (() => {
+                 // Check if all values are zero
+                 const hasAnyData = dashboardData.salesData.some(d => 
+                   (d.totalTransfer || 0) > 0 || (d.totalSales || 0) > 0 || (d.totalReturn || 0) > 0
+                 );
+                 
+                 if (!hasAnyData) {
+                   return (
+                     <div className="w-full h-full flex items-center justify-center">
+                       <p className="text-sm" style={{ color: safeTheme.text.muted }}>No transactions for selected period</p>
+                     </div>
+                   );
+                 }
+                 
+                 const maxValue = Math.max(...dashboardData.salesData.map(d => Math.max(d.totalTransfer || 0, d.totalSales || 0, d.totalReturn || 0)));
+                 return dashboardData.salesData.map((data, index) => {
+                   const transferHeight = maxValue > 0 ? Math.min(((data.totalTransfer || 0) / maxValue) * 120, 120) : 0;
+                   const salesHeight = maxValue > 0 ? Math.min(((data.totalSales || 0) / maxValue) * 120, 120) : 0;
+                   const returnHeight = maxValue > 0 ? Math.min(((data.totalReturn || 0) / maxValue) * 120, 120) : 0;
+                   
                    return (
                      <div key={index} className="flex flex-col items-center space-y-1">
-                       <div className="w-6 bg-blue-500 rounded-t" style={{ height: `${Math.min(((data.totalTransfer || 0) / maxValue) * 120, 120)}px` }}></div>
-                       <div className="w-6 bg-green-500 rounded-t" style={{ height: `${Math.min(((data.totalSales || 0) / maxValue) * 120, 120)}px` }}></div>
-                       <div className="w-6 bg-orange-500 rounded-t" style={{ height: `${Math.min(((data.totalReturn || 0) / maxValue) * 120, 120)}px` }}></div>
+                       {transferHeight > 0 && <div className="w-6 bg-blue-500 rounded-t" style={{ height: `${transferHeight}px` }}></div>}
+                       {salesHeight > 0 && <div className="w-6 bg-green-500 rounded-t" style={{ height: `${salesHeight}px` }}></div>}
+                       {returnHeight > 0 && <div className="w-6 bg-orange-500 rounded-t" style={{ height: `${returnHeight}px` }}></div>}
                        <span className="text-xs mt-2" style={{ color: safeTheme.text.muted }}>{data.day}</span>
                      </div>
                    );
-                 })
-               ) : (
+                 });
+               })() : (
                  <div className="w-full h-full flex items-center justify-center">
                    <p className="text-sm" style={{ color: safeTheme.text.muted }}>No sales data available</p>
                  </div>
@@ -652,7 +700,15 @@ function Dashboard() {
             style={{ backgroundColor: safeTheme.bg.card, borderColor: safeTheme.border.default }}
           >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold" style={{ color: safeTheme.text.primary }}>Payment Methods</h3>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: safeTheme.text.primary }}>Payment Methods</h3>
+                <p className="text-sm" style={{ color: safeTheme.text.muted }}>
+                  {globalPeriod === 'today' ? 'Today' : 
+                   globalPeriod === 'week' ? 'This Week' : 
+                   globalPeriod === 'month' ? 'This Month' : 
+                   'All Time'}
+                </p>
+              </div>
             </div>
             
             {/* Pie Chart Representation */}

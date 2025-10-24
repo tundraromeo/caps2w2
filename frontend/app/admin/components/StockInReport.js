@@ -80,15 +80,40 @@ function StockInReport() {
       // The API already filters by date range, so we can use the data directly
       let stockInData = result.data || [];
       
+      // Debug: Log the structure of first few items to understand the data
+      if (stockInData.length > 0) {
+        console.log('📊 Sample data structure:', stockInData.slice(0, 2));
+        console.log('📊 Total records before deduplication:', stockInData.length);
+        console.log('📊 Movement IDs found:', stockInData.map(item => item.movement_id || item.id).slice(0, 10));
+      }
+      
       // CRITICAL: Remove duplicates based on movement_id to prevent same transaction showing multiple times
+      // But handle cases where movement_id might be undefined
       const seenMovementIds = new Set();
+      const seenEntries = new Set(); // Track entries by multiple fields for undefined movement_id cases
+      
       stockInData = stockInData.filter(item => {
         const movementId = item.movement_id || item.id;
-        if (seenMovementIds.has(movementId)) {
-          console.log('Removing duplicate entry with movement_id:', movementId);
-          return false; // Skip this duplicate entry
+        
+        // If movement_id exists, use it for deduplication
+        if (movementId && movementId !== 'undefined') {
+          if (seenMovementIds.has(movementId)) {
+            console.log('Removing duplicate entry with movement_id:', movementId);
+            return false; // Skip this duplicate entry
+          }
+          seenMovementIds.add(movementId);
+          return true;
         }
-        seenMovementIds.add(movementId);
+        
+        // For entries without movement_id, create a unique key based on multiple fields
+        const uniqueKey = `${item.product_name || ''}_${item.barcode || ''}_${item.date || ''}_${item.time || ''}_${item.quantity || ''}`;
+        
+        if (seenEntries.has(uniqueKey)) {
+          console.log('Removing duplicate entry without movement_id:', uniqueKey);
+          return false;
+        }
+        
+        seenEntries.add(uniqueKey);
         return true;
       });
       
@@ -115,16 +140,29 @@ function StockInReport() {
 
   const combineReports = async () => {
     try {
+      console.log('🔄 Combine Reports button clicked!');
       setLoading(true);
       
-      // Generate PDF directly
-      await generateCombinedPDF(selectedReportTypes);
+      // Check if we have data first
+      if (stockInData.length === 0) {
+        console.warn('⚠️ No stock-in data available for PDF generation');
+        alert('No data available to generate PDF. Please ensure you have stock-in data for the selected date range.');
+        return;
+      }
       
-      // Close modal
+      console.log('🧪 Starting PDF generation with data:', stockInData.length, 'records');
+      
+      // Generate PDF directly instead of opening modal
+      await generateCombinedPDF(['stock_in']);
+      
+      console.log('✅ PDF generation completed');
+      
+      // Close current modal
       setShowCombineModal(false);
       
     } catch (error) {
-      console.error('Error combining reports:', error);
+      console.error('❌ Error combining reports:', error);
+      alert('Error generating PDF: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -132,6 +170,19 @@ function StockInReport() {
 
   const generateCombinedPDF = async (reportTypes) => {
     try {
+      console.log('🧪 Starting PDF generation...');
+      console.log('🧪 Report types:', reportTypes);
+      console.log('🧪 Stock in data length:', stockInData.length);
+      console.log('🧪 jsPDF available:', typeof jsPDF !== 'undefined');
+      console.log('🧪 html2canvas available:', typeof html2canvas !== 'undefined');
+      
+      // Check if we have data
+      if (stockInData.length === 0) {
+        console.warn('⚠️ No stock-in data available for PDF generation');
+        alert('No data available to generate PDF. Please ensure you have stock-in data for the selected date range.');
+        return;
+      }
+      
       // Create a temporary div for PDF generation
       const tempDiv = document.createElement('div');
       tempDiv.style.position = 'absolute';
@@ -159,38 +210,39 @@ function StockInReport() {
           <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 10px;">
             <thead>
               <tr style="background-color: #f8f9fa;">
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Barcode</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Product Name</th>
                 <th style="border: 1px solid #000; padding: 8px; text-align: left;">Date</th>
                 <th style="border: 1px solid #000; padding: 8px; text-align: left;">Time</th>
-                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Product Name</th>
-                <th style="border: 1px solid #000; padding: 8px; text-align: center;">Type</th>
                 <th style="border: 1px solid #000; padding: 8px; text-align: center;">Quantity</th>
-                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Reason</th>
-                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Adjusted By</th>
-                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Reference No</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Unit Price</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Total Value</th>
+                <th style="border: 1px solid #000; padding: 8px; text-align: left;">Batch Number</th>
               </tr>
             </thead>
             <tbody>
         `;
 
         stockInData.forEach((row, index) => {
+          const barcode = row.barcode || row.product_id || 'N/A';
+          const productName = row.product_name || 'Generic Product';
           const date = row.date ? new Date(row.date).toLocaleDateString('en-PH') : 'N/A';
           const time = row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
-          const productName = row.product_name || 'Generic Product';
           const quantity = row.quantity || '0';
-          const reason = row.notes || 'System Addition';
-          const adjustedBy = row.adjusted_by || row.logged_in_user || row.created_by || 'Unknown User';
-          const referenceNo = row.reference_no || 'Auto-Generated';
+          const unitPrice = row.unit_price || row.price || '0.00';
+          const totalValue = (parseFloat(unitPrice) * parseInt(quantity)).toFixed(2);
+          const batchNumber = row.batch_number || row.batch_id || row.reference_no || 'N/A';
 
           tableHTML += `
             <tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
+              <td style="border: 1px solid #000; padding: 6px;">${barcode}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${productName}</td>
               <td style="border: 1px solid #000; padding: 6px;">${date}</td>
               <td style="border: 1px solid #000; padding: 6px;">${time}</td>
-              <td style="border: 1px solid #000; padding: 6px;">${productName}</td>
-              <td style="border: 1px solid #000; padding: 6px; text-align: center;">Stock In</td>
               <td style="border: 1px solid #000; padding: 6px; text-align: center;">+${quantity}</td>
-              <td style="border: 1px solid #000; padding: 6px;">${reason}</td>
-              <td style="border: 1px solid #000; padding: 6px;">${adjustedBy}</td>
-              <td style="border: 1px solid #000; padding: 6px;">${referenceNo}</td>
+              <td style="border: 1px solid #000; padding: 6px;">₱${unitPrice}</td>
+              <td style="border: 1px solid #000; padding: 6px;">₱${totalValue}</td>
+              <td style="border: 1px solid #000; padding: 6px;">${batchNumber}</td>
             </tr>
           `;
         });
@@ -226,7 +278,7 @@ function StockInReport() {
             </div>
             <div style="display: table-row;">
               <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">Date Range:</div>
-              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">${combineDateRange.startDate} to ${combineDateRange.endDate}</div>
+              <div style="display: table-cell; color: #000000; font-size: 11px; padding: 3px 0;">ALL AVAILABLE DATA</div>
             </div>
             <div style="display: table-row;">
               <div style="display: table-cell; font-weight: bold; color: #000000; font-size: 11px; padding: 3px 10px 3px 0; width: 30%;">File Format:</div>
@@ -271,41 +323,84 @@ function StockInReport() {
       document.body.appendChild(tempDiv);
       
       // Generate canvas from HTML
+      console.log('🧪 Generating canvas from HTML...');
       const canvas = await html2canvas(tempDiv, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff'
       });
+      console.log('✅ Canvas generated successfully:', canvas);
       
       // Remove temporary div
       document.body.removeChild(tempDiv);
       
       // Create PDF
+      console.log('🧪 Creating PDF document...');
       const imgData = canvas.toDataURL('image/png');
+      console.log('🧪 Image data generated, length:', imgData.length);
+      
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgWidth = 210;
       const pageHeight = 295;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       let heightLeft = imgHeight;
       
+      console.log('🧪 PDF dimensions - imgWidth:', imgWidth, 'imgHeight:', imgHeight, 'pageHeight:', pageHeight);
+      
       let position = 0;
       
+      console.log('🧪 Adding first page to PDF...');
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
       
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight;
+        console.log('🧪 Adding additional page to PDF...');
         pdf.addPage();
         pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
       }
       
+      console.log('✅ PDF document created successfully');
+      
       // Save PDF
       const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
-      pdf.save(fileName);
       
-      console.log(`PDF downloaded successfully: ${fileName}`);
+      console.log('🧪 Attempting to save PDF:', fileName);
+      console.log('🧪 PDF object:', pdf);
+      
+      try {
+        pdf.save(fileName);
+        console.log('✅ PDF saved successfully:', fileName);
+        alert('PDF downloaded successfully! Check your Downloads folder.');
+      } catch (saveError) {
+        console.error('❌ PDF save failed:', saveError);
+        
+        // Try alternative method
+        try {
+          console.log('🧪 Trying alternative save method...');
+          const pdfBlob = pdf.output('blob');
+          const url = URL.createObjectURL(pdfBlob);
+          
+          const downloadLink = document.createElement('a');
+          downloadLink.href = url;
+          downloadLink.download = fileName;
+          downloadLink.style.display = 'none';
+          
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+          
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          
+          console.log('✅ Alternative save method successful');
+          alert('PDF downloaded successfully via alternative method! Check your Downloads folder.');
+        } catch (altError) {
+          console.error('❌ Alternative save method also failed:', altError);
+          throw new Error('Both PDF save methods failed: ' + altError.message);
+        }
+      }
       
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -448,15 +543,15 @@ function StockInReport() {
         }
         
         return '👤 Unknown User';
-      case 'reference_no':
-        return row.reference_no || 'N/A';
+      case 'batch_number':
+        return row.batch_number || row.batch_id || row.reference_no || 'N/A';
       default:
         return row[columnKey] || 'N/A';
     }
   };
 
   // Updated columns to match stock adjustment data structure
-  const columns = ['Date', 'Time', 'Product Name', 'Adjustment Type', 'Quantity', 'Reason', 'Adjusted By', 'Status', 'Reference No'];
+  const columns = ['Barcode', 'Product Name', 'Date', 'Time', 'Quantity', 'Unit Price', 'Total Value', 'Batch Number'];
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
@@ -483,7 +578,44 @@ function StockInReport() {
                 border: `1px solid ${theme.border.default}`
               }}
             >
-              📋 Combine Reports
+                  📋 Combine Reports
+                </button>
+                <button
+                  onClick={() => {
+                    console.log('🧪 Testing simple PDF generation...');
+                    try {
+                      if (typeof jsPDF === 'undefined') {
+                        throw new Error('jsPDF library not loaded');
+                      }
+                      
+                      const pdf = new jsPDF();
+                      pdf.setFontSize(16);
+                      pdf.setFont(undefined, 'bold');
+                      pdf.text('ENGUIO PHARMACY SYSTEM', 20, 20);
+                      pdf.setFontSize(12);
+                      pdf.setFont(undefined, 'normal');
+                      pdf.text('Test PDF Report', 20, 35);
+                      pdf.text('Date: ' + new Date().toLocaleDateString(), 20, 45);
+                      pdf.text('This is a test PDF', 20, 55);
+                      
+                      console.log('🧪 Attempting to save test PDF...');
+                      pdf.save('test_stock_in_report.pdf');
+                      console.log('✅ Test PDF saved successfully');
+                      alert('Test PDF downloaded successfully! Check your Downloads folder.');
+                    } catch (error) {
+                      console.error('❌ Test PDF failed:', error);
+                      alert('Test PDF failed: ' + error.message);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.secondary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                >
+                  🧪 Test PDF
             </button>
           </div>
         </div>

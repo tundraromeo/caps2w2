@@ -16,6 +16,8 @@ function UserManagement() {
   const { theme } = useTheme();
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
   const [formData, setFormData] = useState({
     fname: "",
     mname: "",
@@ -247,29 +249,45 @@ function UserManagement() {
     setShowModal(true);
   };
 
-  const handleDelete = async (user) => {
-    if (!window.confirm(`Are you sure you want to delete ${user.fname} ${user.lname}?`)) {
-      return;
-    }
+  const handleToggleStatus = (user) => {
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    const actionText = newStatus === 'active' ? 'activate' : 'deactivate';
+    
+    setConfirmAction({
+      type: 'toggleStatus',
+      user: user,
+      newStatus: newStatus,
+      actionText: actionText
+    });
+    setShowConfirmModal(true);
+  };
 
+  const executeToggleStatus = async () => {
+    if (!confirmAction) return;
+    
+    const { user, newStatus, actionText } = confirmAction;
+    
     try {
       setLoading(true);
       const response = await axios.post(API_BASE_URL, {
-        action: "delete_employee",
-        emp_id: user.id
+        action: "toggle_employee_status",
+        emp_id: user.id,
+        status: newStatus
       });
 
       if (response.data.success) {
-        toast.success('Employee deleted successfully!');
+        toast.success(`Employee ${actionText}d successfully!`);
         fetchUsers();
       } else {
-        toast.error(response.data.message || 'Failed to delete employee');
+        toast.error(response.data.message || `Failed to ${actionText} employee`);
       }
     } catch (error) {
-      console.error('Error deleting employee:', error);
-      toast.error('Error deleting employee');
+      console.error(`Error ${actionText}ing employee:`, error);
+      toast.error(`Error ${actionText}ing employee`);
     } finally {
       setLoading(false);
+      setShowConfirmModal(false);
+      setConfirmAction(null);
     }
   };
 
@@ -528,12 +546,18 @@ function UserManagement() {
                         <span 
                           className="inline-flex px-3 py-1 text-sm font-bold rounded-full border"
                           style={{ 
-                            backgroundColor: theme.isDarkMode ? '#065f46' : '#dcfce7',
-                            color: theme.isDarkMode ? '#6ee7b7' : '#16a34a',
-                            borderColor: theme.isDarkMode ? '#047857' : '#bbf7d0'
+                            backgroundColor: user.status === 'active' 
+                              ? (theme.isDarkMode ? '#065f46' : '#dcfce7')
+                              : (theme.isDarkMode ? '#7f1d1d' : '#fef2f2'),
+                            color: user.status === 'active' 
+                              ? (theme.isDarkMode ? '#6ee7b7' : '#16a34a')
+                              : (theme.isDarkMode ? '#fca5a5' : '#dc2626'),
+                            borderColor: user.status === 'active' 
+                              ? (theme.isDarkMode ? '#047857' : '#bbf7d0')
+                              : (theme.isDarkMode ? '#991b1b' : '#fecaca')
                           }}
                         >
-                          ✓ Active
+                          {user.status === 'active' ? '✓ Active' : '✗ Inactive'}
                         </span>
                       </td>
                       <td className="px-4 py-4" style={{ 
@@ -552,15 +576,17 @@ function UserManagement() {
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(user)}
+                            onClick={() => handleToggleStatus(user)}
                             className="px-3 py-1 text-sm font-semibold rounded border transition-all duration-200 hover:scale-105 hover:shadow-md"
                             style={{
-                              color: theme.colors.danger,
-                              borderColor: theme.colors.danger,
-                              backgroundColor: theme.isDarkMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(220, 38, 38, 0.1)'
+                              color: user.status === 'active' ? theme.colors.warning : theme.colors.success,
+                              borderColor: user.status === 'active' ? theme.colors.warning : theme.colors.success,
+                              backgroundColor: user.status === 'active' 
+                                ? (theme.isDarkMode ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.1)')
+                                : (theme.isDarkMode ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.1)')
                             }}
                           >
-                            Delete
+                            {user.status === 'active' ? 'Deactivate' : 'Activate'}
                           </button>
                         </div>
                       </td>
@@ -934,6 +960,83 @@ function UserManagement() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmation Modal */}
+        {showConfirmModal && confirmAction && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div 
+              className="rounded-lg shadow-xl p-6 w-full max-w-md mx-4"
+              style={{ 
+                backgroundColor: theme.bg.modal || theme.bg.card,
+                border: `1px solid ${theme.border.default}`,
+                boxShadow: `0 25px 50px ${theme.shadow.lg}`
+              }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 
+                  className="text-lg font-semibold"
+                  style={{ color: theme.text.primary }}
+                >
+                  Confirm Action
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setConfirmAction(null);
+                  }}
+                  className="p-1 rounded transition-colors"
+                  style={{ color: theme.text.muted }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-base" style={{ color: theme.text.primary }}>
+                  Are you sure you want to <strong>{confirmAction.actionText}</strong> {' '}
+                  <strong>{confirmAction.user.fname} {confirmAction.user.lname}</strong>?
+                </p>
+                <p className="text-sm mt-2 opacity-75" style={{ color: theme.text.secondary }}>
+                  {confirmAction.actionText === 'activate' 
+                    ? 'This will allow the user to log in to the system.'
+                    : 'This will prevent the user from logging in to the system.'
+                  }
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setConfirmAction(null);
+                  }}
+                  className="px-4 py-2 border rounded transition-all duration-200"
+                  style={{
+                    backgroundColor: theme.bg.hover || theme.bg.secondary,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={executeToggleStatus}
+                  disabled={loading}
+                  className="px-6 py-2 rounded text-white transition-all duration-200 hover:scale-105 disabled:opacity-50"
+                  style={{ 
+                    backgroundColor: confirmAction.actionText === 'activate' 
+                      ? theme.colors.success || '#10b981'
+                      : theme.colors.warning || '#f59e0b'
+                  }}
+                >
+                  {loading ? 'Processing...' : `Yes, ${confirmAction.actionText}`}
+                </button>
+              </div>
             </div>
           </div>
         )}

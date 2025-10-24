@@ -983,10 +983,10 @@ function ConvenienceStore() {
                           <thead className="border-b sticky top-0 z-10" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default }}>
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  PRODUCT NAME
+                  BARCODE
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  BARCODE
+                  PRODUCT NAME
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   CATEGORY
@@ -1004,6 +1004,9 @@ function ConvenienceStore() {
                   SUPPLIER
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
+                  DAYS TO EXPIRY
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   ACTIONS
                 </th>
               </tr>
@@ -1011,7 +1014,7 @@ function ConvenienceStore() {
             <tbody className="divide-y" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.light }}>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
+                  <td colSpan={9} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
                     Loading products...
                   </td>
                 </tr>
@@ -1044,13 +1047,13 @@ function ConvenienceStore() {
                   
                   return (
                   <tr key={`${product.product_id}-${index}`} className={rowClass} style={rowStyle}>
+                    <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
+                      {product.barcode}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium" style={{ color: theme.text.primary }}>
                         {product.product_name}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
-                      {product.barcode}
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
@@ -1064,12 +1067,10 @@ function ConvenienceStore() {
                       <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
                         {product.total_quantity || product.quantity || 0} pieces
                       </div>
-                      {/* Show breakdown if multiple batches */}
-                      {product.total_batches > 1 && (
-                        <div className="text-xs mt-1" style={{ color: theme.text.muted }}>
-                          ({product.total_batches} batches)
-                        </div>
-                      )}
+                      {/* Always show batch count */}
+                      <div className="text-xs mt-1" style={{ color: theme.text.muted }}>
+                        ({product.total_batches || 1} batches)
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                       ₱{(() => {
@@ -1079,6 +1080,24 @@ function ConvenienceStore() {
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || product.brand || "Unknown"}
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
+                      {(() => {
+                        if (!product.expiration) return 'N/A';
+                        const today = new Date();
+                        const expiry = new Date(product.expiration);
+                        const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                        
+                        if (daysUntilExpiry < 0) {
+                          return <span style={{ color: theme.colors.danger }}>Expired ({Math.abs(daysUntilExpiry)} days ago)</span>;
+                        } else if (daysUntilExpiry <= 7) {
+                          return <span style={{ color: theme.colors.warning }}>{daysUntilExpiry} days</span>;
+                        } else if (daysUntilExpiry <= 30) {
+                          return <span style={{ color: theme.colors.info }}>{daysUntilExpiry} days</span>;
+                        } else {
+                          return <span style={{ color: theme.colors.success }}>{daysUntilExpiry} days</span>;
+                        }
+                      })()}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center gap-2">
@@ -1108,7 +1127,7 @@ function ConvenienceStore() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center">
+                    <td colSpan={9} className="px-6 py-8 text-center">
                       <div className="flex flex-col items-center space-y-3">
                         <Package className="h-12 w-12" style={{ color: theme.text.muted }} />
                         <div style={{ color: theme.text.secondary }}>
@@ -1380,12 +1399,6 @@ function ConvenienceStore() {
                     <span className="ml-2 font-semibold text-gray-900">{batchData.length}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Transfer Date:</span>
-                    <span className="ml-2 font-semibold text-gray-900">
-                      {selectedProductForBatch.transfer_date && selectedProductForBatch.transfer_date !== 'null' ? new Date(selectedProductForBatch.transfer_date).toLocaleDateString() : 'Not Set'}
-                    </span>
-                  </div>
-                  <div>
                     <span className="text-gray-600">FIFO Order:</span>
                     <span className="ml-2 font-semibold text-green-600">✓ Active</span>
                   </div>
@@ -1570,12 +1583,6 @@ function ConvenienceStore() {
                   <div>
                     <span className="text-gray-600">Batches Used:</span>
                     <span className="ml-2 font-semibold text-gray-900">{batchData.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Transfer Date:</span>
-                    <span className="ml-2 font-semibold text-gray-900">
-                      {selectedProductForHistory.transfer_date && selectedProductForHistory.transfer_date !== 'null' ? new Date(selectedProductForHistory.transfer_date).toLocaleDateString() : 'Not Set'}
-                    </span>
                   </div>
                   <div>
                     <span className="text-gray-600">FIFO Order:</span>

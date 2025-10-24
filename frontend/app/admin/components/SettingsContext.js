@@ -75,27 +75,7 @@ export const SettingsProvider = ({ children }) => {
   };
 
   const updateSetting = (key, value) => {
-    const oldValue = settings[key];
     setSettings(prev => ({ ...prev, [key]: value }));
-    
-    // Show notification for important setting changes
-    if (key === 'expiryWarningDays' && oldValue !== value && isLoaded) {
-      setTimeout(() => {
-        toast.info(`⚙️ Expiry alert threshold updated to ${value} days. All inventory alerts will now use this new threshold.`);
-      }, 100);
-    }
-    
-    if (key === 'expiryAlerts' && isLoaded) {
-      setTimeout(() => {
-        toast.info(value ? '🔔 Expiry alerts enabled' : '🔕 Expiry alerts disabled');
-      }, 100);
-    }
-    
-    if (key === 'lowStockThreshold' && oldValue !== value && isLoaded) {
-      setTimeout(() => {
-        toast.info(`📊 Low stock threshold updated to ${value} units.`);
-      }, 100);
-    }
   };
 
   // Helper function to check if a product is expiring soon

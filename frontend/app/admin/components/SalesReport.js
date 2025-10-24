@@ -1,12 +1,670 @@
-import IndividualReport from './IndividualReport';
+"use client";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
+import { toast } from 'react-toastify';
+import { useTheme } from './ThemeContext';
+
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/backend.php`;
 
 function SalesReport() {
+  const { theme } = useTheme();
+  const [salesData, setSalesData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [dateRange, setDateRange] = useState(() => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    return {
+      startDate: firstDay.toISOString().split('T')[0],
+      endDate: today.toISOString().split('T')[0]
+    };
+  });
+  const [showCombineModal, setShowCombineModal] = useState(false);
+  const [selectedReportTypes, setSelectedReportTypes] = useState(['sales']);
+
+  const fetchAllSalesData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('💰 Fetching sales data...');
+      
+      const res = await axios.post(API_BASE_URL, {
+        action: 'get_report_data',
+        report_type: 'sales',
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate
+      }, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (res.data?.success) {
+        setSalesData(res.data.data || []);
+        console.log('✅ Sales data fetched successfully:', res.data.data?.length || 0, 'records');
+        
+        // Debug: Log first few records to see cashier data
+        if (res.data.data && res.data.data.length > 0) {
+          console.log('🔍 Sample sales data:', res.data.data.slice(0, 2));
+          console.log('🔍 Cashier fields in first record:', {
+            cashier_name: res.data.data[0].cashier_name,
+            cashier_username: res.data.data[0].cashier_username,
+            emp_id: res.data.data[0].emp_id
+          });
+        }
+      } else {
+        setSalesData([]);
+        setError(res.data?.message || 'Failed to fetch sales data');
+        console.warn('⚠️ Sales data fetch failed:', res.data?.message);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching sales data:', error);
+      setSalesData([]);
+      
+      if (error.message === 'Network Error' || error.message.includes('fetch')) {
+        setError('Network Error: Please check if XAMPP services (Apache & MySQL) are running');
+      } else if (error.message.includes('timeout')) {
+        setError('Request timeout: Server may be slow, please try again');
+      } else {
+        setError(`Failed to load sales data: ${error.message}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const combineReports = async () => {
+    try {
+      setLoading(true);
+      
+      console.log('🔄 Generating combined PDF from SalesReport component');
+      
+      // Generate PDF directly with sales data
+      await generateCombinedPDF(['sales']);
+      
+      // Close modal
+      setShowCombineModal(false);
+      
+      // Show success message
+      console.log('✅ Combined PDF generated successfully from SalesReport');
+      
+    } catch (error) {
+      console.error('Error combining reports:', error);
+      alert('Error generating PDF: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateCombinedPDF = async (reportTypes) => {
+    try {
+      console.log('📄 Generating PDF for report types:', reportTypes);
+      
+      // Use the same API approach as the main Reports component
+      const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/backend.php`;
+      
+      // Fetch data for the selected report types
+      const allReportsData = {};
+      let hasAnyData = false;
+      
+      for (const reportType of reportTypes) {
+        try {
+          console.log(`📊 Fetching data for ${reportType}...`);
+          const res = await axios.post(API_BASE_URL, {
+            action: 'get_report_data',
+            report_type: reportType,
+            start_date: dateRange.startDate,
+            end_date: dateRange.endDate
+          }, {
+            timeout: 10000,
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          });
+          
+          if (res.data?.success) {
+            allReportsData[reportType] = res.data.data || [];
+            console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
+            
+            if (allReportsData[reportType].length > 0) {
+              hasAnyData = true;
+            }
+          } else {
+            allReportsData[reportType] = [];
+            console.warn(`⚠️ No data for ${reportType}:`, res.data?.message);
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching ${reportType}:`, error);
+          allReportsData[reportType] = [];
+        }
+      }
+      
+      // Check if we have any data to generate PDF
+      if (!hasAnyData) {
+        throw new Error('No data found for the selected date range and report types.');
+      }
+      
+      console.log('📄 Creating PDF document...');
+      
+      // Create PDF with jsPDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // Header
+      pdf.setFontSize(16);
+      pdf.setFont(undefined, 'bold');
+      pdf.text('ENGUIO PHARMACY SYSTEM', 20, 20);
+      
+      pdf.setFontSize(12);
+      pdf.text('Sales Report', 20, 30);
+      
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, 'normal');
+      pdf.text(`Date Range: ${dateRange.startDate} to ${dateRange.endDate}`, 20, 40);
+      pdf.text(`Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 20, 45);
+      pdf.text(`Generated by: Admin`, 20, 50);
+      
+      let yPosition = 60;
+      
+      // Add each report's data
+      for (const reportType of reportTypes) {
+        const data = allReportsData[reportType] || [];
+        const reportName = reportType === 'sales' ? 'Sales Report' : reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        
+        console.log(`📊 Processing ${reportType}:`, {
+          reportName,
+          dataLength: data.length,
+          hasData: data.length > 0
+        });
+        
+        // Check if we need a new page
+        if (yPosition > 250) {
+          pdf.addPage();
+          yPosition = 20;
+        }
+        
+        // Report header
+        pdf.setFontSize(12);
+        pdf.setFont(undefined, 'bold');
+        pdf.text(`${reportName}`, 20, yPosition);
+        yPosition += 10;
+        
+        if (data.length === 0) {
+          pdf.setFontSize(9);
+          pdf.setFont(undefined, 'normal');
+          pdf.text('No data available for this report type in the selected date range.', 20, yPosition);
+          yPosition += 15;
+        } else {
+          // Add report-specific summary
+          pdf.setFontSize(9);
+          pdf.setFont(undefined, 'bold');
+          pdf.text(`📊 ${data.length} records found`, 20, yPosition);
+          yPosition += 5;
+          
+          // Get columns for this report type
+          const columns = ['Date', 'Time', 'Reference No', 'Products', 'Items Sold', 'Total Amount', 'Payment Type', 'Cashier'];
+          
+          // Prepare table data
+          const tableData = data.slice(0, 30).map(row => {
+            return columns.map(column => {
+              const columnKey = column.toLowerCase().replace(/\s+/g, '_');
+              let cellValue = row[columnKey] || 'N/A';
+              
+              // Format values
+              if (columnKey === 'total_amount') {
+                cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
+              } else if (columnKey === 'date' && cellValue !== 'N/A') {
+                cellValue = new Date(cellValue).toLocaleDateString('en-PH');
+              } else if (columnKey === 'time' && cellValue !== 'N/A') {
+                try {
+                  cellValue = new Date(`2000-01-01T${cellValue}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+                } catch (e) {
+                  // Keep original if parsing fails
+                }
+              } else if (columnKey === 'products' && cellValue !== 'N/A') {
+                // Truncate long product lists
+                cellValue = cellValue.length > 30 ? cellValue.substring(0, 30) + '...' : cellValue;
+              } else if (columnKey === 'cashier' || columnKey === 'cashier_name') {
+                // Try multiple field names for cashier name
+                const cashierName = row.cashier_name || row.cashier_username || row.emp_name || 'System';
+                const cashierId = row.emp_id || row.cashier_id;
+                
+                if (cashierName && cashierName !== 'System' && cashierName.trim() !== '') {
+                  cellValue = cashierName.trim();
+                } else {
+                  cellValue = 'System';
+                }
+              }
+              
+              return cellValue.toString().substring(0, 25); // Limit cell content length
+            });
+          });
+          
+          // Add table using autoTable
+          try {
+            autoTable(pdf, {
+              head: [columns],
+              body: tableData,
+              startY: yPosition,
+              styles: {
+                fontSize: 8,
+                cellPadding: 2,
+              },
+              headStyles: {
+                fillColor: [200, 200, 200],
+                textColor: [0, 0, 0],
+                fontStyle: 'bold',
+              },
+              alternateRowStyles: {
+                fillColor: [245, 245, 245],
+              },
+              margin: { left: 20, right: 20 },
+              tableWidth: 'auto'
+            });
+            
+            // Get the final Y position after the table
+            yPosition = pdf.lastAutoTable.finalY + 10;
+          } catch (autoTableError) {
+            console.warn('AutoTable failed:', autoTableError);
+            yPosition += 50; // Fallback spacing
+          }
+          
+          if (data.length > 30) {
+            pdf.setFontSize(8);
+            pdf.setFont(undefined, 'normal');
+            pdf.text(`Showing 30 of ${data.length} records`, 20, yPosition);
+            yPosition += 10;
+          }
+        }
+      }
+      
+      // Save PDF
+      const fileName = `Sales_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
+      
+      console.log('💾 Saving PDF:', fileName);
+      pdf.save(fileName);
+      console.log(`✅ PDF downloaded successfully: ${fileName}`);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      throw error;
+    }
+  };
+
+  const handleReportTypeChange = (reportTypeId) => {
+    setSelectedReportTypes(prev => {
+      if (prev.includes(reportTypeId)) {
+        return prev.filter(id => id !== reportTypeId);
+      } else {
+        return [...prev, reportTypeId];
+      }
+    });
+  };
+
+  const openCombineModal = () => {
+    setSelectedReportTypes(['sales']);
+    setShowCombineModal(true);
+  };
+
+  useEffect(() => {
+    fetchAllSalesData();
+  }, [dateRange]);
+
+  const formatReportCell = (row, column) => {
+    const columnKey = column.toLowerCase().replace(/\s+/g, '_');
+    
+    // Debug log to see what column we're processing
+    console.log('Formatting cell for column:', column, 'columnKey:', columnKey, 'row data:', row);
+    
+    switch (columnKey) {
+      case 'total_amount':
+        return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
+      case 'date':
+        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : 'N/A';
+      case 'time':
+        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+      case 'items_sold':
+        return (
+          <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>
+            {row[columnKey] || '0'}
+          </span>
+        );
+      case 'payment_type':
+        const paymentType = row[columnKey] || 'Cash';
+        const paymentColors = {
+          'cash': { bg: theme.colors.successBg, color: theme.colors.success },
+          'gcash': { bg: theme.colors.infoBg, color: theme.colors.info },
+          'card': { bg: theme.colors.warningBg, color: theme.colors.warning }
+        };
+        const colors = paymentColors[paymentType.toLowerCase()] || paymentColors['cash'];
+        return (
+          <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: colors.bg, color: colors.color }}>
+            💳 {paymentType}
+          </span>
+        );
+      case 'products':
+        const products = row[columnKey] || 'N/A';
+        if (products.length > 50) {
+          return (
+            <span title={products} className="cursor-help">
+              {products.substring(0, 50)}...
+            </span>
+          );
+        }
+        return products;
+      case 'cashier':
+      case 'cashier_name':
+        // Try multiple field names for cashier name
+        const cashierName = row.cashier_name || row.cashier_username || row.emp_name || 'System';
+        const cashierId = row.emp_id || row.cashier_id;
+        
+        // Debug log to see what data we're getting
+        console.log('Cashier data:', { 
+          cashier_name: row.cashier_name, 
+          cashier_username: row.cashier_username, 
+          emp_id: row.emp_id,
+          fullRow: row 
+        });
+        
+        // Format cashier display without ID
+        if (cashierName && cashierName !== 'System' && cashierName.trim() !== '') {
+          return `👤 ${cashierName.trim()}`;
+        } else {
+          return '🤖 System';
+        }
+      default:
+        return row[columnKey] || '📊 Not Available';
+    }
+  };
+
+  // Updated columns to match sales data structure
+  const columns = [
+    'Date', 'Time', 'Reference No', 'Products', 'Items Sold', 'Total Amount', 'Payment Type', 'Cashier'
+  ];
+
   return (
-    <IndividualReport 
-      reportType="sales"
-      reportName="Sales Report"
-      reportIcon="💰"
-    />
+    <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
+      {/* Header */}
+      <div className="p-3" style={{ backgroundColor: theme.bg.card }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center space-x-4 mb-2">
+              <span className="text-2xl">💰</span>
+              <div>
+                <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>Sales Report</h1>
+                <p className="text-sm" style={{ color: theme.text.secondary }}>Sales Transactions from POS System</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={openCombineModal}
+              disabled={loading}
+              className="px-3 py-1 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2 text-sm"
+              style={{
+                backgroundColor: theme.bg.hover,
+                color: theme.text.primary,
+                border: `1px solid ${theme.border.default}`
+              }}
+            >
+              📋 Combine Reports
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Report Content */}
+      <div className="p-6">
+        {/* Date Range Selection */}
+        <div className="mb-6">
+          <div
+            className="rounded-lg shadow-md p-4"
+            style={{
+              backgroundColor: theme.bg.card,
+              boxShadow: `0 10px 25px ${theme.shadow.lg}`
+            }}
+          >
+            <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>Filter by Date Range</h3>
+            <div className="flex gap-4 items-center">
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
+                <input
+                  type="date"
+                  value={dateRange.startDate}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.input,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
+                <input
+                  type="date"
+                  value={dateRange.endDate}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="px-3 py-2 border rounded-md"
+                  style={{
+                    backgroundColor: theme.bg.input,
+                    borderColor: theme.border.default,
+                    color: theme.text.primary
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Data Display */}
+        <div
+          className="rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
+          style={{
+            backgroundColor: theme.bg.card,
+            boxShadow: `0 10px 25px ${theme.shadow.lg}`
+          }}
+        >
+          <div className="p-6">
+            <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>
+              Sales Transactions - {dateRange.startDate} to {dateRange.endDate}
+            </h3>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: theme.colors.accent }}></div>
+                <span className="ml-2" style={{ color: theme.text.secondary }}>Loading sales data...</span>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <div className="text-4xl mb-4">⚠️</div>
+                <p className="text-lg font-medium mb-2" style={{ color: theme.colors.danger }}>Error Loading Data</p>
+                <p className="mb-4" style={{ color: theme.text.secondary }}>{error}</p>
+                <button
+                  onClick={fetchAllSalesData}
+                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105"
+                  style={{
+                    backgroundColor: theme.colors.accent,
+                    color: theme.text.primary
+                  }}
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : salesData.length > 0 ? (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
+                    <div className="flex items-center">
+                      <div className="text-3xl mr-3">💰</div>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Transactions</p>
+                        <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{salesData.length}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
+                    <div className="flex items-center">
+                      <div className="text-3xl mr-3">📊</div>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Sales</p>
+                        <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                          ₱{salesData.reduce((sum, item) => sum + (parseFloat(item.total_amount) || 0), 0).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
+                    <div className="flex items-center">
+                      <div className="text-3xl mr-3">🛒</div>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Items Sold</p>
+                        <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                          {salesData.reduce((sum, item) => sum + (parseInt(item.items_sold) || 0), 0).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg shadow-md p-4" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
+                    <div className="flex items-center">
+                      <div className="text-3xl mr-3">👤</div>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Unique Cashiers</p>
+                        <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
+                          {new Set(salesData.map(item => item.cashier_name).filter(Boolean)).size}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="max-h-[600px] overflow-y-auto">
+                  <table className="w-full caption-bottom text-sm">
+                    <thead className="[&_tr]:border-b sticky top-0" style={{ backgroundColor: theme.bg.card }}>
+                      <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                        {columns.map((column, index) => (
+                          <th key={index} className="h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0" style={{ color: theme.text.primary }}>
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="[&_tr:last-child]:border-0">
+                      {salesData.map((row, index) => (
+                        <tr key={index} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                          {columns.map((column, colIndex) => (
+                            <td key={colIndex} className="p-4 align-middle" style={{ color: theme.text.secondary }}>
+                              {formatReportCell(row, column)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-8" style={{ color: theme.text.secondary }}>
+                <div className="text-4xl mb-4">💰</div>
+                <p>No sales data found for the selected date range</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Combine Modal */}
+      {showCombineModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div 
+            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
+            style={{ 
+              backgroundColor: theme.bg.card,
+              borderColor: theme.colors.success,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(34, 197, 94, 0.2)'
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <div>
+                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
+                  💰 Sales Report Download
+                </h3>
+                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+                  Generate PDF report for sales data
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCombineModal(false)}
+                className="transition-colors"
+                style={{ color: theme.text.muted }}
+                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
+                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              <div className="mb-6">
+                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Information</h4>
+                <div className="text-xs mb-2" style={{ color: theme.text.muted }}>
+                  Date range: {dateRange.startDate} to {dateRange.endDate}
+                </div>
+                <div className="text-xs mb-2" style={{ color: theme.text.muted }}>
+                  Records found: {salesData.length}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={combineReports}
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.colors.accent,
+                    color: theme.text.primary
+                  }}
+                >
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      Generating PDF...
+                    </>
+                  ) : (
+                    <>
+                      📥 Download Sales PDF
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowCombineModal(false)}
+                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default,
+                    color: theme.text.secondary,
+                    border: `1px solid ${theme.border.default}`
+                  }}
+                >
+                  ✕ Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

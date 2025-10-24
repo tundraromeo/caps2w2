@@ -644,24 +644,13 @@ const PharmacyStore = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
             <Package className="h-8 w-8" style={{ color: theme.colors.accent }} />
             <div className="ml-4">
               <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Products</p>
               <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{uniqueProducts.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
-          <div className="flex items-center">
-            <CheckCircle className="h-8 w-8" style={{ color: theme.colors.success }} />
-            <div className="ml-4">
-              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>In Stock</p>
-              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                {inventory.filter(p => p.stock_status === 'in stock').length}
-              </p>
             </div>
           </div>
         </div>
@@ -748,10 +737,10 @@ const PharmacyStore = () => {
             <thead className="border-b sticky top-0 z-10" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default }}>
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  PRODUCT NAME
+                  BARCODE
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  BARCODE
+                  PRODUCT NAME
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   CATEGORY
@@ -790,13 +779,13 @@ const PharmacyStore = () => {
                   
                   return (
                     <tr key={`${item.product_id}-${index}`} className="hover:bg-opacity-50" style={{ backgroundColor: 'transparent', hoverBackgroundColor: theme.bg.hover }}>
+                      <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
+                        {item.barcode}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium" style={{ color: theme.text.primary }}>
                           {item.product_name}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
-                        {item.barcode}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
@@ -810,12 +799,10 @@ const PharmacyStore = () => {
                         <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
                           {item.total_quantity || item.quantity || 0}
                         </div>
-                        {/* Show breakdown if multiple batches */}
-                        {item.total_batches > 1 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            ({item.total_batches} batches)
-                          </div>
-                        )}
+                        {/* Always show batch count */}
+                        <div className="text-xs text-gray-500 mt-1">
+                          ({item.total_batches || 1} batches)
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                         ₱{(() => {
@@ -1028,7 +1015,6 @@ const PharmacyStore = () => {
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transfer Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
                       </tr>
@@ -1036,7 +1022,7 @@ const PharmacyStore = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {loadingBatch ? (
                         <tr>
-                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center space-y-2">
                               <Package className="h-8 w-8 text-gray-400" />
                               <p className="text-lg font-medium text-gray-900">Loading batch details...</p>
@@ -1056,7 +1042,6 @@ const PharmacyStore = () => {
                           const isExpiringSoon = batch.expiration_date && batch.expiration_date !== 'null' && 
                             new Date(batch.expiration_date) > new Date() && 
                             new Date(batch.expiration_date) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-                          const transferDate = batch.transfer_date ? new Date(batch.transfer_date).toLocaleDateString() : 'N/A';
                           
                           return (
                             <tr key={`${batch.product_id}_${batch.batch_id}_${index}_${batch.transfer_date}`} className={`hover:bg-gray-50 ${isOldest ? 'bg-yellow-50 border-l-4 border-yellow-400 ring-2 ring-yellow-200' : ''}`}>
@@ -1090,9 +1075,6 @@ const PharmacyStore = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 ₱{Number.parseFloat(batchSrp).toFixed(2)}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                                {transferDate}
-                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
                                 <div className="flex flex-col items-center">
                                   <span className={isExpired ? 'text-red-600 font-semibold' : isExpiringSoon ? 'text-orange-600 font-semibold' : ''}>
@@ -1120,7 +1102,7 @@ const PharmacyStore = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center space-y-2">
                               <Package className="h-8 w-8 text-gray-400" />
                               <p className="text-lg font-medium text-gray-900">No detailed batch information available</p>
@@ -1145,12 +1127,6 @@ const PharmacyStore = () => {
                   <div>
                     <span className="text-gray-600">Batches Transferred:</span>
                     <span className="ml-2 font-semibold text-gray-900">{quantityHistoryData.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Transfer Date:</span>
-                    <span className="ml-2 font-semibold text-gray-900">
-                      {selectedProductForHistory.date_added ? new Date(selectedProductForHistory.date_added).toLocaleDateString() : 'Not Set'}
-                    </span>
                   </div>
                   <div>
                     <span className="text-gray-600">FIFO Order:</span>
