@@ -14,7 +14,6 @@ import ReturnManagement from "./ReturnManagement";
 import MovementHistory from "./MovementHistory";
 import Archive from "./Archive";
 import Settings from "./Settings";
-import StoreSettings from "./StoreSettings";
 import Sidebar from "./sidebar";
 import LogoutConfirm from "./LogoutConfirm";
 import { ThemeProvider } from "./ThemeContext";
@@ -106,8 +105,7 @@ export default function InventoryPage() {
     ReturnManagement: <ReturnManagement />,
     MovementHistory: <MovementHistory />,
     Archive: <Archive />,
-    Settings: <Settings />,
-    StoreSettings: <StoreSettings />
+    Settings: <Settings />
   };
 
   const handleLogout = () => {

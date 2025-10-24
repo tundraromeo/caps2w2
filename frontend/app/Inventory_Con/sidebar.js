@@ -85,7 +85,6 @@ const Sidebar = ({
     { label: "Movement History", icon: <FaHistory />, key: "MovementHistory" },
     { label: "Archive", icon: <FaArchive />, key: "Archive" },
     { label: "Settings", icon: <FaCog />, key: "Settings" },
-    { label: "Store Settings", icon: <FaStoreAlt />, key: "StoreSettings" },
   ];
 
   const handleNavigation = (componentKey) => {

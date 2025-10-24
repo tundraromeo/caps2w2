@@ -26,7 +26,7 @@ import { useSettings } from "./SettingsContext";
 import NotificationSystem from "./NotificationSystem";
 
 function ConvenienceInventory() {
-  const { theme } = useTheme();
+                                          const { theme } = useTheme();
   const { settings, isProductExpiringSoon, isProductExpired, getExpiryStatus, isStockLow } = useSettings();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -64,10 +64,6 @@ function ConvenienceInventory() {
     outOfStock: []
   });
   const [alertCount, setAlertCount] = useState(0);
-  
-  // Modal states
-  const [showLowStockModal, setShowLowStockModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
 
   // API function - Updated to use centralized API handler
   async function handleApiCall(action, data = {}) {
@@ -365,7 +361,7 @@ function ConvenienceInventory() {
       case "out of stock":
         return "text-red-600 bg-red-100";
       default:
-        return "text-gray-600 bg-gray-100";
+        return `text-[${theme.text.secondary}] bg-[${theme.bg.hover}]`;
     }
   };
 
@@ -701,10 +697,10 @@ function ConvenienceInventory() {
 
   return (
     <div className="min-h-screen w-full" style={{ backgroundColor: theme.bg.primary }}>
-      <div style={{ transform: 'scale(0.8)', transformOrigin: 'top left', width: '125%', minHeight: '125vh' }}>
       <NotificationSystem 
         products={products} 
         onAlertCountChange={setAlertCount}
+        componentName="convenience"
       />
       {/* Header */}
       <div className="w-full p-6 pb-4">
@@ -721,11 +717,16 @@ function ConvenienceInventory() {
           
           {/* Action Buttons */}
           <div className="flex items-center gap-3">
+
+
             {/* Notification Bell */}
             <div className="relative notification-dropdown">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2 rounded-full hover:bg-opacity-10 hover:bg-gray-500 transition-colors"
+                className="relative p-2 rounded-full transition-colors"
+                style={{ color: theme.text.muted }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                 title="View Notifications"
               >
                 {alertCount > 0 ? (
@@ -745,7 +746,7 @@ function ConvenienceInventory() {
             {/* Notification Dropdown */}
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-96 rounded-lg shadow-2xl border z-50 max-h-96 overflow-y-auto" 
-                   style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+                   style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
                 <div className="p-4 border-b" style={{ borderColor: theme.border.default }}>
                   <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Notifications</h3>
                   <p className="text-sm" style={{ color: theme.text.secondary }}>
@@ -783,37 +784,26 @@ function ConvenienceInventory() {
                   {/* Low Stock Products */}
                   {notifications.lowStock.length > 0 && (
                     <div className="p-4 border-b" style={{ borderColor: theme.border.light }}>
-                      <div className="w-full">
-                        <h4 className="font-medium mb-2 flex items-center" style={{ color: theme.colors.warning }}>
-                          <AlertCircle className="h-4 w-4 mr-2" />
-                          Low Stock ({notifications.lowStock.length})
-                        </h4>
-                        {notifications.lowStock && Array.isArray(notifications.lowStock) ? notifications.lowStock.slice(0, 5).filter(product => product && typeof product === 'object').map((product, index) => (
-                          <button
-                            key={index}
-                            onClick={() => {
-                              setSelectedProduct(product);
-                              setShowLowStockModal(true);
-                            }}
-                            className="w-full text-left hover:bg-opacity-10 hover:bg-gray-500 rounded-md p-2 -m-2 transition-colors"
-                          >
-                            <div className="flex justify-between items-center py-1">
-                              <span className="text-sm" style={{ color: theme.text.primary }}>{product.product_name}</span>
-                              <span className="text-xs px-2 py-1 rounded" style={{ 
-                                backgroundColor: theme.colors.warning + '20', 
-                                color: theme.colors.warning 
-                              }}>
-                                {product.quantity} left
-                              </span>
-                            </div>
-                          </button>
-                        )) : null}
-                        {notifications.lowStock && notifications.lowStock.length > 5 && (
-                          <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
-                            +{notifications.lowStock.length - 5} more...
-                          </p>
-                        )}
-                      </div>
+                      <h4 className="font-medium mb-2 flex items-center" style={{ color: theme.colors.warning }}>
+                        <AlertCircle className="h-4 w-4 mr-2" />
+                        Low Stock ({notifications.lowStock.length})
+                      </h4>
+                      {notifications.lowStock && Array.isArray(notifications.lowStock) ? notifications.lowStock.slice(0, 5).filter(product => product && typeof product === 'object').map((product, index) => (
+                        <div key={index} className="flex justify-between items-center py-1">
+                          <span className="text-sm" style={{ color: theme.text.primary }}>{product.product_name}</span>
+                          <span className="text-xs px-2 py-1 rounded" style={{ 
+                            backgroundColor: theme.colors.warning + '20', 
+                            color: theme.colors.warning 
+                          }}>
+                            {product.quantity} left
+                          </span>
+                        </div>
+                      )) : null}
+                      {notifications.lowStock && notifications.lowStock.length > 5 && (
+                        <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
+                          +{notifications.lowStock.length - 5} more...
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -861,7 +851,7 @@ function ConvenienceInventory() {
       <div className="w-full px-6 pb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           {/* Store Products */}
-          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium mb-1" style={{ color: theme.text.muted }}>STORE PRODUCTS</div>
               <div className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ color: theme.text.primary }}>{products.length}</div>
@@ -872,7 +862,7 @@ function ConvenienceInventory() {
             </div>
           </div>
           {/* Low Stock Items */}
-          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium mb-1" style={{ color: theme.text.muted }}>LOW STOCK ITEMS</div>
               <div className="text-2xl sm:text-3xl lg:text-4xl font-bold" style={{ color: theme.text.primary }}>{lowStockCount}</div>
@@ -883,7 +873,7 @@ function ConvenienceInventory() {
             </div>
           </div>
           {/* Store Value */}
-          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full sm:col-span-2 lg:col-span-1" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+          <div className="rounded-xl shadow-md p-4 sm:p-6 flex justify-between items-center min-h-[110px] w-full sm:col-span-2 lg:col-span-1" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow.lg}` }}>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium mb-1" style={{ color: theme.text.muted }}>STORE VALUE</div>
               <div className="text-lg sm:text-2xl lg:text-3xl xl:text-4xl font-bold break-words" style={{ color: theme.text.primary }}>
@@ -900,7 +890,7 @@ function ConvenienceInventory() {
 
       {/* Filters and Search */}
       <div className="w-full px-6 pb-4">
-        <div className="rounded-3xl shadow-xl p-6 mb-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6 mb-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
               <div className="relative">
@@ -964,7 +954,7 @@ function ConvenienceInventory() {
 
       {/* Inventory Table */}
       <div className="w-full px-6 pb-6">
-        <div className="rounded-3xl shadow-xl w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl w-full" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="px-6 py-4 border-b" style={{ borderColor: theme.border.default }}>
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Store Products</h3>
@@ -996,10 +986,10 @@ function ConvenienceInventory() {
                           <thead className="border-b sticky top-0 z-10" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default }}>
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  PRODUCT NAME
+                  BARCODE
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  BARCODE
+                  PRODUCT NAME
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   CATEGORY
@@ -1017,6 +1007,9 @@ function ConvenienceInventory() {
                   SUPPLIER
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
+                  DAYS TO EXPIRY
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   ACTIONS
                 </th>
               </tr>
@@ -1024,7 +1017,7 @@ function ConvenienceInventory() {
             <tbody className="divide-y" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.light }}>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
+                  <td colSpan={9} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
                     Loading products...
                   </td>
                 </tr>
@@ -1057,13 +1050,13 @@ function ConvenienceInventory() {
                   
                   return (
                   <tr key={`${product.product_id}-${index}`} className={rowClass} style={rowStyle}>
+                    <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
+                      {product.barcode}
+                    </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium" style={{ color: theme.text.primary }}>
                         {product.product_name}
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
-                      {product.barcode}
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
@@ -1077,12 +1070,10 @@ function ConvenienceInventory() {
                       <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
                         {product.total_quantity || product.quantity || 0} pieces
                       </div>
-                      {/* Show breakdown if multiple batches */}
-                      {product.total_batches > 1 && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          ({product.total_batches} batches)
-                        </div>
-                      )}
+                      {/* Always show batch count */}
+                      <div className="text-xs mt-1" style={{ color: theme.text.muted }}>
+                        ({product.total_batches || 1} batches)
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                       ₱{(() => {
@@ -1092,6 +1083,24 @@ function ConvenienceInventory() {
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: theme.text.primary }}>
                       {product.supplier_name || product.brand || "Unknown"}
+                    </td>
+                    <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
+                      {(() => {
+                        if (!product.expiration) return 'N/A';
+                        const today = new Date();
+                        const expiry = new Date(product.expiration);
+                        const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+                        
+                        if (daysUntilExpiry < 0) {
+                          return <span style={{ color: theme.colors.danger }}>Expired ({Math.abs(daysUntilExpiry)} days ago)</span>;
+                        } else if (daysUntilExpiry <= 7) {
+                          return <span style={{ color: theme.colors.warning }}>{daysUntilExpiry} days</span>;
+                        } else if (daysUntilExpiry <= 30) {
+                          return <span style={{ color: theme.colors.info }}>{daysUntilExpiry} days</span>;
+                        } else {
+                          return <span style={{ color: theme.colors.success }}>{daysUntilExpiry} days</span>;
+                        }
+                      })()}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center gap-2">
@@ -1121,10 +1130,10 @@ function ConvenienceInventory() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center">
+                    <td colSpan={9} className="px-6 py-8 text-center">
                       <div className="flex flex-col items-center space-y-3">
-                        <Package className="h-12 w-12 text-gray-300" />
-                        <div className="text-gray-500">
+                        <Package className="h-12 w-12" style={{ color: theme.text.muted }} />
+                        <div style={{ color: theme.text.secondary }}>
                           <p className="text-lg font-medium">No products found</p>
                           <p className="text-sm">Products will appear here when transferred from warehouse</p>
                         </div>
@@ -1143,7 +1152,8 @@ function ConvenienceInventory() {
                 <button
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50"
+                  className="px-3 py-1 border rounded disabled:opacity-50"
+                  style={{ borderColor: theme.border.default }}
                 >
                   Previous
                 </button>
@@ -1153,7 +1163,8 @@ function ConvenienceInventory() {
                 <button
                   onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50"
+                  className="px-3 py-1 border rounded disabled:opacity-50"
+                  style={{ borderColor: theme.border.default }}
                 >
                   Next
                 </button>
@@ -1166,14 +1177,17 @@ function ConvenienceInventory() {
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
-          <div className="bg-white/90 backdrop-blur-md rounded-xl shadow-2xl p-6 border border-gray-200/50 w-96">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Archive</h3>
-            <p className="text-gray-700 mb-4">Are you sure you want to archive this product?</p>
+          <div className="backdrop-blur-md rounded-xl shadow-2xl p-6 border w-96" style={{ backgroundColor: theme.bg.modal, borderColor: theme.border.default }}>
+            <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Confirm Archive</h3>
+            <p className="mb-4" style={{ color: theme.text.secondary }}>Are you sure you want to archive this product?</p>
             <div className="flex justify-end space-x-4">
               <button
                 type="button"
                 onClick={closeDeleteModal}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 border rounded-md transition-colors"
+                style={{ borderColor: theme.border.default, color: theme.text.primary }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.hover}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
               >
                 Cancel
               </button>
@@ -1198,16 +1212,17 @@ function ConvenienceInventory() {
         return true;
       })() && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50" style={{ zIndex: 9999 }}>
-          <div className="rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto bg-white">
+          <div className="rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: theme.bg.card }}>
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-2xl font-bold text-gray-900">
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <h3 className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                 📦 Batch Details - {selectedProductForBatch.product_name}
               </h3>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={closeBatchModal}
-                  className="p-2 text-gray-500 hover:text-gray-700"
+                  className="p-2 hover:opacity-70 transition-opacity"
+                  style={{ color: theme.text.muted }}
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -1216,55 +1231,98 @@ function ConvenienceInventory() {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
                 {/* Transfer Details Card */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
-                      <CheckCircle className="h-6 w-6 text-green-600" />
+                <div 
+                  className="rounded-lg p-3 sm:p-4 border"
+                  style={{ 
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.colors.success + '40'
+                  }}
+                >
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div 
+                      className="p-2 rounded-lg flex-shrink-0"
+                      style={{ backgroundColor: theme.colors.success + '20' }}
+                    >
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" style={{ color: theme.colors.success }} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600 break-words">Quantity: {selectedProductForBatch.total_quantity || selectedProductForBatch.quantity || 0} pieces</p>
-                      <p className="text-sm text-green-600 break-words">From: {selectedProductForBatch.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600 break-words">To: Convenience Store</p>
+                      <h4 className="font-semibold text-sm sm:text-base" style={{ color: theme.text.primary }}>Transfer Details</h4>
+                      <p className="text-xs sm:text-sm truncate" style={{ color: theme.colors.success }}>Quantity: {selectedProductForBatch.total_quantity || selectedProductForBatch.quantity || 0} pieces</p>
+                      <p className="text-xs sm:text-sm truncate" style={{ color: theme.colors.success }}>From: {selectedProductForBatch.source_location || 'Warehouse'}</p>
+                      <p className="text-xs sm:text-sm truncate" style={{ color: theme.colors.success }}>To: Convenience Store</p>
                     </div>
                   </div>
                 </div>
 
-
                 {/* Batch Info Card */}
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-orange-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-orange-600" />
+                <div 
+                  className="rounded-lg p-3 sm:p-4 border"
+                  style={{ 
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.colors.warning + '40'
+                  }}
+                >
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div 
+                      className="p-2 rounded-lg flex-shrink-0"
+                      style={{ backgroundColor: theme.colors.warning + '20' }}
+                    >
+                      <Package className="h-5 w-5 sm:h-6 sm:w-6" style={{ color: theme.colors.warning }} />
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Batch Information</h4>
-                      <p className="text-sm text-orange-600">Batches Used: {batchData.length}</p>
-                      <p className="text-sm text-orange-600">FIFO Order: Active</p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-sm sm:text-base" style={{ color: theme.text.primary }}>Batch Information</h4>
+                      <p className="text-xs sm:text-sm truncate" style={{ color: theme.colors.warning }}>Batches Used: {batchData.length}</p>
+                      <p className="text-xs sm:text-sm truncate" style={{ color: theme.colors.warning }}>FIFO Order: Active</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Batch Details Table */}
-              <div className="border rounded-lg bg-white border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h4 className="text-lg font-semibold text-gray-900">Batch Consumption Details</h4>
-                  <p className="text-sm text-gray-600">Showing which batches were consumed for this transfer</p>
+              <div 
+                className="border rounded-lg"
+                style={{ 
+                  backgroundColor: theme.bg.card,
+                  borderColor: theme.border.default
+                }}
+              >
+                <div 
+                  className="px-6 py-4 border-b"
+                  style={{ borderColor: theme.border.default }}
+                >
+                  <h4 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Batch Consumption Details</h4>
+                  <p className="text-sm" style={{ color: theme.text.secondary }}>Showing which batches were consumed for this transfer</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead style={{ backgroundColor: theme.bg.hover }}>
                       <tr>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >FIFO Order</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Batch Reference</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Transferred QTY</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >SRP</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Expiry Date</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Status</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1334,7 +1392,7 @@ function ConvenienceInventory() {
               {/* Summary */}
               <div className="mt-6 p-4 rounded-lg bg-gray-50">
                 <h4 className="font-semibold mb-2 text-gray-900">Transfer Summary</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
                     <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
@@ -1357,10 +1415,10 @@ function ConvenienceInventory() {
       {/* Batch Details Modal */}
       {showQuantityHistoryModal && selectedProductForHistory && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50" style={{ zIndex: 9999 }}>
-          <div className="rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto bg-white">
+          <div className="rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: theme.bg.card }}>
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-2xl font-bold text-gray-900">
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
+              <h3 className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                 📦 Batch Details - {selectedProductForHistory.product_name}
               </h3>
               <div className="flex items-center gap-2">
@@ -1377,55 +1435,80 @@ function ConvenienceInventory() {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
                 {/* Transfer Details Card */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
-                      <CheckCircle className="h-6 w-6 text-green-600" />
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600 break-words">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</p>
-                      <p className="text-sm text-green-600 break-words">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600 break-words">To: Convenience Store</p>
+                      <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Transfer Details</h4>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</p>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">To: Convenience Store</p>
                     </div>
                   </div>
                 </div>
 
-
                 {/* Batch Info Card */}
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-orange-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-orange-600" />
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="bg-orange-100 p-2 rounded-lg flex-shrink-0">
+                      <Package className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                     </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Batch Information</h4>
-                      <p className="text-sm text-orange-600">Batches Used: {batchData.length}</p>
-                      <p className="text-sm text-orange-600">FIFO Order: Active</p>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Batch Information</h4>
+                      <p className="text-xs sm:text-sm text-orange-600 truncate">Batches Used: {batchData.length}</p>
+                      <p className="text-xs sm:text-sm text-orange-600 truncate">FIFO Order: Active</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Batch Details Table */}
-              <div className="border rounded-lg bg-white border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h4 className="text-lg font-semibold text-gray-900">Batch Consumption Details</h4>
-                  <p className="text-sm text-gray-600">Showing which batches were consumed for this transfer</p>
+              <div 
+                className="border rounded-lg"
+                style={{ 
+                  backgroundColor: theme.bg.card,
+                  borderColor: theme.border.default
+                }}
+              >
+                <div 
+                  className="px-6 py-4 border-b"
+                  style={{ borderColor: theme.border.default }}
+                >
+                  <h4 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Batch Consumption Details</h4>
+                  <p className="text-sm" style={{ color: theme.text.secondary }}>Showing which batches were consumed for this transfer</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead style={{ backgroundColor: theme.bg.hover }}>
                       <tr>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">FIFO Order</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >FIFO Order</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Batch Reference</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Transferred QTY</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >SRP</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Expiry Date</th>
+                        <th 
+                          className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                          style={{ color: theme.text.muted }}
+                        >Status</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1495,7 +1578,7 @@ function ConvenienceInventory() {
               {/* Summary */}
               <div className="mt-6 p-4 rounded-lg bg-gray-50">
                 <h4 className="font-semibold mb-2 text-gray-900">Transfer Summary</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
                     <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
@@ -1503,12 +1586,6 @@ function ConvenienceInventory() {
                   <div>
                     <span className="text-gray-600">Batches Used:</span>
                     <span className="ml-2 font-semibold text-gray-900">{batchData.length}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Transfer Date:</span>
-                    <span className="ml-2 font-semibold text-gray-900">
-                      {selectedProductForHistory.transfer_date && selectedProductForHistory.transfer_date !== 'null' ? new Date(selectedProductForHistory.transfer_date).toLocaleDateString() : 'Not Set'}
-                    </span>
                   </div>
                   <div>
                     <span className="text-gray-600">FIFO Order:</span>
@@ -1524,17 +1601,31 @@ function ConvenienceInventory() {
       {/* Batch Transfer Modal */}
       {showBatchTransferModal && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50" style={{ zIndex: 9999 }}>
-          <div className="rounded-xl shadow-2xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto bg-white">
+          <div 
+            className="rounded-xl shadow-2xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto border"
+            style={{ 
+              backgroundColor: theme.bg.card,
+              borderColor: theme.border.default,
+              color: theme.text.primary
+            }}
+          >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <div 
+              className="flex items-center justify-between p-6 border-b" 
+              style={{ 
+                borderColor: theme.border.default,
+                backgroundColor: theme.bg.card
+              }}
+            >
               <div>
-                <h3 className="text-2xl font-bold text-gray-900">📦 Batch Transfer History</h3>
-                <p className="text-gray-600 mt-1">Convenience Store - All batch transfers and movements</p>
+                <h3 className="text-2xl font-bold" style={{ color: theme.text.primary }}>📦 Batch Transfer History</h3>
+                <p className="mt-1" style={{ color: theme.text.secondary }}>Convenience Store - All batch transfers and movements</p>
               </div>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={closeBatchTransferModal}
-                  className="p-2 text-gray-500 hover:text-gray-700"
+                  className="p-2 hover:opacity-70 transition-opacity"
+                  style={{ color: theme.text.muted }}
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -1543,92 +1634,169 @@ function ConvenienceInventory() {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                 {/* Total Transfers */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div 
+                  className="rounded-lg p-4 border"
+                  style={{ 
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.border.default
+                  }}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="bg-gray-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-gray-600" />
+                    <div 
+                      className="p-2 rounded-lg"
+                      style={{ backgroundColor: theme.bg.card }}
+                    >
+                      <Package className="h-6 w-6" style={{ color: theme.text.muted }} />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Total Transfers</h4>
-                      <p className="text-2xl font-bold text-gray-600">{batchTransferSummary.total_transfers || 0}</p>
-                      <p className="text-xs text-gray-600 mt-1">Batch movements</p>
+                      <h4 className="font-semibold" style={{ color: theme.text.primary }}>Total Transfers</h4>
+                      <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{batchTransferSummary.total_transfers || 0}</p>
+                      <p className="text-xs mt-1" style={{ color: theme.text.muted }}>Batch movements</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Total Products */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div 
+                  className="rounded-lg p-4 border"
+                  style={{ 
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.colors.success + '40'
+                  }}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-green-600" />
+                    <div 
+                      className="p-2 rounded-lg"
+                      style={{ backgroundColor: theme.colors.success + '20' }}
+                    >
+                      <Package className="h-6 w-6" style={{ color: theme.colors.success }} />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Products</h4>
-                      <p className="text-2xl font-bold text-green-600">{batchTransferSummary.total_products || 0}</p>
-                      <p className="text-xs text-green-600 mt-1">Unique products</p>
+                      <h4 className="font-semibold" style={{ color: theme.text.primary }}>Products</h4>
+                      <p className="text-2xl font-bold" style={{ color: theme.colors.success }}>{batchTransferSummary.total_products || 0}</p>
+                      <p className="text-xs mt-1" style={{ color: theme.colors.success }}>Unique products</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Total Quantity */}
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <div 
+                  className="rounded-lg p-4 border"
+                  style={{ 
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.colors.accent + '40'
+                  }}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="bg-purple-100 p-2 rounded-lg">
-                      <CheckCircle className="h-6 w-6 text-purple-600" />
+                    <div 
+                      className="p-2 rounded-lg"
+                      style={{ backgroundColor: theme.colors.accent + '20' }}
+                    >
+                      <CheckCircle className="h-6 w-6" style={{ color: theme.colors.accent }} />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Total Quantity</h4>
-                      <p className="text-2xl font-bold text-purple-600">{batchTransferSummary.total_quantity || 0}</p>
-                      <p className="text-xs text-purple-600 mt-1">Units transferred</p>
+                      <h4 className="font-semibold" style={{ color: theme.text.primary }}>Total Quantity</h4>
+                      <p className="text-2xl font-bold" style={{ color: theme.colors.accent }}>{batchTransferSummary.total_quantity || 0}</p>
+                      <p className="text-xs mt-1" style={{ color: theme.colors.accent }}>Units transferred</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Total Value */}
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div 
+                  className="rounded-lg p-4 border"
+                  style={{ 
+                    backgroundColor: theme.bg.hover,
+                    borderColor: theme.colors.warning + '40'
+                  }}
+                >
                   <div className="flex items-center gap-3">
-                    <div className="bg-orange-100 p-2 rounded-lg">
-                      <Package className="h-6 w-6 text-orange-600" />
+                    <div 
+                      className="p-2 rounded-lg"
+                      style={{ backgroundColor: theme.colors.warning + '20' }}
+                    >
+                      <Package className="h-6 w-6" style={{ color: theme.colors.warning }} />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Total Value</h4>
-                      <p className="text-2xl font-bold text-orange-600">₱{(batchTransferSummary.total_value || 0).toLocaleString()}</p>
-                      <p className="text-xs text-orange-600 mt-1">Transfer value</p>
+                      <h4 className="font-semibold" style={{ color: theme.text.primary }}>Total Value</h4>
+                      <p className="text-2xl font-bold" style={{ color: theme.colors.warning }}>₱{(batchTransferSummary.total_value || 0).toLocaleString()}</p>
+                      <p className="text-xs mt-1" style={{ color: theme.colors.warning }}>Transfer value</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Batch Transfer Table */}
-              <div className="border rounded-lg bg-white border-gray-200">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h4 className="text-lg font-semibold text-gray-900">Batch Transfer Details</h4>
-                  <p className="text-sm text-gray-600">Complete history of all batch transfers to convenience store</p>
+              <div 
+                className="border rounded-lg"
+                style={{ 
+                  backgroundColor: theme.bg.card,
+                  borderColor: theme.border.default
+                }}
+              >
+                <div 
+                  className="px-6 py-4 border-b"
+                  style={{ borderColor: theme.border.default }}
+                >
+                  <h4 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Batch Transfer Details</h4>
+                  <p className="text-sm" style={{ color: theme.text.secondary }}>Complete history of all batch transfers to convenience store</p>
                 </div>
                 
                 {loadingBatchTransfers ? (
                   <div className="p-8 text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 mx-auto mb-4"></div>
-                    <p className="text-gray-500">Loading batch transfers...</p>
+                    <div 
+                      className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto mb-4"
+                      style={{ borderColor: theme.text.muted }}
+                    ></div>
+                    <p style={{ color: theme.text.muted }}>Loading batch transfers...</p>
                   </div>
                 ) : batchTransferData.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-gray-50">
+                      <thead style={{ backgroundColor: theme.bg.hover }}>
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Batch Reference</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">SRP</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry Date</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Transfer Date</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                          <th 
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Product</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Batch Reference</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Quantity</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >SRP</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Expiry Date</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Status</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Transfer Date</th>
+                          <th 
+                            className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider"
+                            style={{ color: theme.text.muted }}
+                          >Source</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody 
+                        style={{ 
+                          backgroundColor: theme.bg.card,
+                          borderTopColor: theme.border.default
+                        }}
+                      >
                         {batchTransferData.map((transfer, index) => {
                           const expiryDate = transfer.expiration_date && transfer.expiration_date !== 'null' 
                             ? new Date(transfer.expiration_date).toLocaleDateString() 
@@ -1638,46 +1806,78 @@ function ConvenienceInventory() {
                             : 'N/A';
                           
                           return (
-                            <tr key={transfer.batch_transfer_id} className="hover:bg-gray-50">
+                            <tr 
+                              key={transfer.batch_transfer_id} 
+                              className="border-b"
+                              style={{ 
+                                borderColor: theme.border.default,
+                                backgroundColor: theme.bg.card
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = theme.bg.hover;
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = theme.bg.card;
+                              }}
+                            >
                               <td className="px-6 py-4">
                                 <div>
-                                  <div className="text-sm font-medium text-gray-900">{transfer.product_name}</div>
-                                  <div className="text-sm text-gray-500">{transfer.barcode}</div>
-                                  <div className="text-xs text-gray-400">{transfer.brand} - {transfer.category}</div>
+                                  <div className="text-sm font-medium" style={{ color: theme.text.primary }}>{transfer.product_name}</div>
+                                  <div className="text-sm" style={{ color: theme.text.secondary }}>{transfer.barcode}</div>
+                                  <div className="text-xs" style={{ color: theme.text.muted }}>{transfer.brand} - {transfer.category}</div>
                                 </div>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
+                                <span 
+                                  className="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
+                                  style={{ 
+                                    backgroundColor: theme.bg.hover,
+                                    color: theme.text.primary
+                                  }}
+                                >
                                   {transfer.batch_reference}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                                <span 
+                                  className="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
+                                  style={{ 
+                                    backgroundColor: theme.colors.success + '20',
+                                    color: theme.colors.success
+                                  }}
+                                >
                                   {transfer.batch_quantity} pieces
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-center text-sm font-medium text-gray-900">
+                              <td className="px-6 py-4 text-center text-sm font-medium" style={{ color: theme.text.primary }}>
                                 ₱{Number.parseFloat(transfer.batch_srp || 0).toFixed(2)}
                               </td>
-                              <td className="px-6 py-4 text-center text-sm text-gray-500">
+                              <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.secondary }}>
                                 {expiryDate}
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                  transfer.status === 'Available' ? 'bg-green-100 text-green-800' :
-                                  transfer.status === 'Consumed' ? 'bg-red-100 text-red-800' :
-                                  transfer.status === 'Expired' ? 'bg-gray-100 text-gray-800' :
-                                  'bg-yellow-100 text-yellow-800'
-                                }`}>
+                                <span 
+                                  className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                                  style={{
+                                    backgroundColor: transfer.status === 'Available' ? theme.colors.success + '20' :
+                                                    transfer.status === 'Consumed' ? theme.colors.danger + '20' :
+                                                    transfer.status === 'Expired' ? theme.bg.hover :
+                                                    theme.colors.warning + '20',
+                                    color: transfer.status === 'Available' ? theme.colors.success :
+                                           transfer.status === 'Consumed' ? theme.colors.danger :
+                                           transfer.status === 'Expired' ? theme.text.muted :
+                                           theme.colors.warning
+                                  }}
+                                >
                                   {transfer.status}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-center text-sm text-gray-500">
+                              <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.secondary }}>
                                 {transferDate}
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <div className="text-xs text-gray-600">
-                                  <div className="font-semibold text-gray-600">{transfer.source_location_name || 'Warehouse'}</div>
+                                <div className="text-xs" style={{ color: theme.text.secondary }}>
+                                  <div className="font-semibold" style={{ color: theme.text.primary }}>{transfer.source_location_name || 'Warehouse'}</div>
                                   <div>By: {transfer.employee_name || 'System'}</div>
                                 </div>
                               </td>
@@ -1688,10 +1888,10 @@ function ConvenienceInventory() {
                     </table>
                   </div>
                 ) : (
-                  <div className="p-8 text-center text-gray-500">
-                    <Package className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-lg font-medium">No batch transfers found</p>
-                    <p className="text-sm">Batch transfers will appear here when products are transferred to convenience store</p>
+                  <div className="p-8 text-center" style={{ color: theme.text.muted }}>
+                    <Package className="h-12 w-12 mx-auto mb-4" style={{ color: theme.text.muted }} />
+                    <p className="text-lg font-medium" style={{ color: theme.text.secondary }}>No batch transfers found</p>
+                    <p className="text-sm" style={{ color: theme.text.muted }}>Batch transfers will appear here when products are transferred to convenience store</p>
                   </div>
                 )}
               </div>
@@ -1700,149 +1900,8 @@ function ConvenienceInventory() {
         </div>
       )}
 
-      {/* Product Details Modal */}
-      {showLowStockModal && selectedProduct && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden border-2" 
-               style={{ 
-                 backgroundColor: theme.bg.card,
-                 borderColor: theme.colors.accent,
-                 boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px ${theme.colors.accent}20`
-               }}>
-            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
-              <h2 className="text-xl font-semibold flex items-center" style={{ color: theme.text.primary }}>
-                <AlertCircle className="h-6 w-6 mr-2" style={{ color: theme.colors.warning }} />
-                Product Details - {selectedProduct.product_name}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowLowStockModal(false);
-                  setSelectedProduct(null);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                style={{ color: theme.text.secondary }}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-6 mb-6">
-                {/* Product Information */}
-                <div>
-                  <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.secondary }}>Product Information</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Name:</span>
-                      <span style={{ color: theme.text.primary }}>{selectedProduct.product_name}</span>
-                    </div>
-                    {selectedProduct.barcode && (
-                      <div className="flex justify-between">
-                        <span style={{ color: theme.text.muted }}>Barcode:</span>
-                        <span className="font-mono text-xs" style={{ color: theme.text.primary }}>{selectedProduct.barcode}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Category:</span>
-                      <span style={{ color: theme.text.primary }}>{selectedProduct.category_name || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Brand:</span>
-                      <span style={{ color: theme.text.primary }}>{selectedProduct.brand || 'N/A'}</span>
-                    </div>
-                    {selectedProduct.srp && (
-                      <div className="flex justify-between">
-                        <span style={{ color: theme.text.muted }}>SRP:</span>
-                        <span className="font-semibold" style={{ color: theme.text.primary }}>₱{parseFloat(selectedProduct.srp).toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Stock Information */}
-                <div>
-                  <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.secondary }}>Stock Information</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Current Quantity:</span>
-                      <span 
-                        className="px-3 py-1 rounded text-sm font-semibold"
-                        style={{ 
-                          backgroundColor: theme.colors.warning + '20', 
-                          color: theme.colors.warning 
-                        }}
-                      >
-                        {selectedProduct.quantity}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Status:</span>
-                      <span 
-                        className="px-3 py-1 rounded text-sm font-semibold"
-                        style={{ 
-                          backgroundColor: theme.colors.warning + '20', 
-                          color: theme.colors.warning 
-                        }}
-                      >
-                        Low Stock
-                      </span>
-                    </div>
-                    {selectedProduct.expiration_date && (
-                      <div className="flex justify-between">
-                        <span style={{ color: theme.text.muted }}>Earliest Expiry:</span>
-                        <span 
-                          className="px-3 py-1 rounded text-sm font-semibold"
-                          style={{ 
-                            backgroundColor: theme.colors.success + '20', 
-                            color: theme.colors.success 
-                          }}
-                        >
-                          {new Date(selectedProduct.expiration_date).toLocaleDateString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Alert Details */}
-              <div className="p-4 rounded mb-6" style={{ backgroundColor: theme.bg.hover }}>
-                <div className="flex items-center">
-                  <AlertCircle className="h-5 w-5 mr-3" style={{ color: theme.colors.warning }} />
-                  <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
-                    This product is running low on stock!
-                  </span>
-                </div>
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="flex justify-end">
-                <button
-                  onClick={() => {
-                    setShowLowStockModal(false);
-                    setSelectedProduct(null);
-                  }}
-                  className="px-6 py-2 text-sm font-medium rounded transition-colors"
-                  style={{ 
-                    backgroundColor: theme.bg.hover, 
-                    color: theme.text.primary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.secondary}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.hover}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      </div>
     </div>
     </div>
   );
 }
-
 export default ConvenienceInventory;

@@ -51,10 +51,6 @@ const PharmacyInventory = () => {
     lowStock: [],
     outOfStock: []
   });
-  
-  // Modal states
-  const [showLowStockModal, setShowLowStockModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
 
   // Use the centralized API hook
   const { api, loading: apiLoading, error: apiError } = useAPI();
@@ -513,18 +509,18 @@ const PharmacyInventory = () => {
   const items = uniqueProducts.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   return (
-    <div className="p-4 space-y-4" style={{ backgroundColor: theme.bg.primary }}>
-      <div style={{ transform: 'scale(0.85)', transformOrigin: 'top left', width: '117%', minHeight: '120vh' }}>
-      <NotificationSystem products={inventory} />
+    <div className="p-6 space-y-6" style={{ backgroundColor: theme.bg.primary }}>
+      <NotificationSystem products={inventory} componentName="pharmacy" />
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl md:text-3xl font-bold" style={{ color: theme.text.primary }}>Pharmacy Inventory</h1>
-          <p className="text-sm md:text-base" style={{ color: theme.text.secondary }}>Manage pharmaceutical products and medications</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Pharmacy Inventory</h1>
+          <p style={{ color: theme.text.secondary }}>Manage pharmaceutical products and medications</p>
         </div>
         
+        
         {/* Notification Bell */}
-        <div className="relative notification-dropdown flex-shrink-0 ml-4">
+        <div className="relative notification-dropdown">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="relative p-2 rounded-full hover:bg-opacity-10 hover:bg-gray-500 transition-colors"
@@ -547,7 +543,7 @@ const PharmacyInventory = () => {
           {/* Notification Dropdown */}
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-96 rounded-lg shadow-2xl border z-50 max-h-96 overflow-y-auto" 
-                 style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow}` }}>
+                 style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
               <div className="p-4 border-b" style={{ borderColor: theme.border.default }}>
                 <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>Notifications</h3>
                 <p className="text-sm" style={{ color: theme.text.secondary }}>
@@ -585,37 +581,26 @@ const PharmacyInventory = () => {
                 {/* Low Stock Products */}
                 {notifications.lowStock.length > 0 && (
                   <div className="p-4 border-b" style={{ borderColor: theme.border.light }}>
-                    <div className="w-full">
-                      <h4 className="font-medium mb-2 flex items-center" style={{ color: theme.colors.warning }}>
-                        <AlertCircle className="h-4 w-4 mr-2" />
-                        Low Stock ({notifications.lowStock.length})
-                      </h4>
-                      {notifications.lowStock.slice(0, 5).map((product, index) => (
-                        <button
-                          key={index}
-                          onClick={() => {
-                            setSelectedProduct(product);
-                            setShowLowStockModal(true);
-                          }}
-                          className="w-full text-left hover:bg-opacity-10 hover:bg-gray-500 rounded-md p-2 -m-2 transition-colors"
-                        >
-                          <div className="flex justify-between items-center py-1">
-                            <span className="text-sm" style={{ color: theme.text.primary }}>{product.product_name}</span>
-                            <span className="text-xs px-2 py-1 rounded" style={{ 
-                              backgroundColor: theme.colors.warning + '20', 
-                              color: theme.colors.warning 
-                            }}>
-                              {product.quantity} left
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                      {notifications.lowStock.length > 5 && (
-                        <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
-                          +{notifications.lowStock.length - 5} more...
-                        </p>
-                      )}
-                    </div>
+                    <h4 className="font-medium mb-2 flex items-center" style={{ color: theme.colors.warning }}>
+                      <AlertCircle className="h-4 w-4 mr-2" />
+                      Low Stock ({notifications.lowStock.length})
+                    </h4>
+                    {notifications.lowStock.slice(0, 5).map((product, index) => (
+                      <div key={index} className="flex justify-between items-center py-1">
+                        <span className="text-sm" style={{ color: theme.text.primary }}>{product.product_name}</span>
+                        <span className="text-xs px-2 py-1 rounded" style={{ 
+                          backgroundColor: theme.colors.warning + '20', 
+                          color: theme.colors.warning 
+                        }}>
+                          {product.quantity} left
+                        </span>
+                      </div>
+                    ))}
+                    {notifications.lowStock.length > 5 && (
+                      <p className="text-xs mt-2" style={{ color: theme.text.secondary }}>
+                        +{notifications.lowStock.length - 5} more...
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -659,44 +644,33 @@ const PharmacyInventory = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
-            <Package className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.accent }} />
-            <div className="ml-2 md:ml-4">
-              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>Total Products</p>
-              <p className="text-lg md:text-2xl font-bold" style={{ color: theme.text.primary }}>{uniqueProducts.length}</p>
+            <Package className="h-8 w-8" style={{ color: theme.colors.accent }} />
+            <div className="ml-4">
+              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Products</p>
+              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>{uniqueProducts.length}</p>
             </div>
           </div>
         </div>
-        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
-            <CheckCircle className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.success }} />
-            <div className="ml-2 md:ml-4">
-              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>In Stock</p>
-              <p className="text-lg md:text-2xl font-bold" style={{ color: theme.text.primary }}>
-                {inventory.filter(p => p.stock_status === 'in stock').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-          <div className="flex items-center">
-            <AlertCircle className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.warning }} />
-            <div className="ml-2 md:ml-4">
-              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>Low Stock</p>
-              <p className="text-lg md:text-2xl font-bold" style={{ color: theme.text.primary }}>
+            <AlertCircle className="h-8 w-8" style={{ color: theme.colors.warning }} />
+            <div className="ml-4">
+              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Low Stock</p>
+              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                 {inventory.filter(p => p.stock_status === 'low stock').length}
               </p>
             </div>
           </div>
         </div>
-        <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
+        <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
           <div className="flex items-center">
-            <Truck className="h-6 w-6 md:h-8 md:w-8" style={{ color: theme.colors.info }} />
-            <div className="ml-2 md:ml-4">
-              <p className="text-xs md:text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
-              <p className="text-sm md:text-2xl font-bold break-words" style={{ color: theme.text.primary }}>
+            <Truck className="h-8 w-8" style={{ color: theme.colors.info }} />
+            <div className="ml-4">
+              <p className="text-sm font-medium" style={{ color: theme.text.muted }}>Total Value</p>
+              <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                 ₱{inventory.reduce((sum, p) => sum + (Number(p.first_batch_srp || p.srp || 0) * Number(p.total_quantity || p.quantity || 0)), 0).toFixed(2)}
               </p>
             </div>
@@ -705,8 +679,8 @@ const PharmacyInventory = () => {
       </div>
 
       {/* Filters and Search */}
-      <div className="rounded-xl shadow-lg p-4 md:p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <div className="flex flex-col md:flex-row gap-3 md:gap-4">
+      <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
+        <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
               <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4" style={{ color: theme.text.muted }} />
@@ -749,11 +723,11 @@ const PharmacyInventory = () => {
       </div>
 
       {/* Inventory Table */}
-      <div className="rounded-xl shadow-lg" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
-        <div className="px-4 md:px-6 py-3 md:py-4 border-b" style={{ borderColor: theme.border.default }}>
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-            <h3 className="text-lg md:text-xl font-semibold" style={{ color: theme.text.primary }}>Products</h3>
-            <div className="text-xs md:text-sm" style={{ color: theme.text.secondary }}>
+      <div className="rounded-3xl shadow-xl" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
+        <div className="px-6 py-4 border-b" style={{ borderColor: theme.border.default }}>
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-semibold" style={{ color: theme.text.primary }}>Products</h3>
+            <div className="text-sm" style={{ color: theme.text.secondary }}>
               {uniqueProducts.length} unique products found ({filteredInventory.length} total entries)
             </div>
           </div>
@@ -763,10 +737,10 @@ const PharmacyInventory = () => {
             <thead className="border-b sticky top-0 z-10" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default }}>
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  PRODUCT NAME
+                  BARCODE
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
-                  BARCODE
+                  PRODUCT NAME
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
                   CATEGORY
@@ -805,13 +779,13 @@ const PharmacyInventory = () => {
                   
                   return (
                     <tr key={`${item.product_id}-${index}`} className="hover:bg-opacity-50" style={{ backgroundColor: 'transparent', hoverBackgroundColor: theme.bg.hover }}>
+                      <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
+                        {item.barcode}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium" style={{ color: theme.text.primary }}>
                           {item.product_name}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-mono" style={{ color: theme.text.primary }}>
-                        {item.barcode}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.secondary, color: theme.text.primary }}>
@@ -825,12 +799,10 @@ const PharmacyInventory = () => {
                         <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
                           {item.total_quantity || item.quantity || 0}
                         </div>
-                        {/* Show breakdown if multiple batches */}
-                        {item.total_batches > 1 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            ({item.total_batches} batches)
-                          </div>
-                        )}
+                        {/* Always show batch count */}
+                        <div className="text-xs text-gray-500 mt-1">
+                          ({item.total_batches || 1} batches)
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                         ₱{(() => {
@@ -944,7 +916,7 @@ const PharmacyInventory = () => {
           <div className="backdrop-blur-md rounded-xl shadow-2xl p-6 border w-96" style={{ 
             backgroundColor: theme.bg.card + 'F0', 
             borderColor: theme.border.default,
-            boxShadow: `0 25px 50px ${theme.shadow}`
+            boxShadow: `0 25px 50px ${theme.shadow.lg}`
           }}>
             <h3 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>Confirm Archive</h3>
             <p className="mb-4" style={{ color: theme.text.secondary }}>Are you sure you want to archive this product?</p>
@@ -998,34 +970,32 @@ const PharmacyInventory = () => {
 
             {/* Summary Cards */}
             <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mb-6">
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
                 {/* Transfer Details Card */}
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
-                      <CheckCircle className="h-6 w-6 text-green-600" />
+                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h4 className="font-semibold text-gray-900">Transfer Details</h4>
-                      <p className="text-sm text-green-600 break-words">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} units</p>
-                      <p className="text-sm text-green-600 break-words">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
-                      <p className="text-sm text-green-600 break-words">To: Pharmacy</p>
+                      <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Transfer Details</h4>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">Quantity: {selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} units</p>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">From: {selectedProductForHistory.source_location || 'Warehouse'}</p>
+                      <p className="text-xs sm:text-sm text-green-600 truncate">To: Pharmacy</p>
                     </div>
                   </div>
                 </div>
 
-
                 {/* Batch Info Card */}
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div className="flex items-center gap-3">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 sm:p-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <div className="bg-orange-100 p-2 rounded-lg flex-shrink-0">
-                      <Package className="h-6 w-6 text-orange-600" />
+                      <Package className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h4 className="font-semibold text-gray-900">Batch Information</h4>
-                      <p className="text-sm text-orange-600 break-words">Batches Transferred: {quantityHistoryData.length}</p>
-                      <p className="text-sm text-orange-600 break-words">FIFO Order: Active</p>
+                      <h4 className="font-semibold text-gray-900 text-sm sm:text-base">Batch Information</h4>
+                      <p className="text-xs sm:text-sm text-orange-600 truncate">Batches Transferred: {quantityHistoryData.length}</p>
+                      <p className="text-xs sm:text-sm text-orange-600 truncate">FIFO Order: Active</p>
                     </div>
                   </div>
                 </div>
@@ -1045,7 +1015,6 @@ const PharmacyInventory = () => {
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Batch Reference</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transferred QTY</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">SRP</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Transfer Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Expiry Date</th>
                         <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
                       </tr>
@@ -1053,7 +1022,7 @@ const PharmacyInventory = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {loadingBatch ? (
                         <tr>
-                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center space-y-2">
                               <Package className="h-8 w-8 text-gray-400" />
                               <p className="text-lg font-medium text-gray-900">Loading batch details...</p>
@@ -1073,7 +1042,6 @@ const PharmacyInventory = () => {
                           const isExpiringSoon = batch.expiration_date && batch.expiration_date !== 'null' && 
                             new Date(batch.expiration_date) > new Date() && 
                             new Date(batch.expiration_date) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-                          const transferDate = batch.transfer_date ? new Date(batch.transfer_date).toLocaleDateString() : 'N/A';
                           
                           return (
                             <tr key={`${batch.product_id}_${batch.batch_id}_${index}_${batch.transfer_date}`} className={`hover:bg-gray-50 ${isOldest ? 'bg-yellow-50 border-l-4 border-yellow-400 ring-2 ring-yellow-200' : ''}`}>
@@ -1107,9 +1075,6 @@ const PharmacyInventory = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 ₱{Number.parseFloat(batchSrp).toFixed(2)}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                                {transferDate}
-                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
                                 <div className="flex flex-col items-center">
                                   <span className={isExpired ? 'text-red-600 font-semibold' : isExpiringSoon ? 'text-orange-600 font-semibold' : ''}>
@@ -1137,7 +1102,7 @@ const PharmacyInventory = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                          <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center space-y-2">
                               <Package className="h-8 w-8 text-gray-400" />
                               <p className="text-lg font-medium text-gray-900">No detailed batch information available</p>
@@ -1164,12 +1129,6 @@ const PharmacyInventory = () => {
                     <span className="ml-2 font-semibold text-gray-900">{quantityHistoryData.length}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Transfer Date:</span>
-                    <span className="ml-2 font-semibold text-gray-900">
-                      {selectedProductForHistory.date_added ? new Date(selectedProductForHistory.date_added).toLocaleDateString() : 'Not Set'}
-                    </span>
-                  </div>
-                  <div>
                     <span className="text-gray-600">FIFO Order:</span>
                     <span className="ml-2 font-semibold text-green-600">✓ Active</span>
                   </div>
@@ -1180,148 +1139,8 @@ const PharmacyInventory = () => {
         </div>
       )}
 
-      {/* Product Details Modal */}
-      {showLowStockModal && selectedProduct && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden border-2" 
-               style={{ 
-                 backgroundColor: theme.bg.card,
-                 borderColor: theme.colors.accent,
-                 boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px ${theme.colors.accent}20`
-               }}>
-            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
-              <h2 className="text-xl font-semibold flex items-center" style={{ color: theme.text.primary }}>
-                <AlertCircle className="h-6 w-6 mr-2" style={{ color: theme.colors.warning }} />
-                Product Details - {selectedProduct.product_name}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowLowStockModal(false);
-                  setSelectedProduct(null);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                style={{ color: theme.text.secondary }}
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-6 mb-6">
-                {/* Product Information */}
-                <div>
-                  <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.secondary }}>Product Information</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Name:</span>
-                      <span style={{ color: theme.text.primary }}>{selectedProduct.product_name}</span>
-                    </div>
-                    {selectedProduct.barcode && (
-                      <div className="flex justify-between">
-                        <span style={{ color: theme.text.muted }}>Barcode:</span>
-                        <span className="font-mono text-xs" style={{ color: theme.text.primary }}>{selectedProduct.barcode}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Category:</span>
-                      <span style={{ color: theme.text.primary }}>{selectedProduct.category_name || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Brand:</span>
-                      <span style={{ color: theme.text.primary }}>{selectedProduct.brand || 'N/A'}</span>
-                    </div>
-                    {selectedProduct.srp && (
-                      <div className="flex justify-between">
-                        <span style={{ color: theme.text.muted }}>SRP:</span>
-                        <span className="font-semibold" style={{ color: theme.text.primary }}>₱{parseFloat(selectedProduct.srp).toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Stock Information */}
-                <div>
-                  <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.secondary }}>Stock Information</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Current Quantity:</span>
-                      <span 
-                        className="px-3 py-1 rounded text-sm font-semibold"
-                        style={{ 
-                          backgroundColor: theme.colors.warning + '20', 
-                          color: theme.colors.warning 
-                        }}
-                      >
-                        {selectedProduct.quantity}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span style={{ color: theme.text.muted }}>Status:</span>
-                      <span 
-                        className="px-3 py-1 rounded text-sm font-semibold"
-                        style={{ 
-                          backgroundColor: theme.colors.warning + '20', 
-                          color: theme.colors.warning 
-                        }}
-                      >
-                        Low Stock
-                      </span>
-                    </div>
-                    {selectedProduct.expiration && (
-                      <div className="flex justify-between">
-                        <span style={{ color: theme.text.muted }}>Earliest Expiry:</span>
-                        <span 
-                          className="px-3 py-1 rounded text-sm font-semibold"
-                          style={{ 
-                            backgroundColor: theme.colors.success + '20', 
-                            color: theme.colors.success 
-                          }}
-                        >
-                          {new Date(selectedProduct.expiration).toLocaleDateString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Alert Details */}
-              <div className="p-4 rounded mb-6" style={{ backgroundColor: theme.bg.hover }}>
-                <div className="flex items-center">
-                  <AlertCircle className="h-5 w-5 mr-3" style={{ color: theme.colors.warning }} />
-                  <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
-                    This product is running low on stock!
-                  </span>
-                </div>
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="flex justify-end">
-                <button
-                  onClick={() => {
-                    setShowLowStockModal(false);
-                    setSelectedProduct(null);
-                  }}
-                  className="px-6 py-2 text-sm font-medium rounded transition-colors"
-                  style={{ 
-                    backgroundColor: theme.bg.hover, 
-                    color: theme.text.primary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = theme.bg.secondary}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = theme.bg.hover}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      </div>
     </div>
   );
 };
-
 export default PharmacyInventory; 
