@@ -24,7 +24,7 @@ try {
 if (!isset($_ENV['CORS_ALLOWED_ORIGINS']) || empty($_ENV['CORS_ALLOWED_ORIGINS'])) {
     // Development fallback only - logs warning
     error_log("WARNING: CORS_ALLOWED_ORIGINS not set in .env file. Using development defaults.");
-    $corsOriginsEnv = 'http://localhost:3000,http://localhost:3001';
+    $corsOriginsEnv = 'http://localhost:3000,http://localhost:3001,https://enguiostore.vercel.app';
 } else {
     $corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'];
 }
@@ -39,7 +39,7 @@ if (!empty($requestOrigin) && in_array($requestOrigin, $allowedOrigins)) {
     $corsOrigin = $requestOrigin;
 } else {
     // Use first allowed origin if request origin doesn't match
-    $corsOrigin = $allowedOrigins[0] ?? 'http://localhost:3000';
+    $corsOrigin = $allowedOrigins[0] ?? 'https://enguiostore.vercel.app';
 }
 
 // Set CORS headers

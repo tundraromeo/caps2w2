@@ -11,14 +11,19 @@
  */
 
 // Get base URL from environment variable with fallback
-// FORCE HTTP to avoid SSL certificate errors with XAMPP
 const getBaseUrl = () => {
   // Debug logging
   console.log('Environment variable NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
   
-  // FORCE LOCAL DEVELOPMENT URL - Override any environment variables
+  // Use environment variable if available, otherwise fallback to local development
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    console.log('Using environment API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  
+  // Fallback to local development URL
   const localUrl = 'http://localhost/caps2w2/backend/Api';
-  console.log('Using FORCED local development URL:', localUrl);
+  console.log('Using fallback local development URL:', localUrl);
   return localUrl;
 };
 
