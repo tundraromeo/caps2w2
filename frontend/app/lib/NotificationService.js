@@ -8,7 +8,7 @@
 
 import { useEffect, useRef } from 'react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api';
+const API_BASE_URL = 'http://localhost/caps2w2/backend/Api';
 
 export const NotificationService = ({ 
   updateSystemActivityNotifications,

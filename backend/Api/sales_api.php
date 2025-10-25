@@ -775,10 +775,29 @@ try {
                     FROM tbl_stock_movements sm
                     JOIN tbl_product p ON sm.product_id = p.product_id
                     WHERE DATE(sm.movement_date) BETWEEN ? AND ?
-                    ORDER BY sm.movement_date DESC
+                    
+                    UNION ALL
+                    
+                    SELECT 
+                        th.transfer_header_id as movement_id,
+                        CONCAT('Transfer Report #', th.transfer_header_id) as title,
+                        'Transfer Report' as type,
+                        CONCAT('Transfer report for ', p.product_name, ' - ', td.qty, ' units') as description,
+                        'System' as generatedBy,
+                        DATE(th.date) as date,
+                        TIME(th.date) as time,
+                        'Completed' as status,
+                        'PDF' as format,
+                        '2.5 MB' as fileSize
+                    FROM tbl_transfer_header th
+                    JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
+                    JOIN tbl_product p ON td.product_id = p.product_id
+                    WHERE DATE(th.date) BETWEEN ? AND ?
+                    
+                    ORDER BY date DESC, time DESC
                     LIMIT 50
                 ");
-                $stmt->execute([$start_date, $end_date]);
+                $stmt->execute([$start_date, $end_date, $start_date, $end_date]);
                 $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 
                 // Get analytics data
@@ -881,7 +900,7 @@ try {
                         sm.movement_id,
                         p.product_name,
                         p.barcode,
-                        c.category_name as category,
+                        COALESCE(c.category_name, 'Uncategorized') as category,
                         sm.quantity,
                         COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
                         sm.movement_type,
@@ -895,6 +914,7 @@ try {
                         sm.notes
                     FROM tbl_stock_movements sm
                     JOIN tbl_product p ON sm.product_id = p.product_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
                     LEFT JOIN tbl_location l ON p.location_id = l.location_id
                     LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
@@ -910,21 +930,22 @@ try {
                             th.transfer_header_id as movement_id,
                             p.product_name,
                             p.barcode,
-                            c.category_name as category,
+                            COALESCE(c.category_name, 'Uncategorized') as category,
                             td.qty as quantity,
                             COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
                             'TRANSFER' as movement_type,
-                            th.reference_number as reference_no,
+                            th.transfer_header_id as reference_no,
                             DATE(th.date) as date,
                             TIME(th.date) as time,
                             COALESCE(l.location_name, 'Warehouse') as location_name,
                             COALESCE(s.supplier_name, 'Unknown') as supplier_name,
                             COALESCE(b.brand, 'Generic') as brand,
                             p.expiration as expiration_date,
-                            th.notes
+                            NULL as notes
                         FROM tbl_transfer_header th
                         JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
                         JOIN tbl_product p ON td.product_id = p.product_id
+                        LEFT JOIN tbl_category c ON p.category_id = c.category_id
                         LEFT JOIN tbl_location l ON p.location_id = l.location_id
                         LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                         LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id

@@ -3226,12 +3226,13 @@ case 'get_products_oldest_batch_for_transfer':
                             
                             if ($batchInfo && $batchInfo['fifo_id'] !== null) {
                                 // Only insert if fifo_id exists in tbl_fifo_stock
+                                // Store consumed quantity as positive value (not negative)
                                 $batchDetailsStmt->execute([
                                     $product_id,
                                     $batchInfo['batch_id'],
                                     $batchInfo['fifo_id'],  // Include fifo_id
                                     $batch['batch_reference'],
-                                    $batch['quantity'],
+                                    $batch['quantity'],  // Store as positive value for consumed quantity
                                     $batchInfo['srp'],
                                     $batchInfo['expiration_date'],
                                     $destination_location_id  // Add destination location ID
@@ -10406,6 +10407,45 @@ case 'get_products_oldest_batch_for_transfer':
             echo json_encode([
                 "success" => false,
                 "message" => "Database error: " . $e->getMessage()
+            ]);
+        }
+        break;
+
+    case 'get_combined_reports_data':
+        try {
+            require_once 'modules/reports.php';
+            
+            $startDate = $data['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
+            $endDate = $data['end_date'] ?? date('Y-m-d');
+            $reportTypes = $data['report_types'] ?? ['all'];
+            
+            $reportsModule = new ReportsModule($conn);
+            $result = $reportsModule->getCombinedReportsData($startDate, $endDate, $reportTypes);
+            
+            echo json_encode($result);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error fetching combined reports data: " . $e->getMessage()
+            ]);
+        }
+        break;
+
+    case 'get_combined_summary':
+        try {
+            require_once 'modules/reports.php';
+            
+            $startDate = $data['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
+            $endDate = $data['end_date'] ?? date('Y-m-d');
+            
+            $reportsModule = new ReportsModule($conn);
+            $result = $reportsModule->getCombinedSummary($startDate, $endDate);
+            
+            echo json_encode($result);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error fetching combined summary: " . $e->getMessage()
             ]);
         }
         break;

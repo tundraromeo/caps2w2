@@ -17,7 +17,8 @@ import { useTheme } from "./ThemeContext";
 import { useSettings } from "./SettingsContext";
 import { useNotification } from "./NotificationContext";
 import NotificationSystem from "./NotificationSystem";
-import { useAPI } from '../hooks/useAPI';
+import { getApiEndpointForAction } from '../lib/apiHandler';
+import apiHandler from '../lib/apiHandler';
 
 const PharmacyInventory = () => {
   const { theme } = useTheme();
@@ -43,6 +44,8 @@ const PharmacyInventory = () => {
   const [showCurrentFifoData, setShowCurrentFifoData] = useState(false);
   const [fifoStockData, setFifoStockData] = useState([]);
   
+  // Real-time connection status
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting'); // 'connecting', 'connected', 'disconnected', 'polling'
   
   // Notification states
   const [showNotifications, setShowNotifications] = useState(false);
@@ -52,56 +55,93 @@ const PharmacyInventory = () => {
     outOfStock: []
   });
 
-  // Use the centralized API hook
-  const { api, loading: apiLoading, error: apiError } = useAPI();
-
-  // API function - using centralized API system to avoid CORS issues
+  // API function - Updated to use centralized API handler with robust error handling
   async function handleApiCall(action, data = {}) {
-    console.log("🚀 API Call Payload:", { action, ...data });
-
     try {
-      let response;
+      console.log("🚀 API Call:", { action, data });
       
-      // Route to appropriate API method based on action
-      switch (action) {
-        case 'get_locations':
-          response = await api.getLocations();
-          break;
+      // For specific actions, use direct fetch to avoid JSON parsing issues
+      if (action === 'get_pharmacy_batch_details' || action === 'debug_pharmacy_stock') {
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/pharmacy_api.php`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({ action, ...data })
+          });
           
-        case 'get_pharmacy_products':
-          response = await api.getPharmacyProducts(data);
-          break;
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
           
-        case 'get_location_products':
-          response = await api.getProducts(data);
-          break;
+          const text = await response.text();
+          console.log("📡 Raw response text:", text);
           
-        case 'delete_product':
-          response = await api.archivePharmacyProduct(data.product_id);
-          break;
+          // Clean the response text - remove any PHP warnings/notices that might be prepended
+          const cleanText = text.replace(/^.*?(\{.*\})$/s, '$1');
+          console.log("🧹 Cleaned response text:", cleanText);
           
-        case 'get_fifo_stock':
-          response = await api.getFIFOStock(data.product_id, data.location_id);
-          break;
-          
-        case 'get_pharmacy_batch_details':
-          // Use pharmacy_api.php for batch details
-          response = await api.callGenericAPI('pharmacy_api.php', action, data);
-          break;
-          
-        default:
-          // For batch tracking specific actions, use the centralized API with batch_tracking.php endpoint
-          response = await api.callGenericAPI('batch_tracking.php', action, data);
+          try {
+            const jsonData = JSON.parse(cleanText);
+            console.log("✅ Parsed JSON:", jsonData);
+            return jsonData;
+          } catch (parseError) {
+            console.error("❌ JSON Parse Error:", parseError);
+            console.error("❌ Invalid JSON text:", cleanText);
+            
+            // Try to extract JSON from the response if it's mixed with other content
+            const jsonMatch = text.match(/\{.*\}/s);
+            if (jsonMatch) {
+              try {
+                const extractedJson = JSON.parse(jsonMatch[0]);
+                console.log("✅ Extracted JSON:", extractedJson);
+                return extractedJson;
+              } catch (extractError) {
+                console.error("❌ Failed to extract JSON:", extractError);
+              }
+            }
+            
+            return {
+              success: false,
+              message: "Server returned invalid JSON",
+              error: "INVALID_JSON",
+              rawResponse: text
+            };
+          }
+        } catch (fetchError) {
+          console.error("❌ Fetch Error:", fetchError);
+          return {
+            success: false,
+            message: fetchError.message,
+            error: "FETCH_ERROR"
+          };
+        }
       }
-
-      console.log("✅ API Success Response:", response);
-      return response || { success: false, message: "No response received" };
       
+      // For other actions, use the centralized API handler
+      const endpoint = getApiEndpointForAction(action);
+      const response = await apiHandler.callAPI(endpoint, action, data);
+      
+      if (response && typeof response === "object") {
+        if (!response.success) {
+          console.warn("⚠️ API responded with failure:", response.message || response);
+        }
+        return response;
+      } else {
+        console.warn("⚠️ Unexpected API response format:", response);
+        return {
+          success: false,
+          message: "Unexpected response format",
+          data: response,
+        };
+      }
     } catch (error) {
       console.error("❌ API Call Error:", error);
       return {
         success: false,
-        message: error.message || "Network error",
+        message: error.message,
         error: "REQUEST_ERROR",
       };
     }
@@ -129,7 +169,11 @@ const PharmacyInventory = () => {
     });
     
     setNotifications({
-      expiring: expiring.sort((a, b) => new Date(a.expiration) - new Date(b.expiration)),
+      expiring: expiring.sort((a, b) => {
+        const dateA = a.expiration && a.expiration !== 'null' ? new Date(a.expiration) : new Date(0);
+        const dateB = b.expiration && b.expiration !== 'null' ? new Date(b.expiration) : new Date(0);
+        return dateA - dateB;
+      }),
       lowStock: lowStock.sort((a, b) => parseInt(a.quantity || 0) - parseInt(b.quantity || 0)),
       outOfStock
     });
@@ -144,7 +188,7 @@ const PharmacyInventory = () => {
     
     const lowStockProducts = products.filter(product => {
       const quantity = parseInt(product.total_quantity || product.quantity || 0);
-      return quantity <= settings.lowStockThreshold && quantity > 0;
+      return isStockLow(quantity);
     });
     
     if (lowStockProducts.length > 0) {
@@ -157,110 +201,122 @@ const PharmacyInventory = () => {
     }
   }
 
-  // Test API connection using centralized API
-  const testAPIConnection = async () => {
-    try {
-      const response = await api.testConnection();
-      if (response.success) {
-        console.log("✅ API connected successfully");
-        return true;
-      } else {
-        throw new Error(`Server error: ${response.message}`);
-      }
-    } catch (error) {
-      console.error("❌ API connection failed:", error);
-      toast.error("Cannot connect to server. Please check if XAMPP is running.");
-      return false;
-    }
-  };
-
-  // Function to get pharmacy location using centralized API
+  // Load pharmacy location ID
   const loadPharmacyLocation = async () => {
     try {
-      console.log("🔍 Loading pharmacy location...");
-      const response = await api.getLocations();
-      console.log("📍 Locations response:", response);
+      console.log("🔍 Loading locations...");
+      const response = await handleApiCall("get_locations");
+      console.log("📍 Locations API Response:", response);
       
-      if (response.success && response.data) {
-        const pharmacy = response.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
-        console.log("🏥 Found pharmacy location:", pharmacy);
-        
-        if (pharmacy) {
-          setPharmacyLocationId(pharmacy.location_id);
-          console.log("✅ Set pharmacy location ID:", pharmacy.location_id);
-          return pharmacy.location_id;
+      if (response.success && Array.isArray(response.data)) {
+        console.log("📍 All Locations:", response.data);
+        const pharmacyLocation = response.data.find(loc => 
+          loc.location_name.toLowerCase().includes('pharmacy')
+        );
+        if (pharmacyLocation) {
+          console.log("📍 Found pharmacy location:", pharmacyLocation);
+          setPharmacyLocationId(pharmacyLocation.location_id);
         } else {
-          console.warn("⚠️ No pharmacy location found in:", response.data);
-          toast.error("Pharmacy location not found. Please check database.");
-          return null;
+          console.warn("⚠️ No pharmacy location found");
+          console.warn("⚠️ Available locations:", response.data.map(loc => loc.location_name));
         }
+        
+        return pharmacyLocation?.location_id || null;
       } else {
-        console.error("❌ Failed to load locations:", response.message);
-        toast.error("Failed to load locations: " + (response.message || "Unknown error"));
-        return null;
+        console.warn("⚠️ Failed to load locations:", response.message);
       }
     } catch (error) {
-      console.error("❌ Error loading pharmacy location:", error);
-      toast.error("Failed to load pharmacy location: " + error.message);
-      return null;
+      console.error("Error loading pharmacy location:", error);
     }
+    return null;
   };
 
-  // Function to load products using centralized API
+  // Load products for pharmacy
   const loadProducts = async () => {
-    if (!pharmacyLocationId) {
-      console.log("⚠️ No pharmacy location ID, skipping product load");
-      return;
-    }
+    if (!pharmacyLocationId || isLoading) return; // Prevent multiple simultaneous calls
     
     setIsLoading(true);
     try {
-      console.log("🔄 Loading pharmacy products for location ID:", pharmacyLocationId);
+      console.log("🔄 Loading pharmacy products...");
       
-      const response = await api.getPharmacyProducts({
-        location_name: 'pharmacy',
-        location_id: pharmacyLocationId
+      // First sync transferred products to ensure proper pricing
+      try {
+        await handleApiCall("sync_transferred_products", {
+          location_name: "pharmacy"
+        });
+        console.log("✅ Synced transferred products for pricing");
+      } catch (syncError) {
+        console.warn("⚠️ Sync failed, continuing with load:", syncError);
+      }
+      
+      // Use the pharmacy products API
+      const response = await handleApiCall("get_pharmacy_products", {
+        location_name: "pharmacy",
+        search: searchTerm,
+        category: selectedCategory
       });
       
       console.log("📦 API Response:", response);
+      console.log("🔍 Pharmacy Location ID:", pharmacyLocationId);
       
-      if (response.success && response.data) {
-        // Filter out archived products and products with 0 quantity
-        const activeProducts = response.data.filter(product => {
-          const quantity = parseInt(product.total_quantity || product.quantity || 0);
-          const isActive = product.status !== 'archived';
-          const hasQuantity = quantity > 0;
-          
-          if (!isActive) console.log("❌ Filtered out archived:", product.product_name);
-          if (!hasQuantity) console.log("⚠️ Product with 0 quantity:", product.product_name, "- keeping for visibility");
-          
-          // Show all active products even if quantity is 0
-          return isActive;
-        });
+      if (response.success && Array.isArray(response.data)) {
+        console.log("✅ Loaded pharmacy products:", response.data.length);
+        console.log("📋 Raw Products Data:", response.data);
         
-        console.log(`✅ Loaded ${activeProducts.length} active products out of ${response.data.length} total`);
+        // Filter out archived products
+        const activeProducts = response.data.filter(
+          (product) => (product.status || "").toLowerCase() !== "archived"
+        );
+        console.log("✅ Active pharmacy products after filtering:", activeProducts.length);
+        console.log("📋 Products:", activeProducts.map(p => `${p.product_name} (${p.total_quantity || p.quantity})`));
         
-        // Debug: Log first few products to check SRP values
-        console.log("🔍 First 3 products with SRP data:", activeProducts.slice(0, 3).map(p => ({
-          name: p.product_name,
-          srp: p.srp,
-          first_batch_srp: p.first_batch_srp,
-          total_quantity: p.total_quantity,
-          quantity: p.quantity
-        })));
+        // Debug SRP fields for first product
+        if (activeProducts.length > 0) {
+          const firstProduct = activeProducts[0];
+          console.log("🔍 SRP Debug for first product:", {
+            product_name: firstProduct.product_name,
+            srp: firstProduct.srp,
+            first_batch_srp: firstProduct.first_batch_srp,
+            unit_price: firstProduct.unit_price,
+            total_quantity: firstProduct.total_quantity,
+            allFields: Object.keys(firstProduct)
+          });
+        }
         
         setInventory(activeProducts);
         setFilteredInventory(activeProducts);
         calculateNotifications(activeProducts);
       } else {
-        console.error("❌ API Error:", response.message);
-        toast.error(response.message || "Failed to load products");
+        console.warn("⚠️ Primary API failed, trying fallback...");
+        console.warn("⚠️ API Error:", response.message);
+        
+        // Fallback to the original backend API
+        const fallbackResponse = await handleApiCall("get_products_by_location_name", {
+          location_name: "pharmacy"
+        });
+        
+        console.log("📦 Fallback API Response:", fallbackResponse);
+        
+        if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
+          console.log("✅ Loaded pharmacy products (fallback):", fallbackResponse.data.length);
+          // Filter out archived products
+          const activeProducts = fallbackResponse.data.filter(
+            (product) => (product.status || "").toLowerCase() !== "archived"
+          );
+          console.log("✅ Active pharmacy products after filtering (fallback):", activeProducts.length);
+        setInventory(activeProducts);
+        setFilteredInventory(activeProducts);
+        calculateNotifications(activeProducts);
+      } else {
+          console.warn("⚠️ No products found for pharmacy");
+          console.warn("⚠️ Fallback Error:", fallbackResponse.message);
         setInventory([]);
         setFilteredInventory([]);
+        }
       }
     } catch (error) {
-      console.error("❌ Error loading products:", error);
-      toast.error("Failed to load products: " + error.message);
+      console.error("Error loading products:", error);
+      toast.error("Failed to load products");
       setInventory([]);
       setFilteredInventory([]);
     } finally {
@@ -268,32 +324,151 @@ const PharmacyInventory = () => {
     }
   };
 
-  // Initialize component
   useEffect(() => {
     const initialize = async () => {
-      console.log("🚀 Initializing Pharmacy Inventory...");
       const locationId = await loadPharmacyLocation();
-      console.log("📍 Pharmacy Location ID:", locationId);
       if (locationId) {
         await loadProducts();
-      } else {
-        console.error("❌ Failed to get pharmacy location ID");
-        toast.error("Failed to load pharmacy location. Please check if pharmacy location exists.");
       }
     };
     initialize();
-  }, [pharmacyLocationId]);
+  }, []); // Only run once on mount
 
-  // Auto-refresh products every 5 seconds to catch new transfers and POS sales
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (pharmacyLocationId) {
+      loadProducts();
+      
+      // Set up automatic refresh every 3 seconds
+      const refreshInterval = setInterval(() => {
+        if (pharmacyLocationId && !isLoading) {
+          console.log("🔄 Auto-refreshing pharmacy inventory...");
+          loadProducts();
+        }
+      }, 3000); // Refresh every 3 seconds
+      
+      return () => {
+        clearInterval(refreshInterval);
+      };
+    }
+  }, [searchTerm, selectedCategory, pharmacyLocationId]);
+
+  // Real-time updates using Server-Sent Events with fallback polling
+  useEffect(() => {
+    if (!pharmacyLocationId) return;
+
+    console.log("🔄 Setting up real-time updates for pharmacy inventory...");
+    
+    let eventSource = null;
+    let pollInterval = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    
+    const connectSSE = () => {
+      try {
+        console.log("🔄 Attempting to connect to real-time updates...");
+        eventSource = new EventSource(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/realtime_updates.php?location=pharmacy&location_id=${pharmacyLocationId}`);
+        
+        eventSource.onopen = () => {
+          console.log("✅ Real-time connection established for pharmacy");
+          setRealtimeStatus('connected');
+          reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        };
+        
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log("📡 Real-time update received:", data);
+            
+            if (data.type === 'connection') {
+              console.log("🔗 Connected to real-time updates");
+              toast.success("🔗 Connected to real-time updates", { autoClose: 2000 });
+            } else if (data.type === 'inventory_update') {
+              console.log("🔄 Inventory update detected, refreshing products...");
+              
+              toast.info(`🔄 ${data.message || 'Inventory updated'}`, {
+                autoClose: 3000,
+                position: "top-right"
+              });
+              
+              // Refresh products immediately
+              loadProducts();
+            } else if (data.type === 'return_approved') {
+              console.log("✅ Return approved, refreshing inventory...");
+              
+              toast.success(`✅ ${data.message || 'Return approved - inventory updated'}`, {
+                autoClose: 5000,
+                position: "top-right"
+              });
+              
+              // Refresh products with delay to ensure backend is updated
+              setTimeout(() => {
+                loadProducts();
+              }, 1000);
+            } else if (data.type === 'transfer_completed') {
+              console.log("📦 Transfer completed, refreshing inventory...");
+              
+              toast.success(`📦 ${data.message || 'New products transferred to pharmacy'}`, {
+                autoClose: 5000,
+                position: "top-right"
+              });
+              
+              // Refresh products
+              loadProducts();
+            } else if (data.type === 'heartbeat') {
+              console.log("💓 Heartbeat received");
+            }
+          } catch (error) {
+            console.error("❌ Error parsing real-time update:", error);
+          }
+        };
+        
+        eventSource.onerror = (error) => {
+          console.warn("⚠️ Real-time connection error, falling back to polling:", error);
+          setRealtimeStatus('disconnected');
+          
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          
+          // Skip reconnection attempts and go straight to polling
+          console.log("🔄 Starting fallback polling...");
+          setRealtimeStatus('polling');
+          startPolling();
+        };
+        
+      } catch (error) {
+        console.warn("⚠️ Error creating SSE connection, using polling:", error);
+        setRealtimeStatus('polling');
+        startPolling();
+      }
+    };
+    
+    const startPolling = () => {
+      console.log("🔄 Starting fallback polling for updates...");
+      setRealtimeStatus('polling');
+      pollInterval = setInterval(() => {
       if (pharmacyLocationId && !isLoading) {
-        console.log("🔄 Auto-refreshing pharmacy products...");
+          console.log("🔄 Polling for inventory updates...");
         loadProducts();
       }
-    }, 5000); // 5 seconds - very frequent to catch POS sales immediately
-
-    return () => clearInterval(interval);
+      }, 15000); // Poll every 15 seconds as fallback
+    };
+    
+    // Start with polling for now (SSE can be enabled later)
+    console.log("🔄 Starting with polling for updates...");
+    setRealtimeStatus('polling');
+    startPolling();
+    
+    return () => {
+      console.log("🔄 Cleaning up real-time connections...");
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
   }, [pharmacyLocationId, isLoading]);
 
   // Close notifications when clicking outside
@@ -315,12 +490,31 @@ const PharmacyInventory = () => {
     const handleInventoryRefresh = (event) => {
       const { location, action, message, transferDetailsUpdated } = event.detail;
       
-      // Check if this refresh is for Pharmacy
-      if (location && location.toLowerCase().includes('pharmacy')) {
-        console.log('🔄 Inventory refresh triggered for Pharmacy:', { action, message, transferDetailsUpdated });
+      // Check if this refresh is for Pharmacy - be more flexible with location matching
+      const isPharmacyRefresh = location && (
+        location.toLowerCase().includes('pharmacy') ||
+        location.toLowerCase().includes('pharm') ||
+        // Also check if we're currently viewing pharmacy inventory
+        window.location.pathname.includes('pharmacy') ||
+        window.location.pathname.includes('Pharmacy')
+      );
+      
+      // Fallback: if we're on pharmacy page and no specific location match, still refresh
+      const isOnPharmacyPage = window.location.pathname.includes('pharmacy') || window.location.pathname.includes('Pharmacy');
+      
+      if (isPharmacyRefresh || (isOnPharmacyPage && action === 'return_approved')) {
+        console.log('🔄 Inventory refresh triggered for Pharmacy:', { 
+          action, 
+          message, 
+          transferDetailsUpdated, 
+          location,
+          isPharmacyRefresh,
+          isOnPharmacyPage,
+          currentPath: window.location.pathname
+        });
         
         // Show toast notification with transfer details info
-        let notificationMessage = `🔄 ${message} - Refreshing inventory...`;
+        let notificationMessage = `🔄 ${message} - Refreshing pharmacy inventory...`;
         if (transferDetailsUpdated) {
           notificationMessage += `\n📊 Transfer details updated with returned quantities.`;
         }
@@ -328,8 +522,15 @@ const PharmacyInventory = () => {
         
         // Refresh products after a short delay
         setTimeout(() => {
+          console.log('🔄 Refreshing pharmacy products after return approval...');
           loadProducts();
         }, 1000);
+        
+        // Also refresh again after a longer delay to ensure we catch any delayed updates
+        setTimeout(() => {
+          console.log('🔄 Second refresh for pharmacy products after return approval...');
+          loadProducts();
+        }, 3000);
       }
     };
 
@@ -348,9 +549,9 @@ const PharmacyInventory = () => {
 
     if (searchTerm) {
       filtered = filtered.filter(item =>
-        item.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
+        (item.product_name && typeof item.product_name === 'string' && item.product_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.category && typeof item.category === 'string' && item.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.barcode && typeof item.barcode === 'string' && item.barcode.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
 
@@ -452,6 +653,33 @@ const PharmacyInventory = () => {
 
       console.log("Batch transfer details response:", response);
       
+      // Handle different response types
+      if (response.error === "INVALID_JSON") {
+        console.error("❌ Invalid JSON response:", response.rawResponse);
+        console.log("🔄 Trying fallback API...");
+        
+        // Try fallback API
+        try {
+          const fallbackResponse = await handleApiCall("get_fifo_stock", {
+            product_id: productId,
+            location_id: pharmacyLocationId
+          });
+          
+          if (fallbackResponse.success && fallbackResponse.data) {
+            console.log("✅ Fallback API succeeded");
+            const fallbackData = Array.isArray(fallbackResponse.data) ? fallbackResponse.data : [fallbackResponse.data];
+            displayBatchTransferDetails(fallbackData, { total_transfers: fallbackData.length });
+            return;
+          }
+        } catch (fallbackError) {
+          console.error("❌ Fallback API also failed:", fallbackError);
+        }
+        
+        toast.error("Server returned invalid data. Please check server logs.");
+        displayBatchTransferDetails([], {});
+        return;
+      }
+      
       if (response.success && response.data) {
         console.log("Transfer data received:", response.data);
         const batchDetails = response.data.batch_details || [];
@@ -464,15 +692,35 @@ const PharmacyInventory = () => {
           console.log("✅ Found batch transfer details");
           displayBatchTransferDetails(batchDetails, summary);
         } else {
-          console.log("⚠️ No batch transfer details found, showing empty state");
+          console.log("⚠️ No batch transfer details found, trying fallback...");
+          
+          // Try fallback API if no data found
+          try {
+            const fallbackResponse = await handleApiCall("get_fifo_stock", {
+              product_id: productId,
+              location_id: pharmacyLocationId
+            });
+            
+            if (fallbackResponse.success && fallbackResponse.data) {
+              console.log("✅ Fallback API found data");
+              const fallbackData = Array.isArray(fallbackResponse.data) ? fallbackResponse.data : [fallbackResponse.data];
+              displayBatchTransferDetails(fallbackData, { total_transfers: fallbackData.length });
+              return;
+            }
+          } catch (fallbackError) {
+            console.error("❌ Fallback API failed:", fallbackError);
+          }
+          
           displayBatchTransferDetails([], {});
         }
       } else {
         console.error("Error loading batch transfer details:", response.message);
+        toast.warning(`Failed to load batch details: ${response.message || 'Unknown error'}`);
         displayBatchTransferDetails([], {});
       }
     } catch (error) {
       console.error("Error loading batch transfer details:", error);
+      toast.error("Error loading batch details. Please try again.");
       displayBatchTransferDetails([], {});
     } finally {
       setLoadingBatch(false);
@@ -510,14 +758,31 @@ const PharmacyInventory = () => {
 
   return (
     <div className="p-6 space-y-6" style={{ backgroundColor: theme.bg.primary }}>
+
       <NotificationSystem products={inventory} componentName="pharmacy" />
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Pharmacy Inventory</h1>
+          <div className="flex items-center gap-3 mt-2">
           <p style={{ color: theme.text.secondary }}>Manage pharmaceutical products and medications</p>
+            {/* Real-time Status Indicator */}
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${
+                realtimeStatus === 'connected' ? 'bg-green-500 animate-pulse' :
+                realtimeStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                realtimeStatus === 'polling' ? 'bg-blue-500 animate-pulse' :
+                'bg-red-500'
+              }`}></div>
+              <span className="text-xs font-medium" style={{ color: theme.text.muted }}>
+                {realtimeStatus === 'connected' ? '🟢 Real-time' :
+                 realtimeStatus === 'connecting' ? '🟡 Connecting...' :
+                 realtimeStatus === 'polling' ? '🔵 Polling' :
+                 '🔴 Disconnected'}
+              </span>
+            </div>
+          </div>
         </div>
-        
         
         {/* Notification Bell */}
         <div className="relative notification-dropdown">
@@ -642,7 +907,6 @@ const PharmacyInventory = () => {
           )}
         </div>
       </div>
-
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="rounded-3xl shadow-xl p-6" style={{ backgroundColor: theme.bg.card, boxShadow: `0 25px 50px ${theme.shadow.lg}` }}>
@@ -798,10 +1062,6 @@ const PharmacyInventory = () => {
                       <td className="px-6 py-4 text-center">
                         <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
                           {item.total_quantity || item.quantity || 0}
-                        </div>
-                        {/* Always show batch count */}
-                        <div className="text-xs text-gray-500 mt-1">
-                          ({item.total_batches || 1} batches)
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
@@ -1122,7 +1382,7 @@ const PharmacyInventory = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForHistory.total_quantity || selectedProductForHistory.quantity || 0} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{quantityHistoryData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Transferred:</span>
@@ -1138,9 +1398,8 @@ const PharmacyInventory = () => {
           </div>
         </div>
       )}
-
-
     </div>
   );
 };
+
 export default PharmacyInventory; 

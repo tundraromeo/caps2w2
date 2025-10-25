@@ -171,11 +171,15 @@ export default function ReturnManagement() {
             <div className="font-bold text-lg">Return Approved Successfully!</div>
             <div className="mt-2">
               <div>Stock has been restored to <strong>{data.location_name}</strong></div>
+              {data.return_location && data.return_location !== data.location_name && (
+                <div className="text-sm text-gray-600">Return processed from: {data.return_location}</div>
+              )}
               {transferMessage && <div className="mt-1">{transferMessage}</div>}
             </div>
             <div className="mt-3 text-sm">
               <div><strong>Restored Items:</strong> {data.restored_items}</div>
               <div><strong>Total Quantity:</strong> {data.total_quantity_restored} units</div>
+              {data.note && <div className="text-xs text-gray-500 mt-1">{data.note}</div>}
             </div>
           </div>,
           { 

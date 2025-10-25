@@ -6,7 +6,7 @@ class QZTrayIntegration {
     this.qz = null;
     this.isConnected = false;
     this.printerName = 'POS-58'; // Default printer name
-    this.apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api';
+    this.apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api';
   }
 
   // Initialize QZ Tray

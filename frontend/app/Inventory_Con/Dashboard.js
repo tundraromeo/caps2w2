@@ -100,14 +100,8 @@ function Dashboard() {
     }
   };
 
-  // Handler function for time period change
-  const handleTimePeriodChange = (e) => {
-    const value = e.target.value;
-    console.log('⏰ Time period filter changed to:', value);
-    setSelectedTimePeriod(value);
-    // Update date range display immediately
-    setDateRangeDisplay(calculateDateRange(value));
-  };
+  // Time period is automatically set to monthly
+  // No user interaction needed for time period selection
 
   // Default filter values (no UI controls for product and location)
   const selectedProduct = "All";
@@ -254,10 +248,10 @@ function Dashboard() {
     setDateRangeDisplay(calculateDateRange(selectedTimePeriod));
   }, []);
 
-  // Fetch data from database when time period changes
+  // Fetch data from database (monthly view only)
   useEffect(() => {
     fetchAllData();
-  }, [selectedTimePeriod, retryCount]);
+  }, [retryCount]);
 
 
   const fetchWarehouseData = async () => {
@@ -952,22 +946,9 @@ function Dashboard() {
         <div className="p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold" style={{ color: theme.text.primary }}>{title}</h3>
-            <select 
-              value={selectedTimePeriod} 
-              onChange={handleTimePeriodChange}
-              className="px-2 py-1 rounded border text-xs font-medium"
-              style={{ 
-                backgroundColor: theme.colors.accent, 
-                color: 'white',
-                borderColor: theme.colors.accent,
-                cursor: 'pointer'
-              }}
-              title="Filter by time period"
-            >
-              <option value="today">📅 Today</option>
-              <option value="weekly">📅 Week</option>
-              <option value="monthly">📅 Month</option>
-            </select>
+            <div className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: theme.colors.accent, color: 'white' }}>
+              📅 Monthly View
+            </div>
           </div>
           <div className="text-center py-8">
             <div className="text-4xl mb-2">📈</div>
@@ -1035,22 +1016,9 @@ function Dashboard() {
       <div className="p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold" style={{ color: theme.text.primary }}>{title}</h3>
-          <select 
-            value={selectedTimePeriod} 
-            onChange={handleTimePeriodChange}
-            className="px-2 py-1 rounded border text-xs font-medium"
-            style={{ 
-              backgroundColor: theme.colors.accent, 
-              color: 'white',
-              borderColor: theme.colors.accent,
-              cursor: 'pointer'
-            }}
-            title="Filter by time period"
-          >
-            <option value="today">📅 Today</option>
-            <option value="weekly">📅 Week</option>
-            <option value="monthly">📅 Month</option>
-          </select>
+          <div className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: theme.colors.accent, color: 'white' }}>
+            📅 Monthly View
+          </div>
         </div>
         
         <div className="space-y-4">

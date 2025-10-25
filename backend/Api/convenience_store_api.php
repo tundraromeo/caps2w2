@@ -554,13 +554,13 @@ try {
             error_log("DEBUG get_convenience_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
             
             // Get batch transfer details from tbl_transfer_batch_details for all related products
-            // First try to get transfers TO the convenience store (location_id = destination)
+            // Only show batches that still have available quantity (not completely consumed)
             $batchStmt = $conn->prepare("
                 SELECT 
                     btd.id,
                     btd.batch_id,
                     btd.batch_reference,
-                    btd.quantity as batch_quantity,
+                    btd.quantity as batch_quantity,  -- Show actual consumed quantities
                     btd.srp,
                     btd.srp as batch_srp,
                     btd.expiration_date,
@@ -582,6 +582,7 @@ try {
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON btd.location_id = l.location_id
                 WHERE btd.product_id IN ($placeholders)
+                AND btd.quantity > 0  -- Only show batches with available quantity
                 ORDER BY btd.expiration_date ASC, btd.id ASC
             ");
             $batchStmt->execute($relatedProductIds);
@@ -617,6 +618,7 @@ try {
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     LEFT JOIN tbl_category c ON p.category_id = c.category_id
                     WHERE fs.product_id IN ($placeholders)
+                    AND fs.available_quantity > 0  -- Only show batches with available quantity
                     ORDER BY fs.expiration_date ASC, fs.fifo_id ASC
                 ");
                 $fifoStmt->execute($relatedProductIds);

@@ -725,7 +725,7 @@ function updateReceivedQuantities($conn) {
                 if ($receivedQty == 0) {
                     $itemStatus = 'delivered';
                 } elseif ($receivedQty >= $orderedQty && $receivedQty > 0) {
-                    $itemStatus = 'complete';
+                    $itemStatus = 'received'; // Changed from 'complete' to 'received' for fully received items
                 } elseif ($receivedQty > 0 && $receivedQty < $orderedQty) {
                     $itemStatus = 'partial';
                 }
@@ -849,7 +849,7 @@ function updatePartialDelivery($conn) {
                 if ($receivedQty == 0) {
                     $itemStatus = 'delivered';
                 } elseif ($receivedQty >= $orderedQty && $receivedQty > 0) {
-                    $itemStatus = 'complete';
+                    $itemStatus = 'received'; // Changed from 'complete' to 'received' for fully received items
                 } elseif ($receivedQty > 0 && $receivedQty < $orderedQty) {
                     $itemStatus = 'partial';
                 }
@@ -1199,11 +1199,17 @@ function getReceivedItemsDetails($conn) {
                               prd.received_qty,
                               prd.unit_price,
                               prd.batch_number,
-                              prd.expiration_date
+                              prd.expiration_date,
+                              pod.quantity as total_ordered_qty,
+                              pod.received_qty as total_received_qty,
+                              pod.missing_qty,
+                              COALESCE(pod.item_status, 'delivered') as item_status
                             FROM tbl_purchase_receiving_dtl prd
+                            JOIN tbl_purchase_order_dtl pod ON prd.product_name = pod.product_name 
+                                AND pod.purchase_header_id = ?
                             WHERE prd.receiving_id = ?";
             $detailStmt = $conn->prepare($detailQuery);
-            $detailStmt->execute([$receivingId]);
+            $detailStmt->execute([$result['purchase_header_id'], $receivingId]);
             $details = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
             
             if (empty($details)) {

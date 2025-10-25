@@ -485,8 +485,14 @@ function CreatePurchaseOrder() {
                 } else if (receivedQty > 0) {
                   itemStatus = 'partial';
                 } else {
-                  itemStatus = 'pending';
+                  itemStatus = 'delivered';
                 }
+              }
+              
+              // Map database statuses to frontend filter statuses
+              let mappedStatus = itemStatus;
+              if (itemStatus === 'pending') {
+                mappedStatus = 'delivered'; // Map 'pending' to 'delivered' for the default filter
               }
               
               // If item_status is 'received', exclude from all tabs except when explicitly filtering for received
@@ -499,7 +505,29 @@ function CreatePurchaseOrder() {
                 return itemStatus === 'returned';
               }
               
-              return itemStatus === status;
+              // For complete tab, only show products that are 'complete' (ready to be received)
+              // Don't show 'received' products in complete tab
+              if (status === 'complete' && itemStatus === 'received') {
+                return false;
+              }
+              
+              // Enhanced logic for mixed PO handling:
+              // - Complete products (no missing qty) go to Complete tab
+              // - Partial products (has missing qty) go to Partial tab
+              // - Delivered products (not received yet) go to Delivered tab
+              
+              if (status === 'complete') {
+                // Show products that are complete (ready to receive)
+                return itemStatus === 'complete';
+              } else if (status === 'partial') {
+                // Show products that are partial (some received, some missing)
+                return itemStatus === 'partial';
+              } else if (status === 'delivered') {
+                // Show products that are delivered (not received yet)
+                return itemStatus === 'delivered';
+              }
+              
+              return mappedStatus === status;
             }) || []
           })).filter(po => po.products.length > 0); // Only include POs that have products matching the status
         }
@@ -652,11 +680,32 @@ function CreatePurchaseOrder() {
             }
           }
           
-          // Map 'returned' status to 'return' for the filter
-          if (itemStatus === 'returned') {
+          // Map database statuses to frontend filter statuses for counting
+          let mappedStatus = itemStatus;
+          if (itemStatus === 'pending') {
+            mappedStatus = 'delivered'; // Map 'pending' to 'delivered' for counting
+          }
+          
+          // Enhanced counting logic for mixed PO handling:
+          // Count individual products based on their actual status
+          
+          if (itemStatus === 'received') {
+            // Only count in received tab
+            if (counts.hasOwnProperty('received')) {
+              counts['received']++;
+            }
+          } else if (itemStatus === 'complete') {
+            // Count in complete tab
+            counts['complete']++;
+          } else if (itemStatus === 'partial') {
+            // Count in partial tab
+            counts['partial']++;
+          } else if (itemStatus === 'delivered') {
+            // Count in delivered tab
+            counts['delivered']++;
+          } else if (itemStatus === 'returned') {
+            // Count in return tab
             counts['return']++;
-          } else if (counts.hasOwnProperty(itemStatus)) {
-            counts[itemStatus]++;
           }
         });
       }
@@ -982,29 +1031,22 @@ function CreatePurchaseOrder() {
       const data = await response.json();
       
       if (data.success) {
-        // Filter only complete products
-        const completeProducts = data.details.filter(detail => {
-          const missingQty = detail.missing_qty ?? (detail.quantity - (detail.received_qty || 0));
-          return missingQty === 0;
+        // Show modal for all products, not just complete ones
+        setSelectedPOForReceive(data);
+        
+        // Initialize form data with current received quantities
+        const initialFormData = {};
+        data.details.forEach(item => {
+          initialFormData[item.purchase_dtl_id] = item.received_qty || 0;
         });
-
-        if (completeProducts.length === 0) {
-          toast.warning("No complete products found in this PO to receive.");
-          return;
-        }
-
-        // Auto-receive all complete products
-        for (const product of completeProducts) {
-          await handleReceiveCompleteProduct(poId, product);
-        }
-
-        toast.success(`✅ ${completeProducts.length} product(s) received successfully!`);
+        setReceiveItemsFormData(initialFormData);
+        setShowReceiveItemsForm(true);
       } else {
         toast.error('Failed to load PO details');
       }
     } catch (error) {
-      console.error('Error receiving complete items:', error);
-      toast.error('Error receiving items');
+      console.error('Error loading PO details:', error);
+      toast.error('Error loading purchase order details');
     }
   };
 
@@ -1873,7 +1915,7 @@ function CreatePurchaseOrder() {
       console.log('📊 Individual Product Categorization (Receive):', {
         complete: categorized.complete.length,
         partial: categorized.partial.length,
-        pending: categorized.pending.length,
+        delivered: categorized.delivered.length,
         details: categorized
       });
       
@@ -1922,6 +1964,9 @@ function CreatePurchaseOrder() {
           await fetchPurchaseOrders(poFilter);
           await fetchAllPurchaseOrders();
           await fetchReceivingList();
+          
+          // Automatically switch to Receive Items tab
+          setActiveTab('receive');
         } else {
           toast.error(result.error || 'Failed to update received quantities');
         }
@@ -1930,7 +1975,7 @@ function CreatePurchaseOrder() {
         // Determine overall PO status based on individual product statuses
         let overallStatus = 'complete';
         
-        if (categorized.partial.length > 0 || categorized.pending.length > 0) {
+        if (categorized.partial.length > 0 || categorized.delivered.length > 0) {
           overallStatus = 'partial_delivery';
         }
 
@@ -2109,7 +2154,7 @@ function CreatePurchaseOrder() {
       console.log('📊 Partial Delivery - Individual Product Categorization:', {
         complete: categorized.complete.length,
         partial: categorized.partial.length,
-        pending: categorized.pending.length,
+        delivered: categorized.delivered.length,
         details: categorized
       });
 
@@ -2716,7 +2761,7 @@ function CreatePurchaseOrder() {
                                     
                                       onMouseLeave={handleMouseLeave}
                                     >
-                                      Receive
+                                      Received
                                     </button>
                                     <button
                                       onClick={(e) => { 
@@ -3470,12 +3515,18 @@ function CreatePurchaseOrder() {
                         selectedReceivedItems.details.map((item, index) => (
                           <tr key={index}>
                             <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
-                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.ordered_qty || '-'}</td>
-                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.received_qty}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.total_ordered_qty || item.ordered_qty || '-'}</td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.total_received_qty || item.received_qty}</td>
                             <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
-                              <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
-                                ✅ Received
-                              </span>
+                              {item.missing_qty > 0 ? (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-warning)', color: 'white'}}>
+                                  ⚠️ Missing: {item.missing_qty}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-success)', color: 'white'}}>
+                                  ✅ Received
+                                </span>
+                              )}
                             </td>
                           </tr>
                         ))

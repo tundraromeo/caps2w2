@@ -1,4 +1,5 @@
 
+
 // pages/pos.js
 "use client";
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -10,25 +11,6 @@ import { getApiUrl } from '../lib/apiConfig';
 
 export default function POS() {
   const router = useRouter();
-  
-  // Load QZ Tray integration script
-  useEffect(() => {
-    const loadQZTrayScript = () => {
-      if (typeof window !== 'undefined' && !window.QZTrayIntegration) {
-        const script = document.createElement('script');
-        script.src = '/qz-tray-integration.js';
-        script.onload = () => {
-          console.log('✅ QZ Tray integration script loaded');
-        };
-        script.onerror = () => {
-          console.log('⚠️ QZ Tray integration script failed to load');
-        };
-        document.head.appendChild(script);
-      }
-    };
-    
-    loadQZTrayScript();
-  }, []);
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -73,6 +55,7 @@ export default function POS() {
   const [showClearCartModal, setShowClearCartModal] = useState(false);
   const [showCustomerReturnModal, setShowCustomerReturnModal] = useState(false);
   const [showReturnConfirmModal, setShowReturnConfirmModal] = useState(false);
+  const [showWrongTerminalAlert, setShowWrongTerminalAlert] = useState(false);
   const [isCheckoutProcessing, setIsCheckoutProcessing] = useState(false);
   const [customerReturnData, setCustomerReturnData] = useState({
     transactionId: '',
@@ -194,6 +177,7 @@ export default function POS() {
   const autoScanTimeoutRef = useRef(null);
   const suspendedCartRef = useRef(null); // for suspend/resume
   const lastScanRef = useRef({ code: null, time: 0 });
+  const isLoadingProductsRef = useRef(false); // prevent infinite reload loops
 
   const startNewTransaction = () => {
     clearCart();
@@ -247,7 +231,7 @@ export default function POS() {
   useEffect(() => {
     const fetchDiscounts = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_discounts' })
@@ -525,7 +509,7 @@ export default function POS() {
       let resolvedLocationId = null;
       let resolvedLocationName = null;
       try {
-        const locResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+        const locResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_locations' })
@@ -547,7 +531,7 @@ export default function POS() {
       } catch (_) {}
       
       // First, try to find the product in the current location using convenience store API
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/convenience_store_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -642,7 +626,7 @@ export default function POS() {
       console.log(`🔄 Loading all products for location: ${locationName}`);
       
       // Get location ID for the current location
-      const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_locations' })
@@ -664,7 +648,7 @@ export default function POS() {
           console.log(`📍 Found location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
           
           // Load products for this specific location using convenience store API with accurate stock quantities
-          const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`, {
+          const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/convenience_store_api.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -735,7 +719,7 @@ export default function POS() {
       console.log(`🔎 Searching products by name in ${locationName}: "${query}"`);
 
       // Resolve current location_id first - ensure exact match
-      const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'get_locations' })
@@ -763,7 +747,7 @@ export default function POS() {
       console.log(`📍 Using location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
 
       // Query inventory with search term - only for this specific location using convenience store API
-      const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`, {
+      const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/convenience_store_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -789,14 +773,26 @@ export default function POS() {
           return true;
         });
         
-        setProducts(filteredProducts);
+        // Additional filtering for more precise search results
+        const preciseFilteredProducts = filteredProducts.filter(product => {
+          if (!query) return true;
+          
+          const productName = (product.name || product.product_name || '').toLowerCase().trim();
+          const searchTerm = query.toLowerCase().trim();
+          
+          // ULTRA STRICT MODE: Only show exact matches
+          // This completely prevents "paracetamol 500mg" from appearing when searching "paracetamol"
+          return productName === searchTerm;
+        });
+        
+        setProducts(preciseFilteredProducts);
         setBarcodeScannedProduct(null);
         setSelectedIndex(0);
         setNavigationIndex(1);
-        console.log(`✅ Found ${filteredProducts.length} product(s) for "${query}" in ${currentLocation.location_name}`);
+        console.log(`✅ Found ${preciseFilteredProducts.length} product(s) for "${query}" in ${currentLocation.location_name}`);
         
         // Focus qty input of first result for quick entry
-        const firstId = filteredProducts[0]?.id;
+        const firstId = preciseFilteredProducts[0]?.id;
         setTimeout(() => {
           if (firstId) {
             const el = document.getElementById(`qty-input-${firstId}`);
@@ -824,24 +820,21 @@ export default function POS() {
 
   // Update product stock in local state
   const updateLocalStock = (productId, quantityChange) => {
-    // Validate and sanitize the quantity change
-    const sanitizedChange = Number(quantityChange) || 0;
-    
     setProducts(prevProducts => 
       prevProducts.map(product => 
         product.id === productId 
-          ? { ...product, quantity: Math.max(0, (product.quantity || 0) + sanitizedChange) }
+          ? { ...product, quantity: Math.max(0, product.quantity + quantityChange) }
           : product
       )
     );
   };
 
-  // Refresh inventory and reload products
+  // Refresh inventory - clear products (user must manually reload)
   const refreshInventory = async () => {
     try {
-      console.log(`🔄 Refreshing inventory for ${locationName}...`);
-      // Load all products for the current location
-      await loadAllProducts();
+      console.log(`🔄 Clearing inventory for ${locationName}...`);
+      // Clear products - user must manually load
+      setProducts([]);
       
       try {
         const barcodeInput = document.getElementById('barcode-scanner');
@@ -849,12 +842,12 @@ export default function POS() {
       } catch (_) {}
       
       if (typeof window !== 'undefined' && window.toast) {
-        window.toast.success('Inventory refreshed successfully!');
+        window.toast.success('Inventory cleared - please reload products manually');
       }
     } catch (error) {
-      console.error('Error refreshing inventory:', error);
+      console.error('Error clearing inventory:', error);
       if (typeof window !== 'undefined' && window.toast) {
-        window.toast.error('Failed to refresh inventory');
+        window.toast.error('Failed to clear inventory');
       }
     }
   };
@@ -934,6 +927,15 @@ export default function POS() {
     generateSearchSuggestions(searchTerm);
   }, [searchTerm, products]);
 
+  // Handle search term clearing - clear products when search is empty (no auto-reload)
+  useEffect(() => {
+    if (!searchTerm || searchTerm.trim() === '') {
+      // Clear products when search is empty - user must manually load products
+      console.log('🔄 Search cleared - products cleared, user must manually load');
+      setProducts([]);
+    }
+  }, [searchTerm]);
+
   // Removed sample data restore; using real data from database
 
   // Auto-update location when terminal changes
@@ -969,7 +971,7 @@ export default function POS() {
   // Calculate total
   useEffect(() => {
     const newTotal = cart.reduce(
-      (acc, item) => acc + ((item.product.price || 0) * (item.quantity || 0)),
+      (acc, item) => acc + (item.product.price * item.quantity),
       0
     );
     setTotal(newTotal);
@@ -1017,11 +1019,8 @@ export default function POS() {
 
   // Remove item from cart and restore stock
   const removeFromCart = (productId, quantity) => {
-    // Validate and sanitize the quantity
-    const sanitizedQuantity = Number(quantity) || 0;
-    
     // Restore stock
-    updateLocalStock(productId, sanitizedQuantity);
+    updateLocalStock(productId, quantity);
     
     // Remove from cart
     setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
@@ -1095,8 +1094,13 @@ export default function POS() {
   // Keyboard Navigation (Search, Products, Checkout)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Handle credentials modal navigation
+      // Handle keys inside Credentials Modal
       if (showCredentialsModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeCredentialsModal();
+          return;
+        }
         switch (e.key) {
           case 'Tab':
             e.preventDefault();
@@ -1333,6 +1337,11 @@ export default function POS() {
 
       // Handle keys inside Sales History Modal
       if (showHistoryModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowHistoryModal(false);
+          return;
+        }
         if (["ArrowDown", "s", "S"].includes(e.key)) {
           e.preventDefault();
           if (historyMode === 'sales') {
@@ -1408,6 +1417,46 @@ export default function POS() {
           return;
         }
         return; // block other shortcuts while total sales modal open
+      }
+
+      // Handle keys inside Logout Confirmation Modal
+      if (showLogoutConfirm) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          cancelLogout();
+          return;
+        }
+        return; // Block other shortcuts while logout modal is open
+      }
+
+      // Handle keys inside Clear Cart Modal
+      if (showClearCartModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowClearCartModal(false);
+          return;
+        }
+        return; // Block other shortcuts while clear cart modal is open
+      }
+
+      // Handle keys inside Return Confirmation Modal
+      if (showReturnConfirmModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowReturnConfirmModal(false);
+          return;
+        }
+        return; // Block other shortcuts while return confirm modal is open
+      }
+
+      // Handle keys inside Thank You Modal
+      if (showThankYouModal) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setShowThankYouModal(false);
+          return;
+        }
+        return; // Block other shortcuts while thank you modal is open
       }
 
       // Handle keys inside Discount Modal
@@ -1724,13 +1773,11 @@ export default function POS() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigationIndex, selectedIndex, products, searchTerm, selectedCategory, quantityInputs, cart, cartFocusIndex, showHistoryModal, salesHistory, historySelectedIndex, showDiscountModal, discountSelection, discountType, payableTotal, barcodeScannedProduct, showCustomerReturnModal, customerReturnData, returnQuantities, recentTransactions, showRecentTransactions]);
+  }, [navigationIndex, selectedIndex, products, searchTerm, selectedCategory, quantityInputs, cart, cartFocusIndex, showHistoryModal, salesHistory, historySelectedIndex, showDiscountModal, discountSelection, discountType, payableTotal, barcodeScannedProduct, showCustomerReturnModal, customerReturnData, returnQuantities, recentTransactions, showRecentTransactions, showCredentialsModal, showLogoutConfirm, showClearCartModal, showReturnConfirmModal, showThankYouModal]);
 
   // Cart functions
   const updateCartItemQuantity = (productId, newQuantity) => {
-    // Validate and sanitize the new quantity
-    const sanitizedQuantity = Number(newQuantity);
-    if (isNaN(sanitizedQuantity) || sanitizedQuantity < 1) {
+    if (newQuantity < 1) {
       // Get the current quantity in cart to restore stock
       const currentItem = cart.find(item => item.product.id === productId);
       if (currentItem) {
@@ -1743,7 +1790,7 @@ export default function POS() {
     // Find the current item to calculate stock difference
     const currentItem = cart.find(item => item.product.id === productId);
     if (currentItem) {
-      const quantityDifference = sanitizedQuantity - currentItem.quantity;
+      const quantityDifference = newQuantity - currentItem.quantity;
       if (quantityDifference !== 0) {
         // Update stock based on quantity difference
         updateLocalStock(productId, -quantityDifference);
@@ -1753,7 +1800,7 @@ export default function POS() {
     setCart(prevCart =>
       prevCart.map(item =>
         item.product.id === productId
-          ? { ...item, quantity: sanitizedQuantity }
+          ? { ...item, quantity: newQuantity }
           : item
       )
     );
@@ -1777,9 +1824,9 @@ export default function POS() {
       terminalName,
       items: cart.map(item => ({
         name: item.product.name,
-        quantity: item.quantity || 0,
-        price: item.product.price || 0,
-        total: (item.product.price || 0) * (item.quantity || 0)
+        quantity: item.quantity,
+        price: item.product.price,
+        total: item.product.price * item.quantity
       })),
       subtotal: total,
       discountType: discountType || null,
@@ -1797,174 +1844,39 @@ export default function POS() {
       console.log('💰 Receipt Amount Paid:', receiptData.amountPaid);
       console.log('💰 Receipt Grand Total:', receiptData.grandTotal);
       
-      // METHOD 1: Try QZ Tray first (best for online with printer)
-      if (typeof QZTrayIntegration !== 'undefined') {
-        try {
-          console.log('🖨️ Attempting QZ Tray printing...');
-          const qzTray = new QZTrayIntegration();
-          const initialized = await qzTray.initialize();
-          
-          if (initialized) {
-            // Get available printers and set the first one
-            const printers = await qzTray.getPrinters();
-            if (printers && printers.length > 0) {
-              qzTray.setPrinter(printers[0]);
-              console.log(`🖨️ Using printer: ${printers[0]}`);
-            }
-            
-            const result = await qzTray.printReceipt(receiptData);
-            console.log('✅ Receipt printed successfully via QZ Tray!');
-            return { success: true, message: 'Receipt printed successfully via QZ Tray', transactionId, method: 'qz-tray' };
-          }
-        } catch (qzError) {
-          console.log('⚠️ QZ Tray failed:', qzError.message);
-          // Continue to next method
-        }
+      // Server-side printing (for local XAMPP)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/qz-tray-receipt.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(receiptData)
+      });
+
+      console.log('📥 Response status:', response.status, response.ok);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ HTTP Error:', response.status, errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const result = await response.json();
+      console.log('📋 Server print result:', result);
       
-      // METHOD 2: Check if running online (not localhost)
-      const isOnline = !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1');
-      
-      if (isOnline) {
-        // Online mode - Use browser print dialog as fallback
-        console.log('🌐 Online mode detected - Using browser print dialog');
-        const printWindow = window.open('', '_blank');
-        const receiptHTML = generateReceiptHTML(receiptData);
-        printWindow.document.write(receiptHTML);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
-        
-        return { success: true, message: 'Receipt opened for printing', transactionId, method: 'browser-print' };
+      if (result.success) {
+        console.log('✅ Receipt printed successfully via server!');
+        return { success: true, message: 'Receipt printed successfully', transactionId, method: 'server-print' };
       } else {
-        // Local mode - Server-side printing
-        console.log('🏠 Local mode detected - Using server-side printing');
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/print-receipt-fixed-width.php`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(receiptData)
-        });
-
-        console.log('📥 Response status:', response.status, response.ok);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ HTTP Error:', response.status, errorText);
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('📋 Server print result:', result);
-        
-        if (result.success) {
-          console.log('✅ Receipt printed successfully via server!');
-          return { success: true, message: 'Receipt printed successfully', transactionId, method: 'server-print' };
-        } else {
-          console.error('❌ Print failed:', result.message);
-          return { success: false, message: result.message, transactionId };
-        }
+        console.error('❌ Print failed:', result.message);
+        return { success: false, message: result.message, transactionId };
       }
       
     } catch (error) {
       console.error('❌ Print error:', error);
-      // Fallback to browser print dialog
-      try {
-        console.log('🔄 Falling back to browser print dialog');
-        const printWindow = window.open('', '_blank');
-        const receiptHTML = generateReceiptHTML(receiptData);
-        printWindow.document.write(receiptHTML);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
-        
-        return { success: true, message: 'Receipt opened for printing (fallback)', transactionId, method: 'browser-print-fallback' };
-      } catch (fallbackError) {
-        console.error('❌ Fallback print also failed:', fallbackError);
-        return { success: false, message: error.message, transactionId };
-      }
+      // Return error details for better debugging
+      return { success: false, message: error.message, transactionId };
     }
-  };
-
-  // Generate HTML receipt for browser printing
-  const generateReceiptHTML = (receiptData) => {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Receipt - ${receiptData.transactionId}</title>
-        <style>
-          body { font-family: monospace; font-size: 12px; margin: 0; padding: 20px; }
-          .receipt { max-width: 300px; margin: 0 auto; }
-          .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-          .item { display: flex; justify-content: space-between; margin: 5px 0; }
-          .total { border-top: 1px solid #000; padding-top: 10px; margin-top: 10px; font-weight: bold; }
-          .footer { text-align: center; margin-top: 20px; font-size: 10px; }
-          @media print { body { margin: 0; padding: 10px; } }
-        </style>
-      </head>
-      <body>
-        <div class="receipt">
-          <div class="header">
-            <h2>${receiptData.storeName}</h2>
-            <p>Date: ${receiptData.date} ${receiptData.time}</p>
-            <p>TXN ID: ${receiptData.transactionId}</p>
-            <p>Cashier: ${receiptData.cashier}</p>
-            <p>Terminal: ${receiptData.terminalName}</p>
-          </div>
-          
-          <div class="items">
-            ${receiptData.items.map(item => `
-              <div class="item">
-                <span>${item.quantity}x ${item.name}</span>
-                <span>₱${item.total.toFixed(2)}</span>
-              </div>
-            `).join('')}
-          </div>
-          
-          <div class="total">
-            <div class="item">
-              <span>Subtotal:</span>
-              <span>₱${receiptData.subtotal.toFixed(2)}</span>
-            </div>
-            ${receiptData.discountType ? `
-              <div class="item">
-                <span>Discount (${receiptData.discountType}):</span>
-                <span>-₱${receiptData.discountAmount.toFixed(2)}</span>
-              </div>
-            ` : ''}
-            <div class="item">
-              <span><strong>GRAND TOTAL:</strong></span>
-              <span><strong>₱${receiptData.grandTotal.toFixed(2)}</strong></span>
-            </div>
-            <div class="item">
-              <span>Payment: ${receiptData.paymentMethod}</span>
-              <span>₱${receiptData.amountPaid.toFixed(2)}</span>
-            </div>
-            <div class="item">
-              <span>Change:</span>
-              <span>₱${receiptData.change.toFixed(2)}</span>
-            </div>
-            ${receiptData.gcashRef ? `
-              <div class="item">
-                <span>GCash Ref:</span>
-                <span>${receiptData.gcashRef}</span>
-              </div>
-            ` : ''}
-          </div>
-          
-          <div class="footer">
-            <p>Thank you!</p>
-            <p>Please come again</p>
-            <p>This is your official receipt</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
   };
 
   // Persist sale to backend (always called, even if printing fails)
@@ -1980,8 +1892,8 @@ export default function POS() {
                         String(terminalName || '').toLowerCase().includes('pharmacy');
       
       const apiUrl = isPharmacy 
-        ? `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pharmacy_api.php`
-        : `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/convenience_store_api.php`;
+        ? `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pharmacy_api.php`
+        : `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/convenience_store_api.php`;
       
       const action = isPharmacy 
         ? 'process_pharmacy_sale'
@@ -1992,7 +1904,7 @@ export default function POS() {
         action: action,
         transaction_id: transactionId,
         total_amount: payableTotal,
-        items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity || 0, price: it.product.price || 0 }))
+        items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
       });
       
       // Use appropriate API based on location/terminal
@@ -2009,7 +1921,7 @@ export default function POS() {
           location_name: locationName,
           emp_id: empId,
           username,
-          items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity || 0, price: it.product.price || 0 }))
+          items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
         })
       });
       const json1 = await res1.json().catch(() => ({}));
@@ -2027,7 +1939,7 @@ export default function POS() {
       const finalEmpId = empId || localStorage.getItem('pos-emp-id') || '1';
       console.log('👤 Using employee ID:', finalEmpId);
       
-      const salesRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const salesRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2040,8 +1952,8 @@ export default function POS() {
           emp_id: parseInt(finalEmpId), // Pass employee ID
           items: cart.map(it => ({ 
             product_id: it.product.id, 
-            quantity: it.quantity || 0, 
-            price: it.product.price || 0 
+            quantity: it.quantity, 
+            price: it.product.price 
           }))
         })
       });
@@ -2056,7 +1968,7 @@ export default function POS() {
       // Log activity
       try {
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
-        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2074,7 +1986,7 @@ export default function POS() {
     } catch (e) {
       console.warn('save_pos_sale failed:', e);
       try {
-        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+        await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2238,7 +2150,7 @@ export default function POS() {
     if (!transactionId.trim()) return;
     
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2277,7 +2189,7 @@ export default function POS() {
 
   const loadRecentTransactions = async () => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2334,13 +2246,46 @@ export default function POS() {
       return;
     }
 
+    // VALIDATION: Check if return is being processed at the correct terminal
+    try {
+      const validationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'validate_return_terminal',
+          transaction_id: customerReturnData.transactionId,
+          current_location: locationName,
+          current_terminal: terminalName
+        })
+      });
+
+      const validationResult = await validationResponse.json();
+      
+      if (!validationResult.success) {
+        // Show alert dialog for wrong terminal
+        setShowWrongTerminalAlert(true);
+        return;
+      }
+      
+      // If validation passes, continue with return processing
+      console.log('✅ Return terminal validation passed');
+      
+    } catch (error) {
+      console.error('Error validating return terminal:', error);
+      toast.error('Unable to validate return terminal. Please try again.');
+      return;
+    }
+
     // Count items with return quantity > 0
     const returnItemsCount = customerReturnData.items.filter(item => {
       const returnQty = returnQuantities[item.product_id] || 0;
       return returnQty > 0;
     }).length;
 
-    // Show custom confirmation modal instead of browser confirm
+    // Close the main customer return modal first
+    setShowCustomerReturnModal(false);
+    
+    // Then show the confirmation modal
     setShowReturnConfirmModal(true);
   };
 
@@ -2380,7 +2325,7 @@ export default function POS() {
       };
 
       console.log('Calling pos_return_api.php for return processing with data:', returnData);
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2413,8 +2358,8 @@ export default function POS() {
         setCustomerReturnData({ transactionId: '', returnReason: '', customReason: '', items: [] });
         setReturnQuantities({});
         
-        // Refresh product stock and sales history
-        await loadAllProducts();
+        // Clear products after return - user must manually reload
+        setProducts([]);
         await loadRecentTransactions(); // Refresh recent transactions to show updated data
         
         // Trigger notification event for admin panel
@@ -2491,7 +2436,7 @@ export default function POS() {
       
       console.log('📤 API Request:', requestBody);
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/sales_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
@@ -2552,34 +2497,14 @@ export default function POS() {
     try {
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
-      let empId = null;
+      const empId = userData ? JSON.parse(userData).user_id : null;
       
-      if (userData) {
-        try {
-          const user = JSON.parse(userData);
-          empId = user.user_id || user.emp_id || null;
-          console.log('POS Logout - Parsed user data:', user);
-          console.log('POS Logout - Found emp_id:', empId);
-        } catch (e) {
-          console.error('Failed to parse user data:', e);
-        }
-      }
-      
-      // Fallback: Try to get emp_id from localStorage
-      if (!empId) {
-        const localEmpId = localStorage.getItem('pos-emp-id');
-        if (localEmpId) {
-          empId = parseInt(localEmpId);
-          console.log('POS Logout - Using emp_id from localStorage:', empId);
-        }
-      }
-      
-      console.log('POS Logout attempt - Final Emp ID:', empId);
+      console.log('POS Logout attempt - User data:', userData);
+      console.log('POS Logout attempt - Emp ID:', empId);
       
       // Validate empId before attempting logout
       if (!empId) {
-        console.warn('⚠️ No employee ID found in session or local storage');
-        console.log('📍 Clearing local session data and redirecting to login');
+        console.warn('No employee ID found, clearing local session only');
         toast.warning('Session expired. Redirecting to login...');
       } else {
         try {
@@ -2605,7 +2530,7 @@ export default function POS() {
           console.log('POS Logout API response:', result);
           
           if (result.success) {
-            console.log('✅ POS logout successful - Server confirmed logout');
+            console.log('✅ POS logout successful');
             toast.success('Logged out successfully');
           } else {
             console.warn('⚠️ POS logout warning:', result.message);
@@ -2613,23 +2538,20 @@ export default function POS() {
           }
         } catch (fetchError) {
           console.error('❌ Logout API call failed:', fetchError);
-          console.log('📍 Proceeding with local cleanup even though API call failed');
+          console.log('Proceeding with local logout only');
           toast.warning('Logged out locally');
         }
       }
     } catch (error) {
       console.error('❌ POS logout error:', error);
-      console.log('📍 Proceeding with local logout despite errors');
       toast.warning('Logged out locally');
     } finally {
       // Always clear session and redirect regardless of API call result
-      console.log('🧹 Cleaning up: Clearing all session and local storage');
-      sessionStorage.clear(); // Clear all session data
-      localStorage.removeItem('pos-terminal');
-      localStorage.removeItem('pos-cashier');
-      localStorage.removeItem('pos-emp-id');
-      console.log('✅ Cleanup complete, redirecting to login page');
+      console.log('🧹 Clearing local session data');
+      sessionStorage.removeItem('user_data');
+      localStorage.clear(); // Clear any other stored data
       
+      console.log('🔄 Redirecting to login page');
       router.push('/');
     }
   };
@@ -2823,9 +2745,9 @@ export default function POS() {
       items: cart.map(item => ({
         id: item.product.id,
         name: item.product.name,
-        quantity: item.quantity || 0,
-        price: item.product.price || 0,
-        total: (item.product.price || 0) * (item.quantity || 0),
+        quantity: item.quantity,
+        price: item.product.price,
+        total: item.product.price * item.quantity,
         returnedQuantity: 0,
       })),
       subtotal: total,
@@ -2881,19 +2803,9 @@ export default function POS() {
       // If we had a barcode scan, refresh that product's data
       handleBarcodeScan(barcodeScannedProduct.barcode || barcodeScannedProduct.product_id);
     } else {
-      // For regular searches, refresh the entire product list for the current location
-      console.log(`🔄 Refreshing product list for ${locationName} after checkout...`);
-      try {
-        // Small delay to ensure database operations are complete
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Force a complete refresh by clearing products first, then reloading
-        setProducts([]);
-        await loadAllProducts();
-        console.log(`✅ Product list refreshed successfully for ${locationName}`);
-      } catch (error) {
-        console.error('Failed to refresh product list after checkout:', error);
-      }
+      // Clear products after checkout - user must manually reload
+      console.log(`🔄 Clearing products after checkout - user must manually reload`);
+      setProducts([]);
     }
     
     // Show success notification for stock update
@@ -2942,7 +2854,7 @@ export default function POS() {
 
   return (
     <>
-      <style jsx global>{`
+      <style jsx>{`
         .scrollbar-hide {
           -ms-overflow-style: none;
           scrollbar-width: none;
@@ -2950,11 +2862,22 @@ export default function POS() {
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }
+        /* Set main container zoom to 80% */
+        .pos-main-container {
+          transform: scale(0.80);
+          transform-origin: top left;
+          width: 125%; /* Compensate for the scale reduction */
+          height: 125%; /* Compensate for the scale reduction */
+        }
+        /* Ensure proper scaling for all elements */
+        * {
+          box-sizing: border-box;
+        }
       `}</style>
-      <div className="flex h-screen bg-gray-50">
-        <main className="flex-1 responsive-padding pb-24 overflow-y-auto bg-white transition-all duration-300 ease-in-out">
+      <div className="flex h-screen bg-gray-50 pos-main-container">
+        <main className="flex-1 p-8 pb-24 overflow-y-auto bg-white transition-all duration-300 ease-in-out">
           {/* Layout */}
-          <div className="responsive-flex flex-1">
+          <div className="flex flex-col md:flex-row flex-1">
             {/* Left Side - Product Search & Selection */}
             <div className="md:w-[85%] p-4 border-r">
               {/* Section 0: Search Bar */}
@@ -2994,6 +2917,15 @@ export default function POS() {
                           navigationIndex === 0 ? 'ring-2 ring-blue-500 border-blue-500' : 'hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'
                         }`}
                       />
+                      {searchTerm && (
+                        <button
+                          onClick={() => setSearchTerm('')}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                          title="Clear search"
+                        >
+                          ✕
+                        </button>
+                      )}
                       
                       {/* Search Suggestions Dropdown */}
                       {showSuggestions && searchSuggestions.length > 0 && (
@@ -3386,12 +3318,6 @@ export default function POS() {
                    <div className="inline-block px-4 py-2 bg-blue-100 text-blue-800 rounded-lg text-base font-bold border border-blue-300">
                      🖥️ Terminal: <strong>{terminalName}</strong> → Location: <strong>{locationName}</strong>
                    </div>
-                   <button
-                     onClick={loadAllProducts}
-                     className="mt-6 px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-lg font-bold shadow-lg hover:shadow-xl"
-                   >
-                     📦 Load All Products
-                   </button>
                  </div>
                )}
             </div>
@@ -3503,31 +3429,31 @@ export default function POS() {
                             </div>
                             
                             <div className="text-sm text-gray-600">
-                              Quantity: <span className="font-bold text-blue-600">x{item.quantity || 0} pcs</span>
+                              Quantity: <span className="font-bold text-blue-600">x{item.quantity} pcs</span>
                             </div>
                             <div className="text-sm text-gray-600">
-                              Price: <span className="font-bold text-green-600">₱{(item.product.price || 0).toFixed(2)} each</span>
+                              Price: <span className="font-bold text-green-600">₱{item.product.price.toFixed(2)} each</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <button
                               className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => updateCartItemQuantity(item.product.id, (item.quantity || 0) - 1)}
+                              onClick={() => updateCartItemQuantity(item.product.id, item.quantity - 1)}
                             >
                               −
                             </button>
                             <span className="text-lg font-bold text-gray-800 min-w-[80px] text-center">
-                              ₱{((item.product.price || 0) * (item.quantity || 0)).toFixed(2)}
+                              ₱{(item.product.price * item.quantity).toFixed(2)}
                             </span>
                             <button
                               className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => updateCartItemQuantity(item.product.id, (item.quantity || 0) + 1)}
+                              onClick={() => updateCartItemQuantity(item.product.id, item.quantity + 1)}
                             >
                               +
                             </button>
                             <button
                               className="w-8 h-8 bg-red-200 rounded-full hover:bg-red-300 text-red-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => removeFromCart(item.product.id, item.quantity || 0)}
+                              onClick={() => removeFromCart(item.product.id, item.quantity)}
                               title="Remove item"
                             >
                               ×
@@ -3813,7 +3739,6 @@ export default function POS() {
                 >
                   Clear Old Data
                 </button>
-                <div className="text-sm text-gray-500">Alt+H to close</div>
               </div>
             </div>
             <div className="flex">
@@ -4327,7 +4252,7 @@ export default function POS() {
                               <div className="flex-1">
                                 <div className="font-semibold text-gray-800">{item.name || item.product_name}</div>
                                 <div className="text-sm text-gray-600">
-                                  Original: {item.quantity || 0} × ₱{(itemPrice || 0).toFixed(2)} = ₱{((itemPrice || 0) * (item.quantity || 0)).toFixed(2)}
+                                  Original: {item.quantity} × ₱{itemPrice.toFixed(2)} = ₱{(itemPrice * item.quantity).toFixed(2)}
                                 </div>
                               </div>
                             </div>
@@ -4520,6 +4445,39 @@ export default function POS() {
               onClick={() => setShowThankYouModal(false)}
             >
               Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Wrong Terminal Alert Modal */}
+      {showWrongTerminalAlert && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-xl shadow-2xl text-center border-2 border-red-300 max-w-md mx-4">
+            <div className="text-red-500 text-6xl mb-4">⚠️</div>
+            <h2 className="text-2xl font-bold mb-4 text-red-600">Wrong Terminal!</h2>
+            <div className="text-gray-700 text-lg mb-4">
+              <p className="mb-2">This return cannot be processed at this terminal.</p>
+              <p className="font-semibold text-red-600">
+                Transaction #{customerReturnData.transactionId}
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
+                Please process this return at the <strong>original store location</strong> where the purchase was made.
+              </p>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-yellow-800">
+                <strong>Note:</strong> Returns must be processed at the same location where the original sale occurred.
+              </p>
+            </div>
+            <button
+              className="px-8 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold transition-colors"
+              onClick={() => {
+                setShowWrongTerminalAlert(false);
+                setShowCustomerReturnModal(true); // Reopen the return modal
+              }}
+            >
+              I Understand
             </button>
           </div>
         </div>
@@ -4768,7 +4726,10 @@ export default function POS() {
               
               <div className="flex gap-3 justify-center">
                 <button
-                  onClick={() => setShowReturnConfirmModal(false)}
+                  onClick={() => {
+                    setShowReturnConfirmModal(false);
+                    setShowCustomerReturnModal(true);
+                  }}
                   className="px-6 py-3 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 font-bold transition-colors"
                 >
                   Cancel

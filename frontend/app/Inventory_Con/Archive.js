@@ -73,10 +73,10 @@ const Archive = () => {
 
     if (searchTerm) {
       filtered = filtered.filter(item =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.archivedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.reason.toLowerCase().includes(searchTerm.toLowerCase())
+        (item.name && typeof item.name === 'string' && item.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.category && typeof item.category === 'string' && item.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.archivedBy && typeof item.archivedBy === 'string' && item.archivedBy.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.reason && typeof item.reason === 'string' && item.reason.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
 

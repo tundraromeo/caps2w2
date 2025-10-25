@@ -396,9 +396,75 @@ try {
             $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
+            // Debug: Log the query and results
+            error_log("DEBUG Pharmacy API: Query executed with params: " . json_encode($params));
+            error_log("DEBUG Pharmacy API: Found " . count($rows) . " products");
+            if (count($rows) > 0) {
+                error_log("DEBUG Pharmacy API: First product: " . json_encode($rows[0]));
+            }
+            
             echo json_encode([
                 "success" => true,
                 "data" => $rows
+            ]);
+            break;
+            
+        case 'debug_pharmacy_stock':
+            // Debug endpoint to check current stock state
+            $product_id = $data['product_id'] ?? 0;
+            
+            if (!$product_id) {
+                echo json_encode(['success' => false, 'message' => 'Product ID required']);
+                break;
+            }
+            
+            // Get pharmacy location ID
+            $locStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name LIKE '%pharmacy%' LIMIT 1");
+            $locStmt->execute();
+            $pharmacy_location_id = $locStmt->fetchColumn();
+            
+            // Get all transfer batch details for this product
+            $debugStmt = $conn->prepare("
+                SELECT 
+                    tbd.id,
+                    tbd.batch_id,
+                    tbd.batch_reference,
+                    tbd.quantity,
+                    tbd.location_id,
+                    tbd.created_at,
+                    l.location_name,
+                    p.product_name
+                FROM tbl_transfer_batch_details tbd
+                JOIN tbl_location l ON tbd.location_id = l.location_id
+                JOIN tbl_product p ON tbd.product_id = p.product_id
+                WHERE tbd.product_id = ?
+                ORDER BY tbd.created_at DESC
+            ");
+            $debugStmt->execute([$product_id]);
+            $debugResults = $debugStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'product_id' => $product_id,
+                'pharmacy_location_id' => $pharmacy_location_id,
+                'transfer_batch_details' => $debugResults,
+                'total_quantity_at_pharmacy' => array_sum(array_map(function($row) use ($pharmacy_location_id) {
+                    return $row['location_id'] == $pharmacy_location_id ? $row['quantity'] : 0;
+                }, $debugResults))
+            ]);
+            break;
+            
+        case 'test_pharmacy_api':
+            // Simple test endpoint to check if API is working
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'message' => 'Pharmacy API is working',
+                'timestamp' => date('Y-m-d H:i:s'),
+                'data' => [
+                    'test' => true,
+                    'php_version' => PHP_VERSION
+                ]
             ]);
             break;
             
@@ -406,6 +472,9 @@ try {
             // Get batch transfer details for pharmacy - COPY LOGIC FROM CONVENIENCE STORE
             $product_id = $data['product_id'] ?? 0;
             $location_id = $data['location_id'] ?? null;
+            
+            // Clear any output buffer to prevent unwanted content
+            ob_clean();
             
             if (!$product_id) {
                 echo json_encode(['success' => false, 'message' => 'Product ID is required']);
@@ -452,13 +521,13 @@ try {
             error_log("DEBUG get_pharmacy_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
             
             // Get batch transfer details from tbl_transfer_batch_details for all related products
-            // First try to get transfers TO the pharmacy (location_id = destination)
+            // Only show batches that still have available quantity (not completely consumed)
             $batchStmt = $conn->prepare("
                 SELECT 
                     btd.id,
                     btd.batch_id,
                     btd.batch_reference,
-                    btd.quantity as batch_quantity,
+                    btd.quantity as batch_quantity,  -- Show actual consumed quantities
                     btd.srp,
                     btd.srp as batch_srp,
                     btd.expiration_date,
@@ -480,6 +549,7 @@ try {
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON btd.location_id = l.location_id
                 WHERE btd.product_id IN ($placeholders)
+                AND btd.quantity > 0  -- Only show batches with available quantity
                 ORDER BY btd.expiration_date ASC, btd.id ASC
             ");
             $batchStmt->execute($relatedProductIds);
@@ -515,6 +585,7 @@ try {
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     LEFT JOIN tbl_category c ON p.category_id = c.category_id
                     WHERE fs.product_id IN ($placeholders)
+                    AND fs.available_quantity > 0  -- Only show batches with available quantity
                     ORDER BY fs.expiration_date ASC, fs.fifo_id ASC
                 ");
                 $fifoStmt->execute($relatedProductIds);
@@ -565,6 +636,9 @@ try {
                 }, $batchDetails))
             ];
             
+            // Clear any output buffer before JSON output
+            ob_clean();
+            
             echo json_encode([
                 "success" => true,
                 "data" => [
@@ -575,6 +649,7 @@ try {
             
             } catch (Exception $e) {
                 error_log("Error in get_pharmacy_batch_details: " . $e->getMessage());
+                ob_clean();
                 echo json_encode([
                     "success" => false,
                     "message" => "Database error: " . $e->getMessage(),

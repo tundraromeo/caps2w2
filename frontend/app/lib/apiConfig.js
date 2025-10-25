@@ -13,13 +13,13 @@
 // Get base URL from environment variable with fallback
 // FORCE HTTP to avoid SSL certificate errors with XAMPP
 const getBaseUrl = () => {
-  // Use environment variable if set
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
-  }
+  // Debug logging
+  console.log('Environment variable NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
   
-  // Production default (Vercel will always have env var, but this is fallback)
-  return 'https://enguio.shop/Api';
+  // FORCE LOCAL DEVELOPMENT URL - Override any environment variables
+  const localUrl = 'http://localhost/caps2w2/backend/Api';
+  console.log('Using FORCED local development URL:', localUrl);
+  return localUrl;
 };
 
 export const API_BASE_URL = getBaseUrl();

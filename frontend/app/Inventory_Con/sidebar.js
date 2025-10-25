@@ -57,7 +57,7 @@ const Sidebar = ({
       notificationCount: getTotalNotifications('convenience')
     },
     { 
-      label: "Pharmacy Inventory", 
+      label: "Pharmacy Store", 
       icon: <FaPills />, 
       key: "PharmacyInventory",
       hasNotifications: getTotalNotifications('pharmacy') > 0,

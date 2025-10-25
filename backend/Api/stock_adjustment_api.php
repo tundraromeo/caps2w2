@@ -94,6 +94,7 @@ function handle_get_products_for_stock_adjustment($conn, $data) {
         // For other locations, check tbl_transfer_batch_details
         if ($location_id == 2) {
             // Warehouse products - get from tbl_fifo_stock
+            // Use actual current quantity from tbl_product instead of summing batches
             $stmt = $conn->prepare("
                 SELECT DISTINCT
                     p.product_id,
@@ -104,25 +105,27 @@ function handle_get_products_for_stock_adjustment($conn, $data) {
                     b.brand,
                     s.supplier_name,
                     l.location_name,
-                    SUM(fs.quantity) as total_quantity,
-                    AVG(fs.srp) as avg_srp,
-                    MIN(fs.expiration_date) as earliest_expiry,
-                    MAX(fs.expiration_date) as latest_expiry,
+                    p.quantity as total_quantity,
+                    p.srp as avg_srp,
+                    NULL as earliest_expiry,
+                    NULL as latest_expiry,
                     COUNT(DISTINCT fs.batch_id) as batch_count
-                FROM tbl_fifo_stock fs
-                LEFT JOIN tbl_product p ON fs.product_id = p.product_id
+                FROM tbl_product p
+                LEFT JOIN tbl_fifo_stock fs ON p.product_id = fs.product_id AND fs.quantity > 0
                 LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_location l ON l.location_id = ?
-                WHERE fs.quantity > 0
+                WHERE p.location_id = ?
+                AND p.quantity > 0
                 AND (p.status IS NULL OR p.status <> 'archived')
-                GROUP BY p.product_id, p.product_name, p.barcode, p.description, c.category_name, b.brand, s.supplier_name, l.location_name
+                GROUP BY p.product_id, p.product_name, p.barcode, p.description, c.category_name, b.brand, s.supplier_name, l.location_name, p.quantity, p.srp
                 ORDER BY p.product_name ASC
             ");
-            $stmt->execute([$location_id]);
+            $stmt->execute([$location_id, $location_id]);
         } else {
-            // Other locations - get from tbl_transfer_batch_details
+            // Other locations - get actual quantities from tbl_transfer_batch_details
+            // Use actual current quantity instead of summing all batches
             $stmt = $conn->prepare("
                 SELECT DISTINCT
                     p.product_id,
@@ -133,7 +136,7 @@ function handle_get_products_for_stock_adjustment($conn, $data) {
                     b.brand,
                     s.supplier_name,
                     l.location_name,
-                    SUM(tbd.quantity) as total_quantity,
+                    COALESCE(SUM(tbd.quantity), 0) as total_quantity,
                     AVG(tbd.srp) as avg_srp,
                     MIN(tbd.expiration_date) as earliest_expiry,
                     MAX(tbd.expiration_date) as latest_expiry,
@@ -158,6 +161,7 @@ function handle_get_products_for_stock_adjustment($conn, $data) {
                     (? NOT IN (3, 4))
                 )
                 GROUP BY p.product_id, p.product_name, p.barcode, p.description, c.category_name, b.brand, s.supplier_name, l.location_name
+                HAVING total_quantity > 0
                 ORDER BY p.product_name ASC
             ");
             $stmt->execute([$location_id, $location_id, $location_id, $location_id]);
@@ -169,6 +173,12 @@ function handle_get_products_for_stock_adjustment($conn, $data) {
         error_log("Stock Adjustment API - Products found: " . count($products));
         if (!empty($products)) {
             error_log("Stock Adjustment API - First product: " . json_encode($products[0]));
+            // Log Lady pills specifically if found
+            foreach ($products as $product) {
+                if (strpos(strtolower($product['product_name']), 'lady pills') !== false) {
+                    error_log("Stock Adjustment API - Lady pills quantity: " . $product['total_quantity']);
+                }
+            }
         }
         
         echo json_encode([
@@ -228,18 +238,19 @@ function handle_get_product_batches_for_adjustment($conn, $data) {
         // For other locations, check tbl_transfer_batch_details
         if ($location_id == 2) {
             // Warehouse products - get from tbl_fifo_stock
+            // Use available_quantity instead of quantity to show current stock
             $batchesStmt = $conn->prepare("
                 SELECT 
                     fs.batch_id,
                     fs.batch_reference,
-                    fs.quantity as current_qty,
+                    fs.available_quantity as current_qty,
                     fs.srp,
                     fs.expiration_date,
                     l.location_name,
                     fs.created_at as batch_created_at
                 FROM tbl_fifo_stock fs
                 LEFT JOIN tbl_location l ON l.location_id = ?
-                WHERE fs.product_id = ? AND fs.quantity > 0
+                WHERE fs.product_id = ? AND fs.available_quantity > 0
                 ORDER BY fs.expiration_date ASC, fs.created_at ASC
             ");
             $batchesStmt->execute([$location_id, $product_id]);
@@ -263,11 +274,27 @@ function handle_get_product_batches_for_adjustment($conn, $data) {
         }
         $batches = $batchesStmt->fetchAll(PDO::FETCH_ASSOC);
         
+        // Debug logging for batches
+        error_log("Batch API - Product ID: " . $product_id . ", Location ID: " . $location_id);
+        error_log("Batch API - Batches found: " . count($batches));
+        if (!empty($batches)) {
+            error_log("Batch API - First batch: " . json_encode($batches[0]));
+            // Log total batch quantities
+            $totalBatchQty = array_sum(array_column($batches, 'current_qty'));
+            error_log("Batch API - Total batch quantity: " . $totalBatchQty);
+        }
+        
         echo json_encode([
             "success" => true,
             "data" => [
                 "product" => $product,
                 "batches" => $batches
+            ],
+            "debug" => [
+                "product_id" => $product_id,
+                "location_id" => $location_id,
+                "batches_count" => count($batches),
+                "total_batch_qty" => !empty($batches) ? array_sum(array_column($batches, 'current_qty')) : 0
             ]
         ]);
         
@@ -305,13 +332,43 @@ function handle_create_batch_stock_adjustment($conn, $data) {
         // Start transaction
         $conn->beginTransaction();
         
-        // Update the batch quantity in tbl_transfer_batch_details
-        $updateStmt = $conn->prepare("
-            UPDATE tbl_transfer_batch_details 
-            SET quantity = ? 
-            WHERE batch_id = ? AND product_id = ?
+        // Determine which table to update based on location
+        // For warehouse (location_id = 2), update tbl_fifo_stock
+        // For other locations, update tbl_transfer_batch_details
+        
+        // Get location_id for this batch from tbl_product
+        $locationStmt = $conn->prepare("
+            SELECT p.location_id 
+            FROM tbl_product p
+            WHERE p.product_id = ?
+            LIMIT 1
         ");
-        $updateStmt->execute([$new_qty, $batch_id, $product_id]);
+        $locationStmt->execute([$product_id]);
+        $location = $locationStmt->fetch(PDO::FETCH_ASSOC);
+        
+        error_log("Stock Adjustment - Product ID: $product_id, Location ID: " . ($location ? $location['location_id'] : 'not found'));
+        
+        if ($location && $location['location_id'] == 2) {
+            // Warehouse - update tbl_fifo_stock
+            $updateStmt = $conn->prepare("
+                UPDATE tbl_fifo_stock 
+                SET available_quantity = ?, quantity = ?
+                WHERE batch_id = ? AND product_id = ?
+            ");
+            $updateStmt->execute([$new_qty, $new_qty, $batch_id, $product_id]);
+            
+            error_log("Stock Adjustment - Updated tbl_fifo_stock: batch_id=$batch_id, product_id=$product_id, new_qty=$new_qty");
+        } else {
+            // Other locations - update tbl_transfer_batch_details
+            $updateStmt = $conn->prepare("
+                UPDATE tbl_transfer_batch_details 
+                SET quantity = ? 
+                WHERE batch_id = ? AND product_id = ?
+            ");
+            $updateStmt->execute([$new_qty, $batch_id, $product_id]);
+            
+            error_log("Stock Adjustment - Updated tbl_transfer_batch_details: batch_id=$batch_id, product_id=$product_id, new_qty=$new_qty");
+        }
         
         // Log the adjustment
         $logStmt = $conn->prepare("
@@ -326,6 +383,9 @@ function handle_create_batch_stock_adjustment($conn, $data) {
             $reason, $notes, $adjusted_by, $movement_type
         ]);
         
+        // Additional logging for debugging
+        error_log("Stock Adjustment - Adjustment logged: product_id=$product_id, batch_id=$batch_id, old_qty=$old_qty, new_qty=$new_qty, adjustment_qty=$adjustment_qty");
+        
         $conn->commit();
         
         echo json_encode([
@@ -333,7 +393,9 @@ function handle_create_batch_stock_adjustment($conn, $data) {
             "message" => "Stock adjustment created successfully",
             "data" => [
                 "adjustment_id" => $conn->lastInsertId(),
-                "movement_type" => $movement_type
+                "movement_type" => $movement_type,
+                "location_id" => $location ? $location['location_id'] : 'unknown',
+                "table_updated" => ($location && $location['location_id'] == 2) ? 'tbl_fifo_stock' : 'tbl_transfer_batch_details'
             ]
         ]);
         
@@ -360,8 +422,9 @@ function handle_get_batch_adjustment_history($conn, $data) {
                 bal.log_id,
                 bal.product_id,
                 p.product_name,
+                p.barcode,
                 bal.batch_id,
-                tbd.batch_reference,
+                COALESCE(tbd.batch_reference, fs.batch_reference, 'N/A') as batch_reference,
                 bal.old_qty,
                 bal.new_qty,
                 bal.adjustment_qty,
@@ -369,15 +432,28 @@ function handle_get_batch_adjustment_history($conn, $data) {
                 bal.notes,
                 bal.adjusted_by,
                 bal.movement_type,
-                bal.created_at
+                bal.created_at,
+                COALESCE(tbd.srp, fs.srp, 0) as srp,
+                COALESCE(tbd.expiration_date, fs.expiration_date) as expiration_date,
+                c.category_name,
+                b.brand
             FROM tbl_batch_adjustment_log bal
             LEFT JOIN tbl_product p ON bal.product_id = p.product_id
-            LEFT JOIN tbl_transfer_batch_details tbd ON bal.batch_id = tbd.batch_id
+            LEFT JOIN tbl_category c ON p.category_id = c.category_id
+            LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+            LEFT JOIN tbl_transfer_batch_details tbd ON bal.batch_id = tbd.batch_id AND bal.product_id = tbd.product_id
+            LEFT JOIN tbl_fifo_stock fs ON bal.batch_id = fs.batch_id AND bal.product_id = fs.product_id
             ORDER BY bal.created_at DESC
             LIMIT ? OFFSET ?
         ");
         $stmt->execute([$limit, $offset]);
         $adjustments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Debug logging
+        error_log("Batch Adjustment History - Found " . count($adjustments) . " adjustments");
+        if (!empty($adjustments)) {
+            error_log("Batch Adjustment History - Sample adjustment: " . json_encode($adjustments[0]));
+        }
         
         // Get total count
         $countStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_batch_adjustment_log");

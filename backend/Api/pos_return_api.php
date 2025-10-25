@@ -44,6 +44,88 @@ if (!is_array($data)) { $data = []; }
 $action = $_GET['action'] ?? ($data['action'] ?? '');
 
 switch ($action) {
+    case 'validate_return_terminal':
+        try {
+            $transaction_id = $data['transaction_id'] ?? '';
+            $current_location = $data['current_location'] ?? '';
+            $current_terminal = $data['current_terminal'] ?? '';
+            
+            if (empty($transaction_id) || empty($current_location)) {
+                echo json_encode(['success' => false, 'message' => 'Transaction ID and current location are required']);
+                break;
+            }
+            
+            // Get the original transaction details to check where it was sold
+            $stmt = $conn->prepare("
+                SELECT 
+                    psh.location_name,
+                    psh.terminal_name,
+                    psh.sales_header_id,
+                    psh.transaction_id,
+                    psh.date_created
+                FROM tbl_pos_sales_header psh
+                WHERE psh.transaction_id = ?
+                ORDER BY psh.date_created DESC
+                LIMIT 1
+            ");
+            $stmt->execute([$transaction_id]);
+            $originalTransaction = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$originalTransaction) {
+                echo json_encode([
+                    'success' => false, 
+                    'message' => 'Transaction not found',
+                    'error' => 'TRANSACTION_NOT_FOUND'
+                ]);
+                break;
+            }
+            
+            $original_location = $originalTransaction['location_name'];
+            $original_terminal = $originalTransaction['terminal_name'];
+            
+            error_log("VALIDATION: Transaction {$transaction_id} - Original: {$original_location}/{$original_terminal}, Current: {$current_location}/{$current_terminal}");
+            
+            // Check if the return is being processed at the same location
+            $location_match = strtolower($original_location) === strtolower($current_location);
+            
+            if (!$location_match) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Return must be processed at the original store location',
+                    'error' => 'WRONG_LOCATION',
+                    'data' => [
+                        'original_location' => $original_location,
+                        'original_terminal' => $original_terminal,
+                        'current_location' => $current_location,
+                        'current_terminal' => $current_terminal,
+                        'transaction_id' => $transaction_id
+                    ]
+                ]);
+                break;
+            }
+            
+            // If location matches, validation passes
+            echo json_encode([
+                'success' => true,
+                'message' => 'Return terminal validation passed',
+                'data' => [
+                    'original_location' => $original_location,
+                    'original_terminal' => $original_terminal,
+                    'current_location' => $current_location,
+                    'current_terminal' => $current_terminal,
+                    'transaction_id' => $transaction_id
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("Error validating return terminal: " . $e->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'Validation error: ' . $e->getMessage()
+            ]);
+        }
+        break;
+        
     case 'process_customer_return':
         error_log('POS Return API: Processing customer return with data: ' . json_encode($data));
         try {
@@ -454,11 +536,67 @@ switch ($action) {
             
             foreach ($returnData as $item) {
                 if ($item['product_id']) {
-                    // Get location ID
-                    $locationStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name = ? LIMIT 1");
-                    $locationStmt->execute([$location_name]);
-                    $locationResult = $locationStmt->fetch(PDO::FETCH_ASSOC);
-                    $location_id = $locationResult ? $locationResult['location_id'] : 4;
+                    // Determine the original source location for this product
+                    // First, try to find where this product was originally transferred from
+                    // Look for pharmacy as the source location specifically
+                    $sourceLocationStmt = $conn->prepare("
+                        SELECT DISTINCT l.location_name, l.location_id
+                        FROM tbl_transfer_batch_details tbd
+                        JOIN tbl_location l ON tbd.location_id = l.location_id
+                        WHERE tbd.product_id = ? 
+                        AND l.location_name LIKE '%pharmacy%'
+                        ORDER BY tbd.created_at ASC
+                        LIMIT 1
+                    ");
+                    $sourceLocationStmt->execute([$item['product_id']]);
+                    $sourceLocation = $sourceLocationStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    error_log("DEBUG: Looking for PHARMACY source location for product {$item['product_id']}, return location: {$location_name}");
+                    error_log("DEBUG: Pharmacy source location query result: " . json_encode($sourceLocation));
+                    
+                    // If no pharmacy found, try any location that's not the return location
+                    if (!$sourceLocation) {
+                        $sourceLocationStmt = $conn->prepare("
+                            SELECT DISTINCT l.location_name, l.location_id
+                            FROM tbl_transfer_batch_details tbd
+                            JOIN tbl_location l ON tbd.location_id = l.location_id
+                            WHERE tbd.product_id = ? 
+                            AND tbd.location_id != (
+                                SELECT location_id FROM tbl_location WHERE location_name = ? LIMIT 1
+                            )
+                            ORDER BY tbd.created_at ASC
+                            LIMIT 1
+                        ");
+                        $sourceLocationStmt->execute([$item['product_id'], $location_name]);
+                        $sourceLocation = $sourceLocationStmt->fetch(PDO::FETCH_ASSOC);
+                        error_log("DEBUG: Fallback source location query result: " . json_encode($sourceLocation));
+                    }
+                    
+                    // Use source location if found, otherwise try pharmacy as default
+                    if ($sourceLocation) {
+                        $restore_location_name = $sourceLocation['location_name'];
+                        $location_id = $sourceLocation['location_id'];
+                        error_log("Restoring product {$item['product_id']} to original source location: {$restore_location_name} (ID: {$location_id})");
+                    } else {
+                        // Try pharmacy as default fallback
+                        $pharmacyStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name LIKE '%pharmacy%' LIMIT 1");
+                        $pharmacyStmt->execute();
+                        $pharmacyResult = $pharmacyStmt->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($pharmacyResult) {
+                            $location_id = $pharmacyResult['location_id'];
+                            $restore_location_name = 'Pharmacy';
+                            error_log("No source location found, defaulting to PHARMACY: {$restore_location_name} (ID: {$location_id})");
+                        } else {
+                            // Final fallback to return location
+                            $locationStmt = $conn->prepare("SELECT location_id FROM tbl_location WHERE location_name = ? LIMIT 1");
+                            $locationStmt->execute([$location_name]);
+                            $locationResult = $locationStmt->fetch(PDO::FETCH_ASSOC);
+                            $location_id = $locationResult ? $locationResult['location_id'] : 4;
+                            $restore_location_name = $location_name;
+                            error_log("No pharmacy found, restoring to return location: {$restore_location_name} (ID: {$location_id})");
+                        }
+                    }
                     
                     // Directly restore to tbl_transfer_batch_details - no changes to tbl_product
                     $quantity_to_restore = $item['quantity'];
@@ -503,7 +641,8 @@ switch ($action) {
                         $stmt->execute([$item['product_id'], $location_id]);
                         $originalBatch = $stmt->fetch(PDO::FETCH_ASSOC);
                         
-                        error_log("Using fallback batch selection for product {$item['product_id']}");
+                        error_log("DEBUG: Fallback batch selection for product {$item['product_id']} at location {$location_id}");
+                        error_log("DEBUG: Fallback batch result: " . json_encode($originalBatch));
                     }
                     
                     if ($originalBatch) {
@@ -515,16 +654,65 @@ switch ($action) {
                         ");
                         $stmt->execute([$quantity_to_restore, $originalBatch['id']]);
                         
+                        // Verify the update
+                        $verifyStmt = $conn->prepare("SELECT quantity FROM tbl_transfer_batch_details WHERE id = ?");
+                        $verifyStmt->execute([$originalBatch['id']]);
+                        $newQuantity = $verifyStmt->fetchColumn();
+                        
                         $restored_batches[] = [
                             'batch_reference' => $originalBatch['batch_reference'],
                             'restored_quantity' => $quantity_to_restore,
                             'system' => 'Transfer Batch Details'
                         ];
                         
-                        error_log("Restored to batch {$originalBatch['batch_reference']} (batch_id: {$originalBatch['batch_id']}) for product {$item['product_id']}: {$quantity_to_restore} units (tbd ID: {$originalBatch['id']})");
+                        error_log("SUCCESS: Restored to batch {$originalBatch['batch_reference']} (batch_id: {$originalBatch['batch_id']}) for product {$item['product_id']}: {$quantity_to_restore} units (tbd ID: {$originalBatch['id']})");
+                        error_log("VERIFY: New quantity in batch {$originalBatch['id']}: {$newQuantity}");
                     } else {
                         // No batch found - this shouldn't happen, but log it
-                        error_log("Warning: No batch found to restore for product {$item['product_id']} at location {$location_id}");
+                        error_log("ERROR: No batch found to restore for product {$item['product_id']} at location {$location_id}");
+                        
+                        // Try to create a new batch entry if none exists
+                        error_log("ATTEMPTING: Creating new batch entry for product {$item['product_id']} at location {$location_id}");
+                        
+                        // Get a default batch_id for this product
+                        $defaultBatchStmt = $conn->prepare("
+                            SELECT batch_id FROM tbl_batch 
+                            WHERE product_id = ? 
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        ");
+                        $defaultBatchStmt->execute([$item['product_id']]);
+                        $defaultBatchId = $defaultBatchStmt->fetchColumn();
+                        
+                        if ($defaultBatchId) {
+                            // Create new transfer batch detail entry
+                            $createBatchStmt = $conn->prepare("
+                                INSERT INTO tbl_transfer_batch_details 
+                                (batch_id, product_id, location_id, quantity, batch_reference, srp, expiration_date, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+                            ");
+                            $batchReference = "RET-" . date('YmdHis') . "-" . $item['product_id'];
+                            $createBatchStmt->execute([
+                                $defaultBatchId,
+                                $item['product_id'],
+                                $location_id,
+                                $quantity_to_restore,
+                                $batchReference,
+                                0, // Default SRP
+                                '2025-12-31', // Default expiration
+                            ]);
+                            
+                            $newBatchId = $conn->lastInsertId();
+                            error_log("CREATED: New batch entry ID {$newBatchId} for product {$item['product_id']} with quantity {$quantity_to_restore}");
+                            
+                            $restored_batches[] = [
+                                'batch_reference' => $batchReference,
+                                'restored_quantity' => $quantity_to_restore,
+                                'system' => 'New Transfer Batch Details'
+                            ];
+                        } else {
+                            error_log("CRITICAL: No default batch found for product {$item['product_id']} - cannot restore stock");
+                        }
                     }
                     
                     $restored_items[] = $item['product_id'];
@@ -535,15 +723,38 @@ switch ($action) {
             // Commit transaction
             $conn->commit();
             
+            // Determine the primary restore location for the response
+            $primaryRestoreLocation = $location_name; // Default to return location
+            if (!empty($restored_items)) {
+                // Check if we restored to a different location than the return location
+                $firstItemSourceStmt = $conn->prepare("
+                    SELECT DISTINCT l.location_name
+                    FROM tbl_transfer_batch_details tbd
+                    JOIN tbl_location l ON tbd.location_id = l.location_id
+                    WHERE tbd.product_id = ? 
+                    AND tbd.location_id != (
+                        SELECT location_id FROM tbl_location WHERE location_name = ? LIMIT 1
+                    )
+                    ORDER BY tbd.created_at ASC
+                    LIMIT 1
+                ");
+                $firstItemSourceStmt->execute([$returnData[0]['product_id'], $location_name]);
+                $firstItemSource = $firstItemSourceStmt->fetchColumn();
+                if ($firstItemSource) {
+                    $primaryRestoreLocation = $firstItemSource;
+                }
+            }
+            
             echo json_encode([
                 'success' => true,
                 'message' => 'Return approved successfully',
-                'location_name' => $location_name,
+                'location_name' => $primaryRestoreLocation, // Use the actual restore location
+                'return_location' => $location_name, // Keep track of where return was processed
                 'restored_items' => implode(', ', $restored_items),
                 'total_quantity_restored' => $total_quantity_restored,
                 'transfer_details_updated' => true,
                 'restored_batches' => $restored_batches,
-                'note' => 'Returned quantities have been restored to original batches in tbl_transfer_batch_details'
+                'note' => 'Returned quantities have been restored to original source location batches in tbl_transfer_batch_details'
             ]);
             
         } catch (Exception $e) {

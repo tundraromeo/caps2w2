@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -26,7 +26,7 @@ import { useSettings } from "./SettingsContext";
 import NotificationSystem from "./NotificationSystem";
 
 function ConvenienceInventory() {
-                                          const { theme } = useTheme();
+  const { theme } = useTheme();
   const { settings, isProductExpiringSoon, isProductExpired, getExpiryStatus, isStockLow } = useSettings();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -666,7 +666,7 @@ function ConvenienceInventory() {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
         product.product_name?.toLowerCase().includes(searchLower) ||
-        product.barcode?.toLowerCase().includes(searchLower) ||
+        String(product.barcode || "").toLowerCase().includes(searchLower) ||
         product.category?.toLowerCase().includes(searchLower) ||
         product.brand?.toLowerCase().includes(searchLower) ||
         product.supplier_name?.toLowerCase().includes(searchLower);
@@ -700,7 +700,6 @@ function ConvenienceInventory() {
       <NotificationSystem 
         products={products} 
         onAlertCountChange={setAlertCount}
-        componentName="convenience"
       />
       {/* Header */}
       <div className="w-full p-6 pb-4">
@@ -1070,10 +1069,6 @@ function ConvenienceInventory() {
                       <div className={`font-semibold ${quantity === 0 ? 'text-red-600' : quantity === 1 ? 'text-orange-600' : ''}`}>
                         {product.total_quantity || product.quantity || 0} pieces
                       </div>
-                      {/* Always show batch count */}
-                      <div className="text-xs mt-1" style={{ color: theme.text.muted }}>
-                        ({product.total_batches || 1} batches)
-                      </div>
                     </td>
                     <td className="px-6 py-4 text-center text-sm" style={{ color: theme.text.primary }}>
                       ₱{(() => {
@@ -1395,7 +1390,7 @@ function ConvenienceInventory() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Used:</span>
@@ -1581,7 +1576,7 @@ function ConvenienceInventory() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-600">Total Quantity:</span>
-                    <span className="ml-2 font-semibold text-gray-900">{selectedProductForBatch?.total_quantity || selectedProductForBatch?.quantity || batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
+                    <span className="ml-2 font-semibold text-gray-900">{batchData.reduce((sum, batch) => sum + (batch.batch_quantity || 0), 0)} pieces</span>
                   </div>
                   <div>
                     <span className="text-gray-600">Batches Used:</span>
@@ -1904,4 +1899,6 @@ function ConvenienceInventory() {
     </div>
   );
 }
+
+
 export default ConvenienceInventory;

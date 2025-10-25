@@ -81,7 +81,9 @@ const StockAdjustment = () => {
     new_qty: 0,
     adjustment_qty: 0,
     reason: "",
-    notes: ""
+    notes: "",
+    srp: 0,
+    expiration_date: ""
   });
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [products, setProducts] = useState([]);
@@ -174,6 +176,7 @@ const StockAdjustment = () => {
         let allData = result.data || [];
         
         console.log('📈 Total records:', allData.length);
+        console.log('📊 Sample raw data:', allData.slice(0, 2));
         
         // Process the data to match expected format
         const processedData = allData.map(item => ({
@@ -191,8 +194,15 @@ const StockAdjustment = () => {
           status: 'Approved', // Batch adjustments are automatically approved
           product_name: item.product_name,
           product_id: item.product_id,
+          barcode: item.barcode || 'N/A',
           batch_reference: item.batch_reference || 'N/A',
-          expiration_date: item.expiration_date
+          expiration_date: item.expiration_date,
+          srp: item.srp || item.batch_srp || 0,
+          batch_srp: item.srp || item.batch_srp || 0,
+          old_qty: item.old_qty || 0,
+          new_qty: item.new_qty || 0,
+          category_name: item.category_name || 'N/A',
+          brand: item.brand || 'N/A'
         }));
         
         // Remove duplicates based on log_id (additional safeguard)
@@ -205,7 +215,6 @@ const StockAdjustment = () => {
         console.log('📊 Sample processed data:', processedData.slice(0, 2));
         
         setAdjustments(uniqueData);
-        setFilteredAdjustments(uniqueData);
         setTotalRecords(result.total || uniqueData.length);
         
         console.log('✅ Batch adjustments fetched successfully:', processedData.length, 'records');
@@ -222,6 +231,31 @@ const StockAdjustment = () => {
       setIsLoading(false);
     }
   };
+
+  // Apply filtering logic
+  useEffect(() => {
+    if (adjustments.length === 0) return;
+    
+    let filteredData = adjustments;
+    
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filteredData = filteredData.filter(item => 
+        item.product_name?.toLowerCase().includes(searchLower) ||
+        item.batch_reference?.toLowerCase().includes(searchLower) ||
+        item.reason?.toLowerCase().includes(searchLower) ||
+        item.adjusted_by?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Filter by type
+    if (selectedType !== 'all') {
+      filteredData = filteredData.filter(item => item.adjustment_type === selectedType);
+    }
+    
+    setFilteredAdjustments(filteredData);
+  }, [adjustments, searchTerm, selectedType]);
 
   // Fetch statistics
   const fetchStats = async () => {
@@ -381,17 +415,52 @@ const StockAdjustment = () => {
         const batches = result.data.batches || [];
         const product = result.data.product;
         
-        // Calculate total quantity from batches
-        const totalQuantity = batches.reduce((sum, batch) => sum + (parseFloat(batch.current_qty) || 0), 0);
+        console.log('📦 Batches received:', batches);
+        console.log('💰 Sample batch SRP:', batches[0]?.srp);
+        console.log('📅 Sample batch expiration:', batches[0]?.expiration_date);
+        
+        // Find the original product from the products list to preserve the correct total_quantity
+        const originalProduct = products.find(p => p.product_id == productId);
+        const originalTotalQuantity = originalProduct?.total_quantity || 0;
+        
+        // Calculate total quantity from batches for verification
+        const batchTotalQuantity = batches.reduce((sum, batch) => sum + (parseFloat(batch.current_qty) || 0), 0);
+        
+        console.log('🔍 Quantity Comparison:', {
+          productId: productId,
+          originalTotalQuantity: originalTotalQuantity,
+          batchTotalQuantity: batchTotalQuantity,
+          difference: originalTotalQuantity - batchTotalQuantity
+        });
+        
+        // Use the original total_quantity from the product list (more reliable)
+        // Only fall back to batch calculation if original is not available
+        const finalTotalQuantity = originalTotalQuantity > 0 ? originalTotalQuantity : batchTotalQuantity;
         
         // Add total_quantity to product data
         const productWithTotal = {
           ...product,
-          total_quantity: totalQuantity
+          total_quantity: finalTotalQuantity,
+          batch_total_quantity: batchTotalQuantity, // Keep batch total for reference
+          quantity_discrepancy: originalTotalQuantity > 0 && Math.abs(batchTotalQuantity - originalTotalQuantity) > 1 // Allow small rounding differences
         };
         
         setProductBatches(batches);
         setSelectedProduct(productWithTotal);
+        
+        // Show warning if there's a significant discrepancy (more than 1 unit difference)
+        if (originalTotalQuantity > 0 && Math.abs(batchTotalQuantity - originalTotalQuantity) > 1) {
+          console.warn(`⚠️ Quantity discrepancy detected for product ${productId}:`, {
+            original: originalTotalQuantity,
+            batchTotal: batchTotalQuantity,
+            difference: originalTotalQuantity - batchTotalQuantity
+          });
+        } else {
+          console.log(`✅ Quantities match for product ${productId}:`, {
+            original: originalTotalQuantity,
+            batchTotal: batchTotalQuantity
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching product batches:', error);
@@ -406,6 +475,12 @@ const StockAdjustment = () => {
   const handleProductSelect = (productId) => {
     const product = products.find(p => p.product_id == productId);
     if (product) {
+      console.log('🔍 Product Selected:', {
+        productId: productId,
+        productName: product.product_name,
+        originalTotalQuantity: product.total_quantity,
+        barcode: product.barcode
+      });
       setSelectedProduct(product);
       fetchProductBatches(productId);
     }
@@ -414,6 +489,9 @@ const StockAdjustment = () => {
   // Handle batch adjust button click
   const handleBatchAdjust = (batch) => {
     console.log('🔘 Batch adjust button clicked for batch:', batch);
+    console.log('💰 Batch SRP:', batch.srp);
+    console.log('📅 Batch Expiration:', batch.expiration_date);
+    
     setSelectedBatch(batch);
     setBatchAdjustment({
       batch_id: batch.batch_id,
@@ -422,7 +500,9 @@ const StockAdjustment = () => {
       new_qty: batch.current_qty,
       adjustment_qty: 0,
       reason: "",
-      notes: ""
+      notes: "",
+      srp: batch.srp || 0,
+      expiration_date: batch.expiration_date || ""
     });
     console.log('✅ Batch adjustment state set:', {
       batch_id: batch.batch_id,
@@ -431,7 +511,9 @@ const StockAdjustment = () => {
       new_qty: batch.current_qty,
       adjustment_qty: 0,
       reason: "",
-      notes: ""
+      notes: "",
+      srp: batch.srp || 0,
+      expiration_date: batch.expiration_date || ""
     });
     setShowBatchAdjustmentModal(true);
   };
@@ -460,7 +542,9 @@ const StockAdjustment = () => {
       new_qty: batch.current_qty,
       adjustment_qty: 0,
       reason: "",
-      notes: ""
+      notes: "",
+      srp: batch.srp || 0,
+      expiration_date: batch.expiration_date || ""
     });
   };
 
@@ -536,6 +620,8 @@ const StockAdjustment = () => {
         adjustment_qty: batchAdjustment.adjustment_qty,
         reason: batchAdjustment.reason,
         notes: batchAdjustment.notes,
+        srp: batchAdjustment.srp,
+        expiration_date: batchAdjustment.expiration_date,
         adjusted_by: userData.username || userData.emp_id || 'inventory_manager'
       };
       
@@ -578,7 +664,9 @@ const StockAdjustment = () => {
       new_qty: 0,
       adjustment_qty: 0,
       reason: "",
-      notes: ""
+      notes: "",
+      srp: 0,
+      expiration_date: ""
     });
   };
 
@@ -765,7 +853,7 @@ const StockAdjustment = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className={`${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-xl p-6`}>
           <div className="flex items-center">
             <Package className="h-8 w-8 text-blue-500" />
@@ -790,15 +878,6 @@ const StockAdjustment = () => {
             <div className="ml-4">
               <p className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Subtractions</p>
               <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{stats.subtractions}</p>
-            </div>
-          </div>
-        </div>
-        <div className={`${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-xl p-6`}>
-          <div className="flex items-center">
-            <TrendingUp className="h-8 w-8 text-purple-500" />
-            <div className="ml-4">
-              <p className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Net Quantity</p>
-              <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{stats.net_quantity}</p>
             </div>
           </div>
         </div>
@@ -833,7 +912,7 @@ const StockAdjustment = () => {
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2">
             <div className="relative">
               <FaSearch className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
@@ -848,20 +927,6 @@ const StockAdjustment = () => {
           </div>
           <div>
             <select
-              value={selectedLocationFilter || ''}
-              onChange={(e) => setSelectedLocationFilter(e.target.value ? parseInt(e.target.value) : null)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-            >
-              <option value="">All Locations</option>
-              {availableLocations.map((location) => (
-                <option key={location.location_id} value={location.location_id}>
-                  {location.location_name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
               className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
@@ -869,19 +934,6 @@ const StockAdjustment = () => {
               {adjustmentTypes.map((type) => (
                 <option key={type} value={type}>
                   {type === "all" ? "All Types" : type}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-            >
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {status === "all" ? "All Status" : status}
                 </option>
               ))}
             </select>
@@ -1256,8 +1308,16 @@ const StockAdjustment = () => {
                         <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.product_name || 'N/A'}</p>
                       </div>
                       <div>
-                        <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Product ID</label>
-                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.product_id || 'N/A'}</p>
+                        <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Category</label>
+                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.category_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Brand</label>
+                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.brand || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Barcode</label>
+                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.barcode || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
@@ -1267,16 +1327,24 @@ const StockAdjustment = () => {
                     <h4 className={`text-lg font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>Adjustment Details</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
+                        <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Reference</label>
+                        <p className={`text-sm font-mono ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.batch_reference || 'N/A'}</p>
+                      </div>
+                      <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Quantity</label>
                         <p className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{viewingAdjustment.quantity}</p>
                       </div>
                       <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>SRP</label>
-                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>₱{safeParseFloat(viewingAdjustment.srp).toFixed(2)}</p>
+                        <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          ₱{safeParseFloat(viewingAdjustment.srp || viewingAdjustment.batch_srp || 0).toFixed(2)}
+                        </p>
                       </div>
                       <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Total Value</label>
-                        <p className={`text-lg font-bold text-green-600`}>₱{(safeParseFloat(viewingAdjustment.quantity) * safeParseFloat(viewingAdjustment.srp)).toFixed(2)}</p>
+                        <p className={`text-lg font-bold text-green-600`}>
+                          ₱{(safeParseFloat(viewingAdjustment.quantity) * safeParseFloat(viewingAdjustment.srp || viewingAdjustment.batch_srp || 0)).toFixed(2)}
+                        </p>
                       </div>
                       <div>
                         <label className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Expiration Date</label>
@@ -1468,8 +1536,19 @@ const StockAdjustment = () => {
                           <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.category_name || 'N/A'}</p>
                         </div>
                         <div>
+                          <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Brand:</span>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.brand || 'N/A'}</p>
+                        </div>
+                        <div className="col-span-2">
                           <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Total Stock:</span>
-                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct.total_quantity || selectedProduct.quantity || 0} units</p>
+                          <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            {selectedProduct.total_quantity || selectedProduct.quantity || 0} units
+                            {selectedProduct.quantity_discrepancy && (
+                              <span className="ml-2 text-xs text-orange-500">
+                                ⚠️ Batch total: {selectedProduct.batch_total_quantity}
+                              </span>
+                            )}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -1492,6 +1571,7 @@ const StockAdjustment = () => {
                           <table className="w-full text-sm">
                             <thead className={`${isDark ? 'bg-gray-700' : 'bg-gray-100'} border-b`}>
                               <tr>
+                                <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Number</th>
                                 <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Reference</th>
                                 <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Expiry</th>
                                 <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Current Qty</th>
@@ -1503,6 +1583,9 @@ const StockAdjustment = () => {
                             <tbody>
                               {productBatches.map((batch, index) => (
                                 <tr key={`batch-${batch.batch_id}-${batch.batch_reference}-${index}`} className={`border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                                  <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                    {batch.batch_id || 'N/A'}
+                                  </td>
                                   <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
                                     {batch.batch_reference}
                                   </td>
@@ -1549,6 +1632,14 @@ const StockAdjustment = () => {
                             <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct?.product_name}</p>
                           </div>
                           <div>
+                            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>🏷️ Category:</span>
+                            <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct?.category_name || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>🏢 Brand:</span>
+                            <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedProduct?.brand || 'N/A'}</p>
+                          </div>
+                          <div>
                             <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>🆔 Batch Reference:</span>
                             <p className={`${isDark ? 'text-white' : 'text-gray-900'}`}>{selectedBatch.batch_reference}</p>
                           </div>
@@ -1582,28 +1673,151 @@ const StockAdjustment = () => {
                           </div>
                           <div>
                             <label className={`block text-xs mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Adjustment Qty (Difference)</label>
-                            <input
-                              type="number"
-                              value={batchAdjustment.adjustment_qty}
-                              onChange={(e) => {
-                                const adjQty = parseFloat(e.target.value) || 0;
-                                const newQty = selectedBatch.current_qty + adjQty;
-                                setBatchAdjustment(prev => ({
-                                  ...prev,
-                                  adjustment_qty: adjQty,
-                                  new_qty: Math.max(0, newQty)
-                                }));
-                              }}
-                              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                              step="0.01"
-                            />
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={batchAdjustment.adjustment_qty === 0 ? '' : batchAdjustment.adjustment_qty}
+                                onChange={(e) => {
+                                  const inputValue = e.target.value;
+                                  console.log('Input value:', inputValue); // Debug log
+                                  
+                                  // Handle empty input
+                                  if (inputValue === '') {
+                                    setBatchAdjustment(prev => ({
+                                      ...prev,
+                                      adjustment_qty: 0,
+                                      new_qty: selectedBatch.current_qty
+                                    }));
+                                    return;
+                                  }
+                                  
+                                  // Allow minus sign alone for now
+                                  if (inputValue === '-') {
+                                    setBatchAdjustment(prev => ({
+                                      ...prev,
+                                      adjustment_qty: 0,
+                                      new_qty: selectedBatch.current_qty
+                                    }));
+                                    return;
+                                  }
+                                  
+                                  // Parse the value
+                                  const adjQty = parseFloat(inputValue) || 0;
+                                  const newQty = selectedBatch.current_qty + adjQty;
+                                  setBatchAdjustment(prev => ({
+                                    ...prev,
+                                    adjustment_qty: adjQty,
+                                    new_qty: newQty
+                                  }));
+                                }}
+                                className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                                placeholder="Enter adjustment amount (+/-)"
+                                onKeyDown={(e) => {
+                                  console.log('Key pressed:', e.key, 'Key code:', e.keyCode); // Debug log
+                                  
+                                  // TEMPORARILY ALLOW ALL KEYS FOR TESTING
+                                  // Don't prevent any keys - let everything through
+                                  console.log('Allowing key:', e.key);
+                                  return;
+                                }}
+                                onFocus={(e) => {
+                                  console.log('Input focused'); // Debug log
+                                  e.target.select();
+                                }}
+                                onInput={(e) => {
+                                  console.log('Input event:', e.target.value); // Debug log
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentValue = batchAdjustment.adjustment_qty || 0;
+                                  const newValue = currentValue < 0 ? currentValue : -Math.abs(currentValue || 1);
+                                  const newQty = selectedBatch.current_qty + newValue;
+                                  setBatchAdjustment(prev => ({
+                                    ...prev,
+                                    adjustment_qty: newValue,
+                                    new_qty: newQty
+                                  }));
+                                }}
+                                className={`px-3 py-2 border rounded-md hover:bg-red-50 ${isDark ? 'border-gray-600 bg-gray-700 text-red-400 hover:bg-red-900' : 'border-gray-300 bg-white text-red-600 hover:bg-red-50'}`}
+                                title="Make negative adjustment"
+                              >
+                                <FaMinus className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentValue = batchAdjustment.adjustment_qty || 0;
+                                  const newValue = currentValue > 0 ? currentValue : Math.abs(currentValue || 1);
+                                  const newQty = selectedBatch.current_qty + newValue;
+                                  setBatchAdjustment(prev => ({
+                                    ...prev,
+                                    adjustment_qty: newValue,
+                                    new_qty: newQty
+                                  }));
+                                }}
+                                className={`px-3 py-2 border rounded-md hover:bg-green-50 ${isDark ? 'border-gray-600 bg-gray-700 text-green-400 hover:bg-green-900' : 'border-gray-300 bg-white text-green-600 hover:bg-green-50'}`}
+                                title="Make positive adjustment"
+                              >
+                                <FaPlus className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBatchAdjustment(prev => ({
+                                    ...prev,
+                                    adjustment_qty: 0,
+                                    new_qty: selectedBatch.current_qty
+                                  }));
+                                }}
+                                className={`px-3 py-2 border rounded-md hover:bg-gray-50 ${isDark ? 'border-gray-600 bg-gray-700 text-gray-400 hover:bg-gray-600' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                                title="Clear adjustment"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                              💡 Tip: Use <strong>negative numbers</strong> (e.g., -5) to reduce stock, <strong>positive numbers</strong> (e.g., +10) to add stock, or click the +/- buttons
+                            </p>
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  console.log('Test minus button clicked');
+                                  setBatchAdjustment(prev => ({
+                                    ...prev,
+                                    adjustment_qty: -5,
+                                    new_qty: selectedBatch.current_qty - 5
+                                  }));
+                                }}
+                                className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                              >
+                                Test: Set -5
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  console.log('Test plus button clicked');
+                                  setBatchAdjustment(prev => ({
+                                    ...prev,
+                                    adjustment_qty: 5,
+                                    new_qty: selectedBatch.current_qty + 5
+                                  }));
+                                }}
+                                className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                              >
+                                Test: Set +5
+                              </button>
+                            </div>
                           </div>
                         </div>
                         <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                           Current: {selectedBatch.current_qty} → New: {batchAdjustment.new_qty} 
                           {batchAdjustment.adjustment_qty !== 0 && (
-                            <span className={`ml-2 ${batchAdjustment.adjustment_qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <span className={`ml-2 font-medium ${batchAdjustment.adjustment_qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
                               ({batchAdjustment.adjustment_qty > 0 ? '+' : ''}{batchAdjustment.adjustment_qty})
+                              {batchAdjustment.adjustment_qty > 0 ? ' 📈 Stock In' : ' 📉 Stock Out'}
                             </span>
                           )}
                         </p>
@@ -1647,6 +1861,68 @@ const StockAdjustment = () => {
                               }
                             })()} (Auto-filled)
                           </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            💰 SRP (Suggested Retail Price)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={batchAdjustment.srp}
+                            onChange={(e) => setBatchAdjustment(prev => ({...prev, srp: safeParseFloat(e.target.value)}))}
+                            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                            placeholder="Enter SRP"
+                          />
+                          <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            💡 Current batch SRP: ₱{safeParseFloat(selectedBatch?.srp || 0).toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            📅 Expiration Date
+                          </label>
+                          <input
+                            type="date"
+                            value={batchAdjustment.expiration_date}
+                            onChange={(e) => setBatchAdjustment(prev => ({...prev, expiration_date: e.target.value}))}
+                            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+                            style={{
+                              backgroundColor: isDark ? '#374151' : '#ffffff',
+                              color: isDark ? '#f9fafb' : '#111827',
+                              borderColor: isDark ? '#4b5563' : '#d1d5db'
+                            }}
+                          />
+                          <p className={`text-xs mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            💡 Current batch expiry: {selectedBatch?.expiration_date ? new Date(selectedBatch.expiration_date).toLocaleDateString() : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                          💵 Total Value Calculation
+                        </label>
+                        <div className={`px-3 py-2 border rounded-md ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-300 bg-gray-50'}`}>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Quantity:</span>
+                              <span className={`ml-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{batchAdjustment.new_qty}</span>
+                            </div>
+                            <div>
+                              <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>SRP:</span>
+                              <span className={`ml-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>₱{safeParseFloat(batchAdjustment.srp).toFixed(2)}</span>
+                            </div>
+                            <div className="col-span-2">
+                              <span className={`font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Total Value:</span>
+                              <span className={`ml-2 text-lg font-bold text-green-600`}>
+                                ₱{(safeParseFloat(batchAdjustment.new_qty) * safeParseFloat(batchAdjustment.srp)).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -1730,6 +2006,7 @@ const StockAdjustment = () => {
                     <tr>
                       <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Date</th>
                       <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Product</th>
+                      <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Number</th>
                       <th className={`px-3 py-2 text-left ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Batch Reference</th>
                       <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Old Qty</th>
                       <th className={`px-3 py-2 text-center ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>New Qty</th>
@@ -1745,6 +2022,9 @@ const StockAdjustment = () => {
                         </td>
                         <td className={`px-3 py-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {adjustment.product_name}
+                        </td>
+                        <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {adjustment.batch_id || 'N/A'}
                         </td>
                         <td className={`px-3 py-2 font-mono text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {adjustment.batch_reference}

@@ -36,6 +36,11 @@ class APIHandler {
   constructor() {
     this.baseUrl = API_CONFIG.BASE_URL;
     this.endpoints = API_CONFIG.ENDPOINTS;
+    
+    // Debug logging
+    console.log('APIHandler initialized with baseUrl:', this.baseUrl);
+    console.log('API_CONFIG.BASE_URL:', API_CONFIG.BASE_URL);
+    console.log('Imported API_BASE_URL:', API_BASE_URL);
   }
 
   /**
@@ -48,6 +53,9 @@ class APIHandler {
    */
   async callAPI(endpoint, action, data = {}, method = 'POST') {
     const url = `${this.baseUrl}/${endpoint}`;
+    
+    // Debug logging
+    console.log(`API Call: ${method} ${url}`, { action, data });
     
     try {
       const config = {

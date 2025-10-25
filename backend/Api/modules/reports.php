@@ -1061,6 +1061,215 @@ class ReportsModule {
     }
     
     /**
+     * Get combined reports data (from combined_reports_api.php)
+     */
+    public function getCombinedReportsData($startDate, $endDate, $reportTypes = ['all']) {
+        try {
+            // Debug logging
+            error_log("Combined Reports - Received report_types: " . json_encode($reportTypes));
+            
+            $reports = [];
+            
+            // Build the base query
+            $baseQuery = "
+                SELECT 
+                    sm.movement_id,
+                    p.product_name,
+                    p.barcode,
+                    c.category_name as category,
+                    sm.quantity,
+                    COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as srp,
+                    sm.movement_type,
+                    sm.reference_no,
+                    DATE(sm.movement_date) as movement_date,
+                    TIME(sm.movement_date) as movement_time,
+                    COALESCE(l.location_name, 'Warehouse') as location_name,
+                    COALESCE(s.supplier_name, 'Unknown') as supplier_name,
+                    COALESCE(b.brand, 'Generic') as brand,
+                    p.expiration as expiration_date,
+                    sm.notes,
+                    sm.created_by,
+                    sm.movement_date
+                FROM tbl_stock_movements sm
+                JOIN tbl_product p ON sm.product_id = p.product_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                WHERE DATE(sm.movement_date) BETWEEN ? AND ?
+            ";
+            
+            $params = [$startDate, $endDate];
+            
+            // Filter by report types if not 'all'
+            if (!in_array('all', $reportTypes)) {
+                $typeConditions = [];
+                foreach ($reportTypes as $type) {
+                    switch ($type) {
+                        case 'stock_in':
+                            $typeConditions[] = "(sm.movement_type = 'IN' AND (sm.reference_no NOT LIKE 'ADJ-%' OR sm.reference_no IS NULL))";
+                            break;
+                        case 'stock_out':
+                            $typeConditions[] = "(sm.movement_type = 'OUT' AND (sm.reference_no NOT LIKE 'ADJ-%' OR sm.reference_no IS NULL))";
+                            break;
+                        case 'stock_adjustment':
+                            $typeConditions[] = "(sm.reference_no LIKE 'ADJ-%' OR sm.notes LIKE '%adjustment%' OR sm.notes LIKE '%Adjustment%')";
+                            break;
+                        case 'transfer':
+                            $typeConditions[] = "sm.movement_type = 'TRANSFER'";
+                            break;
+                    }
+                }
+                
+                if (!empty($typeConditions)) {
+                    $baseQuery .= " AND (" . implode(' OR ', $typeConditions) . ")";
+                }
+            }
+            
+            $baseQuery .= " ORDER BY sm.movement_date DESC";
+            
+            $stmt = $this->conn->prepare($baseQuery);
+            $stmt->execute($params);
+            $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Also get transfer data if needed
+            $shouldIncludeTransfer = in_array('all', $reportTypes) || in_array('transfer', $reportTypes);
+            error_log("Combined Reports - Should include transfer: " . ($shouldIncludeTransfer ? 'YES' : 'NO'));
+            if ($shouldIncludeTransfer) {
+                $transferQuery = "
+                    SELECT 
+                        th.transfer_header_id as movement_id,
+                        p.product_name,
+                        p.barcode,
+                        c.category_name as category,
+                        td.qty as quantity,
+                        COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as srp,
+                        'TRANSFER' as movement_type,
+                        th.transfer_header_id as reference_no,
+                        DATE(th.date) as movement_date,
+                        TIME(th.date) as movement_time,
+                        COALESCE(l.location_name, 'Warehouse') as location_name,
+                        COALESCE(s.supplier_name, 'Unknown') as supplier_name,
+                        COALESCE(b.brand, 'Generic') as brand,
+                        p.expiration as expiration_date,
+                        th.date as movement_date
+                    FROM tbl_transfer_header th
+                    JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
+                    JOIN tbl_product p ON td.product_id = p.product_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
+                    LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
+                    WHERE DATE(th.date) BETWEEN ? AND ?
+                    ORDER BY th.date DESC
+                ";
+                
+                $transferStmt = $this->conn->prepare($transferQuery);
+                $transferStmt->execute([$startDate, $endDate]);
+                $transferReports = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Merge transfer reports with stock movement reports
+                $reports = array_merge($reports, $transferReports);
+                
+                // Sort by movement date
+                usort($reports, function($a, $b) {
+                    return strtotime($b['movement_date']) - strtotime($a['movement_date']);
+                });
+            }
+            
+            // Get summary statistics
+            $summary = [
+                'total_records' => count($reports),
+                'date_range' => "$startDate to $endDate",
+                'generated_at' => date('Y-m-d H:i:s'),
+                'report_types' => $reportTypes
+            ];
+            
+            // Count by movement type
+            $typeCounts = [];
+            foreach ($reports as $report) {
+                // Determine the actual type based on reference_no and notes
+                if ($report['reference_no'] && strpos($report['reference_no'], 'ADJ-') === 0) {
+                    $type = 'ADJUSTMENT';
+                } elseif ($report['notes'] && (stripos($report['notes'], 'adjustment') !== false)) {
+                    $type = 'ADJUSTMENT';
+                } else {
+                    $type = $report['movement_type'];
+                }
+                $typeCounts[$type] = ($typeCounts[$type] ?? 0) + 1;
+            }
+            $summary['type_counts'] = $typeCounts;
+            
+            return [
+                'success' => true,
+                'reports' => $reports,
+                'summary' => $summary,
+                'message' => 'Reports data retrieved successfully'
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Error fetching reports data: ' . $e->getMessage(),
+                'reports' => []
+            ];
+        }
+    }
+
+    /**
+     * Get combined summary (from combined_reports_api.php)
+     */
+    public function getCombinedSummary($startDate, $endDate) {
+        try {
+            // Get summary statistics
+            $summaryStmt = $this->conn->prepare("
+                SELECT 
+                    COUNT(*) as total_movements,
+                    SUM(CASE WHEN movement_type = 'IN' AND (reference_no NOT LIKE 'ADJ-%' OR reference_no IS NULL) THEN quantity ELSE 0 END) as total_in,
+                    SUM(CASE WHEN movement_type = 'OUT' AND (reference_no NOT LIKE 'ADJ-%' OR reference_no IS NULL) THEN quantity ELSE 0 END) as total_out,
+                    SUM(CASE WHEN reference_no LIKE 'ADJ-%' OR notes LIKE '%adjustment%' OR notes LIKE '%Adjustment%' THEN ABS(quantity) ELSE 0 END) as total_adjustments,
+                    COUNT(DISTINCT product_id) as unique_products,
+                    COUNT(DISTINCT DATE(movement_date)) as active_days
+                FROM tbl_stock_movements 
+                WHERE DATE(movement_date) BETWEEN ? AND ?
+            ");
+            $summaryStmt->execute([$startDate, $endDate]);
+            $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Get top products by movement
+            $topProductsStmt = $this->conn->prepare("
+                SELECT 
+                    p.product_name,
+                    COUNT(*) as movement_count,
+                    SUM(CASE WHEN sm.movement_type = 'IN' AND (sm.reference_no NOT LIKE 'ADJ-%' OR sm.reference_no IS NULL) THEN sm.quantity ELSE 0 END) as total_in,
+                    SUM(CASE WHEN sm.movement_type = 'OUT' AND (sm.reference_no NOT LIKE 'ADJ-%' OR sm.reference_no IS NULL) THEN sm.quantity ELSE 0 END) as total_out,
+                    SUM(CASE WHEN sm.reference_no LIKE 'ADJ-%' OR sm.notes LIKE '%adjustment%' OR sm.notes LIKE '%Adjustment%' THEN ABS(sm.quantity) ELSE 0 END) as total_adjustments
+                FROM tbl_stock_movements sm
+                JOIN tbl_product p ON sm.product_id = p.product_id
+                WHERE DATE(sm.movement_date) BETWEEN ? AND ?
+                GROUP BY p.product_id, p.product_name
+                ORDER BY movement_count DESC
+                LIMIT 10
+            ");
+            $topProductsStmt->execute([$startDate, $endDate]);
+            $topProducts = $topProductsStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            return [
+                'success' => true,
+                'summary' => $summary,
+                'top_products' => $topProducts,
+                'date_range' => "$startDate to $endDate"
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Error fetching summary: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
      * Get report details by report ID
      */
     public function getReportDetails($reportId) {
