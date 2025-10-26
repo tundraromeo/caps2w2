@@ -440,33 +440,19 @@ class PrinterIntegration {
 
   // Generate HTML receipt for browser printing (matching offline format)
   generateHTMLReceipt(data) {
-    const receiptWidth = 32; // Same as offline version
-    
-    // Helper function to format price line
-    const formatPriceLine = (label, amount, width) => {
-      const amountStr = parseFloat(amount).toFixed(2);
-      const spaces = width - label.length - amountStr.length;
-      return label + ' '.repeat(Math.max(0, spaces)) + amountStr;
-    };
-    
-    // Helper function to pad text
-    const padText = (text, width, padChar = ' ') => {
-      if (text.length >= width) return text;
-      return text + padChar.repeat(width - text.length);
-    };
-    
-    // Helper function to center text
-    const centerText = (text, width) => {
-      const padding = Math.floor((width - text.length) / 2);
-      return ' '.repeat(padding) + text;
-    };
-    
     return `
       <!DOCTYPE html>
       <html>
       <head>
         <title>Receipt</title>
+        <meta charset="UTF-8">
         <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          
           @media print {
             @page {
               size: 80mm auto;
@@ -474,140 +460,201 @@ class PrinterIntegration {
             }
             body {
               margin: 0;
-              padding: 0;
-              font-family: 'Courier New', monospace;
-              font-size: 11pt;
-              line-height: 1.2;
-              width: 80mm;
-              color: #000;
-              background: #fff;
+              padding: 3mm;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
           }
+          
           body {
-            margin: 0;
-            padding: 10px 5px;
             font-family: 'Courier New', monospace;
-            font-size: 11pt;
-            line-height: 1.2;
-            width: 80mm;
+            font-size: 13px;
+            line-height: 1.4;
+            width: 75mm;
+            margin: 0 auto;
+            padding: 3mm;
             color: #000;
             background: #fff;
-            white-space: pre;
+            font-weight: normal;
           }
+          
           .receipt {
             width: 100%;
+            max-width: 100%;
           }
+          
           .line {
-            white-space: pre;
             font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            white-space: pre;
+            font-weight: normal;
+            margin: 0;
+            padding: 0;
+            display: block;
+          }
+          
+          .divider {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: normal;
+          }
+          
+          .header {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 14px;
+          }
+          
+          .footer {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
           }
         </style>
       </head>
       <body>
         <div class="receipt">
-          <div class="line">${'='.repeat(receiptWidth)}</div>
-          <div class="line">${centerText("ENGUIO'S PHARMACY", receiptWidth)}</div>
-          <div class="line">${'='.repeat(receiptWidth)}</div>
-          <div class="line">Date: ${data.date || new Date().toLocaleDateString()}</div>
-          <div class="line">Time: ${data.time || new Date().toLocaleTimeString()}</div>
-          <div class="line">TXN ID: ${data.transactionId || 'N/A'}</div>
-          <div class="line">Cashier: ${data.cashier || 'Admin'}</div>
-          <div class="line">Terminal: ${data.terminalName || 'POS'}</div>
-          <div class="line">${'-'.repeat(receiptWidth)}</div>
-          <div class="line">${padText('QTY', 4)}${padText('ITEM', 14)}${padText('PRICE', 7)}${padText('TOTAL', 7)}</div>
-          <div class="line">${'-'.repeat(receiptWidth)}</div>
-          ${this.generateItemsHTMLRaw(data.items || [], receiptWidth)}
-          <div class="line">${'-'.repeat(receiptWidth)}</div>
-          <div class="line">${formatPriceLine('SUBTOTAL:', parseFloat(data.subtotal || data.total || 0).toFixed(2), receiptWidth)}</div>
-          ${this.generateDiscountHTMLRaw(data, receiptWidth)}
-          <div class="line">${'-'.repeat(receiptWidth)}</div>
-          <div class="line">${formatPriceLine('GRAND TOTAL:', parseFloat(data.grandTotal || data.total || 0).toFixed(2), receiptWidth)}</div>
-          <div class="line">${'-'.repeat(receiptWidth)}</div>
-          <div class="line">PAYMENT: ${(data.paymentMethod || 'Unknown').toUpperCase()}</div>
-          ${this.generatePaymentHTMLRaw(data, receiptWidth)}
-          <div class="line">${'='.repeat(receiptWidth)}</div>
-          <div class="line">${centerText('Thank you!', receiptWidth)}</div>
-          <div class="line">${centerText('Please come again', receiptWidth)}</div>
-          <div class="line">${centerText('This is your official receipt', receiptWidth)}</div>
-          <div class="line">${'='.repeat(receiptWidth)}</div>
+${this.generateReceiptContent(data)}
         </div>
       </body>
       </html>
     `;
   }
   
-  // Generate items HTML in raw format (matching offline)
-  generateItemsHTMLRaw(items, width) {
-    const padText = (text, size) => {
-      const textStr = String(text || '');
-      if (textStr.length >= size) return textStr.substring(0, size);
-      return textStr + ' '.repeat(size - textStr.length);
+  // Generate receipt content with proper formatting
+  generateReceiptContent(data) {
+    const receiptWidth = 32;
+    
+    // Helper functions
+    const centerText = (text, width) => {
+      const padding = Math.floor((width - text.length) / 2);
+      return ' '.repeat(Math.max(0, padding)) + text;
     };
     
-    let html = '';
-    items.forEach(item => {
-      const name = item.name || 'Unknown';
-      const qty = parseInt(item.quantity || 1);
-      const price = parseFloat(item.price || 0);
-      const total = qty * price;
-      
-      // Format: QTY (4) + ITEM (14) + PRICE (7) + TOTAL (7) = 32 chars
-      html += `<div class="line">${padText(qty, 4)}${padText(name, 14)}${padText(price.toFixed(2), 7)}${padText(total.toFixed(2), 7)}</div>`;
-    });
+    const formatPriceLine = (label, amount) => {
+      const amountStr = parseFloat(amount).toFixed(2);
+      const spaces = Math.max(0, receiptWidth - label.length - amountStr.length);
+      return label + ' '.repeat(spaces) + amountStr;
+    };
     
-    return html;
+    let content = '';
+    
+    // Header
+    content += `<div class="line">${'='.repeat(receiptWidth)}</div>\n`;
+    content += `<div class="line header">${centerText("ENGUIO'S PHARMACY", receiptWidth)}</div>\n`;
+    content += `<div class="line">${'='.repeat(receiptWidth)}</div>\n`;
+    
+    // Receipt info
+    content += `<div class="line">Date: ${data.date || new Date().toLocaleDateString()}</div>\n`;
+    content += `<div class="line">Time: ${data.time || new Date().toLocaleTimeString()}</div>\n`;
+    content += `<div class="line">TXN ID: ${data.transactionId || 'N/A'}</div>\n`;
+    content += `<div class="line">Cashier: ${data.cashier || 'Admin'}</div>\n`;
+    content += `<div class="line">Terminal: ${data.terminalName || 'POS'}</div>\n`;
+    content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
+    
+    // Items header - Removed to make it cleaner
+    content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
+    
+    // Items
+    const items = this.generateItemsContent(data.items || []);
+    content += items;
+    
+    content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
+    
+    // Subtotal
+    content += `<div class="line">${formatPriceLine('SUBTOTAL:', parseFloat(data.subtotal || data.total || 0))}</div>\n`;
+    
+    // Discount
+    const discount = this.generateDiscountContent(data);
+    content += discount;
+    
+    content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
+    
+    // Grand total
+    content += `<div class="line">${formatPriceLine('GRAND TOTAL:', parseFloat(data.grandTotal || data.total || 0))}</div>\n`;
+    content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
+    
+    // Payment info
+    content += `<div class="line">PAYMENT: ${(data.paymentMethod || 'Unknown').toUpperCase()}</div>\n`;
+    const payment = this.generatePaymentContent(data);
+    content += payment;
+    
+    // Footer
+    content += `<div class="line">${'='.repeat(receiptWidth)}</div>\n`;
+    content += `<div class="line footer">${centerText('Thank you!', receiptWidth)}</div>\n`;
+    content += `<div class="line footer">${centerText('Please come again', receiptWidth)}</div>\n`;
+    content += `<div class="line footer">${centerText('This is your official receipt', receiptWidth)}</div>\n`;
+    content += `<div class="line">${'='.repeat(receiptWidth)}</div>\n`;
+    
+    return content;
   }
   
-  // Generate discount HTML in raw format
-  generateDiscountHTMLRaw(data, width) {
-    const formatPriceLine = (label, amount, width) => {
-      const amountStr = parseFloat(amount).toFixed(2);
-      const spaces = width - label.length - amountStr.length;
-      return label + ' '.repeat(Math.max(0, spaces)) + amountStr;
-    };
+  // Generate items content - Fixed layout to prevent breaking on print
+  generateItemsContent(items) {
+    let content = '';
     
+    items.forEach(item => {
+      const name = String(item.name || 'Unknown').substring(0, 15);
+      const qty = String(item.quantity || 1);
+      const price = parseFloat(item.price || 0).toFixed(2);
+      const total = (parseInt(qty) * parseFloat(item.price || 0)).toFixed(2);
+      
+      // Simple, clear format
+      const qtyStr = qty.padStart(2);
+      const nameStr = name.padEnd(20);
+      const priceStr = price;
+      const totalStr = total;
+      
+      // Format: QTY (right) + ITEM (left) + PRICE + TOTAL
+      content += `<div class="line">${qtyStr}x ${nameStr}</div>\n`;
+      content += `<div class="line">${''.padEnd(15)}@${priceStr} = ${totalStr}</div>\n`;
+    });
+    
+    return content;
+  }
+  
+  // Generate discount content
+  generateDiscountContent(data) {
     if (!data.discountType || !data.discountAmount || parseFloat(data.discountAmount) <= 0) {
       return '';
     }
     
-    return `
-      <div class="line">Discount: ${data.discountType}</div>
-      <div class="line">${formatPriceLine('Discount Amt:', parseFloat(data.discountAmount).toFixed(2), width)}</div>
-    `;
+    const receiptWidth = 32;
+    const formatPriceLine = (label, amount) => {
+      const amountStr = parseFloat(amount).toFixed(2);
+      const spaces = Math.max(0, receiptWidth - label.length - amountStr.length);
+      return label + ' '.repeat(spaces) + amountStr;
+    };
+    
+    return `<div class="line">Discount: ${data.discountType}</div>\n<div class="line">${formatPriceLine('Discount Amt:', parseFloat(data.discountAmount))}</div>\n`;
   }
   
-  // Generate payment HTML in raw format
-  generatePaymentHTMLRaw(data, width) {
-    const formatPriceLine = (label, amount, width) => {
+  // Generate payment content
+  generatePaymentContent(data) {
+    const receiptWidth = 32;
+    const formatPriceLine = (label, amount) => {
       const amountStr = parseFloat(amount).toFixed(2);
-      const spaces = width - label.length - amountStr.length;
-      return label + ' '.repeat(Math.max(0, spaces)) + amountStr;
+      const spaces = Math.max(0, receiptWidth - label.length - amountStr.length);
+      return label + ' '.repeat(spaces) + amountStr;
     };
     
     const paymentMethod = (data.paymentMethod || '').toLowerCase();
-    let html = '';
+    let content = '';
     
     if (paymentMethod === 'cash') {
-      html = `
-        <div class="line">${formatPriceLine('CASH:', parseFloat(data.amountPaid || 0).toFixed(2), width)}</div>
-        <div class="line">${formatPriceLine('CHANGE:', parseFloat(data.change || 0).toFixed(2), width)}</div>
-      `;
+      content += `<div class="line">${formatPriceLine('CASH:', parseFloat(data.amountPaid || 0))}</div>\n`;
+      content += `<div class="line">${formatPriceLine('CHANGE:', parseFloat(data.change || 0))}</div>\n`;
     } else if (paymentMethod === 'gcash') {
       if (data.gcashRef) {
-        html = `
-          <div class="line">GCASH REF: ${data.gcashRef}</div>
-        `;
+        content += `<div class="line">GCASH REF: ${data.gcashRef}</div>\n`;
       }
-      html += `
-        <div class="line">${formatPriceLine('AMOUNT PAID:', parseFloat(data.amountPaid || 0).toFixed(2), width)}</div>
-        <div class="line">${formatPriceLine('CHANGE:', parseFloat(data.change || 0).toFixed(2), width)}</div>
-      `;
+      content += `<div class="line">${formatPriceLine('AMOUNT PAID:', parseFloat(data.amountPaid || 0))}</div>\n`;
+      content += `<div class="line">${formatPriceLine('CHANGE:', parseFloat(data.change || 0))}</div>\n`;
     }
     
-    return html;
+    return content;
   }
-
-
+  
   // Disconnect
   disconnect() {
     this.stopAutoReconnect();
