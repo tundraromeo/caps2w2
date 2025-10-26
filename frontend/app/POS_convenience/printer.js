@@ -438,8 +438,29 @@ class PrinterIntegration {
     };
   }
 
-  // Generate HTML receipt for browser printing
+  // Generate HTML receipt for browser printing (matching offline format)
   generateHTMLReceipt(data) {
+    const receiptWidth = 32; // Same as offline version
+    
+    // Helper function to format price line
+    const formatPriceLine = (label, amount, width) => {
+      const amountStr = parseFloat(amount).toFixed(2);
+      const spaces = width - label.length - amountStr.length;
+      return label + ' '.repeat(Math.max(0, spaces)) + amountStr;
+    };
+    
+    // Helper function to pad text
+    const padText = (text, width, padChar = ' ') => {
+      if (text.length >= width) return text;
+      return text + padChar.repeat(width - text.length);
+    };
+    
+    // Helper function to center text
+    const centerText = (text, width) => {
+      const padding = Math.floor((width - text.length) / 2);
+      return ' '.repeat(padding) + text;
+    };
+    
     return `
       <!DOCTYPE html>
       <html>
@@ -448,229 +469,144 @@ class PrinterIntegration {
         <style>
           @media print {
             @page {
-              size: 58mm auto;
+              size: 80mm auto;
               margin: 0;
             }
             body {
               margin: 0;
-              padding: 5mm;
+              padding: 0;
               font-family: 'Courier New', monospace;
-              font-size: 10pt;
+              font-size: 11pt;
               line-height: 1.2;
+              width: 80mm;
+              color: #000;
+              background: #fff;
             }
           }
           body {
             margin: 0;
-            padding: 5mm;
+            padding: 10px 5px;
             font-family: 'Courier New', monospace;
-            font-size: 10pt;
+            font-size: 11pt;
             line-height: 1.2;
-            width: 58mm;
+            width: 80mm;
+            color: #000;
+            background: #fff;
+            white-space: pre;
           }
           .receipt {
             width: 100%;
-            text-align: center;
           }
-          .header {
-            margin-bottom: 10px;
-          }
-          .company-name {
-            font-weight: bold;
-            font-size: 12pt;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-          }
-          .divider {
-            border-bottom: 1px dashed #000;
-            margin: 5px 0;
-          }
-          .receipt-info {
-            text-align: left;
-            font-size: 9pt;
-            margin-bottom: 10px;
-          }
-          .receipt-info div {
-            margin: 2px 0;
-          }
-          .items {
-            margin-bottom: 10px;
-          }
-          .item {
-            font-size: 9pt;
-            margin: 3px 0;
-            text-align: left;
-          }
-          .item-name {
-            font-weight: bold;
-          }
-          .item-details {
-            font-size: 8pt;
-            margin-left: 10px;
-            color: #666;
-          }
-          .totals {
-            border-top: 1px dashed #000;
-            margin-top: 10px;
-            padding-top: 10px;
-          }
-          .total-line {
-            display: flex;
-            justify-content: space-between;
-            margin: 3px 0;
-            font-size: 10pt;
-          }
-          .grand-total {
-            font-weight: bold;
-            border-top: 2px solid #000;
-            border-bottom: 2px solid #000;
-            padding: 5px 0;
-            margin: 5px 0;
-            font-size: 12pt;
-          }
-          .payment-info {
-            margin-top: 15px;
-            text-align: left;
-            font-size: 9pt;
-          }
-          .payment-line {
-            display: flex;
-            justify-content: space-between;
-            margin: 3px 0;
-          }
-          .footer {
-            text-align: center;
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px dashed #000;
-            font-size: 9pt;
-          }
-          .note {
-            margin-top: 10px;
-            font-size: 8pt;
-            color: #666;
-            font-style: italic;
+          .line {
+            white-space: pre;
+            font-family: 'Courier New', monospace;
           }
         </style>
       </head>
       <body>
         <div class="receipt">
-          <div class="header">
-            <div class="company-name">ENGUIO'S PHARMACY</div>
-            <div class="divider"></div>
-            <div>${data.storeName || 'Convenience Store'}</div>
-          </div>
-          
-          <div class="receipt-info">
-            <div>Date: ${data.date || new Date().toLocaleDateString()}</div>
-            <div>Time: ${data.time || new Date().toLocaleTimeString()}</div>
-            <div>TXN: ${data.transactionId || 'N/A'}</div>
-            <div>Cashier: ${data.cashier || 'Admin'}</div>
-            <div>Terminal: ${data.terminalName || 'POS'}</div>
-          </div>
-          
-          <div class="divider"></div>
-          
-          <div class="items">
-            ${this.generateItemsHTML(data.items || [])}
-          </div>
-          
-          <div class="totals">
-            <div class="total-line">
-              <span>Subtotal:</span>
-              <span>₱${parseFloat(data.subtotal || data.total || 0).toFixed(2)}</span>
-            </div>
-            ${this.generateDiscountHTML(data)}
-            <div class="total-line grand-total">
-              <span>TOTAL:</span>
-              <span>₱${parseFloat(data.grandTotal || data.total || 0).toFixed(2)}</span>
-            </div>
-          </div>
-          
-          <div class="divider"></div>
-          
-          <div class="payment-info">
-            <div><strong>PAYMENT: ${(data.paymentMethod || 'Unknown').toUpperCase()}</strong></div>
-            ${this.generatePaymentHTML(data)}
-          </div>
-          
-          <div class="footer">
-            <div class="note">This is your official receipt</div>
-            <div><strong>Thank you!</strong></div>
-            <div>Please come again</div>
-          </div>
+          <div class="line">${'='.repeat(receiptWidth)}</div>
+          <div class="line">${centerText("ENGUIO'S PHARMACY", receiptWidth)}</div>
+          <div class="line">${'='.repeat(receiptWidth)}</div>
+          <div class="line">Date: ${data.date || new Date().toLocaleDateString()}</div>
+          <div class="line">Time: ${data.time || new Date().toLocaleTimeString()}</div>
+          <div class="line">TXN ID: ${data.transactionId || 'N/A'}</div>
+          <div class="line">Cashier: ${data.cashier || 'Admin'}</div>
+          <div class="line">Terminal: ${data.terminalName || 'POS'}</div>
+          <div class="line">${'-'.repeat(receiptWidth)}</div>
+          <div class="line">${padText('QTY', 4)}${padText('ITEM', 14)}${padText('PRICE', 7)}${padText('TOTAL', 7)}</div>
+          <div class="line">${'-'.repeat(receiptWidth)}</div>
+          ${this.generateItemsHTMLRaw(data.items || [], receiptWidth)}
+          <div class="line">${'-'.repeat(receiptWidth)}</div>
+          <div class="line">${formatPriceLine('SUBTOTAL:', parseFloat(data.subtotal || data.total || 0).toFixed(2), receiptWidth)}</div>
+          ${this.generateDiscountHTMLRaw(data, receiptWidth)}
+          <div class="line">${'-'.repeat(receiptWidth)}</div>
+          <div class="line">${formatPriceLine('GRAND TOTAL:', parseFloat(data.grandTotal || data.total || 0).toFixed(2), receiptWidth)}</div>
+          <div class="line">${'-'.repeat(receiptWidth)}</div>
+          <div class="line">PAYMENT: ${(data.paymentMethod || 'Unknown').toUpperCase()}</div>
+          ${this.generatePaymentHTMLRaw(data, receiptWidth)}
+          <div class="line">${'='.repeat(receiptWidth)}</div>
+          <div class="line">${centerText('Thank you!', receiptWidth)}</div>
+          <div class="line">${centerText('Please come again', receiptWidth)}</div>
+          <div class="line">${centerText('This is your official receipt', receiptWidth)}</div>
+          <div class="line">${'='.repeat(receiptWidth)}</div>
         </div>
       </body>
       </html>
     `;
   }
-
-  // Generate items HTML
-  generateItemsHTML(items) {
-    return items.map(item => {
+  
+  // Generate items HTML in raw format (matching offline)
+  generateItemsHTMLRaw(items, width) {
+    const padText = (text, size) => {
+      const textStr = String(text || '');
+      if (textStr.length >= size) return textStr.substring(0, size);
+      return textStr + ' '.repeat(size - textStr.length);
+    };
+    
+    let html = '';
+    items.forEach(item => {
       const name = item.name || 'Unknown';
       const qty = parseInt(item.quantity || 1);
       const price = parseFloat(item.price || 0);
       const total = qty * price;
       
-      // Truncate name if too long (for thermal printers)
-      const displayName = name.length > 20 ? name.substring(0, 17) + '...' : name;
-      
-      return `
-        <div class="item">
-          <div class="item-name">${displayName}</div>
-          <div class="item-details">
-            ${qty} x ₱${price.toFixed(2)} = ₱${total.toFixed(2)}
-          </div>
-        </div>
-      `;
-    }).join('');
+      // Format: QTY (4) + ITEM (14) + PRICE (7) + TOTAL (7) = 32 chars
+      html += `<div class="line">${padText(qty, 4)}${padText(name, 14)}${padText(price.toFixed(2), 7)}${padText(total.toFixed(2), 7)}</div>`;
+    });
+    
+    return html;
   }
-
-  // Generate discount HTML
-  generateDiscountHTML(data) {
+  
+  // Generate discount HTML in raw format
+  generateDiscountHTMLRaw(data, width) {
+    const formatPriceLine = (label, amount, width) => {
+      const amountStr = parseFloat(amount).toFixed(2);
+      const spaces = width - label.length - amountStr.length;
+      return label + ' '.repeat(Math.max(0, spaces)) + amountStr;
+    };
+    
     if (!data.discountType || !data.discountAmount || parseFloat(data.discountAmount) <= 0) {
       return '';
     }
     
     return `
-      <div class="total-line">
-        <span>Discount (${data.discountType}):</span>
-        <span>-₱${parseFloat(data.discountAmount).toFixed(2)}</span>
-      </div>
+      <div class="line">Discount: ${data.discountType}</div>
+      <div class="line">${formatPriceLine('Discount Amt:', parseFloat(data.discountAmount).toFixed(2), width)}</div>
     `;
   }
-
-  // Generate payment HTML
-  generatePaymentHTML(data) {
+  
+  // Generate payment HTML in raw format
+  generatePaymentHTMLRaw(data, width) {
+    const formatPriceLine = (label, amount, width) => {
+      const amountStr = parseFloat(amount).toFixed(2);
+      const spaces = width - label.length - amountStr.length;
+      return label + ' '.repeat(Math.max(0, spaces)) + amountStr;
+    };
+    
     const paymentMethod = (data.paymentMethod || '').toLowerCase();
+    let html = '';
     
     if (paymentMethod === 'cash') {
-      return `
-        <div class="payment-line">
-          <span>Cash:</span>
-          <span>₱${parseFloat(data.amountPaid || 0).toFixed(2)}</span>
-        </div>
-        <div class="payment-line">
-          <span>Change:</span>
-          <span>₱${parseFloat(data.change || 0).toFixed(2)}</span>
-        </div>
+      html = `
+        <div class="line">${formatPriceLine('CASH:', parseFloat(data.amountPaid || 0).toFixed(2), width)}</div>
+        <div class="line">${formatPriceLine('CHANGE:', parseFloat(data.change || 0).toFixed(2), width)}</div>
       `;
     } else if (paymentMethod === 'gcash') {
-      return `
-        ${data.gcashRef ? `<div>GCash Ref: ${data.gcashRef}</div>` : ''}
-        <div class="payment-line">
-          <span>Amount:</span>
-          <span>₱${parseFloat(data.amountPaid || 0).toFixed(2)}</span>
-        </div>
-        <div class="payment-line">
-          <span>Change:</span>
-          <span>₱${parseFloat(data.change || 0).toFixed(2)}</span>
-        </div>
+      if (data.gcashRef) {
+        html = `
+          <div class="line">GCASH REF: ${data.gcashRef}</div>
+        `;
+      }
+      html += `
+        <div class="line">${formatPriceLine('AMOUNT PAID:', parseFloat(data.amountPaid || 0).toFixed(2), width)}</div>
+        <div class="line">${formatPriceLine('CHANGE:', parseFloat(data.change || 0).toFixed(2), width)}</div>
       `;
     }
     
-    return '';
+    return html;
   }
+
 
   // Disconnect
   disconnect() {
