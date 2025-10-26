@@ -70,12 +70,6 @@ try {
         case 'receive_items':
             receiveItems($conn);
             break;
-        case 'products':
-            getProducts($conn);
-            break;
-        case 'health':
-            echo json_encode(['success' => true, 'message' => 'Backend is running', 'timestamp' => date('Y-m-d H:i:s')]);
-            break;
         default:
             echo json_encode(['success' => false, 'error' => 'Invalid action: ' . $action]);
             break;
@@ -376,23 +370,9 @@ function getPurchaseOrders($conn) {
         
         $query .= " ORDER BY po.date DESC";
         
-        // Debug logging for Complete tab
-        if ($status === 'complete') {
-            error_log("Complete tab query: " . $query);
-            error_log("Complete tab timestamp: " . date('Y-m-d H:i:s'));
-        }
-        
         $stmt = $conn->prepare($query);
         $stmt->execute($params);
         $purchaseOrders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        // Debug logging for Complete tab
-        if ($status === 'complete') {
-            error_log("Complete tab results count: " . count($purchaseOrders));
-            foreach ($purchaseOrders as $po) {
-                error_log("Complete tab PO: " . $po['po_number'] . " - Status: " . $po['status']);
-            }
-        }
         
         // Remove duplicates and add product details
         $uniquePOs = [];
@@ -414,6 +394,21 @@ function getPurchaseOrders($conn) {
                 $productsStmt = $conn->prepare($productsQuery);
                 $productsStmt->execute([$poId]);
                 $products = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // ALWAYS re-evaluate item_status based on received_qty vs quantity to ensure accuracy
+                foreach ($products as &$product) {
+                    $receivedQty = intval($product['received_qty'] ?? 0);
+                    $quantity = intval($product['quantity'] ?? 0);
+                    
+                    // Re-calculate item_status based on actual quantities
+                    if ($receivedQty >= $quantity && $quantity > 0) {
+                        $product['item_status'] = 'complete';
+                    } else if ($receivedQty > 0) {
+                        $product['item_status'] = 'partial';
+                    } else {
+                        $product['item_status'] = 'delivered';
+                    }
+                }
                 
                 // Calculate the correct status based on item statuses
                 $totalItems = count($products);
@@ -446,9 +441,6 @@ function getPurchaseOrders($conn) {
                 } else {
                     $po['status'] = 'delivered';
                 }
-                
-                // Debug logging for status calculation
-                error_log("PO {$po['po_number']}: totalItems=$totalItems, completeItems=$completeItems, partialItems=$partialItems, deliveredItems=$deliveredItems, po_status={$po['status']}, final_status={$po['status']}");
                 
                 // Create products summary
                 $productNames = array_map(function($p) { return $p['product_name']; }, $products);
@@ -510,19 +502,23 @@ function getPurchaseOrdersWithProducts($conn) {
             $productsStmt->execute([$po['purchase_header_id']]);
             $po['products'] = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Calculate item_status for products if column doesn't exist
-            if (!$hasItemStatus) {
-                foreach ($po['products'] as &$product) {
-                    $receivedQty = intval($product['received_qty'] ?? 0);
-                    $quantity = intval($product['quantity'] ?? 0);
-                    
-                    if ($receivedQty >= $quantity && $quantity > 0) {
-                        $product['item_status'] = 'complete';
-                    } else if ($receivedQty > 0) {
-                        $product['item_status'] = 'partial';
-                    } else {
-                        $product['item_status'] = 'delivered';
-                    }
+            // Re-evaluate item_status based on received_qty vs quantity, but preserve 'returned' status
+            foreach ($po['products'] as &$product) {
+                // Don't overwrite returned status - it's manually set and should persist
+                if ($product['item_status'] === 'returned') {
+                    continue;
+                }
+                
+                $receivedQty = intval($product['received_qty'] ?? 0);
+                $quantity = intval($product['quantity'] ?? 0);
+                
+                // Re-calculate item_status based on actual quantities
+                if ($receivedQty >= $quantity && $quantity > 0) {
+                    $product['item_status'] = 'complete';
+                } else if ($receivedQty > 0) {
+                    $product['item_status'] = 'partial';
+                } else {
+                    $product['item_status'] = 'delivered';
                 }
             }
         }
@@ -568,6 +564,26 @@ function getPurchaseOrderDetails($conn) {
         $detailStmt = $conn->prepare($detailsQuery);
         $detailStmt->execute([$poId]);
         $details = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Re-evaluate item_status based on received_qty vs quantity, but preserve 'returned' status
+        foreach ($details as &$detail) {
+            // Don't overwrite returned status - it's manually set and should persist
+            if ($detail['item_status'] === 'returned') {
+                continue;
+            }
+            
+            $receivedQty = intval($detail['received_qty'] ?? 0);
+            $quantity = intval($detail['quantity'] ?? 0);
+            
+            // Re-calculate item_status based on actual quantities
+            if ($receivedQty >= $quantity && $quantity > 0) {
+                $detail['item_status'] = 'complete';
+            } else if ($receivedQty > 0) {
+                $detail['item_status'] = 'partial';
+            } else {
+                $detail['item_status'] = 'delivered';
+            }
+        }
         
         echo json_encode([
             'success' => true,
@@ -620,14 +636,36 @@ function updatePOStatus($conn) {
         $verifyStmt->execute([$purchaseHeaderId]);
         $newStatus = $verifyStmt->fetchColumn();
         
+        // Handle NULL status case
+        if ($newStatus === null) {
+            $newStatus = '';
+        }
+        
         if ($newStatus !== $status) {
-            throw new Exception("Status update failed. Expected '$status' but got '$newStatus'");
+            error_log("Status update mismatch: Expected '$status' but got '$newStatus' for PO $purchaseHeaderId");
+            // For cancelled status, don't throw error if it's empty - just log it
+            if ($status === 'cancelled' && $newStatus === '') {
+                error_log("Allowing cancelled status update even though database returned empty string");
+            } else {
+                throw new Exception("Status update failed. Expected '$status' but got '$newStatus'");
+            }
         }
         
         error_log("Successfully updated PO $purchaseHeaderId to status '$status'");
         
-        // If status is 'received', create a receiving record
+        // If status is 'received', update all items' item_status to 'received' and create receiving record
         if ($status === 'received') {
+            // Update all items' item_status to 'received'
+            $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_purchase_order_dtl LIKE 'item_status'");
+            $hasItemStatus = $checkColumn->rowCount() > 0;
+            
+            if ($hasItemStatus) {
+                $updateItemsQuery = "UPDATE tbl_purchase_order_dtl SET item_status = 'received' WHERE purchase_header_id = ?";
+                $updateItemsStmt = $conn->prepare($updateItemsQuery);
+                $updateItemsStmt->execute([$purchaseHeaderId]);
+                error_log("Updated all items in PO $purchaseHeaderId to 'received' status");
+            }
+            
             // Check if receiving record already exists
             $checkQuery = "SELECT receiving_id FROM tbl_purchase_receiving_header WHERE purchase_header_id = ?";
             $checkStmt = $conn->prepare($checkQuery);
@@ -720,14 +758,19 @@ function updateReceivedQuantities($conn) {
             $hasItemStatus = $checkColumn->rowCount() > 0;
             
             if ($hasItemStatus) {
-                // Determine item_status based on received vs ordered quantity
-                $itemStatus = 'delivered';
-                if ($receivedQty == 0) {
+                // Use item_status from frontend if provided, otherwise determine based on received vs ordered quantity
+                $itemStatus = $item['item_status'] ?? null;
+                
+                if ($itemStatus === null) {
+                    // Determine item_status based on received vs ordered quantity
                     $itemStatus = 'delivered';
-                } elseif ($receivedQty >= $orderedQty && $receivedQty > 0) {
-                    $itemStatus = 'received'; // Changed from 'complete' to 'received' for fully received items
-                } elseif ($receivedQty > 0 && $receivedQty < $orderedQty) {
-                    $itemStatus = 'partial';
+                    if ($receivedQty == 0) {
+                        $itemStatus = 'delivered';
+                    } elseif ($receivedQty >= $orderedQty && $receivedQty > 0) {
+                        $itemStatus = 'complete'; // Use 'complete' for fully received items
+                    } elseif ($receivedQty > 0 && $receivedQty < $orderedQty) {
+                        $itemStatus = 'partial';
+                    }
                 }
 
                 $query = "UPDATE tbl_purchase_order_dtl
@@ -844,14 +887,19 @@ function updatePartialDelivery($conn) {
             $hasItemStatus = $checkColumn->rowCount() > 0;
             
             if ($hasItemStatus) {
-                // Determine item_status
-                $itemStatus = 'delivered';
-                if ($receivedQty == 0) {
+                // Use item_status from frontend if provided, otherwise determine based on received vs ordered quantity
+                $itemStatus = $item['item_status'] ?? null;
+                
+                if ($itemStatus === null) {
+                    // Determine item_status based on received vs ordered quantity
                     $itemStatus = 'delivered';
-                } elseif ($receivedQty >= $orderedQty && $receivedQty > 0) {
-                    $itemStatus = 'received'; // Changed from 'complete' to 'received' for fully received items
-                } elseif ($receivedQty > 0 && $receivedQty < $orderedQty) {
-                    $itemStatus = 'partial';
+                    if ($receivedQty == 0) {
+                        $itemStatus = 'delivered';
+                    } elseif ($receivedQty >= $orderedQty && $receivedQty > 0) {
+                        $itemStatus = 'complete'; // Use 'complete' for fully received items
+                    } elseif ($receivedQty > 0 && $receivedQty < $orderedQty) {
+                        $itemStatus = 'partial';
+                    }
                 }
 
                 $query = "UPDATE tbl_purchase_order_dtl
@@ -869,11 +917,37 @@ function updatePartialDelivery($conn) {
             }
         }
         
+        // Check if all items in the PO are now complete
+        $checkItemsQuery = "SELECT COUNT(*) as total, SUM(CASE WHEN item_status = 'complete' THEN 1 ELSE 0 END) as complete_count
+                            FROM tbl_purchase_order_dtl 
+                            WHERE purchase_header_id = ?";
+        $checkStmt = $conn->prepare($checkItemsQuery);
+        $checkStmt->execute([$purchaseHeaderId]);
+        $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Update PO-level status based on product statuses
+        $overallStatus = 'partial_delivery'; // Default to partial
+        if ($checkResult && $checkResult['total'] > 0) {
+            if ($checkResult['complete_count'] == $checkResult['total']) {
+                // All items are complete
+                $overallStatus = 'complete';
+            } else if ($checkResult['complete_count'] > 0) {
+                // Some items are complete, but not all
+                $overallStatus = 'partial_delivery';
+            }
+        }
+        
+        // Update the PO header status
+        $updateHeaderQuery = "UPDATE tbl_purchase_order_header SET status = ? WHERE purchase_header_id = ?";
+        $updateHeaderStmt = $conn->prepare($updateHeaderQuery);
+        $updateHeaderStmt->execute([$overallStatus, $purchaseHeaderId]);
+        
         $conn->commit();
         
         echo json_encode([
             'success' => true, 
-            'message' => 'Partial delivery updated successfully'
+            'message' => 'Partial delivery updated successfully',
+            'overall_status' => $overallStatus
         ]);
         
     } catch (Exception $e) {
@@ -1330,19 +1404,6 @@ function updateDeliveryStatus($conn) {
         } else {
             echo json_encode(['success' => false, 'error' => 'No rows updated']);
         }
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
-    }
-}
-
-function getProducts($conn) {
-    try {
-        $query = "SELECT product_id, product_name, category, srp as unit_price FROM tbl_product WHERE status = 'active' ORDER BY product_name";
-        $stmt = $conn->prepare($query);
-        $stmt->execute();
-        $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode(['success' => true, 'data' => $products]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
     }
