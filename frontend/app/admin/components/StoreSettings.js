@@ -5,7 +5,7 @@ import { toast } from "react-toastify";
 import { useTheme } from './ThemeContext';
 import { useSettings } from './SettingsContext';
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/backend.php`;
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/backend.php`;
 
 function StoreSettings() {
   const { theme } = useTheme();

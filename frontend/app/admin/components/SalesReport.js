@@ -7,7 +7,7 @@ import html2canvas from 'html2canvas';
 import { toast } from 'react-toastify';
 import { useTheme } from './ThemeContext';
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/backend.php`;
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/backend.php`;
 
 function SalesReport() {
   const { theme } = useTheme();
@@ -106,7 +106,7 @@ function SalesReport() {
       console.log('📄 Generating PDF for report types:', reportTypes);
       
       // Use the same API approach as the main Reports component
-      const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/Api'}/backend.php`;
+      const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/backend.php`;
       
       // Fetch data for the selected report types
       const allReportsData = {};
