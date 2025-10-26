@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
 import { getApiUrl } from '../lib/apiConfig';
+import './qz-tray-integration.js';
 
 export default function POS() {
   const router = useRouter();
@@ -83,6 +84,66 @@ export default function POS() {
   const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
   const credentialsRefs = useRef([]);
 
+  // QZ Tray integration state
+  const [qzTrayIntegration, setQzTrayIntegration] = useState(null);
+  const [isQzTrayConnected, setIsQzTrayConnected] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'error'
+  const [isTestingPrinter, setIsTestingPrinter] = useState(false);
+
+
+  // Initialize QZ Tray integration
+  useEffect(() => {
+    const initializeQZTray = async () => {
+      try {
+        if (typeof window !== 'undefined' && window.QZTrayIntegration) {
+          const qzIntegration = new window.QZTrayIntegration();
+          setQzTrayIntegration(qzIntegration);
+          
+          // Try to connect to QZ Tray
+          setPrinterStatus('connecting');
+          const connected = await qzIntegration.initialize();
+          
+          if (connected) {
+            setIsQzTrayConnected(true);
+            setPrinterStatus('connected');
+            console.log('✅ QZ Tray connected successfully');
+            
+            // Try to get available printers
+            try {
+              const printers = await qzIntegration.getPrinters();
+              console.log('📋 Available printers:', printers);
+              if (printers && printers.length > 0) {
+                // Set the first available printer as default
+                qzIntegration.setPrinter(printers[0]);
+              }
+            } catch (printerError) {
+              console.warn('⚠️ Could not get printer list:', printerError);
+            }
+          } else {
+            setIsQzTrayConnected(false);
+            setPrinterStatus('error');
+            console.warn('⚠️ QZ Tray not available - will use fallback printing');
+          }
+        } else {
+          console.warn('⚠️ QZ Tray integration not available');
+          setPrinterStatus('error');
+        }
+      } catch (error) {
+        console.error('❌ QZ Tray initialization failed:', error);
+        setIsQzTrayConnected(false);
+        setPrinterStatus('error');
+      }
+    };
+
+    initializeQZTray();
+
+    // Cleanup on unmount
+    return () => {
+      if (qzTrayIntegration) {
+        qzTrayIntegration.disconnect();
+      }
+    };
+  }, []);
 
   // Auto-focus Transaction ID field when modal opens
   useEffect(() => {
@@ -1844,7 +1905,26 @@ export default function POS() {
       console.log('💰 Receipt Amount Paid:', receiptData.amountPaid);
       console.log('💰 Receipt Grand Total:', receiptData.grandTotal);
       
-      // Server-side printing (for local XAMPP)
+      // Try QZ Tray printing first (for online environments)
+      if (isQzTrayConnected && qzTrayIntegration) {
+        try {
+          console.log('🖨️ Attempting QZ Tray printing...');
+          const printResult = await qzTrayIntegration.printReceipt(receiptData);
+          
+          if (printResult.success) {
+            console.log('✅ Receipt printed successfully via QZ Tray!');
+            return { success: true, message: 'Receipt printed successfully', transactionId, method: 'qz-tray' };
+          } else {
+            throw new Error(printResult.message);
+          }
+        } catch (qzError) {
+          console.warn('⚠️ QZ Tray printing failed, trying fallback:', qzError.message);
+          // Fall through to server-side printing
+        }
+      }
+      
+      // Fallback: Server-side printing (for local XAMPP or when QZ Tray fails)
+      console.log('🖨️ Attempting server-side printing...');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/qz-tray-receipt.php`, {
         method: 'POST',
         headers: {
@@ -1876,6 +1956,98 @@ export default function POS() {
       console.error('❌ Print error:', error);
       // Return error details for better debugging
       return { success: false, message: error.message, transactionId };
+    }
+  };
+
+  // Test printer function
+  const testPrinter = async () => {
+    if (!qzTrayIntegration) {
+      toast.error('QZ Tray integration not available');
+      return;
+    }
+
+    // Check if QZ Tray is connected
+    if (!isQzTrayConnected) {
+      toast.error('QZ Tray is not connected. Please make sure QZ Tray application is running and try to connect again.');
+      console.log('⚠️ Attempting to reconnect QZ Tray...');
+      
+      // Try to reconnect
+      setIsTestingPrinter(true);
+      try {
+        const connected = await qzTrayIntegration.initialize();
+        if (connected) {
+          setIsQzTrayConnected(true);
+          setPrinterStatus('connected');
+          toast.success('QZ Tray connected! You can now test the printer.');
+          setIsTestingPrinter(false);
+          return;
+        } else {
+          toast.error('Could not connect to QZ Tray. Please make sure the QZ Tray application is installed and running.');
+          setIsTestingPrinter(false);
+          return;
+        }
+      } catch (error) {
+        toast.error(`QZ Tray connection failed: ${error.message}`);
+        setIsTestingPrinter(false);
+        return;
+      }
+    }
+
+    setIsTestingPrinter(true);
+    try {
+      console.log('🧪 Testing printer...');
+      const result = await qzTrayIntegration.testPrint();
+      
+      if (result.success) {
+        toast.success('Test print successful! Check your printer.');
+        console.log('✅ Test print completed successfully');
+      } else {
+        toast.error(`Test print failed: ${result.message}`);
+        console.error('❌ Test print failed:', result.message);
+      }
+    } catch (error) {
+      toast.error(`Test print error: ${error.message}`);
+      console.error('❌ Test print error:', error);
+    } finally {
+      setIsTestingPrinter(false);
+    }
+  };
+
+  // Manual connect to printer
+  const connectPrinter = async () => {
+    if (!qzTrayIntegration) {
+      toast.error('QZ Tray integration not available');
+      return;
+    }
+
+    setPrinterStatus('connecting');
+    try {
+      const connected = await qzTrayIntegration.initialize();
+      if (connected) {
+        setIsQzTrayConnected(true);
+        setPrinterStatus('connected');
+        toast.success('Printer connected successfully!');
+        
+        // Try to get available printers
+        try {
+          const printers = await qzTrayIntegration.getPrinters();
+          console.log('📋 Available printers:', printers);
+          if (printers && printers.length > 0) {
+            qzTrayIntegration.setPrinter(printers[0]);
+          }
+        } catch (printerError) {
+          console.warn('⚠️ Could not get printer list:', printerError);
+        }
+      } else {
+        setIsQzTrayConnected(false);
+        setPrinterStatus('error');
+        toast.error('Could not connect to QZ Tray. Please make sure QZ Tray application is running.');
+      }
+    } catch (error) {
+      console.error('❌ Printer connection failed:', error);
+      setIsQzTrayConnected(false);
+      setPrinterStatus('error');
+      toast.error(`Printer connection failed: ${error.message}`);
     }
   };
 
@@ -2875,6 +3047,45 @@ export default function POS() {
         }
       `}</style>
       <div className="flex h-screen bg-gray-50 pos-main-container">
+        {/* Printer Status Indicator */}
+        <div className="fixed top-4 right-4 z-50">
+          <div 
+            className={`px-3 py-2 rounded-lg text-sm font-medium shadow-lg cursor-pointer transition-all duration-200 hover:shadow-xl ${
+              printerStatus === 'connected' ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' :
+              printerStatus === 'connecting' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' :
+              printerStatus === 'error' ? 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200' :
+              'bg-gray-100 text-gray-800 border border-gray-300 hover:bg-gray-200'
+            } ${isTestingPrinter ? 'animate-pulse' : ''}`}
+            onClick={() => {
+              if (printerStatus === 'connected') {
+                testPrinter();
+              } else {
+                connectPrinter();
+              }
+            }}
+            title={
+              printerStatus === 'connected' ? 'Click to test printer' : 
+              printerStatus === 'connecting' ? 'Connecting to printer...' :
+              'Click to connect printer'
+            }
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">
+                {isTestingPrinter ? '⏳' :
+                 printerStatus === 'connected' ? '🖨️' :
+                 printerStatus === 'connecting' ? '⏳' :
+                 printerStatus === 'error' ? '❌' : '🔌'}
+              </span>
+              <span>
+                {isTestingPrinter ? 'Testing...' :
+                 printerStatus === 'connected' ? 'Printer Ready' :
+                 printerStatus === 'connecting' ? 'Connecting...' :
+                 printerStatus === 'error' ? 'Click to Connect' : 'Click to Connect'}
+              </span>
+            </div>
+          </div>
+        </div>
+        
         <main className="flex-1 p-8 pb-24 overflow-y-auto bg-white transition-all duration-300 ease-in-out">
           {/* Layout */}
           <div className="flex flex-col md:flex-row flex-1">

@@ -37,11 +37,11 @@ export default function LoginForm() {
     try {
       console.log('Generating captcha...');
       
-      let response;
+      let responseData = null;
       
       // Try axios first
       try {
-        response = await axios.post(API_BASE_URL, {
+        const response = await axios.post(API_BASE_URL, {
           action: "generate_captcha"
         }, {
           timeout: 10000,
@@ -49,36 +49,50 @@ export default function LoginForm() {
             'Content-Type': 'application/json',
           }
         });
+        responseData = response.data;
       } catch (axiosError) {
         console.warn('Axios failed, trying fetch:', axiosError.message);
         
         // Fallback to fetch API
-        const fetchResponse = await fetch(API_BASE_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({ action: "generate_captcha" })
-        });
-        
-        if (!fetchResponse.ok) {
-          throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
+        try {
+          const fetchResponse = await fetch(API_BASE_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({ action: "generate_captcha" })
+          });
+          
+          if (!fetchResponse.ok) {
+            throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
+          }
+          
+          const textResponse = await fetchResponse.text();
+          console.log('Raw fetch response:', textResponse);
+          
+          // Try to parse as JSON
+          if (textResponse && textResponse.trim() !== '') {
+            responseData = JSON.parse(textResponse);
+          } else {
+            throw new Error('Empty response from server');
+          }
+        } catch (fetchError) {
+          console.error('Fetch also failed:', fetchError);
+          throw fetchError;
         }
-        
-        const data = await fetchResponse.json();
-        response = { data };
       }
       
-      console.log('Captcha API response:', response.data);
+      console.log('Captcha API response:', responseData);
       
-      if (response.data.success) {
-        setCaptchaQuestion(response.data.question);
-        setCaptchaAnswer(response.data.answer.toString());
-        console.log('Captcha set:', response.data.question, 'Answer:', response.data.answer);
+      // Check if response has success field and it's true
+      if (responseData && typeof responseData === 'object' && responseData.success === true) {
+        setCaptchaQuestion(responseData.question);
+        setCaptchaAnswer(responseData.answer.toString());
+        console.log('Captcha set:', responseData.question, 'Answer:', responseData.answer);
       } else {
-        console.error('Captcha API failed:', response.data);
-        // Use fallback if API returns success: false
+        console.warn('Captcha API returned invalid response, using fallback');
+        // Use fallback if API returns success: false or invalid response
         const num1 = Math.floor(Math.random() * 10) + 1;
         const num2 = Math.floor(Math.random() * 10) + 1;
         setCaptchaQuestion(`What is ${num1} + ${num2}?`);
@@ -88,7 +102,7 @@ export default function LoginForm() {
     } catch (err) {
       console.error('Captcha generation error:', err);
       
-      // Fallback captcha if API fails
+      // Fallback captcha if API fails completely
       const num1 = Math.floor(Math.random() * 10) + 1;
       const num2 = Math.floor(Math.random() * 10) + 1;
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);

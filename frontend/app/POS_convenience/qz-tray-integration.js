@@ -1,5 +1,13 @@
 // QZ Tray Integration for POS System
 // This module handles QZ Tray printer detection and printing
+//
+// IMPORTANT: To use this printer feature, you must:
+// 1. Download and install QZ Tray from https://qz.io/download/
+// 2. Start the QZ Tray application on your computer
+// 3. Click the printer status indicator in the top-right corner to connect
+// 4. Once connected, the status will show "Printer Ready" and you can print receipts
+//
+// Without QZ Tray running, the printer will show as disconnected/offline
 
 class QZTrayIntegration {
   constructor() {
@@ -17,21 +25,46 @@ class QZTrayIntegration {
         await this.loadQZTrayLibrary();
       }
 
-      this.qz = qz;
-      
-      // Check if QZ Tray is running
-      if (!this.qz.websocket.isActive()) {
-        throw new Error('QZ Tray is not running. Please start QZ Tray application.');
+      // Check if qz is still undefined after loading
+      if (typeof qz === 'undefined') {
+        console.error('QZ library not loaded');
+        throw new Error('QZ Tray library failed to load. Please check your internet connection.');
       }
 
-      // Connect to QZ Tray
-      await this.qz.websocket.connect();
-      this.isConnected = true;
+      this.qz = qz;
+      
+      // Check if websocket exists
+      if (!this.qz || !this.qz.websocket) {
+        console.error('QZ websocket not available');
+        throw new Error('QZ Tray websocket not available.');
+      }
+      
+      // Try to connect to QZ Tray (don't check isActive() first, just try to connect)
+      try {
+        // Use certificate-based authentication if available
+        if (this.qz.security) {
+          try {
+            await this.qz.security.setCertificatePromise(function() {
+              return Promise.resolve('');
+            });
+          } catch (certError) {
+            console.warn('Certificate setup warning:', certError);
+          }
+        }
+        
+        await this.qz.websocket.connect();
+        this.isConnected = true;
+      } catch (connectError) {
+        console.error('QZ Tray connection error:', connectError);
+        throw new Error('QZ Tray is not running. Please start QZ Tray application.');
+      }
       
       console.log('QZ Tray connected successfully');
       return true;
     } catch (error) {
-      console.error('QZ Tray initialization failed:', error);
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      console.error('QZ Tray initialization failed:', errorMessage);
+      console.error('Full error:', error);
       this.isConnected = false;
       return false;
     }
@@ -39,11 +72,67 @@ class QZTrayIntegration {
 
   // Load QZ Tray JavaScript library
   async loadQZTrayLibrary() {
+    if (typeof window === 'undefined') {
+      throw new Error('This method can only be called in a browser environment');
+    }
+
+    // Check if qz is already available (maybe loaded by QZ Tray app itself)
+    if (typeof qz !== 'undefined') {
+      console.log('QZ Tray library already loaded');
+      return;
+    }
+
+    // Try to load from local files first (most reliable)
+    const localSources = [
+      '/qz-tray.js',  // Local copy in public folder
+      'http://localhost:8181/qz-tray.js',  // QZ Tray's local server (if running)
+      'https://qz.io/js/qz-tray.js'       // Fallback to CDN (may be blocked)
+    ];
+
+    let lastError = null;
+    
+    for (const src of localSources) {
+      try {
+        console.log(`Attempting to load QZ Tray from: ${src}`);
+        await this.loadScript(src);
+        
+        // Wait for qz object to be available
+        for (let i = 0; i < 10; i++) {
+          if (typeof qz !== 'undefined') {
+            console.log('QZ Tray library loaded successfully from:', src);
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        if (typeof qz !== 'undefined') {
+          return;
+        }
+        throw new Error('QZ object not available after script load');
+      } catch (error) {
+        console.warn(`Failed to load from ${src}:`, error);
+        lastError = error;
+        // Continue to next source
+      }
+    }
+    
+    throw new Error(`Failed to load QZ Tray library from all sources. Last error: ${lastError?.message || 'Unknown'}`);
+  }
+
+  // Helper method to load a script
+  loadScript(src) {
     return new Promise((resolve, reject) => {
+      // Check if script already exists
+      const existingScript = document.querySelector(`script[src="${src}"]`);
+      if (existingScript) {
+        resolve();
+        return;
+      }
+
       const script = document.createElement('script');
-      script.src = 'https://qz.io/js/qz-tray.js';
-      script.onload = resolve;
-      script.onerror = reject;
+      script.src = src;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error(`Failed to load script from ${src}`));
       document.head.appendChild(script);
     });
   }
@@ -55,12 +144,19 @@ class QZTrayIntegration {
     }
 
     try {
+      // Check if printers.get exists
+      if (!this.qz.printers || typeof this.qz.printers.get !== 'function') {
+        console.warn('QZ Tray printers.get is not available in this version. Using default printer.');
+        return []; // Return empty array instead of failing
+      }
+      
       const printers = await this.qz.printers.get();
       console.log('Available printers:', printers);
       return printers;
     } catch (error) {
       console.error('Failed to get printers:', error);
-      throw error;
+      // Return empty array instead of throwing
+      return [];
     }
   }
 
@@ -167,5 +263,7 @@ class QZTrayIntegration {
   }
 }
 
-// Export for use in POS system
-window.QZTrayIntegration = QZTrayIntegration;
+// Export for use in POS system (only in browser environment)
+if (typeof window !== 'undefined') {
+  window.QZTrayIntegration = QZTrayIntegration;
+}
