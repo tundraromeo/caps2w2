@@ -422,13 +422,12 @@ class PrinterIntegration {
     printWindow.document.write(htmlReceipt);
     printWindow.document.close();
 
-    // Wait for content to load then print
+    // Wait for content to load then auto-trigger print dialog
     printWindow.onload = function() {
       setTimeout(() => {
-        printWindow.print();
-        // Don't close automatically - let user decide
-        // printWindow.close();
-      }, 500);
+        printWindow.print(); // Auto-opens print dialog
+        // Keep window open - user just needs to click Print button
+      }, 300);
     };
 
     return {

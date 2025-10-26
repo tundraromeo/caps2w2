@@ -40,12 +40,13 @@ class OnlinePrinting {
       printWindow.document.write(htmlReceipt);
       printWindow.document.close();
 
-      // Wait for content to load then print
+      // Wait for content to load then auto-trigger print dialog
       printWindow.onload = function() {
         setTimeout(() => {
           printWindow.print();
-          printWindow.close();
-        }, 500);
+          // Keep window open so user can see preview
+          // printWindow.close();
+        }, 300);
       };
 
       return true;
