@@ -4,7 +4,7 @@ import axios from "axios";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useTheme } from './ThemeContext';
-import { API_BASE_URL } from '../lib/apiConfig';
+import { API_BASE_URL } from '../../lib/apiConfig';
 
 function IndividualReport({ reportType, reportName, reportIcon }) {
   const { theme } = useTheme();
