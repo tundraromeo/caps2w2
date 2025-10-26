@@ -70,32 +70,41 @@ class PrinterIntegration {
 
       this.qz = qz;
 
-      // Try to connect
+      // Try to connect to QZ Tray
       try {
-        // Set certificate if available
-        if (this.qz.security) {
+        // Check if websocket is not active
+        if (!this.qz.websocket.isActive()) {
           try {
-            await this.qz.security.setCertificatePromise(() => Promise.resolve(''));
-          } catch (certError) {
-            console.warn('Certificate setup warning:', certError);
+            // Connect to QZ Tray
+            await this.qz.websocket.connect();
+            console.log("✅ QZ Tray connected!");
+            
+            this.isConnected = true;
+            this.reconnectAttempts = 0;
+            
+            // Clear any existing reconnect interval
+            this.stopAutoReconnect();
+            
+            return true;
+          } catch (err) {
+            console.error("❌ QZ Tray connection failed:", err);
+            this.lastError = err;
+            
+            // Start auto-reconnect
+            this.startAutoReconnect();
+            
+            return false;
           }
+        } else {
+          console.log("🔌 QZ Tray already connected.");
+          this.isConnected = true;
+          this.stopAutoReconnect();
+          return true;
         }
-
-        await this.qz.websocket.connect();
-        this.isConnected = true;
-        this.reconnectAttempts = 0;
-        
-        // Clear any existing reconnect interval
-        this.stopAutoReconnect();
-        
-        return true;
-      } catch (connectError) {
-        console.warn('QZ Tray connection failed:', connectError.message);
-        this.lastError = connectError;
-        
-        // Start auto-reconnect
+      } catch (err) {
+        console.error("❌ QZ Tray initialization error:", err);
+        this.lastError = err;
         this.startAutoReconnect();
-        
         return false;
       }
     } catch (error) {
@@ -375,24 +384,46 @@ class PrinterIntegration {
 
       const rawReceipt = result.data.rawReceipt;
 
-      // Configure print job for POS58 thermal printer
-      const config = qz.configs.create(this.printerName, {
-        colorType: 'blackwhite',
-        scaleContent: true,
-        rasterize: false,
-        size: { width: 2.83, height: -1 }, // 58mm width
-        units: 'in'
+      // Get available printers first
+      let printerToUse = this.printerName; // Default: 'POS-58'
+      
+      try {
+        const printers = await this.qz.printers.get();
+        if (printers && printers.length > 0) {
+          // Use the first available printer
+          printerToUse = printers[0];
+          console.log(`📋 Using printer: ${printerToUse}`);
+        }
+      } catch (e) {
+        console.warn('Could not get printer list, using default:', e);
+      }
+      
+      // Create config with specific printer and proper encoding
+      const config = qz.configs.create(printerToUse, {
+        encoding: 'UTF-8', // Use UTF-8 encoding to prevent character corruption
+        colorType: 'blackwhite'
       });
+      
+      // Fix encoding and ensure proper line breaks
+      // Normalize line endings only - keep text as is
+      const fixedReceipt = rawReceipt
+        .replace(/\r\n/g, '\n')              // Normalize Windows line endings
+        .replace(/\r/g, '\n');               // Normalize old Mac line endings
+      
+      // Create print data with raw text
+      const printData = [
+        { 
+          type: 'raw', 
+          format: 'plain', 
+          encoding: 'UTF-8',
+          data: fixedReceipt  // Don't trim - keep all content including feeds
+        }
+      ];
 
-      // Create print job with raw text
-      const printJob = [{
-        type: 'raw',
-        format: 'plain',
-        data: rawReceipt
-      }];
-
-      // Send to printer
-      await this.qz.print(config, printJob);
+      // Send to QZ Tray printer
+      await qz.print(config, printData);
+      
+      console.log("🖨️ Printed successfully via QZ Tray!");
 
       console.log('✅ Receipt printed successfully via QZ Tray');
       return {
@@ -422,12 +453,19 @@ class PrinterIntegration {
     printWindow.document.write(htmlReceipt);
     printWindow.document.close();
 
-    // Wait for content to load then auto-trigger print dialog
+    // Wait for content to load then immediately trigger print dialog
     printWindow.onload = function() {
       setTimeout(() => {
-        printWindow.print(); // Auto-opens print dialog
-        // Keep window open - user just needs to click Print button
-      }, 300);
+        printWindow.print(); // Auto-opens print dialog immediately
+        // Give user a moment to see the preview, then focus the print button
+        setTimeout(() => {
+          try {
+            printWindow.focus();
+          } catch (e) {
+            // Ignore focus errors
+          }
+        }, 100);
+      }, 200); // Faster - 200ms instead of 300ms
     };
 
     return {

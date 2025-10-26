@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Receipt Print Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 15px 30px; font-size: 18px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; width: 100%; }
+        button:hover { background: #0056b3; }
+        textarea { width: 100%; height: 250px; font-family: 'Courier New', monospace; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🖨️ Receipt Print Test</h1>
+    
+    <label><strong>Receipt Text:</strong></label><br>
+    <textarea id="receiptText">================================================
+    ENGUIO'S PHARMACY
+================================================
+Date: 2025-01-15
+Time: 10:30:00
+TXN ID: TEST-001
+Cashier: Admin
+Terminal: POS
+------------------------------------------------
+2x Paracetamol 500mg     50.00  100.00
+1x Aspirin 100mg         30.00   30.00
+------------------------------------------------
+SUBTOTAL:                      130.00
+GRAND TOTAL:                   130.00
+------------------------------------------------
+PAYMENT: CASH
+CASH:                         200.00
+CHANGE:                        70.00
+================================================
+     Thank you!
+     Please come again
+     This is your official receipt
+================================================</textarea>
+    
+    <button onclick="printReceipt()">🖨️ Print Receipt</button>
+    
+    <script>
+        function printReceipt() {
+            const receiptText = document.getElementById('receiptText').value;
+            
+            const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt</title><style>@media print{@page{size:80mm auto;margin:0}}body{font-family:"Courier New",monospace;font-size:13px;width:300px;margin:0 auto;padding:20px}pre{white-space:pre-wrap;word-wrap:break-word;margin:0;line-height:1.4}</style></head><body><pre>' + receiptText + '</pre></body></html>';
+            
+            const win = window.open('', '_blank', 'width=500,height=800');
+            
+            if (!win) {
+                alert('Popup blocked! Please allow popups.');
+                return;
+            }
+            
+            win.document.write(html);
+            win.document.close();
+            
+            setTimeout(() => {
+                win.print();
+            }, 500);
+        }
+    </script>
+</body>
+</html>

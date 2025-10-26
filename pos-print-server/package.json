@@ -1,0 +1,14 @@
+{
+  "name": "pos-print-server",
+  "version": "1.0.0",
+  "description": "POS Print Server for Thermal Receipt Printers",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "express": "^5.1.0"
+  }
+}

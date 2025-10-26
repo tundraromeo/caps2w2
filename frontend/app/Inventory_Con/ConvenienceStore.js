@@ -177,7 +177,7 @@ function ConvenienceInventory() {
   };
 
   // Load products for convenience store
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     if (!convenienceLocationId || loading) return; // Prevent multiple simultaneous calls
     
     setLoading(true);
@@ -264,7 +264,7 @@ function ConvenienceInventory() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [convenienceLocationId, loading, searchTerm, selectedCategory, selectedProductType]);
 
   useEffect(() => {
     const initialize = async () => {
@@ -350,7 +350,7 @@ function ConvenienceInventory() {
     return () => {
       window.removeEventListener('inventoryRefresh', handleInventoryRefresh);
     };
-  }, [convenienceLocationId]);
+  }, [convenienceLocationId, loadProducts]); // Add loadProducts to dependencies
 
   const getStatusColor = (status) => {
     switch (status) {

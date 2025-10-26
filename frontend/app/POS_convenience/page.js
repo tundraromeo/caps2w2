@@ -8,8 +8,7 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
 import { getApiUrl } from '../lib/apiConfig';
-import './printer.js'; // Enhanced printer integration with auto-reconnect
-import './online-printing.js'; // Keep for backward compatibility
+import './online-printing.js'; // Simple browser print only
 
 export default function POS() {
   const router = useRouter();
@@ -86,56 +85,23 @@ export default function POS() {
   const credentialsRefs = useRef([]);
 
   // Printing integration state
-  const [printerIntegration, setPrinterIntegration] = useState(null);
   const [onlinePrinting, setOnlinePrinting] = useState(null);
-  const [printerStatus, setPrinterStatus] = useState('disconnected'); // 'disconnected', 'connecting', 'connected', 'error', 'reconnecting', 'unavailable'
-  const [printingMethod, setPrintingMethod] = useState('auto'); // 'auto', 'qz', 'online', 'browser'
+  const [printerStatus, setPrinterStatus] = useState('ready'); // 'ready', 'testing'
+  const [printingMethod, setPrintingMethod] = useState('browser'); // browser only
   const [isTestingPrinter, setIsTestingPrinter] = useState(false);
 
 
-  // Initialize printing integration with auto-reconnect
+  // Initialize printing integration - Browser print only
   useEffect(() => {
     const initializePrinting = async () => {
       try {
-        // Initialize Enhanced Printer Integration
-        if (typeof window !== 'undefined' && window.PrinterIntegration) {
-          const printer = new window.PrinterIntegration();
-          
-          // Set up status change callback
-          printer.setOnStatusChange((status) => {
-            console.log(`📊 Printer status changed: ${status}`);
-            setPrinterStatus(status);
-            
-            // Update printing method based on status
-            if (status === 'connected') {
-              setPrintingMethod('qz');
-            } else if (status === 'fallback') {
-              setPrintingMethod('browser');
-            } else if (status === 'unavailable') {
-              setPrintingMethod('browser');
-            }
-          });
-          
-          setPrinterIntegration(printer);
-          
-          // Try to initialize
-          const connected = await printer.initialize();
-          
-          if (connected) {
-            console.log('✅ Printer initialized successfully');
-          } else {
-            console.log('⚠️ Printer not connected, will auto-reconnect');
-          }
-        } else {
-          console.warn('⚠️ Printer integration not available');
-        }
-
-        // Initialize Online Printing as additional fallback
+        // Initialize Online Printing only
         if (typeof window !== 'undefined' && window.OnlinePrinting) {
           const onlinePrint = new window.OnlinePrinting();
           await onlinePrint.initialize();
-          setOnlinePrinting(onlinePrint);
-          console.log('✅ Online printing initialized as fallback');
+            setOnlinePrinting(onlinePrint);
+          console.log('✅ Browser printing initialized');
+          setPrinterStatus('ready');
         }
       } catch (error) {
         console.error('❌ Printing initialization failed:', error);
@@ -144,13 +110,6 @@ export default function POS() {
     };
 
     initializePrinting();
-
-    // Cleanup on unmount
-    return () => {
-      if (printerIntegration) {
-        printerIntegration.disconnect();
-      }
-    };
   }, []);
 
   // Auto-focus Transaction ID field when modal opens
@@ -291,7 +250,7 @@ export default function POS() {
     if (terminalLower.includes('convenience')) {
       return 'Convenience Store';
     } else if (terminalLower.includes('pharmacy')) {
-      return 'Pharmacy';
+      return 'Pharmacy Store';
     }
     return 'Convenience Store'; // default
   };
@@ -1875,6 +1834,122 @@ export default function POS() {
     );
   };
 
+  // Generate HTML receipt for browser printing
+  const generateHTMLReceipt = (data) => {
+    const receiptWidth = 48;
+    
+    const formatPriceLine = (label, amount) => {
+      const amountStr = parseFloat(amount).toFixed(2);
+      const spaces = Math.max(0, receiptWidth - label.length - amountStr.length);
+      return label + ' '.repeat(spaces) + amountStr;
+    };
+    
+    const centerText = (text) => {
+      const padding = Math.floor((receiptWidth - text.length) / 2);
+      return ' '.repeat(Math.max(0, padding)) + text;
+    };
+    
+    let content = '';
+    
+    // Header
+    content += '='.repeat(receiptWidth) + '\n';
+    content += centerText(data.storeName || "ENGUIO'S PHARMACY") + '\n';
+    content += '='.repeat(receiptWidth) + '\n';
+    
+    // Receipt info
+    content += `Date: ${data.date || new Date().toLocaleDateString()}\n`;
+    content += `Time: ${data.time || new Date().toLocaleTimeString()}\n`;
+    content += `TXN ID: ${data.transactionId || 'N/A'}\n`;
+    content += `Cashier: ${data.cashier || 'Admin'}\n`;
+    content += `Terminal: ${data.terminalName || 'POS'}\n`;
+    content += '-'.repeat(receiptWidth) + '\n';
+    
+    // Items
+    if (data.items && data.items.length > 0) {
+      data.items.forEach(item => {
+        const qty = String(item.quantity || 1).padStart(2);
+        const name = String(item.name || 'Unknown').substring(0, 20).padEnd(20);
+        const price = parseFloat(item.price || item.price || 0).toFixed(2);
+        const total = (parseFloat(item.total || 0)).toFixed(2);
+        
+        content += `${qty}x ${name}\n`;
+        content += `${''.padEnd(15)}@${price} = ${total}\n`;
+      });
+    }
+    
+    content += '-'.repeat(receiptWidth) + '\n';
+    
+    // Subtotal
+    content += formatPriceLine('SUBTOTAL:', data.subtotal || data.total || 0) + '\n';
+    
+    // Discount
+    if (data.discountType && parseFloat(data.discountAmount) > 0) {
+      content += `Discount: ${data.discountType}\n`;
+      content += formatPriceLine('Discount Amt:', data.discountAmount) + '\n';
+    }
+    
+    content += '-'.repeat(receiptWidth) + '\n';
+    
+    // Grand total
+    content += formatPriceLine('GRAND TOTAL:', data.grandTotal || data.total || 0) + '\n';
+    content += '-'.repeat(receiptWidth) + '\n';
+    
+    // Payment info
+    content += `PAYMENT: ${(data.paymentMethod || 'Unknown').toUpperCase()}\n`;
+    
+    if (data.paymentMethod?.toLowerCase() === 'cash') {
+      content += formatPriceLine('CASH:', data.amountPaid || 0) + '\n';
+      content += formatPriceLine('CHANGE:', data.change || 0) + '\n';
+    } else if (data.paymentMethod?.toLowerCase() === 'gcash') {
+      if (data.gcashRef) {
+        content += `GCASH REF: ${data.gcashRef}\n`;
+      }
+      content += formatPriceLine('AMOUNT PAID:', data.amountPaid || 0) + '\n';
+      content += formatPriceLine('CHANGE:', data.change || 0) + '\n';
+    }
+    
+    // Footer
+    content += '='.repeat(receiptWidth) + '\n';
+    content += centerText('Thank you!') + '\n';
+    content += centerText('Please come again') + '\n';
+    content += centerText('This is your official receipt') + '\n';
+    content += '='.repeat(receiptWidth) + '\n';
+    
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt</title>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    @media print {
+      @page { size: 80mm auto; margin: 0; }
+      body { margin: 0; padding: 3mm; }
+    }
+    
+    body {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.4;
+      width: 75mm;
+      margin: 0 auto;
+      padding: 3mm;
+      color: #000;
+      background: #fff;
+    }
+    
+    .line { white-space: pre; font-family: 'Courier New', monospace; }
+  </style>
+</head>
+<body>
+  <div class="receipt">
+    ${content.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
+  </div>
+</body>
+</html>`;
+  };
+
   const printReceipt = async () => {
     // Get current date and time
     const now = new Date();
@@ -1885,7 +1960,7 @@ export default function POS() {
     // Prepare receipt data
     const sessionUser = (typeof window !== 'undefined') ? JSON.parse(sessionStorage.getItem('user_data') || '{}') : {};
     const receiptData = {
-      storeName: "Enguios Pharmacy & Convenience Store",
+      storeName: "ENGUIO'S PHARMACY",
       date: dateStr,
       time: timeStr,
       transactionId: transactionId,
@@ -1908,75 +1983,75 @@ export default function POS() {
     };
 
     try {
-      console.log('📤 Sending receipt data:', receiptData);
-      console.log('💰 Receipt Change Amount:', receiptData.change);
-      console.log('💰 Receipt Amount Paid:', receiptData.amountPaid);
-      console.log('💰 Receipt Grand Total:', receiptData.grandTotal);
+      console.log('📤 Receipt data:', receiptData);
       
-      // Try Enhanced Printer Integration first (handles both QZ Tray and browser print)
-      if (printerIntegration) {
+      // Try automatic network printing first
+      const printerIP = localStorage.getItem('printerIP'); // Store printer IP in localStorage
+      const printerPort = localStorage.getItem('printerPort') || '9100'; // Default TCP/IP port
+      
+      if (printerIP) {
+        console.log(`🖨️ Attempting automatic printing to ${printerIP}:${printerPort}...`);
         try {
-          console.log('🖨️ Attempting to print via printer integration...');
-          const printResult = await printerIntegration.printReceipt(receiptData);
+          // Send to backend for TCP/IP printing
+          const printResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/print_direct.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              printerIP,
+              printerPort,
+              receiptData
+            })
+          });
+          
+          const printResult = await printResponse.json();
           
           if (printResult.success) {
-            console.log(`✅ Receipt printed successfully via ${printResult.method}!`);
-            return { success: true, message: printResult.message, transactionId, method: printResult.method };
+            toast.success('✅ Receipt printed automatically!');
+            return { success: true, message: 'Printed automatically', transactionId, method: 'direct' };
           }
-        } catch (printerError) {
-          console.warn('⚠️ Printer integration failed, trying browser print fallback:', printerError.message);
-          // Don't show error - automatically try browser print
+        } catch (e) {
+          console.log('Direct print failed, falling back to browser print:', e);
         }
       }
       
-      // Fallback: Online/Browser Printing (Always try this if QZ Tray fails)
-      if (onlinePrinting) {
-        try {
-          console.log('🖨️ Attempting browser print fallback...');
-          const printResult = await onlinePrinting.printReceipt(receiptData);
-          
-          if (printResult) {
-            console.log('✅ Receipt opened for browser printing!');
-            return { success: true, message: 'Receipt opened in browser print dialog', transactionId, method: 'browser' };
-          }
-        } catch (onlineError) {
-          console.warn('⚠️ Browser printing also failed:', onlineError.message);
-          // Fall through to server-side printing
-        }
+      // Fallback: Browser print dialog
+      console.log('🖨️ Opening browser print dialog...');
+      
+      // Generate HTML receipt
+      const htmlReceipt = generateHTMLReceipt(receiptData);
+      
+      // Create print window
+      const printWindow = window.open('', '_blank', 'width=400,height=600');
+      
+      if (!printWindow) {
+        toast.error('Popup blocked. Please allow popups for this site.');
+        return { success: false, message: 'Popup blocked', transactionId };
       }
       
-      // Fallback: Server-side printing (for local XAMPP or when QZ Tray fails)
-      console.log('🖨️ Attempting server-side printing...');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/qz-tray-receipt.php`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(receiptData)
-      });
-
-      console.log('📥 Response status:', response.status, response.ok);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ HTTP Error:', response.status, errorText);
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('📋 Server print result:', result);
+      // Write HTML content
+      printWindow.document.write(htmlReceipt);
+      printWindow.document.close();
       
-      if (result.success) {
-        console.log('✅ Receipt printed successfully via server!');
-        return { success: true, message: 'Receipt printed successfully', transactionId, method: 'server-print' };
-      } else {
-        console.error('❌ Print failed:', result.message);
-        return { success: false, message: result.message, transactionId };
-      }
+      // Wait for content to load then trigger print dialog
+      printWindow.onload = function() {
+        setTimeout(() => {
+          printWindow.print();
+          setTimeout(() => {
+            try {
+              printWindow.focus();
+            } catch (e) {
+              // Ignore focus errors
+            }
+          }, 100);
+        }, 200);
+      };
+      
+      console.log('✅ Print dialog opened!');
+      return { success: true, message: 'Print dialog opened', transactionId, method: 'browser' };
       
     } catch (error) {
       console.error('❌ Print error:', error);
-      // Return error details for better debugging
+      toast.error('Print failed: ' + error.message);
       return { success: false, message: error.message, transactionId };
     }
   };
@@ -1988,48 +2063,35 @@ export default function POS() {
     try {
       console.log('🧪 Testing printer connection...');
       
-      // Test printer connection
-      if (printerIntegration) {
-        const result = await printerIntegration.testConnection();
-        
-        if (result.success) {
-          toast.success(result.message || 'Test connection successful!');
-          console.log('✅ Test connection successful');
-        } else {
-          toast.error(result.message || 'Test connection failed');
-          console.error('❌ Test connection failed:', result.message);
-        }
-      } else if (onlinePrinting && (printingMethod === 'online' || printingMethod === 'browser')) {
-        // Test browser printing with sample data
-        const testData = {
-          storeName: "Test Store",
-          date: new Date().toLocaleDateString(),
-          time: new Date().toLocaleTimeString(),
-          transactionId: 'TEST001',
-          cashier: 'Test User',
-          terminalName: 'Test Terminal',
-          items: [
-            { name: 'Test Item', quantity: 1, price: 10.00, total: 10.00 }
-          ],
-          subtotal: 10.00,
-          grandTotal: 10.00,
-          paymentMethod: 'CASH',
-          amountPaid: 10.00,
-          change: 0.00
-        };
-        
-        const result = await onlinePrinting.printReceipt(testData);
-        
-        if (result) {
-          toast.success('Test print successful! Check your browser print dialog.');
-          console.log('✅ Browser test print completed successfully');
-        } else {
-          toast.error('Test print failed: Could not open print dialog');
-          console.error('❌ Browser test print failed');
-        }
+      // Test data for receipt
+      const testData = {
+        storeName: "ENGUIO'S PHARMACY",
+        date: new Date().toLocaleDateString(),
+        time: new Date().toLocaleTimeString(),
+        transactionId: 'TEST-' + Date.now(),
+        cashier: 'Test User',
+        terminalName: locationName || 'POS Terminal',
+        items: [
+          { name: 'Test Item 1', quantity: 1, price: 25.00, total: 25.00 },
+          { name: 'Test Item 2 - Long Name Test', quantity: 2, price: 15.50, total: 31.00 }
+        ],
+        subtotal: 56.00,
+        grandTotal: 56.00,
+        paymentMethod: 'CASH',
+        amountPaid: 60.00,
+        change: 4.00
+      };
+      
+      // Try to print using the regular print function
+      console.log('🔍 Attempting to print test receipt...');
+      const result = await printReceipt(testData);
+      
+      if (result && result.success) {
+        toast.success('✅ Test print successful! Check your printer.');
+        console.log('✅ Test print completed successfully:', result);
       } else {
-        toast.error('No printing method available for testing');
-        console.error('❌ No printing method available');
+        toast.error('❌ Test print failed: ' + (result?.message || 'Unknown error'));
+        console.error('❌ Test print failed:', result);
       }
     } catch (error) {
       toast.error(`Test failed: ${error.message}`);
@@ -2039,33 +2101,9 @@ export default function POS() {
     }
   };
 
-  // Manual connect to printer
+  // Manual connect to printer (not needed for browser print)
   const connectPrinter = async () => {
-    if (!printerIntegration) {
-      toast.info('Using browser print (no setup needed)');
-      return;
-    }
-
-    setPrinterStatus('connecting');
-    try {
-      const result = await printerIntegration.connect();
-      
-      if (result.success) {
-        setPrinterStatus('connected');
-        toast.success(result.message || 'QZ Tray connected successfully!');
-        console.log('✅ Manual connection successful');
-      } else {
-        // Don't show error - browser print is available
-        setPrinterStatus('fallback');
-        toast.info('Browser print is available (QZ Tray not needed)');
-        console.log('ℹ️ Using browser print:', result.message);
-      }
-    } catch (error) {
-      // Don't show error - browser print is available
-      console.log('ℹ️ Using browser print:', error.message);
-      setPrinterStatus('fallback');
-      toast.info('Using browser print - works without QZ Tray');
-    }
+    toast.info('Browser print is always ready!');
   };
 
   // Persist sale to backend (always called, even if printing fails)
@@ -2366,6 +2404,37 @@ export default function POS() {
           items: items
         }));
         console.log('Transaction found:', transaction);
+        console.log('Items loaded:', items);
+        console.log('Items count:', items.length);
+        
+        if (items.length > 0) {
+          toast.success(`Found ${items.length} item(s) in transaction`);
+        } else {
+          toast.warning('Transaction found but has no items');
+        }
+        
+        // Now validate location AFTER loading items
+        // This allows user to see what they're trying to return
+        const validationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'validate_return_terminal',
+            transaction_id: transactionId.trim(),
+            current_location: locationName,
+            current_terminal: terminalName
+          })
+        });
+        
+        const validationResult = await validationResponse.json();
+        
+        if (!validationResult.success) {
+          // Show warning but don't block - let them see the items
+          toast.warning(`⚠️ Location mismatch: This was sold at ${validationResult.data?.original_location || 'another location'}. Returns should be processed there.`, {
+            autoClose: false
+          });
+        }
+        
       } else {
         toast.error('Transaction not found. Please check the transaction ID.');
         setCustomerReturnData(prev => ({ ...prev, items: [] }));
@@ -3065,45 +3134,39 @@ export default function POS() {
       `}</style>
       <div className="flex h-screen bg-gray-50 pos-main-container">
         {/* Printer Status Indicator */}
-        <div className="fixed top-4 right-4 z-50">
+        <div className="fixed top-4 right-4 z-50 flex gap-2">
+          <button
+            onClick={() => {
+              const ip = prompt('Enter Printer IP Address:', localStorage.getItem('printerIP') || '');
+              if (ip) {
+                localStorage.setItem('printerIP', ip);
+                const port = prompt('Enter Printer Port (default: 9100):', localStorage.getItem('printerPort') || '9100');
+                if (port) localStorage.setItem('printerPort', port);
+                toast.success(`Printer configured: ${ip}:${port}`);
+              }
+            }}
+            className="px-3 py-2 bg-purple-100 text-purple-800 border border-purple-300 hover:bg-purple-200 rounded-lg text-sm font-medium shadow-lg cursor-pointer transition-all duration-200"
+            title="Configure printer IP"
+          >
+            ⚙️ Setup
+          </button>
           <div 
             className={`px-3 py-2 rounded-lg text-sm font-medium shadow-lg cursor-pointer transition-all duration-200 hover:shadow-xl ${
-              printerStatus === 'connected' ? 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200' :
-              printerStatus === 'fallback' ? 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200' :
-              printerStatus === 'connecting' || printerStatus === 'reconnecting' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 animate-pulse' :
-              printerStatus === 'error' || printerStatus === 'unavailable' ? 'bg-orange-100 text-orange-800 border border-orange-300 hover:bg-orange-200' :
+              printerStatus === 'ready' ? 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200' :
               'bg-gray-100 text-gray-800 border border-gray-300 hover:bg-gray-200'
             } ${isTestingPrinter ? 'animate-pulse' : ''}`}
             onClick={() => {
-              if (printerStatus === 'connected') {
+              // Test printer (browser print)
                 testPrinter();
-              } else {
-                connectPrinter();
-              }
             }}
-            title={
-              printerStatus === 'connected' ? 'Click to test printer' : 
-              printerStatus === 'connecting' || printerStatus === 'reconnecting' ? 'Connecting to QZ Tray...' :
-              printerStatus === 'unavailable' ? '⚠️ Printer not connected. Click to try connecting.' :
-              'Click to connect printer'
-            }
+            title="Click to test printer"
           >
             <div className="flex items-center gap-2">
               <span className="text-lg">
-                {isTestingPrinter ? '⏳' :
-                 printerStatus === 'connected' ? '🖨️' :
-                 printerStatus === 'fallback' ? '🖨️' :
-                 printerStatus === 'connecting' || printerStatus === 'reconnecting' ? '🔄' :
-                 printerStatus === 'error' || printerStatus === 'unavailable' ? '⚠️' : '🔌'}
+                {isTestingPrinter ? '⏳' : '🖨️'}
               </span>
               <span>
-                {isTestingPrinter ? 'Testing...' :
-                 printerStatus === 'connected' ? 'QZ Tray Ready' :
-                 printerStatus === 'fallback' ? 'Browser Print Ready' :
-                 printerStatus === 'connecting' ? 'Connecting...' :
-                 printerStatus === 'reconnecting' ? 'Auto-connecting...' :
-                 printerStatus === 'unavailable' ? 'QZ Tray Offline' :
-                 printerStatus === 'error' ? 'Connection Error' : 'Click to Connect'}
+                {isTestingPrinter ? 'Testing...' : 'Print Ready'}
               </span>
             </div>
           </div>
@@ -3213,6 +3276,14 @@ export default function POS() {
                     title="Search (Enter) or scan barcode; empty to load all products"
                   >
                     🔍 Search
+                  </button>
+                  <button
+                    onClick={testPrinter}
+                    disabled={isTestingPrinter}
+                    className={`px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-lg font-bold shadow-lg hover:shadow-xl ${isTestingPrinter ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title="Test printer with sample receipt"
+                  >
+                    {isTestingPrinter ? '⏳ Testing...' : '🖨️ Test Print'}
                   </button>
                   </div>
                 </div>

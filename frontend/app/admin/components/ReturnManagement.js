@@ -41,30 +41,34 @@ export default function ReturnManagement() {
     markNotificationAsViewed('returns');
   }, []); // Empty dependency array - only run once when component mounts
 
-  // Set up real-time refresh every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (activeTab === 'pending') {
-        loadPendingReturns();
-      } else {
-        loadReturnHistory();
-      }
-    }, 30000); // Refresh every 30 seconds
-
-    setRefreshInterval(interval);
-
-    // Cleanup interval on component unmount
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [activeTab]); // Re-setup interval when activeTab changes
+  // DISABLED: Set up real-time refresh every 30 seconds
+  // Uncomment below to enable auto-refresh
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     if (activeTab === 'pending') {
+  //       loadPendingReturns();
+  //     } else {
+  //       loadReturnHistory();
+  //     }
+  //   }, 30000); // Refresh every 30 seconds
+  //
+  //   setRefreshInterval(interval);
+  //
+  //   // Cleanup interval on component unmount
+  //   return () => {
+  //     if (interval) {
+  //       clearInterval(interval);
+  //     }
+  //   };
+  // }, [activeTab]); // Re-setup interval when activeTab changes
 
   const loadPendingReturns = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`;
+      console.log('🔍 Admin - Loading pending returns from:', url);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -74,14 +78,17 @@ export default function ReturnManagement() {
       });
 
       const data = await response.json();
+      console.log('🔍 Admin - API Response:', data);
+      
       if (data.success) {
+        console.log('✅ Admin - Setting pending returns:', data.data.length);
         setPendingReturns(data.data);
         setLastRefresh(new Date());
       } else {
-        console.error('Failed to load pending returns:', data.message);
+        console.error('❌ Admin - Failed to load pending returns:', data.message);
       }
     } catch (error) {
-      console.error('Error loading pending returns:', error);
+      console.error('❌ Admin - Error loading pending returns:', error);
     } finally {
       setLoading(false);
     }
@@ -91,7 +98,7 @@ export default function ReturnManagement() {
     setLoading(true);
     try {
       console.log('Loading return history...');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,7 +128,7 @@ export default function ReturnManagement() {
 
   const getReturnDetails = async (returnId) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -153,7 +160,7 @@ export default function ReturnManagement() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -227,7 +234,7 @@ export default function ReturnManagement() {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2e2/Api'}/pos_return_api.php`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -266,7 +273,20 @@ export default function ReturnManagement() {
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString('en-PH');
+    const date = new Date(dateString);
+    // Use local time to match database timezone (PHP server timezone)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    // Format in 12-hour format with AM/PM
+    const hours12 = hours % 12 || 12;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    
+    return `${month}/${day}/${year}, ${hours12}:${minutes}:${seconds} ${ampm}`;
   };
 
   const handleManualRefresh = () => {
@@ -324,10 +344,6 @@ export default function ReturnManagement() {
               {getTotalNotifications('returns')} New
             </span>
           )}
-          <div className="flex items-center gap-2 text-sm" style={{ color: theme.text.secondary }}>
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span>Auto-refresh every 30s</span>
-          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-sm" style={{ color: theme.text.secondary }}>

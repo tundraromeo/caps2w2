@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -175,7 +175,7 @@ function ConvenienceStore() {
   };
 
   // Load products for convenience store
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     if (!convenienceLocationId || loading) return; // Prevent multiple simultaneous calls
     
     setLoading(true);
@@ -262,7 +262,7 @@ function ConvenienceStore() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [convenienceLocationId, loading, searchTerm, selectedCategory, selectedProductType]);
 
   useEffect(() => {
     const initialize = async () => {
@@ -348,7 +348,7 @@ function ConvenienceStore() {
     return () => {
       window.removeEventListener('inventoryRefresh', handleInventoryRefresh);
     };
-  }, [convenienceLocationId]);
+  }, [convenienceLocationId, loadProducts]); // Add loadProducts to dependencies
 
   const getStatusColor = (status) => {
     switch (status) {

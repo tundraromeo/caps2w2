@@ -11,7 +11,7 @@ if (!is_array($input)) {
     exit;
 }
 
-$receiptWidth = 32; // Standard thermal printer width
+$receiptWidth = 48; // Standard thermal printer width (58mm paper)
 
 // Function to format a price line
 function formatPriceLine($label, $amount, $width) {
@@ -42,9 +42,9 @@ $receipt .= str_repeat('-', $receiptWidth) . "\n";
 
 // Items header
 $receipt .= str_pad('QTY', 4)
-  . str_pad('ITEM', 14)
-  . str_pad('PRICE', 7, ' ', STR_PAD_LEFT)
-  . str_pad('TOTAL', 7, ' ', STR_PAD_LEFT) . "\n";
+  . str_pad('ITEM', 18)
+  . str_pad('PRICE', 8, ' ', STR_PAD_LEFT)
+  . str_pad('TOTAL', 8, ' ', STR_PAD_LEFT) . "\n";
 $receipt .= str_repeat('-', $receiptWidth) . "\n";
 
 // Items
@@ -55,18 +55,18 @@ if (!empty($input['items'])) {
         $price = (float)($item['price'] ?? 0);
         $total = $qty * $price;
 
-        $lines = wrapItemName($name, 14);
+        $lines = wrapItemName($name, 18);
         $first = array_shift($lines);
 
         // First line with qty, price, total
         $receipt .= str_pad($qty, 4)
-          . str_pad($first, 14)
-          . str_pad(number_format($price, 2), 7, ' ', STR_PAD_LEFT)
-          . str_pad(number_format($total, 2), 7, ' ', STR_PAD_LEFT) . "\n";
+          . str_pad(substr($first, 0, 18), 18)
+          . str_pad(number_format($price, 2), 8, ' ', STR_PAD_LEFT)
+          . str_pad(number_format($total, 2), 8, ' ', STR_PAD_LEFT) . "\n";
 
         // Continuation lines (wrapped item names)
         foreach ($lines as $cont) {
-            $receipt .= str_repeat(' ', 4) . str_pad($cont, 14) . "\n";
+            $receipt .= str_repeat(' ', 4) . str_pad(substr($cont, 0, 18), 18) . "\n";
         }
     }
 } else {
@@ -113,7 +113,7 @@ $receipt .= str_pad('Please come again', $receiptWidth, ' ', STR_PAD_BOTH) . "\n
 $receipt .= str_pad('This is your official receipt', $receiptWidth, ' ', STR_PAD_BOTH) . "\n";
 
 // Feed lines for paper cut
-$receipt .= "\n\n\n\n\n";
+$receipt .= "\n\n\n";
 
 // Return raw receipt data for QZ Tray
 echo json_encode([
