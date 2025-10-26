@@ -13,17 +13,31 @@
 // Get base URL from environment variable with fallback
 const getBaseUrl = () => {
   // Debug logging
-  console.log('Environment variable NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+  console.log('🔍 Environment variable NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+  console.log('🔍 Node Environment:', process.env.NODE_ENV);
   
-  // Use environment variable if available, otherwise fallback to local development
+  // Use environment variable if available
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    console.log('Using environment API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
+    console.log('✅ Using configured API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
   
-  // Fallback to local development URL
+  // Check if we're in production (Vercel)
+  const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_URL;
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  if (isVercel || isProduction) {
+    console.error('❌ CRITICAL: NEXT_PUBLIC_API_BASE_URL not set in production!');
+    console.error('Please add NEXT_PUBLIC_API_BASE_URL environment variable in Vercel settings.');
+    console.error('Expected format: https://your-domain.com/backend/Api');
+    
+    // Return a placeholder that will show an error - better than using localhost
+    return 'https://MISSING-BACKEND-URL.vercel.app';
+  }
+  
+  // Fallback to local development URL (only for localhost)
   const localUrl = 'http://localhost/caps2w2/backend/Api';
-  console.log('Using fallback local development URL:', localUrl);
+  console.log('⚠️ Using local development URL (localhost only):', localUrl);
   return localUrl;
 };
 
