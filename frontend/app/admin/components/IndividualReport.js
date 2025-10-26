@@ -415,9 +415,9 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Sales Summary</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
                   <div>Total Transactions: ${dataToProcess.length}</div>
-                  <div>Total Sales: ₱${totalSales.toFixed(2)}</div>
+                  <div>Total Sales: ₱${parseFloat(totalSales || 0).toFixed(2)}</div>
                   <div>Total Items Sold: ${totalItems.toLocaleString()}</div>
-                  <div>Average Sale: ₱${dataToProcess.length > 0 ? (totalSales / dataToProcess.length).toFixed(2) : '0.00'}</div>
+                  <div>Average Sale: ₱${dataToProcess.length > 0 ? parseFloat(totalSales / dataToProcess.length).toFixed(2) : '0.00'}</div>
                 </div>
               </div>
             `;
@@ -431,7 +431,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
                   <div>Total Items: ${dataToProcess.length}</div>
                   <div>Total Quantity: ${totalQuantity.toLocaleString()}</div>
-                  <div>Total Value: ₱${totalValue.toFixed(2)}</div>
+                  <div>Total Value: ₱${parseFloat(totalValue || 0).toFixed(2)}</div>
                   <div>Unique Products: ${new Set(dataToProcess.map(item => item.product_name).filter(Boolean)).size}</div>
                 </div>
               </div>
@@ -458,9 +458,9 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                 <div style="font-size: 14px; font-weight: bold; color: #000000; margin-bottom: 10px;">Cashier Performance Summary</div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 11px;">
                   <div>Total Cashiers: ${dataToProcess.length}</div>
-                  <div>Total Sales: ₱${totalCashierSales.toFixed(2)}</div>
+                  <div>Total Sales: ₱${parseFloat(totalCashierSales || 0).toFixed(2)}</div>
                   <div>Total Transactions: ${dataToProcess.reduce((sum, item) => sum + (parseInt(item.transactions_count) || 0), 0)}</div>
-                  <div>Average Transaction: ₱${dataToProcess.length > 0 ? (totalCashierSales / dataToProcess.reduce((sum, item) => sum + (parseInt(item.transactions_count) || 0), 0)).toFixed(2) : '0.00'}</div>
+                  <div>Average Transaction: ₱${dataToProcess.length > 0 ? parseFloat(totalCashierSales / dataToProcess.reduce((sum, item) => sum + (parseInt(item.transactions_count) || 0), 0)).toFixed(2) : '0.00'}</div>
                 </div>
               </div>
             `;
@@ -1554,7 +1554,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                         <div>
                           <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Total Sales</p>
                           <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
-                            ₱{(cashierDetails?.summary?.total_sales || 0).toFixed(2)}
+                            ₱{parseFloat(cashierDetails?.summary?.total_sales || 0).toFixed(2)}
                           </p>
                         </div>
                       </div>

@@ -31,8 +31,21 @@ const getBaseUrl = () => {
     console.error('Please add NEXT_PUBLIC_API_BASE_URL environment variable in Vercel settings.');
     console.error('Expected format: https://your-domain.com/backend/Api');
     
-    // Return a placeholder that will show an error - better than using localhost
-    return 'https://MISSING-BACKEND-URL.vercel.app';
+    // For Vercel production, try to use a relative API proxy or known backend
+    // This will attempt to use the backend if it's deployed somewhere accessible
+    // TODO: Replace with actual backend URL once deployed
+    console.warn('⚠️ Using temporary fallback URL. Update this with your actual backend URL.');
+    
+    // Option 1: If backend is on the same domain as frontend subdomain
+    // const backendUrl = 'https://api.enguiostore.com/backend/Api';
+    
+    // Option 2: If backend is on separate Namecheap hosting
+    // Using production backend URL
+    console.warn('⚠️ PRODUCTION: Using hardcoded backend URL. Consider using environment variable instead.');
+    const backendUrl = 'https://enguio.shop/backend/Api';
+    console.log('✅ Using production backend:', backendUrl);
+    
+    return backendUrl;
   }
   
   // Fallback to local development URL (only for localhost)
