@@ -4,9 +4,7 @@ import axios from "axios";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useTheme } from './ThemeContext';
-
-// Use environment-based API base URL
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/backend.php`;
+import { API_BASE_URL } from '../lib/apiConfig';
 
 function IndividualReport({ reportType, reportName, reportIcon }) {
   const { theme } = useTheme();
@@ -124,7 +122,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       
       // Try axios first
       try {
-        res = await axios.post(API_BASE_URL, requestData, {
+        res = await axios.post(`${API_BASE_URL}/backend.php`, requestData, {
           timeout: 10000,
           headers: {
             'Content-Type': 'application/json',
@@ -134,7 +132,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         console.warn('Axios failed, trying fetch:', axiosError.message);
         
         // Fallback to fetch
-        const response = await fetch(API_BASE_URL, {
+        const response = await fetch(`${API_BASE_URL}/backend.php`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -259,7 +257,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       // Get current user data from sessionStorage
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const res = await axios.post(API_BASE_URL, {
+      const res = await axios.post(`${API_BASE_URL}/backend.php`, {
         action: 'generate_report',
         report_type: reportType,
         generated_by: userData.full_name || userData.username || 'Admin',
@@ -603,7 +601,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       // Get current user data from sessionStorage
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
-      const res = await axios.post(API_BASE_URL, {
+      const res = await axios.post(`${API_BASE_URL}/backend.php`, {
         action: 'get_cashier_details',
         cashier_id: cashierId,
         start_date: dateRange.startDate,

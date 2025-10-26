@@ -49,9 +49,19 @@ const getBaseUrl = () => {
   }
   
   // Fallback to local development URL (only for localhost)
-  const localUrl = 'http://localhost/caps2w2/backend/Api';
-  console.log('⚠️ Using local development URL (localhost only):', localUrl);
-  return localUrl;
+  // Check if we're running in browser on localhost vs production
+  const isBrowser = typeof window !== 'undefined';
+  const isLocalhost = isBrowser && window.location.hostname === 'localhost';
+  
+  if (isLocalhost) {
+    const localUrl = 'http://localhost/caps2w2/backend/Api';
+    console.log('⚠️ Using local development URL (localhost only):', localUrl);
+    return localUrl;
+  }
+  
+  // For production, use the production backend
+  console.log('🌐 Production detected, using production backend');
+  return 'https://enguio.shop/backend/Api';
 };
 
 export const API_BASE_URL = getBaseUrl();
