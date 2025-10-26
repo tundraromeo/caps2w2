@@ -264,14 +264,31 @@ export default function ReturnManagement() {
   };
 
   const formatCurrency = (amount) => {
+    // Safety check for undefined/null values
+    if (amount === null || amount === undefined || isNaN(amount)) {
+      return '₱0.00';
+    }
+    // Ensure amount is a number
+    const numAmount = typeof amount === 'string' ? parseFloat(amount) : Number(amount);
     return new Intl.NumberFormat('en-PH', {
       style: 'currency',
       currency: 'PHP'
-    }).format(amount);
+    }).format(numAmount);
   };
 
   const formatDate = (dateString) => {
+    // Safety check for undefined/null values
+    if (!dateString || dateString === null || dateString === undefined) {
+      return '--/--/----, --:--:-- --';
+    }
+    
     const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return '--/--/----, --:--:-- --';
+    }
+    
     // Use local time to match database timezone (PHP server timezone)
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -345,7 +362,7 @@ export default function ReturnManagement() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-sm" style={{ color: theme.text.secondary }}>
-            Last updated: {lastRefresh.toLocaleTimeString()}
+            Last updated: {lastRefresh ? lastRefresh.toLocaleTimeString() : '--:--:--'}
           </div>
           <button
             onClick={handleManualRefresh}
