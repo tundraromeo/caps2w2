@@ -121,6 +121,19 @@ function TransactionManager() {
   useEffect(() => {
     fetchTransactions(0, false);
     fetchSummary();
+    
+    // Set up auto-refresh every 10 seconds for real-time updates
+    const refreshInterval = setInterval(() => {
+      fetchTransactions(0, false);
+      fetchSummary();
+    }, 10000); // Refresh every 10 seconds
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+    };
   }, [dateRange]);
 
   const formatCurrency = (amount) => `₱${parseFloat(amount || 0).toFixed(2)}`;

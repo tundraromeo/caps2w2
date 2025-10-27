@@ -2975,12 +2975,27 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
           // Don't show error toast - KPIs are not critical, products will still load
         }
       }
+      
+      // Initial load
       fetchWarehouseKPIs();
       loadData("all");
       
       // Auto-start scanner when component mounts (if enabled in settings)
       setScannerActive(settings.barcodeScanning);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
+      
+      // Set up auto-refresh every 10 seconds for real-time updates
+      const refreshInterval = setInterval(() => {
+        fetchWarehouseKPIs();
+        loadData("all");
+      }, 10000); // Refresh every 10 seconds
+      
+      // Cleanup interval on unmount
+      return () => {
+        if (refreshInterval) {
+          clearInterval(refreshInterval);
+        }
+      };
     }, [])
 
     // Auto-refresh for notifications (every 30 seconds for warehouse)

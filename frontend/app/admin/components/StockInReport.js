@@ -173,8 +173,18 @@ function StockInReport() {
         stockInData.forEach((row, index) => {
           const barcode = row.barcode || row.product_id || 'N/A';
           const productName = row.product_name || 'Generic Product';
-          const date = row.date ? new Date(row.date).toLocaleDateString('en-PH') : 'N/A';
-          const time = row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+          let date = 'N/A';
+          if (row.date) {
+            const dateStr = row.date;
+            if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              const [year, month, day] = dateStr.split('-');
+              date = `${month}/${day}/${year}`;
+            } else {
+              const dateObj = new Date(dateStr + 'T00:00:00');
+              date = dateObj.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+            }
+          }
+          const time = row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A';
           const quantity = row.quantity || '0';
           const unitPrice = row.unit_price || row.price || '0.00';
           const totalValue = (parseFloat(unitPrice) * parseInt(quantity)).toFixed(2);
@@ -359,9 +369,21 @@ function StockInReport() {
     
     switch (columnKey) {
       case 'date':
-        return row.date ? new Date(row.date).toLocaleDateString('en-PH') : 'N/A';
+        // Display date as-is without timezone conversion
+        if (row.date) {
+          const dateStr = row.date;
+          // If already in YYYY-MM-DD format, format it directly
+          if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const [year, month, day] = dateStr.split('-');
+            return `${month}/${day}/${year}`;
+          }
+          // Otherwise, use Date formatting with UTC to avoid timezone issues
+          const date = new Date(dateStr + 'T00:00:00');
+          return date.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+        }
+        return 'N/A';
       case 'time':
-        return row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        return row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A';
       case 'quantity':
         return (
           <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>

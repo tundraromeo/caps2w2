@@ -343,9 +343,20 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             if (columnKey === 'total_value' || columnKey === 'total_amount' || columnKey === 'unit_price') {
               cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
             } else if (columnKey === 'date') {
-              cellValue = row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : 'N/A';
+              if (row[columnKey]) {
+                const dateStr = row[columnKey];
+                if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  const [year, month, day] = dateStr.split('-');
+                  cellValue = `${month}/${day}/${year}`;
+                } else {
+                  const date = new Date(dateStr + 'T00:00:00');
+                  cellValue = date.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+                }
+              } else {
+                cellValue = 'N/A';
+              }
             } else if (columnKey === 'time') {
-              cellValue = row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+              cellValue = row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A';
             } else if (columnKey === 'payment_method' || columnKey === 'payment_type') {
               if (cellValue === 'cash') cellValue = 'Cash';
               else if (cellValue === 'card') cellValue = 'Card';
@@ -697,9 +708,21 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'unit_price':
         return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
       case 'date':
-        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : '📅 Not Available';
+        // Display date as-is without timezone conversion
+        if (row[columnKey]) {
+          const dateStr = row[columnKey];
+          // If already in YYYY-MM-DD format, format it directly
+          if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const [year, month, day] = dateStr.split('-');
+            return `${month}/${day}/${year}`;
+          }
+          // Otherwise, use Date formatting with UTC to avoid timezone issues
+          const date = new Date(dateStr + 'T00:00:00');
+          return date.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+        }
+        return '📅 Not Available';
       case 'time':
-        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : '🕐 Not Available';
+        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true }) : '🕐 Not Available';
       case 'payment_method':
       case 'payment_type':
         const paymentType = row[columnKey];
@@ -1636,10 +1659,21 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                               {cashierDetails.sales_data.map((row, index) => (
                                 <tr key={index} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                                   <td className="p-4 align-middle" style={{ color: theme.text.secondary }}>
-                                    {row.date ? new Date(row.date).toLocaleDateString('en-PH') : 'N/A'}
+                                    {(() => {
+                                      if (row.date) {
+                                        const dateStr = row.date;
+                                        if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                          const [year, month, day] = dateStr.split('-');
+                                          return `${month}/${day}/${year}`;
+                                        }
+                                        const date = new Date(dateStr + 'T00:00:00');
+                                        return date.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+                                      }
+                                      return 'N/A';
+                                    })()}
                                   </td>
                                   <td className="p-4 align-middle" style={{ color: theme.text.secondary }}>
-                                    {row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                                    {row.time ? new Date(`2000-01-01T${row.time}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A'}
                                   </td>
                                   <td className="p-4 align-middle" style={{ color: theme.text.secondary }}>{row.reference_no || 'N/A'}</td>
                                   <td className="p-4 align-middle" style={{ color: theme.text.secondary }}>

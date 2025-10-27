@@ -41,26 +41,26 @@ export default function ReturnManagement() {
     markNotificationAsViewed('returns');
   }, []); // Empty dependency array - only run once when component mounts
 
-  // DISABLED: Set up real-time refresh every 30 seconds
-  // Uncomment below to enable auto-refresh
-  // useEffect(() => {
-  //   const interval = setInterval(() => {
-  //     if (activeTab === 'pending') {
-  //       loadPendingReturns();
-  //     } else {
-  //       loadReturnHistory();
-  //     }
-  //   }, 30000); // Refresh every 30 seconds
-  //
-  //   setRefreshInterval(interval);
-  //
-  //   // Cleanup interval on component unmount
-  //   return () => {
-  //     if (interval) {
-  //       clearInterval(interval);
-  //     }
-  //   };
-  // }, [activeTab]); // Re-setup interval when activeTab changes
+  // ENABLED: Set up real-time refresh every 10 seconds for instant updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeTab === 'pending') {
+        loadPendingReturns();
+      } else {
+        loadReturnHistory();
+      }
+    }, 10000); // Refresh every 10 seconds for near real-time updates
+
+    setRefreshInterval(interval);
+    setLastRefresh(new Date());
+
+    // Cleanup interval on component unmount
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [activeTab]); // Re-setup interval when activeTab changes
 
   const loadPendingReturns = async () => {
     setLoading(true);

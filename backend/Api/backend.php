@@ -9724,6 +9724,24 @@ case 'get_products_oldest_batch_for_transfer':
             ]);
         }
         break;
+        
+    case 'check_reports_updates':
+        try {
+            require_once 'modules/reports.php';
+            
+            $hours = $data['hours'] ?? 1;
+            
+            $reportsModule = new ReportsModule($conn);
+            $result = $reportsModule->checkReportsUpdates($hours);
+            
+            echo json_encode($result);
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error checking reports updates: " . $e->getMessage()
+            ]);
+        }
+        break;
         try {
             require_once 'modules/reports.php';
             

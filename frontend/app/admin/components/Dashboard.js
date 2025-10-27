@@ -442,6 +442,19 @@ function Dashboard() {
     fetchDashboardData();
     fetchEmployeeData(); // Fetch admin employee data on component load
     recordActivity({ activityType: 'DASHBOARD_VIEW', description: 'Dashboard loaded' });
+    
+    // Set up auto-refresh every 15 seconds for real-time updates
+    const refreshInterval = setInterval(() => {
+      fetchDashboardData();
+      fetchEmployeeData();
+    }, 15000); // Refresh every 15 seconds
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+    };
   }, []); // Only run on component mount
 
   return (

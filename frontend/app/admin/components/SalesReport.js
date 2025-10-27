@@ -170,10 +170,17 @@ function SalesReport() {
               if (columnKey === 'total_amount') {
                 cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
               } else if (columnKey === 'date' && cellValue !== 'N/A') {
-                cellValue = new Date(cellValue).toLocaleDateString('en-PH');
+                // Fix timezone issue by treating date as UTC
+                if (typeof cellValue === 'string' && cellValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                  const [year, month, day] = cellValue.split('-');
+                  cellValue = `${month}/${day}/${year}`;
+                } else {
+                  const date = new Date(cellValue + 'T00:00:00');
+                  cellValue = date.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+                }
               } else if (columnKey === 'time' && cellValue !== 'N/A') {
                 try {
-                  cellValue = new Date(`2000-01-01T${cellValue}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+                  cellValue = new Date(`2000-01-01T${cellValue}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true });
                 } catch (e) {
                   // Keep original if parsing fails
                 }
@@ -257,9 +264,21 @@ function SalesReport() {
       case 'total_amount':
         return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
       case 'date':
-        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : 'N/A';
+        // Display date as-is without timezone conversion
+        if (row[columnKey]) {
+          const dateStr = row[columnKey];
+          // If already in YYYY-MM-DD format, format it directly
+          if (typeof dateStr === 'string' && dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const [year, month, day] = dateStr.split('-');
+            return `${month}/${day}/${year}`;
+          }
+          // Otherwise, use Date formatting with UTC to avoid timezone issues
+          const date = new Date(dateStr + 'T00:00:00');
+          return date.toLocaleDateString('en-PH', { timeZone: 'UTC' });
+        }
+        return 'N/A';
       case 'time':
-        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A';
       case 'items_sold':
         return (
           <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>

@@ -1575,6 +1575,87 @@ class ReportsModule {
             'sales_data' => $salesData
         ];
     }
+    
+    /**
+     * Check for reports updates within specified hours
+     */
+    public function checkReportsUpdates($hours = 1) {
+        try {
+            $since = date('Y-m-d H:i:s', strtotime("-$hours hours"));
+            
+            // Check for new sales
+            $salesStmt = $this->conn->prepare("
+                SELECT COUNT(*) as count 
+                FROM tbl_pos_transaction 
+                WHERE created_at >= ?
+            ");
+            $salesStmt->execute([$since]);
+            $newSales = $salesStmt->fetchColumn();
+            
+            // Check for new stock movements
+            $stockInStmt = $this->conn->prepare("
+                SELECT COUNT(*) as count 
+                FROM tbl_stock_movement 
+                WHERE movement_type = 'IN' AND created_at >= ?
+            ");
+            $stockInStmt->execute([$since]);
+            $newStockIn = $stockInStmt->fetchColumn();
+            
+            $stockOutStmt = $this->conn->prepare("
+                SELECT COUNT(*) as count 
+                FROM tbl_stock_movement 
+                WHERE movement_type = 'OUT' AND created_at >= ?
+            ");
+            $stockOutStmt->execute([$since]);
+            $newStockOut = $stockOutStmt->fetchColumn();
+            
+            // Check for new logins
+            $loginStmt = $this->conn->prepare("
+                SELECT COUNT(*) as count 
+                FROM tbl_login 
+                WHERE login_date = CURDATE() AND login_time >= ?
+            ");
+            $loginStmt->execute([date('H:i:s', strtotime("-$hours hours"))]);
+            $newLogins = $loginStmt->fetchColumn();
+            
+            $totalUpdates = $newSales + $newStockIn + $newStockOut + $newLogins;
+            
+            // Return report updates
+            $reportUpdates = [];
+            if ($newSales > 0) {
+                $reportUpdates['Sales Report'] = ['hasUpdates' => true, 'count' => $newSales];
+            }
+            if ($newStockIn > 0) {
+                $reportUpdates['Stock In Report'] = ['hasUpdates' => true, 'count' => $newStockIn];
+            }
+            if ($newStockOut > 0) {
+                $reportUpdates['Stock Out Report'] = ['hasUpdates' => true, 'count' => $newStockOut];
+            }
+            if ($newLogins > 0) {
+                $reportUpdates['Login Logs Report'] = ['hasUpdates' => true, 'count' => $newLogins];
+            }
+            
+            return [
+                'success' => true,
+                'data' => [
+                    'hasUpdates' => $totalUpdates > 0,
+                    'count' => $totalUpdates,
+                    'reportUpdates' => $reportUpdates,
+                    'details' => [
+                        'sales' => $newSales,
+                        'stock_in' => $newStockIn,
+                        'stock_out' => $newStockOut,
+                        'logins' => $newLogins
+                    ]
+                ]
+            ];
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Error checking reports updates: ' . $e->getMessage()
+            ];
+        }
+    }
 }
 
 // Get warehouse KPIs

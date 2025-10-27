@@ -586,7 +586,7 @@ function Reports() {
     };
   }, []);
 
-  // Check for actual system updates (no automatic triggering)
+  // Check for actual system updates (check every 30 seconds)
   useEffect(() => {
     const checkForRealUpdates = async () => {
       try {
@@ -624,8 +624,17 @@ function Reports() {
       }
     };
 
+    // Call immediately
     checkForRealUpdates();
-  }, [updateSystemUpdates, updateReportsNotifications]);
+
+    // Set up interval to check every 30 seconds
+    const interval = setInterval(() => {
+      checkForRealUpdates();
+    }, 30000);
+
+    // Cleanup interval on unmount
+    return () => clearInterval(interval);
+  }, []); // Empty dependency array to run once on mount
 
   useEffect(() => {
     if (selectedReportType !== 'all') {

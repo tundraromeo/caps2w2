@@ -46,6 +46,19 @@ function UserManagement() {
   useEffect(() => {
     fetchUsers();
     fetchRolesAndShifts();
+    
+    // Set up auto-refresh every 15 seconds for real-time updates
+    const refreshInterval = setInterval(() => {
+      fetchUsers();
+      fetchRolesAndShifts();
+    }, 15000); // Refresh every 15 seconds
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+    };
   }, []);
 
   const fetchRolesAndShifts = async () => {
