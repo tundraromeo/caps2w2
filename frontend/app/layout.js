@@ -20,10 +20,6 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "Enguio Inventory Management System",
   description: "Comprehensive inventory management system for Enguio",
-  // Optimize CSS loading
-  other: {
-    'preload-css': 'false', // Disable automatic CSS preloading
-  },
 };
 
 export default function RootLayout({ children }) {

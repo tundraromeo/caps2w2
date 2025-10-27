@@ -851,10 +851,23 @@ switch ($action) {
     
                     // Log login activity to tbl_login
                     try {
-                        $loginStmt = $conn->prepare("
-                            INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id) 
-                            VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id)
-                        ");
+                        // Check if last_seen column exists (backward compatibility)
+                        $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'last_seen'");
+                        $hasLastSeen = $checkColumn->rowCount() > 0;
+                        
+                        if ($hasLastSeen) {
+                            // NEW VERSION: With status and last_seen fields
+                            $loginStmt = $conn->prepare("
+                                INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id, status, last_seen) 
+                                VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id, 'online', NOW())
+                            ");
+                        } else {
+                            // OLD VERSION: Without last_seen column
+                            $loginStmt = $conn->prepare("
+                                INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, location, terminal_id, shift_id) 
+                                VALUES (:emp_id, :role_id, :username, CURTIME(), CURDATE(), :ip_address, :location, :terminal_id, :shift_id)
+                            ");
+                        }
                         
                         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
                         
@@ -1051,10 +1064,23 @@ switch ($action) {
 
                 // Log login activity to tbl_login
                 try {
-                    $loginStmt = $conn->prepare("
-                        INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address) 
-                        VALUES (:emp_id, :role_id, :username, NOW(), CURDATE(), :ip_address)
-                    ");
+                    // Check if last_seen column exists (backward compatibility)
+                    $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'last_seen'");
+                    $hasLastSeen = $checkColumn->rowCount() > 0;
+                    
+                    if ($hasLastSeen) {
+                        // NEW VERSION: With status and last_seen fields
+                        $loginStmt = $conn->prepare("
+                            INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address, status, last_seen) 
+                            VALUES (:emp_id, :role_id, :username, NOW(), CURDATE(), :ip_address, 'online', NOW())
+                        ");
+                    } else {
+                        // OLD VERSION: Without last_seen column
+                        $loginStmt = $conn->prepare("
+                            INSERT INTO tbl_login (emp_id, role_id, username, login_time, login_date, ip_address) 
+                            VALUES (:emp_id, :role_id, :username, NOW(), CURDATE(), :ip_address)
+                        ");
+                    }
                     
                     $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
                     
@@ -10494,6 +10520,155 @@ case 'get_products_oldest_batch_for_transfer':
             echo json_encode([
                 "success" => false,
                 "message" => "Error fetching combined summary: " . $e->getMessage()
+            ]);
+        }
+        break;
+        
+    // Heartbeat - Update last_seen timestamp for real-time online status
+    case 'update_heartbeat':
+    case 'heartbeat':
+        try {
+            @session_start();
+            
+            // Check if user is logged in
+            if (!isset($_SESSION['user_id'])) {
+                // Try to get emp_id from session data passed in request if session not available
+                $fallbackEmpId = $data['emp_id'] ?? null;
+                
+                if ($fallbackEmpId) {
+                    $empId = $fallbackEmpId;
+                } else {
+                    echo json_encode([
+                        "success" => false,
+                        "message" => "User not logged in (no session)"
+                    ]);
+                    break;
+                }
+            } else {
+                $empId = $_SESSION['user_id'];
+            }
+            
+            // Check if last_seen column exists
+            $checkColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'last_seen'");
+            $hasLastSeen = $checkColumn->rowCount() > 0;
+            
+            if (!$hasLastSeen) {
+                // If column doesn't exist, try to add it
+                try {
+                    $conn->query("ALTER TABLE tbl_login ADD COLUMN last_seen TIMESTAMP NULL DEFAULT NULL");
+                    $hasLastSeen = true;
+                } catch (Exception $e) {
+                    // Column might already exist or error adding it, continue
+                }
+            }
+            
+            // Also check and add status column if it doesn't exist
+            $checkStatusColumn = $conn->query("SHOW COLUMNS FROM tbl_login LIKE 'status'");
+            $hasStatus = $checkStatusColumn->rowCount() > 0;
+            
+            if (!$hasStatus) {
+                // If column doesn't exist, try to add it
+                try {
+                    $conn->query("ALTER TABLE tbl_login ADD COLUMN status VARCHAR(10) NULL DEFAULT NULL");
+                    $hasStatus = true;
+                    
+                    // Update existing records without logout_time to 'online'
+                    $conn->query("UPDATE tbl_login SET status = 'online' WHERE (logout_time IS NULL OR logout_time = '00:00:00')");
+                } catch (Exception $e) {
+                    // Column might already exist or error adding it, continue
+                }
+            }
+            
+            if ($hasLastSeen) {
+                // Find the current active login record for this employee
+                // CRITICAL: Only check records from TODAY!
+                $stmt = $conn->prepare("
+                    SELECT login_id 
+                    FROM tbl_login 
+                    WHERE emp_id = ? 
+                    AND login_date = CURDATE()
+                    AND (logout_time IS NULL OR logout_time = '00:00:00')
+                    AND (status = 'online' OR status IS NULL OR status = '')
+                    ORDER BY login_id DESC 
+                    LIMIT 1
+                ");
+                $stmt->execute([$empId]);
+                $loginRecord = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($loginRecord) {
+                    // Update last_seen timestamp and status
+                    if ($hasStatus) {
+                        $updateStmt = $conn->prepare("
+                            UPDATE tbl_login 
+                            SET last_seen = NOW(), status = 'online'
+                            WHERE login_id = ?
+                        ");
+                    } else {
+                        $updateStmt = $conn->prepare("
+                            UPDATE tbl_login 
+                            SET last_seen = NOW()
+                            WHERE login_id = ?
+                        ");
+                    }
+                    $updateStmt->execute([$loginRecord['login_id']]);
+                    
+                    echo json_encode([
+                        "success" => true,
+                        "message" => "Heartbeat updated"
+                    ]);
+                } else {
+                    // Try to find any login record without status or with empty status
+                    // CRITICAL: Only check records from TODAY!
+                    $fallbackStmt = $conn->prepare("
+                        SELECT login_id 
+                        FROM tbl_login 
+                        WHERE emp_id = ? 
+                        AND login_date = CURDATE()
+                        AND (logout_time IS NULL OR logout_time = '00:00:00')
+                        ORDER BY login_id DESC 
+                        LIMIT 1
+                    ");
+                    $fallbackStmt->execute([$empId]);
+                    $fallbackRecord = $fallbackStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($fallbackRecord) {
+                        // Update this record with last_seen and status
+                        if ($hasStatus) {
+                            $updateStmt = $conn->prepare("
+                                UPDATE tbl_login 
+                                SET last_seen = NOW(), status = 'online'
+                                WHERE login_id = ?
+                            ");
+                        } else {
+                            $updateStmt = $conn->prepare("
+                                UPDATE tbl_login 
+                                SET last_seen = NOW()
+                                WHERE login_id = ?
+                            ");
+                        }
+                        $updateStmt->execute([$fallbackRecord['login_id']]);
+                        
+                        echo json_encode([
+                            "success" => true,
+                            "message" => "Heartbeat updated (fallback)"
+                        ]);
+                    } else {
+                        echo json_encode([
+                            "success" => false,
+                            "message" => "No active login record found"
+                        ]);
+                    }
+                }
+            } else {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "last_seen column not available"
+                ]);
+            }
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Error updating heartbeat: " . $e->getMessage()
             ]);
         }
         break;

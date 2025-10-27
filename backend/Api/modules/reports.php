@@ -769,14 +769,14 @@ class ReportsModule {
                     CASE 
                         WHEN l.status = 'online' 
                              AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
-                             AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
+                             AND (l.last_seen IS NOT NULL AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120)
                         THEN 'ONLINE'
                         ELSE 'OFFLINE'
                     END as login_status,
                     CASE 
                         WHEN l.status = 'online' 
                              AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
-                             AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
+                             AND (l.last_seen IS NOT NULL AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120)
                         THEN 'LOGIN'
                         ELSE 'LOGOUT'
                     END as action,
@@ -791,7 +791,7 @@ class ReportsModule {
                     CASE 
                         WHEN l.status = 'online' 
                              AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
-                             AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
+                             AND (l.last_seen IS NOT NULL AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120)
                         THEN '🔓 Currently logged in'
                         WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00'
                         THEN CONCAT('🔒 Logged out at ', TIME_FORMAT(l.logout_time, '%h:%i %p'))
@@ -800,7 +800,7 @@ class ReportsModule {
                     CASE 
                         WHEN l.status = 'online' 
                              AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
-                             AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
+                             AND (l.last_seen IS NOT NULL AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120)
                         THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), NOW())
                         WHEN l.logout_time IS NOT NULL AND l.logout_time != '00:00:00'
                         THEN TIMESTAMPDIFF(MINUTE, CONCAT(l.login_date, ' ', l.login_time), CONCAT(COALESCE(l.logout_date, l.login_date), ' ', l.logout_time))
@@ -809,11 +809,10 @@ class ReportsModule {
                 FROM tbl_employee e
                 LEFT JOIN tbl_role r ON e.role_id = r.role_id
                 LEFT JOIN tbl_login l ON e.emp_id = l.emp_id 
-                    AND l.login_id IN (
-                        SELECT MAX(login_id) 
+                    AND l.login_id = (
+                        SELECT MAX(l2.login_id)
                         FROM tbl_login l2 
-                        WHERE l2.emp_id = e.emp_id 
-                        AND l2.login_date BETWEEN ? AND ?
+                        WHERE l2.emp_id = e.emp_id
                     )
                 LEFT JOIN tbl_pos_terminal t ON l.terminal_id = t.terminal_id
                 WHERE e.status = 'Active'
@@ -821,7 +820,7 @@ class ReportsModule {
                     CASE 
                         WHEN l.status = 'online' 
                              AND (l.logout_time IS NULL OR l.logout_time = '00:00:00')
-                             AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120
+                             AND (l.last_seen IS NOT NULL AND TIMESTAMPDIFF(SECOND, l.last_seen, NOW()) <= 120)
                         THEN 0
                         ELSE 1
                     END,
@@ -890,7 +889,7 @@ class ReportsModule {
             ");
         }
         
-        $onlineStmt->execute([$startDate, $endDate]);
+        $onlineStmt->execute([]);
         $allLogs = $onlineStmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Sort all logs by date and time
@@ -902,8 +901,11 @@ class ReportsModule {
         
         // Filter online users from all logs
         $onlineUsers = array_filter($allLogs, function($log) {
-            return $log['login_status'] === 'ONLINE';
+            return ($log['login_status'] === 'ONLINE' || $log['login_status'] === 'online');
         });
+        
+        // Re-index the array
+        $onlineUsers = array_values($onlineUsers);
         
         // Return both online users (for cards) and all logs (for detailed report)
         return [

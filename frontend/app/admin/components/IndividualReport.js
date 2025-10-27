@@ -52,6 +52,15 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       const today = now.toISOString().split('T')[0];
       const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       
+      // For login_logs, always show today only (automatic)
+      if (reportType === 'login_logs') {
+        setDateRange({
+          startDate: today,
+          endDate: today
+        });
+        return;
+      }
+      
       // Check if we need to update the date range
       setDateRange(prevRange => {
         const isTodayRange = prevRange.startDate === prevRange.endDate;
@@ -61,14 +70,6 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           // Show notification
           setAutoUpdateNotification('🕛 Date range automatically updated for new day');
           setTimeout(() => setAutoUpdateNotification(null), 5000);
-          
-          // For login logs, extend range to include yesterday to catch late-night logins
-          if (reportType === 'login_logs') {
-            return {
-              startDate: yesterday,
-              endDate: today
-            };
-          }
           
           return {
             startDate: today,
@@ -1119,16 +1120,16 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             }}
           >
             <h3 className="text-lg font-semibold mb-3" style={{ color: theme.text.primary }}>
-              {reportType === 'activity_logs' ? 'Activity Logs - Today Only' : 'Date Range'}
+              {(reportType === 'activity_logs' || reportType === 'login_logs') ? `${reportType === 'activity_logs' ? 'Activity' : 'Login'} Logs - Today Only` : 'Date Range'}
             </h3>
-            {reportType === 'activity_logs' && (
+            {(reportType === 'activity_logs' || reportType === 'login_logs') && (
               <div className="mb-3 p-3 rounded-md" style={{ backgroundColor: theme.colors.accent + '20', color: theme.colors.accent }}>
-                <p className="text-sm font-medium">📅 Activity Logs automatically show today&apos;s activities only</p>
-                <p className="text-xs mt-1">Real-time system activities from tbl_activity_log table</p>
+                <p className="text-sm font-medium">📅 {reportType === 'login_logs' ? 'Login' : 'Activity'} Logs automatically show today&apos;s activities only</p>
+                <p className="text-xs mt-1">{reportType === 'login_logs' ? 'Real-time user login activity tracking' : 'Real-time system activities from tbl_activity_log table'}</p>
               </div>
             )}
             <div className="flex gap-4 items-center">
-              {reportType !== 'activity_logs' && (
+              {reportType !== 'activity_logs' && reportType !== 'login_logs' && (
                 <>
                   <div>
                     <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
@@ -1162,11 +1163,17 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               )}
               
               <div className="text-xs" style={{ color: theme.text.secondary }}>
-                Last updated: {lastRefresh.toLocaleTimeString()}
-                {autoUpdateNotification && (
-                  <div className="mt-1 p-2 bg-green-100 border border-green-400 text-green-700 rounded text-xs">
-                    {autoUpdateNotification}
-                  </div>
+                {reportType === 'login_logs' || reportType === 'activity_logs' ? (
+                  <span>Showing data for: <strong>{dateRange.startDate}</strong></span>
+                ) : (
+                  <>
+                    <span>Last updated: {lastRefresh.toLocaleTimeString()}</span>
+                    {autoUpdateNotification && (
+                      <div className="mt-1 p-2 bg-green-100 border border-green-400 text-green-700 rounded text-xs">
+                        {autoUpdateNotification}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1317,8 +1324,8 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                   <p className="text-sm font-medium" style={{ color: theme.text.secondary }}>Currently Online</p>
                   <p className="text-2xl font-bold" style={{ color: theme.text.primary }}>
                     {Array.isArray(reportData) 
-                      ? reportData.filter(item => item.login_status === 'ONLINE').length 
-                      : (reportData.online_users?.length || 0)}
+                      ? reportData.filter(item => item.login_status === 'ONLINE' || item.login_status === 'online').length 
+                      : (Array.isArray(reportData.online_users) ? reportData.online_users.length : 0)}
                   </p>
                 </div>
               </div>

@@ -9,6 +9,8 @@ const nextConfig = {
   // Allow HTTP API calls in development (XAMPP uses HTTP by default)
   // This prevents mixed content errors when frontend is on HTTPS
   reactStrictMode: true,
+  // Reduce CSS preload warnings by optimizing font loading
+  optimizeFonts: true,
   // Disable static optimization to prevent webpack chunk issues
   output: 'standalone',
   // Simplified webpack config for better compatibility
@@ -44,6 +46,11 @@ const nextConfig = {
       ...config.optimization,
       splitChunks: false,
     };
+    
+    // Suppress CSS preload warnings
+    if (!dev) {
+      config.optimization.minimize = true;
+    }
     
     // Add module resolution fixes
     config.resolve.alias = {
