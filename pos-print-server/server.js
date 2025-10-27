@@ -27,8 +27,6 @@ function sendToPrinter(printerIP, printerPort, data) {
     socket.setTimeout(timeout);
 
     socket.on("connect", () => {
-      console.log(`✅ Connected to printer at ${printerIP}:${printerPort}`);
-      
       // Send ESC/POS initialization commands
       const escPosInit = "\x1B\x40"; // Initialize printer
       const escPosFeed = "\x1B\x64\x05"; // Feed 5 lines
@@ -39,7 +37,6 @@ function sendToPrinter(printerIP, printerPort, data) {
         if (err) {
           reject(err);
         } else {
-          console.log("📄 Data sent successfully");
           resolve();
         }
       });
@@ -55,7 +52,6 @@ function sendToPrinter(printerIP, printerPort, data) {
     });
 
     socket.on("close", () => {
-      console.log("🔌 Connection closed");
     });
 
     // Attempt to connect
@@ -73,8 +69,6 @@ app.post("/print", async (req, res) => {
 
     if (testMode) {
       // Test mode - just log without trying to print
-      console.log("🧪 TEST MODE - Print request received:");
-      console.log(text);
       res.json({ 
         success: true, 
         message: "Printed successfully (TEST MODE - no actual print)",
@@ -86,12 +80,9 @@ app.post("/print", async (req, res) => {
     if (printerIP) {
       // Send to network printer
       await sendToPrinter(printerIP, printerPort, text);
-      console.log(`✅ Printed to ${printerIP}:${printerPort}`);
       res.json({ success: true, message: "Printed successfully" });
     } else {
       // Just log if no printer IP specified
-      console.log("📄 Print request received (no printer specified):");
-      console.log(text);
       res.json({ success: true, message: "Print data received (no printer specified)" });
     }
   } catch (error) {
@@ -109,7 +100,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(9100, () => {
-  console.log("✅ Server at http://localhost:9100");
-  console.log("Ready to print! 🖨️");
 });
 

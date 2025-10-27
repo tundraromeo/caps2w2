@@ -58,8 +58,6 @@ class QZTrayIntegration {
         console.error('QZ Tray connection error:', connectError);
         throw new Error('QZ Tray is not running. Please start QZ Tray application.');
       }
-      
-      console.log('QZ Tray connected successfully');
       return true;
     } catch (error) {
       const errorMessage = error?.message || error?.toString() || 'Unknown error';
@@ -78,7 +76,6 @@ class QZTrayIntegration {
 
     // Check if qz is already available (maybe loaded by QZ Tray app itself)
     if (typeof qz !== 'undefined') {
-      console.log('QZ Tray library already loaded');
       return;
     }
 
@@ -93,13 +90,11 @@ class QZTrayIntegration {
     
     for (const src of localSources) {
       try {
-        console.log(`Attempting to load QZ Tray from: ${src}`);
         await this.loadScript(src);
         
         // Wait for qz object to be available
         for (let i = 0; i < 10; i++) {
           if (typeof qz !== 'undefined') {
-            console.log('QZ Tray library loaded successfully from:', src);
             return;
           }
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -151,7 +146,6 @@ class QZTrayIntegration {
       }
       
       const printers = await this.qz.printers.get();
-      console.log('Available printers:', printers);
       return printers;
     } catch (error) {
       console.error('Failed to get printers:', error);
@@ -163,7 +157,6 @@ class QZTrayIntegration {
   // Set default printer
   setPrinter(printerName) {
     this.printerName = printerName;
-    console.log('Printer set to:', printerName);
   }
 
   // Print receipt using QZ Tray
@@ -212,8 +205,6 @@ class QZTrayIntegration {
 
       // Send to printer
       await this.qz.print(config, printJob);
-      
-      console.log('Receipt printed successfully via QZ Tray');
       return {
         success: true,
         message: 'Receipt printed successfully',
@@ -258,7 +249,6 @@ class QZTrayIntegration {
     if (this.isConnected && this.qz) {
       this.qz.websocket.disconnect();
       this.isConnected = false;
-      console.log('QZ Tray disconnected');
     }
   }
 }

@@ -57,8 +57,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         const isTodayRange = prevRange.startDate === prevRange.endDate;
         
         if (isTodayRange && prevRange.endDate !== today) {
-          console.log('🕛 Midnight detected - updating date range for new day');
-          
+
           // Show notification
           setAutoUpdateNotification('🕛 Date range automatically updated for new day');
           setTimeout(() => setAutoUpdateNotification(null), 5000);
@@ -111,13 +110,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       };
       
       // Debug logging
-      console.log('🔍 Fetching report data:', {
-        reportType,
-        API_URL: API_BASE_URL,
-        requestData,
-        dateRange: `${dateRange.startDate} to ${dateRange.endDate}`
-      });
-      
+
       let res;
       
       // Try axios first
@@ -160,18 +153,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         }
         
         // Debug logging
-        console.log(`✅ ${reportType} report data received:`, {
-          dataCount: Array.isArray(processedData) ? processedData.length : (processedData.all_logs?.length || 0),
-          hasNewData: res.data.has_new_data,
-          isAutoRefresh,
-          dateRange: `${dateRange.startDate} to ${dateRange.endDate}`,
-          sampleData: Array.isArray(processedData) ? (processedData[0] || 'No data') : processedData,
-          loginLogsStructure: reportType === 'login_logs' ? {
-            onlineUsers: newData.online_users?.length || 0,
-            allLogs: newData.all_logs?.length || 0
-          } : null
-        });
-        
+
         // Check if there's new data available (for auto-refresh)
         if (isAutoRefresh && res.data.has_new_data) {
           setNewDataAvailable(true);
@@ -179,7 +161,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
           
           // Show notification for new data
           if (reportType === 'sales') {
-            console.log('🔄 New sales data available!');
+
             // Show browser notification if permission granted
             if (Notification.permission === 'granted') {
               new Notification('New Sales Transaction', {
@@ -188,7 +170,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               });
             }
           } else if (reportType === 'cashier_performance') {
-            console.log('👤 New cashier performance data available!');
+
             if (Notification.permission === 'granted') {
               new Notification('Cashier Activity Update', {
                 body: 'New cashier performance data is available',
@@ -196,7 +178,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
               });
             }
           } else if (reportType === 'login_logs') {
-            console.log('🔐 New login activity detected!');
+
             if (Notification.permission === 'granted') {
               new Notification('Login Activity Update', {
                 body: 'New login/logout activity has been detected',
@@ -230,7 +212,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       
       // Retry logic for network errors
       if (retryCount < 2 && (error.message === 'Network Error' || error.message.includes('fetch'))) {
-        console.log(`Retrying... attempt ${retryCount + 1}`);
+
         setTimeout(() => {
           fetchReportData(retryCount + 1);
         }, 2000);
@@ -566,9 +548,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       // Save PDF
       const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
       pdf.save(fileName);
-      
-      console.log(`PDF downloaded successfully: ${fileName}`);
-      
+
     } catch (error) {
       console.error('Error generating PDF:', error);
       throw error;
@@ -946,13 +926,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
         
         // Debug logging for cashier performance reports
         if (reportType === 'cashier_performance') {
-          console.log('Role formatting debug:', {
-            columnKey,
-            column,
-            role,
-            rowKeys: Object.keys(row),
-            rowData: row
-          });
+
         }
         
         if (role === 'admin') return '👑 Administrator';

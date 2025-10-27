@@ -619,7 +619,7 @@ function updatePOStatus($conn) {
             throw new Exception("Purchase order with ID $purchaseHeaderId not found");
         }
         
-        error_log("Updating PO $purchaseHeaderId from status '{$poData['status']}' to '$status'");
+        // error_log("Updating PO $purchaseHeaderId from status '{$poData['status']}' to '$status'");
         
         // Update PO status (handle NULL status case)
         $query = "UPDATE tbl_purchase_order_header SET status = ? WHERE purchase_header_id = ?";
@@ -642,16 +642,16 @@ function updatePOStatus($conn) {
         }
         
         if ($newStatus !== $status) {
-            error_log("Status update mismatch: Expected '$status' but got '$newStatus' for PO $purchaseHeaderId");
+            // error_log("Status update mismatch: Expected '$status' but got '$newStatus' for PO $purchaseHeaderId");
             // For cancelled status, don't throw error if it's empty - just log it
             if ($status === 'cancelled' && $newStatus === '') {
-                error_log("Allowing cancelled status update even though database returned empty string");
+                // error_log("Allowing cancelled status update even though database returned empty string");
             } else {
                 throw new Exception("Status update failed. Expected '$status' but got '$newStatus'");
             }
         }
         
-        error_log("Successfully updated PO $purchaseHeaderId to status '$status'");
+        // error_log("Successfully updated PO $purchaseHeaderId to status '$status'");
         
         // If status is 'received', update all items' item_status to 'received' and create receiving record
         if ($status === 'received') {
@@ -663,7 +663,7 @@ function updatePOStatus($conn) {
                 $updateItemsQuery = "UPDATE tbl_purchase_order_dtl SET item_status = 'received' WHERE purchase_header_id = ?";
                 $updateItemsStmt = $conn->prepare($updateItemsQuery);
                 $updateItemsStmt->execute([$purchaseHeaderId]);
-                error_log("Updated all items in PO $purchaseHeaderId to 'received' status");
+                // error_log("Updated all items in PO $purchaseHeaderId to 'received' status");
             }
             
             // Check if receiving record already exists

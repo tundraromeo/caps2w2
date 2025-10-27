@@ -1239,3 +1239,5 @@ function handle_add_product($conn, $data) {
 }
 
 ?>
+
+

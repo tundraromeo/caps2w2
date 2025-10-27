@@ -165,10 +165,6 @@ function Dashboard() {
     try {
       setLoading(true);
       setError(null);
-      
-      console.log('🚀 Starting comprehensive dashboard data fetch...');
-      console.log('📍 Filters:', { selectedProduct, selectedLocation, selectedTimePeriod });
-      
       // Update date range display based on selected time period
       setDateRangeDisplay(calculateDateRange(selectedTimePeriod));
       
@@ -197,14 +193,6 @@ function Dashboard() {
       
       // Log results
       const [warehouseResult, chartResult, convenienceResult, pharmacyResult, transferResult] = results;
-      console.log('📊 Data fetch results:', {
-        warehouse: warehouseResult.status,
-        charts: chartResult.status,
-        convenience: convenienceResult.status,
-        pharmacy: pharmacyResult.status,
-        transfers: transferResult.status
-      });
-      
       // Check for failures
       const failures = results.filter(r => r.status === 'rejected');
       if (failures.length > 0) {
@@ -213,21 +201,6 @@ function Dashboard() {
           console.error(`Failed fetch ${index}:`, failure.reason);
         });
       }
-      
-      console.log('✅ Dashboard data fetch completed');
-      console.log('📈 Final data state:', {
-        warehouseProducts: warehouseData.totalProducts,
-        convenienceProducts: convenienceKPIs.totalProducts,
-        pharmacyProducts: pharmacyKPIs.totalProducts,
-        transfers: transferKPIs.totalTransfers,
-        chartDataPoints: {
-          topProducts: topProductsByQuantity.length,
-          categoryDistribution: stockDistributionByCategory.length,
-          fastMoving: fastMovingItemsTrend.length,
-          criticalAlerts: criticalStockAlerts.length
-        }
-      });
-      
     } catch (error) {
       console.error('❌ Critical error fetching all data:', error);
       setError(`Failed to load dashboard data: ${error.message}`);
@@ -256,18 +229,12 @@ function Dashboard() {
 
   const fetchWarehouseData = async () => {
     try {
-      console.log('🏭 Fetching comprehensive warehouse data...');
-      console.log('   Filters:', { product: selectedProduct, location: selectedLocation, timePeriod: selectedTimePeriod });
-      
       // Fetch main warehouse KPIs
       const warehouseResponse = await apiHandler.getWarehouseKPIs({
         product: selectedProduct,
         location: selectedLocation,
         timePeriod: selectedTimePeriod
       });
-      
-      console.log('📊 Warehouse KPIs response:', warehouseResponse);
-      
       if (warehouseResponse && warehouseResponse.success) {
         const data = warehouseResponse.data;
         
@@ -283,8 +250,6 @@ function Dashboard() {
         };
         
         setWarehouseData(parsedData);
-        console.log('✅ Warehouse KPIs set:', parsedData);
-        
         // Update debug info
         setDebugInfo(prev => ({
           ...prev,
@@ -296,8 +261,6 @@ function Dashboard() {
         // Fallback: Get data directly from products table
         try {
           const productsResponse = await apiHandler.callAPI('backend.php', 'get_products', {});
-          console.log('📦 Fallback products response:', productsResponse);
-          
           if (productsResponse && productsResponse.success) {
             const products = productsResponse.data || [];
             const now = new Date();
@@ -319,7 +282,6 @@ function Dashboard() {
             };
             
             setWarehouseData(calculatedData);
-            console.log('✅ Warehouse data calculated from products:', calculatedData);
           }
         } catch (fallbackError) {
           console.error('❌ Fallback warehouse data fetch failed:', fallbackError);
@@ -348,7 +310,6 @@ function Dashboard() {
       if (supplyProductResult.status === 'fulfilled' && supplyProductResult.value) {
         const data = supplyProductResult.value.success ? supplyProductResult.value.data : supplyProductResult.value;
         setSupplyByProduct(Array.isArray(data) ? data : []);
-        console.log('📈 Supply by product data:', Array.isArray(data) ? data.length : 0, 'items');
       } else {
         console.warn('⚠️ Supply by product failed:', supplyProductResult.reason);
         setSupplyByProduct([]);
@@ -358,7 +319,6 @@ function Dashboard() {
       if (supplyLocationResult.status === 'fulfilled' && supplyLocationResult.value) {
         const data = supplyLocationResult.value.success ? supplyLocationResult.value.data : supplyLocationResult.value;
         setSupplyByLocation(Array.isArray(data) ? data : []);
-        console.log('📍 Supply by location data:', Array.isArray(data) ? data.length : 0, 'items');
       } else {
         console.warn('⚠️ Supply by location failed:', supplyLocationResult.reason);
         setSupplyByLocation([]);
@@ -376,9 +336,6 @@ function Dashboard() {
 
   const fetchChartData = async () => {
     try {
-      console.log('📊 Fetching comprehensive chart data...');
-      console.log('   Filters:', { product: selectedProduct, location: selectedLocation, timePeriod: selectedTimePeriod });
-      
       // Fetch all chart data in parallel
       const [topProductsResult, locationDistributionResult, fastMovingResult, criticalStockResult] = await Promise.allSettled([
         apiHandler.getTopProductsByQuantity({
@@ -412,7 +369,6 @@ function Dashboard() {
         let processedData = Array.isArray(data) ? data : [];
         
         if (processedData.length === 0) {
-          console.log('📊 No top products data from API, using sample data...');
           processedData = [
             { product: 'Coca Cola 1.5L', quantity: 450 },
             { product: 'Sprite 1.5L', quantity: 380 },
@@ -428,7 +384,6 @@ function Dashboard() {
         }
         
         setTopProductsByQuantity(processedData);
-        console.log('✅ Top products loaded:', processedData.length, 'items');
       } else {
         console.warn('⚠️ Top products failed, using sample data:', topProductsResult.reason || topProductsResult.value?.message);
         
@@ -447,7 +402,6 @@ function Dashboard() {
         ];
         
         setTopProductsByQuantity(sampleData);
-        console.log('✅ Using sample top products data:', sampleData.length, 'items');
       }
       
       // Process location distribution (warehouse, convenience, pharmacy)
@@ -458,7 +412,6 @@ function Dashboard() {
         let processedData = Array.isArray(data) ? data : [];
         
         if (processedData.length === 0) {
-          console.log('📊 No location data from API, creating sample data...');
           processedData = [
             { location: 'Warehouse', onhand: 1250 },
             { location: 'Convenience Store', onhand: 890 },
@@ -467,14 +420,9 @@ function Dashboard() {
         }
         
         setStockDistributionByCategory(processedData);
-        console.log('✅ Location distribution loaded:', processedData.length, 'locations');
-        
         if (processedData.length > 0) {
-          console.log('   Locations found:', processedData.map(d => `${d.location} (${d.onhand})`).join(', '));
         }
       } else {
-        console.warn('⚠️ Location distribution failed, using fallback data:', locationDistributionResult.reason || locationDistributionResult.value?.message);
-        
         // Fallback data when API fails
         const fallbackData = [
           { location: 'Warehouse', onhand: 1250 },
@@ -483,7 +431,6 @@ function Dashboard() {
         ];
         
         setStockDistributionByCategory(fallbackData);
-        console.log('✅ Using fallback location data:', fallbackData);
       }
       
       // Process fast-moving items
@@ -500,10 +447,7 @@ function Dashboard() {
           }));
           
           setFastMovingItemsTrend(processedData);
-          console.log('✅ Fast-moving items loaded:', processedData.length, 'data points');
-          
           if (fastMovingResult.value.metadata) {
-            console.log('   Metadata:', fastMovingResult.value.metadata);
           }
         } else {
           console.warn('⚠️ Fast-moving items: Empty data received, using sample data');
@@ -523,7 +467,6 @@ function Dashboard() {
           ];
           
           setFastMovingItemsTrend(sampleData);
-          console.log('✅ Using sample fast-moving data:', sampleData.length, 'items');
         }
       } else {
         console.warn('⚠️ Fast-moving items failed, using sample data:', fastMovingResult.reason || fastMovingResult.value?.message);
@@ -543,7 +486,6 @@ function Dashboard() {
         ];
         
         setFastMovingItemsTrend(sampleData);
-        console.log('✅ Using fallback sample data for fast-moving items');
       }
       
       // Process critical stock alerts
@@ -554,7 +496,6 @@ function Dashboard() {
         let processedData = Array.isArray(data) ? data : [];
         
         if (processedData.length === 0) {
-          console.log('⚠️ No critical stock alerts, using sample data...');
           processedData = [
             { product: 'Lava Cake', quantity: 0 },
             { product: 'Hot&Spicy Ketchup', quantity: 8 },
@@ -565,10 +506,7 @@ function Dashboard() {
         }
         
         setCriticalStockAlerts(processedData);
-        console.log('✅ Critical stock alerts loaded:', processedData.length, 'alerts');
-        
         if (processedData.length > 0) {
-          console.log('   Critical items:', processedData.map(d => `${d.product} (${d.quantity})`).join(', '));
         }
       } else {
         console.warn('⚠️ Critical stock alerts failed, using sample data:', criticalStockResult.reason || criticalStockResult.value?.message);
@@ -583,7 +521,6 @@ function Dashboard() {
         ];
         
         setCriticalStockAlerts(sampleData);
-        console.log('✅ Using sample critical stock alerts:', sampleData.length, 'items');
       }
       
       // Update debug info
@@ -591,9 +528,6 @@ function Dashboard() {
         ...prev,
         dataSources: { ...prev.dataSources, charts: 'success' }
       }));
-      
-      console.log('✅ Chart data fetch completed');
-
     } catch (error) {
       console.error('❌ Critical error in fetchChartData:', error);
       setDebugInfo(prev => ({
@@ -607,8 +541,6 @@ function Dashboard() {
   // Fetch Convenience Store KPIs
   const fetchConvenienceKPIs = async () => {
     try {
-      console.log('🛒 Fetching convenience store KPIs...');
-      
       // Use the dedicated convenience store API
       const prodRes = await apiHandler.getConvenienceProductsFIFO({
         location_name: 'convenience',
@@ -616,13 +548,8 @@ function Dashboard() {
         category: 'all',
         product_type: 'all'
       });
-      
-      console.log('📦 Convenience products response:', prodRes);
-      
       if (prodRes && prodRes.success) {
         const products = prodRes.data || [];
-        console.log('📊 Convenience products count:', products.length);
-        
         // Calculate KPIs with better error handling
         const totalProducts = products.length;
         const lowStock = products.filter(p => {
@@ -636,14 +563,6 @@ function Dashboard() {
           thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
           return expiryDate <= thirtyDaysFromNow && expiryDate >= new Date();
         }).length;
-        
-        console.log('📈 Convenience KPIs calculated:', { 
-          totalProducts, 
-          lowStock, 
-          expiringSoon,
-          sampleProduct: products[0] || 'No products'
-        });
-        
         setConvenienceKPIs({
           totalProducts,
           lowStock,
@@ -660,7 +579,6 @@ function Dashboard() {
         
         // Try fallback: get all products and filter for convenience
         try {
-          console.log('🔄 Trying fallback method for convenience store...');
           const allProductsRes = await apiHandler.callAPI('backend.php', 'get_products', {});
           
           if (allProductsRes && allProductsRes.success) {
@@ -668,9 +586,6 @@ function Dashboard() {
             const convenienceProducts = allProducts.filter(p => 
               p.location_name && p.location_name.toLowerCase().includes('convenience')
             );
-            
-            console.log('📊 Fallback convenience products found:', convenienceProducts.length);
-            
             const totalProducts = convenienceProducts.length;
             const lowStock = convenienceProducts.filter(p => {
               const qty = parseInt(p.quantity) || 0;
@@ -689,8 +604,6 @@ function Dashboard() {
               lowStock,
               expiringSoon
             });
-            
-            console.log('✅ Fallback convenience KPIs set:', { totalProducts, lowStock, expiringSoon });
           }
         } catch (fallbackError) {
           console.error('❌ Fallback convenience fetch failed:', fallbackError);
@@ -706,8 +619,6 @@ function Dashboard() {
   // Fetch Pharmacy KPIs with comprehensive database access
   const fetchPharmacyKPIs = async () => {
     try {
-      console.log('💊 Fetching pharmacy KPIs using fixed transfer-based API...');
-      
       // Use the fixed pharmacy API that works with transfer-based system
       const fixedPharmacyResult = await apiHandler.getPharmacyProductsFixed({
         search: '',
@@ -721,8 +632,6 @@ function Dashboard() {
       if (fixedPharmacyResult.success && fixedPharmacyResult.data) {
         pharmacyProducts = fixedPharmacyResult.data || [];
         dataSource = 'fixed_pharmacy_api';
-        console.log('✅ Fixed pharmacy API data loaded:', pharmacyProducts.length, 'products');
-        console.log('📊 Source breakdown:', fixedPharmacyResult.source_breakdown);
       } else {
         console.warn('⚠️ Fixed pharmacy API failed:', fixedPharmacyResult.message);
         
@@ -734,16 +643,8 @@ function Dashboard() {
             p.location_name && p.location_name.toLowerCase().includes('pharmacy')
           );
           dataSource = 'all_products_fallback';
-          console.log('✅ All products fallback loaded:', pharmacyProducts.length, 'pharmacy products');
         }
       }
-      
-      console.log('📊 Pharmacy products from database:', {
-        count: pharmacyProducts.length,
-        source: dataSource,
-        sampleProduct: pharmacyProducts[0] || 'No products found'
-      });
-      
       if (pharmacyProducts.length > 0) {
         // Calculate comprehensive KPIs
         const totalProducts = pharmacyProducts.length;
@@ -773,17 +674,6 @@ function Dashboard() {
         
         const categories = [...new Set(pharmacyProducts.map(p => p.category_name).filter(Boolean))];
         const suppliers = [...new Set(pharmacyProducts.map(p => p.supplier_name).filter(Boolean))];
-        
-        console.log('📈 Comprehensive Pharmacy KPIs calculated:', { 
-          totalProducts, 
-          lowStock, 
-          expiringSoon,
-          totalValue: `₱${totalValue.toLocaleString()}`,
-          categories: categories.length,
-          suppliers: suppliers.length,
-          dataSource
-        });
-        
         setPharmacyKPIs({
           totalProducts,
           lowStock,
@@ -823,12 +713,7 @@ function Dashboard() {
   // Fetch Transfer KPIs with improved error handling
   const fetchTransferKPIs = async () => {
     try {
-      console.log('🚚 Fetching transfer KPIs...');
-      
       const res = await apiHandler.getTransfers();
-      
-      console.log('📦 Transfer response:', res);
-      
       // Handle network errors gracefully
       if (res && res.error === 'NETWORK_ERROR') {
         console.warn('⚠️ Network error fetching transfer KPIs, using fallback data');
@@ -852,9 +737,6 @@ function Dashboard() {
             t.status === 'in_progress' ||
             (t.status === '' || t.status === null) // Some transfers might have empty status
           ).length;
-          
-          console.log('📈 Transfer KPIs:', { totalTransfers, activeTransfers });
-          
           setTransferKPIs({
             totalTransfers,
             activeTransfers
@@ -964,12 +846,6 @@ function Dashboard() {
     }
 
     // Debug logging
-    console.log('📈 Fast Moving Trend Data:', {
-      dataLength: data.length,
-      sampleData: data.slice(0, 3),
-      dataStructure: data.length > 0 ? Object.keys(data[0]) : []
-    });
-
     // Group data by product to show trends
     const productGroups = {};
     data.forEach(item => {
@@ -1002,16 +878,6 @@ function Dashboard() {
       .slice(0, 5);
 
     const maxMovement = Math.max(...topProducts.map(p => p.totalMovement));
-
-    console.log('📈 Processed Top Products:', {
-      topProducts: topProducts.map(p => ({
-        product: p.product,
-        totalMovement: p.totalMovement,
-        itemCount: p.items.length,
-        months: p.items.map(i => i.month)
-      }))
-    });
-
     return (
       <div className="p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
         <div className="flex items-center justify-between mb-3">
@@ -1172,17 +1038,6 @@ function Dashboard() {
     }, 0);
     
     // Debug logging
-    console.log('📊 Pie Chart Data:', {
-      title,
-      dataLength: data.length,
-      totalQuantity,
-      dataItems: data.map(d => ({
-        name: d.location || d.category || d.category_name,
-        quantity: d.onhand || d.quantity || d.total_quantity,
-        parsed: parseInt(d.onhand) || parseInt(d.quantity) || parseInt(d.total_quantity) || 0
-      }))
-    });
-    
     return (
       <div className="p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
         <h3 className="text-sm font-semibold mb-3" style={{ color: theme.text.primary }}>{title}</h3>

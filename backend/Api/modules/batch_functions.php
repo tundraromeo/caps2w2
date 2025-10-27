@@ -337,19 +337,19 @@ function createTransferBatchDetailsTable($conn) {
         try {
             $conn->exec("ALTER TABLE tbl_transfer_batch_details ADD COLUMN product_id int(11) NOT NULL AFTER id");
             $conn->exec("ALTER TABLE tbl_transfer_batch_details ADD KEY product_id (product_id)");
-            error_log("Added product_id column to tbl_transfer_batch_details table");
+            // error_log("Added product_id column to tbl_transfer_batch_details table");
         } catch (Exception $e) {
             // Column might already exist, ignore error
-            error_log("Product_id column addition: " . $e->getMessage());
+            // error_log("Product_id column addition: " . $e->getMessage());
         }
         
         // Remove transfer_id column from batch details table (not needed since batch details should be independent)
         try {
             $conn->exec("ALTER TABLE tbl_transfer_batch_details DROP COLUMN transfer_id");
-            error_log("Removed transfer_id column from tbl_transfer_batch_details table");
+            // error_log("Removed transfer_id column from tbl_transfer_batch_details table");
         } catch (Exception $e) {
             // Column might already be dropped, ignore error
-            error_log("Transfer_id column removal: " . $e->getMessage());
+            // error_log("Transfer_id column removal: " . $e->getMessage());
         }
         
         // Populate sample batch details for existing transfers
@@ -951,19 +951,18 @@ function add_batch_entry($conn, $data) {
         ");
         $updateStmt->execute([$quantity, $product_id]);
         
-        // Log stock movement
+        // Log stock movement (srp is stored in tbl_fifo_stock, not in tbl_stock_movements)
         $logStmt = $conn->prepare("
             INSERT INTO tbl_stock_movements 
-            (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
+            (product_id, batch_id, movement_type, quantity, remaining_quantity, 
              expiration_date, reference_no, notes, created_by)
-            VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?)
         ");
         $logStmt->execute([
             $product_id,
             $batch_id,
             $quantity,
             $quantity,
-            $srp,
             $expiration_date,
             $batch_reference,
             "Batch entry added",
@@ -1007,7 +1006,7 @@ function consume_stock_fifo($conn, $data) {
         
         // Get available batches in FIFO order (oldest first)
         $batchStmt = $conn->prepare("
-            SELECT batch_id, batch_reference, available_quantity, unit_cost, expiration_date
+            SELECT batch_id, batch_reference, available_quantity, srp, expiration_date
             FROM tbl_fifo_stock 
             WHERE product_id = ? AND available_quantity > 0
             ORDER BY expiration_date ASC, created_at ASC
@@ -1050,19 +1049,18 @@ function consume_stock_fifo($conn, $data) {
             ");
             $updateBatchStmt->execute([$new_available, $batch['batch_id']]);
             
-            // Log stock movement
+            // Log stock movement (srp is stored in tbl_fifo_stock, not in tbl_stock_movements)
             $logStmt = $conn->prepare("
                 INSERT INTO tbl_stock_movements 
-                (product_id, batch_id, movement_type, quantity, remaining_quantity, srp, 
+                (product_id, batch_id, movement_type, quantity, remaining_quantity, 
                  expiration_date, reference_no, notes, created_by)
-                VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, 'OUT', ?, ?, ?, ?, ?, ?)
             ");
             $logStmt->execute([
                 $product_id,
                 $batch['batch_id'],
                 $consume_from_batch,
                 $new_available,
-                $batch['srp'],
                 $batch['expiration_date'],
                 $reference_no,
                 $notes ?: "FIFO consumption",
@@ -1301,3 +1299,5 @@ function create_transfer_batch_details_table($conn, $data) {
     }
 }
 ?>
+
+

@@ -246,3 +246,5 @@ function handle_update_employee_profile($conn, $data) {
         echo json_encode(["success" => false, "message" => "Database error: " . $e->getMessage()]);
     }
 }
+
+

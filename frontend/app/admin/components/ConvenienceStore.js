@@ -140,24 +140,18 @@ function ConvenienceStore() {
       
       // Here you could trigger an API call to create purchase orders
       // or send notifications to suppliers
-      console.log("Auto-reorder triggered for products:", lowStockProducts);
     }
   }
 
   // Load convenience store location ID
   const loadConvenienceLocation = async () => {
     try {
-      console.log("🔍 Loading locations...");
       const response = await handleApiCall("get_locations");
-      console.log("📍 Locations API Response:", response);
-      
       if (response.success && Array.isArray(response.data)) {
-        console.log("📍 All Locations:", response.data);
         const convenienceLocation = response.data.find(loc => 
           loc.location_name.toLowerCase().includes('convenience')
         );
         if (convenienceLocation) {
-          console.log("📍 Found convenience location:", convenienceLocation);
           setConvenienceLocationId(convenienceLocation.location_id);
         } else {
           console.warn("⚠️ No convenience store location found");
@@ -180,14 +174,11 @@ function ConvenienceStore() {
     
     setLoading(true);
     try {
-      console.log("🔄 Loading convenience store products...");
-      
       // First sync transferred products to ensure proper pricing
       try {
         await handleApiCall("sync_transferred_products", {
           location_name: "convenience"
         });
-        console.log("✅ Synced transferred products for pricing");
       } catch (syncError) {
         console.warn("⚠️ Sync failed, continuing with load:", syncError);
       }
@@ -199,32 +190,14 @@ function ConvenienceStore() {
         category: selectedCategory,
         product_type: selectedProductType
       });
-      
-      console.log("📦 API Response:", response);
-      console.log("🔍 Convenience Location ID:", convenienceLocationId);
-      
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ Loaded convenience store products:", response.data.length);
-        console.log("📋 Raw Products Data:", response.data);
-        
         // Filter out archived products
         const activeProducts = response.data.filter(
           (product) => (product.status || "").toLowerCase() !== "archived"
         );
-        console.log("✅ Active convenience store products after filtering:", activeProducts.length);
-        console.log("📋 Products:", activeProducts.map(p => `${p.product_name} (${p.quantity}) - ${p.product_type}`));
-        
         // Debug SRP fields for first product
         if (activeProducts.length > 0) {
           const firstProduct = activeProducts[0];
-          console.log("🔍 SRP Debug for first product:", {
-            product_name: firstProduct.product_name,
-            srp: firstProduct.srp,
-            first_batch_srp: firstProduct.first_batch_srp,
-            unit_price: firstProduct.unit_price,
-            transfer_srp: firstProduct.transfer_srp,
-            allFields: Object.keys(firstProduct)
-          });
         }
         
         setProducts(activeProducts);
@@ -237,16 +210,11 @@ function ConvenienceStore() {
         const fallbackResponse = await handleApiCall("get_products_by_location_name", {
           location_name: "convenience"
         });
-        
-        console.log("📦 Fallback API Response:", fallbackResponse);
-        
         if (fallbackResponse.success && Array.isArray(fallbackResponse.data)) {
-          console.log("✅ Loaded convenience store products (fallback):", fallbackResponse.data.length);
           // Filter out archived products
           const activeProducts = fallbackResponse.data.filter(
             (product) => (product.status || "").toLowerCase() !== "archived"
           );
-          console.log("✅ Active convenience store products after filtering (fallback):", activeProducts.length);
           setProducts(activeProducts);
           calculateNotifications(activeProducts);
         } else {
@@ -284,7 +252,6 @@ function ConvenienceStore() {
   useEffect(() => {
     const interval = setInterval(() => {
       if (convenienceLocationId && !loading) {
-        console.log("🔄 Auto-refreshing convenience store products...");
         const previousCount = products.length;
         const previousExpiringCount = notifications.expiring.length;
         
@@ -328,8 +295,6 @@ function ConvenienceStore() {
       
       // Check if this refresh is for Convenience Store
       if (location && location.toLowerCase().includes('convenience')) {
-        console.log('🔄 Inventory refresh triggered for Convenience Store:', { action, message, transferDetailsUpdated });
-        
         // Show toast notification with transfer details info
         let notificationMessage = `🔄 ${message} - Refreshing inventory...`;
         if (transferDetailsUpdated) {
@@ -403,73 +368,42 @@ function ConvenienceStore() {
   // Load batch data for a product from tbl_batch_transfer_details
   const loadBatchData = async (productId) => {
     setLoadingBatch(true);
-    console.log("🚀 Starting loadBatchData for product:", productId);
-    console.log("🚀 Convenience location ID:", convenienceLocationId);
-    
     try {
-      console.log("🔍 Loading batch transfer details for product:", productId);
-      console.log("🔍 Convenience location ID:", convenienceLocationId);
-      
       // Get batch transfer details from tbl_batch_transfer_details
       const batchResponse = await handleApiCall("get_convenience_batch_details", {
         location_id: convenienceLocationId,
         product_id: productId
       });
-      
-      console.log("🔍 Raw Batch Transfer Response:", batchResponse);
-      console.log("🔍 Response Success:", batchResponse?.success);
-      console.log("🔍 Response Data:", batchResponse?.data);
-      
       if (batchResponse.success && batchResponse.data) {
         // Handle both data structures - direct array or object with batch_details
         const batchDetails = Array.isArray(batchResponse.data) 
           ? batchResponse.data 
           : batchResponse.data.batch_details || [];
         const summary = batchResponse.data.summary || {};
-        
-        console.log("🔍 Batch Transfer Data:", batchResponse.data);
-        console.log("🔍 Batch Details:", batchDetails);
-        console.log("🔍 Summary:", summary);
-        
         if (batchDetails.length > 0) {
-          console.log("✅ Found batch transfer details from tbl_batch_transfer_details");
-          console.log("✅ Setting batchData to:", batchDetails);
           // Update the modal with summary data
           updateBatchSummary(summary);
           // Set individual batch data
           setBatchData(batchDetails);
         } else {
-          console.log("⚠️ No batch transfer details found, trying FIFO fallback");
-          console.log("⚠️ batchDetails was empty:", batchDetails);
           // Fallback to FIFO stock if no batch details found
           const fifoResponse = await handleApiCall("get_fifo_stock", {
             product_id: productId
           });
-          
-          console.log("🔍 FIFO Response:", fifoResponse);
-          
           if (fifoResponse.success && Array.isArray(fifoResponse.data)) {
-            console.log("✅ Using FIFO data as fallback");
             setBatchData(fifoResponse.data);
           } else {
-            console.log("❌ No FIFO data either");
             setBatchData([]);
           }
         }
       } else {
-        console.log("❌ Batch transfer API failed, trying FIFO fallback");
         // Fallback to FIFO stock if no batch details found
         const fifoResponse = await handleApiCall("get_fifo_stock", {
           product_id: productId
         });
-        
-        console.log("🔍 FIFO Response:", fifoResponse);
-        
         if (fifoResponse.success && Array.isArray(fifoResponse.data)) {
-          console.log("✅ Using FIFO data as fallback");
           setBatchData(fifoResponse.data);
         } else {
-          console.log("❌ No FIFO data either");
           setBatchData([]);
         }
       }
@@ -478,7 +412,6 @@ function ConvenienceStore() {
       console.error("❌ Error details:", error.message);
       setBatchData([]);
     } finally {
-      console.log("🏁 Finished loadBatchData, setting loadingBatch to false");
       setLoadingBatch(false);
     }
   };
@@ -527,22 +460,13 @@ function ConvenienceStore() {
   const loadTransferHistory = async (productId) => {
     setLoadingBatch(true);
     try {
-      console.log("Loading transfer history for product ID:", productId);
       const response = await handleApiCall("get_convenience_batch_details", {
         location_id: convenienceLocationId,
         product_id: productId
       });
-
-      console.log("Transfer history response:", response);
-      
       if (response.success && response.data) {
-        console.log("Transfer data received:", response.data);
         const batchDetails = response.data.batch_details || [];
         const summary = response.data.summary || {};
-        
-        console.log("Batch details extracted:", batchDetails);
-        console.log("Summary extracted:", summary);
-        
         // Update the modal with summary data
         updateBatchSummary(summary);
         
@@ -567,19 +491,16 @@ function ConvenienceStore() {
 
   const updateBatchSummary = (summary) => {
     // This function is now handled by React state instead of direct DOM manipulation
-    console.log("Updating batch summary:", summary);
     // Summary data will be displayed through React state
   };
 
   const displayTransferHistory = (transferLogs) => {
     // This function is now handled by React state instead of direct DOM manipulation
-    console.log("Displaying transfer history:", transferLogs);
     setQuantityHistoryData(transferLogs || []);
   };
 
   const displayBatchDetails = (batchDetails) => {
     // This function is now handled by React state instead of direct DOM manipulation
-    console.log("Displaying batch details:", batchDetails);
     setBatchData(batchDetails || []);
     setQuantityHistoryData(batchDetails || []);
   };
@@ -590,16 +511,10 @@ function ConvenienceStore() {
     
     setLoadingBatchTransfers(true);
     try {
-      console.log("🔄 Loading batch transfers for convenience store...");
-      
       const response = await handleApiCall("get_batch_transfers_by_location", {
         location_id: convenienceLocationId
       });
-      
-      console.log("📦 Batch Transfers Response:", response);
-      
       if (response.success && response.data) {
-        console.log("✅ Loaded batch transfers:", response.data.batch_transfers.length);
         setBatchTransferData(response.data.batch_transfers);
         setBatchTransferSummary(response.data.summary);
       } else {
@@ -1202,10 +1117,6 @@ function ConvenienceStore() {
 
       {/* Batch Details Modal */}
       {showBatchModal && selectedProductForBatch && (() => {
-        console.log("🎭 Rendering Batch Modal");
-        console.log("🎭 batchData:", batchData);
-        console.log("🎭 loadingBatch:", loadingBatch);
-        console.log("🎭 selectedProductForBatch:", selectedProductForBatch);
         return true;
       })() && (
         <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50" style={{ zIndex: 9999 }}>

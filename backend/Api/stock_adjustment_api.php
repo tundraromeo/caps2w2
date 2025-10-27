@@ -169,14 +169,14 @@ function handle_get_products_for_stock_adjustment($conn, $data) {
         $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Debug logging
-        error_log("Stock Adjustment API - Location ID: " . $location_id);
-        error_log("Stock Adjustment API - Products found: " . count($products));
+        // error_log("Stock Adjustment API - Location ID: " . $location_id);
+        // error_log("Stock Adjustment API - Products found: " . count($products));
         if (!empty($products)) {
-            error_log("Stock Adjustment API - First product: " . json_encode($products[0]));
+            // error_log("Stock Adjustment API - First product: " . json_encode($products[0]));
             // Log Lady pills specifically if found
             foreach ($products as $product) {
                 if (strpos(strtolower($product['product_name']), 'lady pills') !== false) {
-                    error_log("Stock Adjustment API - Lady pills quantity: " . $product['total_quantity']);
+                    // error_log("Stock Adjustment API - Lady pills quantity: " . $product['total_quantity']);
                 }
             }
         }
@@ -275,13 +275,13 @@ function handle_get_product_batches_for_adjustment($conn, $data) {
         $batches = $batchesStmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Debug logging for batches
-        error_log("Batch API - Product ID: " . $product_id . ", Location ID: " . $location_id);
-        error_log("Batch API - Batches found: " . count($batches));
+        // error_log("Batch API - Product ID: " . $product_id . ", Location ID: " . $location_id);
+        // error_log("Batch API - Batches found: " . count($batches));
         if (!empty($batches)) {
-            error_log("Batch API - First batch: " . json_encode($batches[0]));
+            // error_log("Batch API - First batch: " . json_encode($batches[0]));
             // Log total batch quantities
             $totalBatchQty = array_sum(array_column($batches, 'current_qty'));
-            error_log("Batch API - Total batch quantity: " . $totalBatchQty);
+            // error_log("Batch API - Total batch quantity: " . $totalBatchQty);
         }
         
         echo json_encode([
@@ -346,7 +346,7 @@ function handle_create_batch_stock_adjustment($conn, $data) {
         $locationStmt->execute([$product_id]);
         $location = $locationStmt->fetch(PDO::FETCH_ASSOC);
         
-        error_log("Stock Adjustment - Product ID: $product_id, Location ID: " . ($location ? $location['location_id'] : 'not found'));
+        // error_log("Stock Adjustment - Product ID: $product_id, Location ID: " . ($location ? $location['location_id'] : 'not found'));
         
         if ($location && $location['location_id'] == 2) {
             // Warehouse - update tbl_fifo_stock
@@ -357,7 +357,7 @@ function handle_create_batch_stock_adjustment($conn, $data) {
             ");
             $updateStmt->execute([$new_qty, $new_qty, $batch_id, $product_id]);
             
-            error_log("Stock Adjustment - Updated tbl_fifo_stock: batch_id=$batch_id, product_id=$product_id, new_qty=$new_qty");
+            // error_log("Stock Adjustment - Updated tbl_fifo_stock: batch_id=$batch_id, product_id=$product_id, new_qty=$new_qty");
         } else {
             // Other locations - update tbl_transfer_batch_details
             $updateStmt = $conn->prepare("
@@ -367,10 +367,10 @@ function handle_create_batch_stock_adjustment($conn, $data) {
             ");
             $updateStmt->execute([$new_qty, $batch_id, $product_id]);
             
-            error_log("Stock Adjustment - Updated tbl_transfer_batch_details: batch_id=$batch_id, product_id=$product_id, new_qty=$new_qty");
+            // error_log("Stock Adjustment - Updated tbl_transfer_batch_details: batch_id=$batch_id, product_id=$product_id, new_qty=$new_qty");
         }
         
-        // Log the adjustment
+        // Log the adjustment to batch_adjustment_log
         $logStmt = $conn->prepare("
             INSERT INTO tbl_batch_adjustment_log (
                 product_id, batch_id, old_qty, new_qty, adjustment_qty, 
@@ -383,8 +383,29 @@ function handle_create_batch_stock_adjustment($conn, $data) {
             $reason, $notes, $adjusted_by, $movement_type
         ]);
         
-        // Additional logging for debugging
-        error_log("Stock Adjustment - Adjustment logged: product_id=$product_id, batch_id=$batch_id, old_qty=$old_qty, new_qty=$new_qty, adjustment_qty=$adjustment_qty");
+        // Also log to tbl_stock_movements for reporting
+        $stockMovementStmt = $conn->prepare("
+            INSERT INTO tbl_stock_movements (
+                product_id, batch_id, movement_type, quantity, remaining_quantity,
+                reference_no, notes, created_by, movement_date
+            ) VALUES (?, ?, 'ADJUSTMENT', ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        // Create reference number
+        $reference_no = 'ADJ-' . date('Ymd') . '-' . $batch_id;
+        
+        $stockMovementStmt->execute([
+            $product_id,
+            $batch_id,
+            abs($adjustment_qty), // Use absolute value for quantity
+            $new_qty, // remaining_quantity
+            $reference_no,
+            "Stock adjustment: $reason" . ($notes ? " - $notes" : ''),
+            $adjusted_by
+        ]);
+        
+        // error_log("✅ Stock adjustment logged to both tbl_batch_adjustment_log and tbl_stock_movements");
+        // error_log("   product_id=$product_id, batch_id=$batch_id, old_qty=$old_qty, new_qty=$new_qty, adjustment_qty=$adjustment_qty");
         
         $conn->commit();
         
@@ -427,7 +448,7 @@ function handle_get_batch_adjustment_history($conn, $data) {
             try {
                 $conn->exec("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN is_archived TINYINT(1) DEFAULT 0");
             } catch (Exception $e) {
-                error_log("Could not add is_archived column: " . $e->getMessage());
+                // error_log("Could not add is_archived column: " . $e->getMessage());
             }
         }
         
@@ -474,9 +495,9 @@ function handle_get_batch_adjustment_history($conn, $data) {
         $adjustments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Debug logging
-        error_log("Batch Adjustment History - Found " . count($adjustments) . " adjustments (include_archived: " . ($includeArchived ? 'true' : 'false') . ")");
+        // error_log("Batch Adjustment History - Found " . count($adjustments) . " adjustments (include_archived: " . ($includeArchived ? 'true' : 'false') . ")");
         if (!empty($adjustments)) {
-            error_log("Batch Adjustment History - Sample adjustment: " . json_encode($adjustments[0]));
+            // error_log("Batch Adjustment History - Sample adjustment: " . json_encode($adjustments[0]));
         }
         
         // Get total count

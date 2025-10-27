@@ -8,7 +8,6 @@ import html2canvas from 'html2canvas';
 import { toast } from 'react-toastify';
 import { useTheme } from './ThemeContext';
 import { useNotification } from './NotificationContext';
-import CombinedReports from './CombinedReports';
 
 // Use environment-based API base URL
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/backend.php`;
@@ -31,28 +30,7 @@ function Reports() {
       endDate: today.toISOString().split('T')[0]
     };
   });
-  const [showGenerateModal, setShowGenerateModal] = useState(false);
-  const [selectedGenerateReportType, setSelectedGenerateReportType] = useState('');
-  const [generateDateRange, setGenerateDateRange] = useState(() => {
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    return {
-      startDate: firstDay.toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
-    };
-  });
-  const [showCombineModal, setShowCombineModal] = useState(false);
-  const [selectedCombineReportType, setSelectedCombineReportType] = useState('');
-  const [selectedReportTypes, setSelectedReportTypes] = useState(['all']);
-  const [combineDateRange, setCombineDateRange] = useState(() => {
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    return {
-      startDate: firstDay.toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
-    };
-  });
-  const [viewMode, setViewMode] = useState('individual'); // 'individual' or 'combined'
+  // Removed unused modal states and viewMode
   const itemsPerPage = 12;
 
   const reportTypes = [
@@ -70,13 +48,8 @@ function Reports() {
   const fetchReports = async () => {
     try {
       setReportsLoading(true);
-      console.log('📊 Fetching reports from:', API_BASE_URL);
-      
       const res = await axios.post(API_BASE_URL, { action: 'get_reports_data' });
-      console.log('📊 Reports API Response:', res.data);
-      
       if (res.data?.success && Array.isArray(res.data.reports)) {
-        console.log('✅ Reports fetched successfully:', res.data.reports.length, 'reports');
         setReports(res.data.reports);
         setReportsPage(1);
         
@@ -122,13 +95,6 @@ function Reports() {
     try {
       setReportDataLoading(true);
       setReportError(null);
-      
-      console.log('📊 Fetching report data with date range:', {
-        reportType,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate
-      });
-      
       const requestData = { 
         action: 'get_report_data',
         report_type: reportType,
@@ -181,7 +147,6 @@ function Reports() {
       
       // Retry logic for network errors
       if (retryCount < 2 && (error.message === 'Network Error' || error.message.includes('fetch'))) {
-        console.log(`Retrying... attempt ${retryCount + 1}`);
         setTimeout(() => {
           fetchReportData(reportType, retryCount + 1);
         }, 2000);
@@ -227,148 +192,10 @@ function Reports() {
     }
   };
 
-  const generateIndividualReport = async (reportType) => {
-    try {
-      setReportDataLoading(true);
-      const res = await axios.post(API_BASE_URL, {
-        action: 'generate_report',
-        report_type: reportType,
-        generated_by: 'Admin',
-        parameters: {
-          start_date: generateDateRange.startDate,
-          end_date: generateDateRange.endDate
-        }
-      });
-      
-      if (res.data?.success) {
-        // Refresh reports list
-        fetchReports();
-        // Close modal
-        setShowGenerateModal(false);
-        // Show success notification
-        console.log(`${reportTypes.find(t => t.id === reportType)?.name} generated successfully!`);
-      }
-    } catch (error) {
-      console.error('Error generating individual report:', error);
-    } finally {
-      setReportDataLoading(false);
-    }
-  };
+  // Removed unused functions: generateIndividualReport, openGenerateModal, combineIndividualReports
 
-  const openGenerateModal = (reportType) => {
-    setSelectedGenerateReportType(reportType);
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    setGenerateDateRange({
-      startDate: firstDay.toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
-    });
-    setShowGenerateModal(true);
-  };
-
-  const combineIndividualReports = async () => {
+  const generateCombinedPDF = async (reportTypes, dateRange) => {
     try {
-      console.log('🎯 Download button clicked!');
-      console.log('🎯 Current state:', {
-        reportDataLoading,
-        selectedReportTypes,
-        combineDateRange,
-        API_BASE_URL
-      });
-      
-      setReportDataLoading(true);
-      setReportError(null);
-      
-      // Validate date range
-      if (!combineDateRange.startDate || !combineDateRange.endDate) {
-        throw new Error('Please select both start and end dates.');
-      }
-      
-      if (new Date(combineDateRange.startDate) > new Date(combineDateRange.endDate)) {
-        throw new Error('Start date cannot be later than end date.');
-      }
-      
-      // Convert selected report types to API format
-      let reportTypesToCombine = selectedReportTypes;
-      if (selectedReportTypes.includes('all')) {
-        // Include ALL available report types for comprehensive reporting
-        reportTypesToCombine = [
-          'stock_in', 
-          'stock_out', 
-          'sales', 
-          'inventory_balance', 
-          'supplier', 
-          'cashier_performance', 
-          'login_logs',
-          'stock_adjustment'
-        ];
-      }
-      
-      // Validate that at least one report type is selected
-      if (reportTypesToCombine.length === 0) {
-        throw new Error('Please select at least one report type to combine.');
-      }
-      
-      console.log('🚀 Starting PDF generation for:', reportTypesToCombine);
-      console.log('🚀 Original selectedReportTypes:', selectedReportTypes);
-      console.log('🚀 Date range:', combineDateRange);
-      console.log('🚀 API URL:', API_BASE_URL);
-      
-      // Show loading toast
-      toast.info('📄 Generating PDF... Please wait.', {
-        position: "top-right",
-        autoClose: 3000,
-      });
-      
-      // Generate PDF directly
-      await generateCombinedPDF(reportTypesToCombine);
-      
-      console.log('✅ PDF generation completed successfully');
-      
-      // Close modal
-      setShowCombineModal(false);
-      
-    } catch (error) {
-      console.error('❌ Error combining reports:', error);
-      console.error('❌ Error stack:', error.stack);
-      
-      let errorMessage = 'Failed to generate PDF. Please try again.';
-      
-      // Provide specific error messages based on error type
-      if (error.message.includes('Network Error') || error.message.includes('ECONNREFUSED')) {
-        errorMessage = 'Cannot connect to server. Please ensure XAMPP services (Apache & MySQL) are running.';
-      } else if (error.message.includes('timeout')) {
-        errorMessage = 'Request timeout. The server may be slow. Please try again.';
-      } else if (error.message.includes('No data found')) {
-        errorMessage = 'No data found for the selected date range. Please try a different date range.';
-      } else if (error.message.includes('API URL')) {
-        errorMessage = 'Configuration error. Please refresh the page and try again.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      setReportError(errorMessage);
-      
-      // Show user-friendly error message
-      toast.error(`❌ PDF Generation Failed: ${errorMessage}`, {
-        position: "top-right",
-        autoClose: 8000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
-    } finally {
-      console.log('🏁 Setting loading to false');
-      setReportDataLoading(false);
-    }
-  };
-
-  const generateCombinedPDF = async (reportTypes) => {
-    try {
-      console.log('📄 Generating combined PDF for:', reportTypes);
-      console.log('📄 API URL being used:', API_BASE_URL);
-      
       // Validate API URL
       if (!API_BASE_URL || API_BASE_URL.includes('undefined')) {
         throw new Error('API URL is not properly configured. Please check your environment settings.');
@@ -378,43 +205,37 @@ function Reports() {
       if (typeof jsPDF === 'undefined') {
         throw new Error('PDF library not loaded. Please refresh the page and try again.');
       }
-      
-      console.log('✅ API URL validation passed');
-      
       // Fetch data for all selected report types
       const allReportsData = {};
       let hasAnyData = false;
       
+      console.log('📅 Date range being used for PDF:', {
+        start: dateRange.startDate,
+        end: dateRange.endDate
+      });
+      
       for (const reportType of reportTypes) {
         try {
-          console.log(`📊 Fetching data for ${reportType}...`);
+          console.log(`📊 Fetching ${reportType} with date range: ${dateRange.startDate} to ${dateRange.endDate}`);
+          
           const res = await axios.post(API_BASE_URL, {
             action: 'get_report_data',
             report_type: reportType,
-            start_date: combineDateRange.startDate,
-            end_date: combineDateRange.endDate
+            start_date: dateRange.startDate,
+            end_date: dateRange.endDate
           }, {
             timeout: 10000,
             headers: {
               'Content-Type': 'application/json',
             }
           });
-          
-          console.log(`📊 Response for ${reportType}:`, {
-            success: res.data?.success,
-            dataLength: res.data?.data?.length || 0,
-            message: res.data?.message,
-            fullResponse: res.data
-          });
-          
           if (res.data?.success) {
             allReportsData[reportType] = res.data.data || [];
+            
             console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
             if (allReportsData[reportType].length > 0) {
-              console.log(`📊 Sample data for ${reportType}:`, allReportsData[reportType][0]);
-              console.log(`📊 All fields for first record:`, Object.keys(allReportsData[reportType][0]));
-            } else {
-              console.log(`❌ No data items for ${reportType}`);
+              // Log first record's date to verify filtering
+              console.log(`   First record date: ${allReportsData[reportType][0].date || allReportsData[reportType][0].movement_date || 'N/A'}`);
             }
             
             if (allReportsData[reportType].length > 0) {
@@ -439,9 +260,6 @@ function Reports() {
       if (!hasAnyData) {
         throw new Error('No data found for the selected date range and report types. Please try a different date range or check if there are any reports available.');
       }
-      
-      console.log('📄 Creating PDF document...');
-      
       // Create PDF with autoTable plugin
       const pdf = new jsPDF('p', 'mm', 'a4');
       
@@ -455,7 +273,7 @@ function Reports() {
       
       pdf.setFontSize(10);
       pdf.setFont(undefined, 'normal');
-      pdf.text(`Date Range: ${combineDateRange.startDate} to ${combineDateRange.endDate}`, 20, 40);
+      pdf.text(`Date Range: ${dateRange.startDate} to ${dateRange.endDate}`, 20, 40);
       pdf.text(`Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 20, 45);
       pdf.text(`Generated by: Admin`, 20, 50);
       
@@ -498,7 +316,7 @@ function Reports() {
       yPosition += 6;
       pdf.text(`💰 Total Value: ₱${totalValue.toFixed(2)}`, 20, yPosition);
       yPosition += 6;
-      pdf.text(`📅 Report Period: ${combineDateRange.startDate} to ${combineDateRange.endDate}`, 20, yPosition);
+      pdf.text(`📅 Report Period: ${dateRange.startDate} to ${dateRange.endDate}`, 20, yPosition);
       yPosition += 6;
       pdf.text(`⏰ Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 20, yPosition);
       yPosition += 15;
@@ -513,25 +331,11 @@ function Reports() {
         { id: 'login_logs', name: 'Login Logs Report', icon: '🔐' },
         { id: 'stock_adjustment', name: 'Stock Adjustment Report', icon: '⚖️' }
       ];
-      
-      console.log(`📊 Report types to process:`, reportTypes);
-      console.log(`📊 All reports data keys:`, Object.keys(allReportsData));
-      console.log(`📊 Full allReportsData:`, allReportsData);
-      
       // Add each report's data
       for (const reportType of reportTypes) {
         const data = allReportsData[reportType] || [];
         const reportInfo = reportTypesList.find(t => t.id === reportType);
         const reportName = reportInfo?.name || reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        
-        console.log(`📊 Processing ${reportType}:`, {
-          reportName,
-          dataLength: data.length,
-          hasData: data.length > 0,
-          sampleData: data.length > 0 ? data[0] : null,
-          dataKeys: data.length > 0 ? Object.keys(data[0]) : []
-        });
-        
         // Check if we need a new page
         if (yPosition > 250) {
           pdf.addPage();
@@ -545,13 +349,11 @@ function Reports() {
         yPosition += 10;
         
         if (data.length === 0) {
-          console.log(`❌ No data for ${reportType} - showing empty message`);
           pdf.setFontSize(9);
           pdf.setFont(undefined, 'normal');
           pdf.text(`No data available for ${reportName} in the selected date range.`, 20, yPosition);
           yPosition += 15;
         } else {
-          console.log(`✅ Processing ${reportType} with ${data.length} records`);
           // Add report-specific summary
           pdf.setFontSize(9);
           pdf.setFont(undefined, 'bold');
@@ -723,20 +525,10 @@ function Reports() {
       }
       
       // Save PDF
-      const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
-      
-      console.log('💾 Saving PDF:', fileName);
-      console.log('📊 PDF document info:', {
-        totalPages: pdf.internal.getNumberOfPages(),
-        pageSize: pdf.internal.pageSize,
-        version: pdf.internal.version
-      });
-      
+      const fileName = `Combined_Reports_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
       // Simple save method
       try {
         pdf.save(fileName);
-        console.log(`✅ PDF downloaded successfully: ${fileName}`);
-        
         // Show success message
         toast.success(`📥 PDF downloaded successfully: ${fileName}`, {
           position: "top-right",
@@ -757,61 +549,10 @@ function Reports() {
     }
   };
 
-  const openCombineModal = (reportType) => {
-    console.log('🔧 Opening combine modal for report type:', reportType);
-    setSelectedCombineReportType(reportType);
-    setSelectedReportTypes(['all']); // Reset to all reports selected
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    setCombineDateRange({
-      startDate: firstDay.toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
-    });
-    console.log('🔧 Set date range to:', {
-      startDate: firstDay.toISOString().split('T')[0],
-      endDate: today.toISOString().split('T')[0]
-    });
-    setShowCombineModal(true);
-  };
-
-  const handleReportTypeChange = (reportTypeId) => {
-    if (reportTypeId === 'all') {
-      setSelectedReportTypes(['all']);
-    } else {
-      setSelectedReportTypes(prev => {
-        const newSelection = prev.filter(id => id !== 'all');
-        if (newSelection.includes(reportTypeId)) {
-          return newSelection.filter(id => id !== reportTypeId);
-        } else {
-          return [...newSelection, reportTypeId];
-        }
-      });
-    }
-  };
-
-  // Add test function to window for debugging
-  window.testStockOutReport = async () => {
-    try {
-      console.log('🧪 Testing stock_out report directly...');
-      const res = await axios.post(API_BASE_URL, {
-        action: 'get_report_data',
-        report_type: 'stock_out',
-        start_date: combineDateRange.startDate,
-        end_date: combineDateRange.endDate
-      });
-      console.log('🧪 Stock Out Report Response:', res.data);
-      return res.data;
-    } catch (error) {
-      console.error('🧪 Stock Out Report Error:', error);
-      return null;
-    }
-  };
+  // Removed unused functions: openCombineModal, combineIndividualReports, testStockOutReport
 
   useEffect(() => {
     // Initial fetch
-    console.log('🔧 Reports component loaded with report types:', reportTypes);
-    console.log('🔧 Initial date range:', dateRange);
-    console.log('🔧 Initial combine date range:', combineDateRange);
     fetchReports();
     
     // Auto-clear notifications when Reports component is viewed
@@ -865,12 +606,10 @@ function Reports() {
             // Only update if there are actual updates
             updateSystemUpdates(true, result.data.count);
             updateReportsNotifications(true, result.data.count, result.data.reportUpdates || {});
-            console.log('✅ Real reports updates detected:', result.data);
           } else {
             // Clear updates if no real updates
             updateSystemUpdates(false, 0);
             updateReportsNotifications(false, 0, {});
-            console.log('✅ No real reports updates');
           }
         } else {
           // Clear updates if API fails
@@ -975,77 +714,64 @@ function Reports() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
-      {/* View Mode Toggle */}
+      {/* Header */}
       <div className="p-3" style={{ backgroundColor: theme.bg.card }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <span className="text-2xl">📊</span>
-            <div>
-              <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>Reports Dashboard</h1>
-              <p className="text-sm" style={{ color: theme.text.secondary }}>
-                {viewMode === 'individual' ? 'Individual Report Management' : 'Unified Report View'}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setViewMode(viewMode === 'individual' ? 'combined' : 'individual')}
-              className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center gap-2"
-              style={{
-                backgroundColor: theme.colors.accent,
-                color: theme.text.primary
-              }}
-            >
-              {viewMode === 'individual' ? (
-                <>
-                  🔗 Switch to Combined View
-                </>
-              ) : (
-                <>
-                  📋 Switch to Individual View
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Conditional Rendering */}
-      {viewMode === 'combined' ? (
-        <CombinedReports />
-      ) : (
-        <>
-          {/* Individual Reports Content */}
-          {/* Header */}
-          <div className="p-6" style={{ backgroundColor: theme.colors.accent }}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <span className="text-2xl">📊</span>
           <div>
-            <div className="flex items-center space-x-6 mb-4">
-              <span className="border-b-2 pb-1" style={{ color: theme.text.primary, borderColor: theme.text.primary }}>System Reports</span>
-              <span style={{ color: theme.text.secondary }}>Data Analytics</span>
-              <span style={{ color: theme.text.secondary }}>Performance Metrics</span>
-            </div>
-            <h1 className="text-3xl font-bold" style={{ color: theme.text.primary }}>Reports Dashboard</h1>
+            <h1 className="text-xl font-bold" style={{ color: theme.text.primary }}>Reports Dashboard</h1>
+            <p className="text-sm" style={{ color: theme.text.secondary }}>
+              Individual Report Management
+            </p>
           </div>
         </div>
       </div>
 
+      <>
       {/* Reports Content */}
       <div className="p-6">
         {/* Quick Download All Reports Button */}
         <div className="mb-6">
           <div className="flex justify-center gap-4">
             <button
-              onClick={() => {
-                // Set to current month and open combine modal with all reports selected
-                const today = new Date();
-                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                setCombineDateRange({
-                  startDate: firstDay.toISOString().split('T')[0],
-                  endDate: today.toISOString().split('T')[0]
-                });
-                setSelectedReportTypes(['all']);
-                setShowCombineModal(true);
+              onClick={async () => {
+                try {
+                  setReportDataLoading(true);
+                  
+                  // Set to current month and download all reports
+                  const today = new Date();
+                  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                  
+                  // Show loading toast
+                  toast.info('📄 Generating PDF... Please wait.', {
+                    position: "top-right",
+                    autoClose: 3000,
+                  });
+                  
+                  // Call the download function directly
+                  await generateCombinedPDF([
+                    'stock_in', 
+                    'stock_out', 
+                    'sales', 
+                    'inventory_balance', 
+                    'supplier', 
+                    'cashier_performance', 
+                    'login_logs',
+                    'stock_adjustment'
+                  ], {
+                    startDate: firstDay.toISOString().split('T')[0],
+                    endDate: today.toISOString().split('T')[0]
+                  });
+                  
+                } catch (error) {
+                  console.error('Error downloading reports:', error);
+                  toast.error(`Failed to download: ${error.message}`, {
+                    position: "top-right",
+                    autoClose: 5000,
+                  });
+                } finally {
+                  setReportDataLoading(false);
+                }
               }}
               disabled={reportDataLoading}
               className="px-8 py-4 rounded-lg font-bold text-lg transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-3 shadow-lg"
@@ -1055,7 +781,7 @@ function Reports() {
                 boxShadow: `0 10px 25px ${theme.shadow.lg}`
               }}
             >
-              📊 Download All Reports (This Month)
+              📥 Download All Reports (This Month)
             </button>
             <button
               onClick={() => window.location.reload()}
@@ -1100,7 +826,10 @@ function Reports() {
                 {type.id !== 'all' && (
                   <div className="space-y-2">
                     <button
-                      onClick={() => openGenerateModal(type.id)}
+                      onClick={() => {
+                        // Directly generate the report
+                        generateReport(type.id);
+                      }}
                       disabled={reportDataLoading}
                       className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
                       style={{
@@ -1110,18 +839,6 @@ function Reports() {
                       }}
                     >
                       📊 Generate Report
-                    </button>
-                    <button
-                      onClick={() => openCombineModal(type.id)}
-                      disabled={reportDataLoading}
-                      className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50"
-                      style={{
-                        backgroundColor: theme.bg.hover,
-                        color: theme.text.secondary,
-                        border: `1px solid ${theme.border.default}`
-                      }}
-                    >
-                      📋 Combine Reports
                     </button>
                   </div>
                 )}
@@ -1421,529 +1138,7 @@ function Reports() {
           </div>
         )}
       </div>
-
-      {/* Individual Generate Report Modal */}
-      {showGenerateModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div 
-            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
-            style={{ 
-              backgroundColor: theme.bg.card,
-              borderColor: theme.colors.accent,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(59, 130, 246, 0.2)'
-            }}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
-              <div>
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                  Generate {reportTypes.find(t => t.id === selectedGenerateReportType)?.name}
-                </h3>
-                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
-                  Select date range to generate the report
-                </p>
-              </div>
-              <button
-                onClick={() => setShowGenerateModal(false)}
-                className="transition-colors"
-                style={{ color: theme.text.muted }}
-                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
-                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* Quick Select Date Range */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Quick Select</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Today', days: 0 },
-                    { label: 'Yesterday', days: -1 },
-                    { label: 'This Week', days: -7 },
-                    { label: 'Last Week', days: -14 },
-                    { label: 'This Month', days: 'this_month' },
-                    { label: 'Last Month', days: 'last_month' }
-                  ].map((option) => (
-                    <button
-                      key={option.label}
-                      onClick={() => {
-                        const today = new Date();
-                        
-                        if (option.days === 0) {
-                          // Today
-                          const dateStr = today.toISOString().split('T')[0];
-                          setGenerateDateRange({ startDate: dateStr, endDate: dateStr });
-                        } else if (option.days === -1) {
-                          // Yesterday
-                          const yesterday = new Date(today.getTime() - (24 * 60 * 60 * 1000));
-                          const dateStr = yesterday.toISOString().split('T')[0];
-                          setGenerateDateRange({ startDate: dateStr, endDate: dateStr });
-                        } else if (option.days === 'this_month') {
-                          // This Month - from 1st of current month to today
-                          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                          const lastDay = today;
-                          setGenerateDateRange({ 
-                            startDate: firstDay.toISOString().split('T')[0], 
-                            endDate: lastDay.toISOString().split('T')[0] 
-                          });
-                        } else if (option.days === 'last_month') {
-                          // Last Month - from 1st to last day of previous month
-                          const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                          const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-                          setGenerateDateRange({ 
-                            startDate: firstDayLastMonth.toISOString().split('T')[0], 
-                            endDate: lastDayLastMonth.toISOString().split('T')[0] 
-                          });
-                        } else {
-                          // Other periods (weeks)
-                          const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
-                          const dateStr = targetDate.toISOString().split('T')[0];
-                          setGenerateDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
-                        }
-                      }}
-                      className="px-3 py-2 text-sm rounded-md border transition-all duration-200 hover:scale-105"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Date Range */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Custom Date Range</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
-                    <input
-                      type="date"
-                      value={generateDateRange.startDate}
-                      onChange={(e) => setGenerateDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
-                    <input
-                      type="date"
-                      value={generateDateRange.endDate}
-                      onChange={(e) => setGenerateDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => generateIndividualReport(selectedGenerateReportType)}
-                  disabled={reportDataLoading}
-                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.colors.accent,
-                    color: theme.text.primary
-                  }}
-                >
-                  {reportDataLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      📊 Generate Report
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowGenerateModal(false)}
-                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.bg.hover,
-                    borderColor: theme.border.default,
-                    color: theme.text.secondary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                >
-                  ✕ Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Individual Combine Reports Modal */}
-      {showCombineModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50" key={`combine-modal-${Date.now()}`}>
-          <div 
-            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
-            style={{ 
-              backgroundColor: theme.bg.card,
-              borderColor: theme.colors.warning,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(147, 51, 234, 0.2)'
-            }}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
-              <div>
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                  📊 COMPREHENSIVE REPORTS DOWNLOAD v2.0
-                </h3>
-                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
-                  Download ALL 8 report types as a single comprehensive PDF file
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCombineModal(false)}
-                className="transition-colors"
-                style={{ color: theme.text.muted }}
-                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
-                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* Quick Select Date Range */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Quick Select</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Today', days: 0 },
-                    { label: 'Yesterday', days: -1 },
-                    { label: 'This Week', days: -7 },
-                    { label: 'Last Week', days: -14 },
-                    { label: 'This Month', days: 'this_month' },
-                    { label: 'Last Month', days: 'last_month' }
-                  ].map((option) => (
-                    <button
-                      key={option.label}
-                      onClick={() => {
-                        const today = new Date();
-                        
-                        if (option.days === 0) {
-                          // Today
-                          const dateStr = today.toISOString().split('T')[0];
-                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
-                        } else if (option.days === -1) {
-                          // Yesterday
-                          const yesterday = new Date(today.getTime() - (24 * 60 * 60 * 1000));
-                          const dateStr = yesterday.toISOString().split('T')[0];
-                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
-                        } else if (option.days === 'this_month') {
-                          // This Month - from 1st of current month to today
-                          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                          const lastDay = today;
-                          setCombineDateRange({ 
-                            startDate: firstDay.toISOString().split('T')[0], 
-                            endDate: lastDay.toISOString().split('T')[0] 
-                          });
-                        } else if (option.days === 'last_month') {
-                          // Last Month - from 1st to last day of previous month
-                          const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                          const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-                          setCombineDateRange({ 
-                            startDate: firstDayLastMonth.toISOString().split('T')[0], 
-                            endDate: lastDayLastMonth.toISOString().split('T')[0] 
-                          });
-                        } else {
-                          // Other periods (weeks)
-                          const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
-                          const dateStr = targetDate.toISOString().split('T')[0];
-                          setCombineDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
-                        }
-                      }}
-                      className="px-3 py-2 text-sm rounded-md border transition-all duration-200 hover:scale-105"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Date Range */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Custom Date Range</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
-                    <input
-                      type="date"
-                      value={combineDateRange.startDate}
-                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
-                    <input
-                      type="date"
-                      value={combineDateRange.endDate}
-                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Report Type Selection */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Types to Combine</h4>
-                <div className="text-xs mb-2" style={{ color: theme.text.muted }}>
-                  Debug: Selected types: {JSON.stringify(selectedReportTypes)} | Date range: {combineDateRange.startDate} to {combineDateRange.endDate}
-                </div>
-                <div className="space-y-2">
-                  {reportTypes.filter(type => type.id !== 'all').map((type) => (
-                    <label key={type.id} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedReportTypes.includes(type.id)}
-                        onChange={() => handleReportTypeChange(type.id)}
-                        className="rounded"
-                        style={{ borderColor: theme.border.default }}
-                      />
-                      <span className="text-sm" style={{ color: theme.text.secondary }}>
-                        {type.name}
-                      </span>
-                    </label>
-                  ))}
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedReportTypes.includes('all')}
-                      onChange={() => handleReportTypeChange('all')}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm font-bold" style={{ color: theme.text.primary }}>
-                      📊 ALL REPORTS (8 Types) - RECOMMENDED
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Error Display */}
-              {reportError && (
-                <div className="mb-4 p-3 rounded-md border" style={{ 
-                  backgroundColor: theme.colors.dangerBg || '#fef2f2', 
-                  borderColor: theme.colors.danger || '#fecaca',
-                  color: theme.colors.danger || '#dc2626'
-                }}>
-                  <div className="flex items-center">
-                    <span className="text-sm font-medium">⚠️ Error:</span>
-                    <span className="ml-2 text-sm">{reportError}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={combineIndividualReports}
-                  disabled={reportDataLoading}
-                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.colors.accent,
-                    color: theme.text.primary
-                  }}
-                >
-                  {reportDataLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                      Generating PDF...
-                    </>
-                  ) : (
-                    <>
-                      📥 DOWNLOAD COMPREHENSIVE PDF (ALL REPORTS)
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      console.log('📊 Generating CSV export...');
-                      setReportDataLoading(true);
-                      
-                      // Fetch data for all selected report types
-                      const allReportsData = {};
-                      let reportTypesToCombine = selectedReportTypes;
-                      if (selectedReportTypes.includes('all')) {
-                        // Include ALL available report types for comprehensive reporting
-                        reportTypesToCombine = [
-                          'stock_in', 
-                          'stock_out', 
-                          'sales', 
-                          'inventory_balance', 
-                          'supplier', 
-                          'cashier_performance', 
-                          'login_logs',
-                          'stock_adjustment'
-                        ];
-                      }
-                      
-                      for (const reportType of reportTypesToCombine) {
-                        try {
-                          const res = await axios.post(API_BASE_URL, {
-                            action: 'get_report_data',
-                            report_type: reportType,
-                            start_date: combineDateRange.startDate,
-                            end_date: combineDateRange.endDate
-                          }, {
-                            timeout: 10000,
-                            headers: {
-                              'Content-Type': 'application/json',
-                            }
-                          });
-                          
-                          if (res.data?.success) {
-                            allReportsData[reportType] = res.data.data || [];
-                          }
-                        } catch (error) {
-                          console.error(`Error fetching ${reportType}:`, error);
-                          allReportsData[reportType] = [];
-                        }
-                      }
-                      
-                      // Create CSV content
-                      let csvContent = 'ENGUIO PHARMACY SYSTEM - COMBINED REPORTS\n';
-                      csvContent += `Date Range: ${combineDateRange.startDate} to ${combineDateRange.endDate}\n`;
-                      csvContent += `Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}\n`;
-                      csvContent += `Generated by: Admin\n\n`;
-                      
-                      // Add each report's data
-                      for (const reportType of reportTypesToCombine) {
-                        const data = allReportsData[reportType] || [];
-                        if (data.length > 0) {
-                          const reportInfo = reportTypes.find(t => t.id === reportType);
-                          const reportName = reportInfo?.name || reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                          
-                          csvContent += `\n${reportName}\n`;
-                          csvContent += '='.repeat(reportName.length) + '\n';
-                          
-                          // Get columns
-                          const columns = getReportColumns(reportType);
-                          csvContent += columns.join(',') + '\n';
-                          
-                          // Add data rows
-                          data.forEach(row => {
-                            const rowData = columns.map(column => {
-                              const columnKey = column.toLowerCase().replace(/\s+/g, '_');
-                              let cellValue = row[columnKey] || 'N/A';
-                              
-                              // Format values
-                              if (columnKey.includes('total_value') || columnKey.includes('total_amount') || columnKey.includes('unit_price') || columnKey.includes('average_transaction')) {
-                                cellValue = `₱${parseFloat(cellValue || 0).toFixed(2)}`;
-                              } else if (columnKey === 'date' && cellValue !== 'N/A') {
-                                cellValue = new Date(cellValue).toLocaleDateString('en-PH');
-                              }
-                              
-                              // Escape CSV values
-                              if (cellValue.toString().includes(',')) {
-                                cellValue = `"${cellValue}"`;
-                              }
-                              return cellValue;
-                            });
-                            csvContent += rowData.join(',') + '\n';
-                          });
-                        }
-                      }
-                      
-                      // Create and download CSV
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                      const link = document.createElement('a');
-                      const url = URL.createObjectURL(blob);
-                      link.setAttribute('href', url);
-                      link.setAttribute('download', `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.csv`);
-                      link.style.visibility = 'hidden';
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      
-                      toast.success('📊 CSV exported successfully!', {
-                        position: "top-right",
-                        autoClose: 3000,
-                      });
-                      
-                    } catch (error) {
-                      console.error('Error generating CSV:', error);
-                      toast.error('❌ CSV export failed: ' + error.message, {
-                        position: "top-right",
-                        autoClose: 5000,
-                      });
-                    } finally {
-                      setReportDataLoading(false);
-                    }
-                  }}
-                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.bg.hover,
-                    borderColor: theme.border.default,
-                    color: theme.text.secondary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                >
-                  📊 Export CSV
-                </button>
-                <button
-                  onClick={() => setShowCombineModal(false)}
-                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.bg.hover,
-                    borderColor: theme.border.default,
-                    color: theme.text.secondary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                >
-                  ✕ Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-        </>
-      )}
+      </>
     </div>
   );
 }

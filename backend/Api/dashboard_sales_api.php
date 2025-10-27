@@ -263,8 +263,8 @@ function getPaymentMethods($conn, $data = []) {
         ]);
         
     } catch (PDOException $e) {
-        error_log("PDO Error in getPaymentMethods: " . $e->getMessage());
-        error_log("Error trace: " . $e->getTraceAsString());
+        // error_log("PDO Error in getPaymentMethods: " . $e->getMessage());
+        // error_log("Error trace: " . $e->getTraceAsString());
         echo json_encode([
             'success' => false,
             'message' => 'Error getting payment methods: ' . $e->getMessage(),
@@ -272,7 +272,7 @@ function getPaymentMethods($conn, $data = []) {
             'trace' => $e->getFile() . ':' . $e->getLine()
         ]);
     } catch (Exception $e) {
-        error_log("General Error in getPaymentMethods: " . $e->getMessage());
+        // error_log("General Error in getPaymentMethods: " . $e->getMessage());
         echo json_encode([
             'success' => false,
             'message' => 'Error getting payment methods: ' . $e->getMessage()

@@ -104,14 +104,10 @@ function InventoryTransfer() {
 
   // API function
   async function handleApiCall(action, data = {}) {
-    console.log("🚀 API Call Payload:", { action, ...data })
-
     try {
-      const response = await api.callGenericAPI('transfer_api.php', action, data);
-      console.log("✅ API Success Response:", response)
+      const response = await api.callGenericAPI('backend.php', action, data)
       return response;
     } catch (error) {
-      console.error("❌ API Call Error:", error)
       return {
         success: false,
         message: error.message,
@@ -122,14 +118,10 @@ function InventoryTransfer() {
 
   // Product Units API function
   async function handleProductUnitsApiCall(action, data = {}) {
-    console.log("🚀 Product Units API Call Payload:", { action, ...data })
-
     try {
-      const response = await api.callGenericAPI('product_units_api.php', action, data);
-      console.log("✅ Product Units API Success Response:", response)
+      const response = await api.callGenericAPI('backend.php', action, data)
       return response;
     } catch (error) {
-      console.error("❌ Product Units API Call Error:", error)
       return {
         success: false,
         message: error.message,
@@ -144,7 +136,6 @@ function InventoryTransfer() {
       const response = await api.callGenericAPI('backend.php', 'get_product_units', { product_id: productId });
       
       if (response.success && response.data) {
-        console.log(`✅ Loaded units for product ${productId}:`, response.data);
         return response.data;
       } else {
         console.warn(`⚠️ No units found for product ${productId}`);
@@ -281,11 +272,8 @@ function InventoryTransfer() {
     setLoading(true)
     try {
       const response = await handleApiCall("get_transfers_with_details")
-      console.log("🔥 Transfers Loaded from API:", response)
 
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ Number of transfers received:", response.data.length)
-        console.log("📋 Transfer details:", response.data)
         
         // Process and enhance transfer data
         const processedTransfers = response.data.map(transfer => ({
@@ -304,11 +292,9 @@ function InventoryTransfer() {
                          transfer.status || "Completed"
         }))
         
-        console.log("🔄 Processed transfers:", processedTransfers)
         setTransfers(processedTransfers)
       } else {
         console.warn("⚠️ No transfers found or invalid format")
-        console.log("🔍 Response structure:", response)
         setTransfers([])
       }
     } catch (error) {
@@ -324,10 +310,8 @@ function InventoryTransfer() {
   const loadTransferLogs = async () => {
     try {
       const response = await handleApiCall("get_transfer_log")
-      console.log("📊 Transfer Logs Loaded from API:", response)
 
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ Number of transfer logs received:", response.data.length)
         setTransferLogs(response.data)
       } else {
         console.warn("⚠️ No transfer logs found or invalid format")
@@ -343,7 +327,6 @@ function InventoryTransfer() {
   const loadAvailableProducts = async (sourceLocationId = null) => {
     setLoadingProducts(true)
     try {
-      console.log("🔄 Loading warehouse products with FIFO oldest batch info...")
       
       // If no location ID provided, try to find warehouse location
       let locationId = sourceLocationId
@@ -353,7 +336,6 @@ function InventoryTransfer() {
         )
         if (warehouseLocation) {
           locationId = warehouseLocation.location_id
-          console.log("🏭 Found warehouse location:", warehouseLocation.location_name, "(ID:", locationId, ")")
         } else {
           console.warn("⚠️ No warehouse location found, using default location ID 2")
           locationId = 2 // Default warehouse location ID from database
@@ -366,7 +348,6 @@ function InventoryTransfer() {
       )
       
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ Loaded products with oldest batch for transfer:", response.data.length)
         
         // Process the data to ensure proper field mapping
         const processedProducts = response.data.map(product => ({
@@ -386,8 +367,6 @@ function InventoryTransfer() {
         }))
         
         setAvailableProducts(processedProducts)
-        console.log("📦 Available products state updated:", processedProducts.length, "products")
-        console.log("Sample product:", processedProducts[0] || "No products")
         
         // Check for expiring products and show alert if needed
         showExpirationAlertIfNeeded(processedProducts)
@@ -414,10 +393,8 @@ function InventoryTransfer() {
 
   // Function to refresh available products with latest oldest batch data
   const refreshAvailableProducts = async (sourceLocationId = null) => {
-    console.log("🔄 Refreshing available products with latest oldest batch data...")
     try {
       await loadAvailableProducts(sourceLocationId)
-      console.log("✅ Available products refreshed successfully")
     } catch (error) {
       console.error("❌ Error refreshing available products:", error)
     }
@@ -427,15 +404,11 @@ function InventoryTransfer() {
   const loadLocations = async () => {
     try {
       const res = await handleApiCall("get_locations")
-      console.log("📦 API Response from get_locations:", res)
       if (res.success && Array.isArray(res.data)) {
         setLocations(res.data)
         
         // Validate location mapping
-        console.log("🔍 Location Mapping Validation:")
-        console.log("📍 Total locations loaded:", res.data.length)
         res.data.forEach(loc => {
-          console.log(`  - Location: ${loc.location_name} (ID: ${loc.location_id})`)
         })
         
         // Check for convenience store specifically (flexible matching)
@@ -443,7 +416,6 @@ function InventoryTransfer() {
           loc.location_name.toLowerCase().includes('convenience')
         )
         if (convenienceStore) {
-          console.log("✅ Found Convenience Store:", convenienceStore.location_name, "(ID:", convenienceStore.location_id, ")")
         } else {
           console.warn("⚠️ No convenience store found in locations")
           console.warn("   Available locations:", res.data.map(loc => loc.location_name).join(', '))
@@ -455,7 +427,6 @@ function InventoryTransfer() {
           loc.location_name.toLowerCase().includes('warehouse')
         )
         if (warehouse) {
-          console.log("✅ Found Warehouse:", warehouse.location_name, "(ID:", warehouse.location_id, ")")
         } else {
           console.warn("⚠️ No warehouse found in locations")
           console.warn("   Available locations:", res.data.map(loc => loc.location_name).join(', '))
@@ -474,7 +445,6 @@ function InventoryTransfer() {
   // Load current user data
   const loadCurrentUser = async () => {
     try {
-      console.log("🔍 Loading current user data...")
       
       // First, try to get user from sessionStorage (set during login)
       let userFromStorage = null;
@@ -482,7 +452,6 @@ function InventoryTransfer() {
         const storedUserData = sessionStorage.getItem('user_data');
         if (storedUserData) {
           userFromStorage = JSON.parse(storedUserData);
-          console.log("📦 Found user data in sessionStorage:", userFromStorage);
         }
       } catch (storageErr) {
         console.warn("⚠️ Could not read from sessionStorage:", storageErr.message);
@@ -490,7 +459,6 @@ function InventoryTransfer() {
       
       // Then, try to get from API
       const response = await handleApiCall("get_current_user")
-      console.log("📋 Current user API response:", response)
       
       if (response.success && response.data) {
         // API returned user data successfully
@@ -503,9 +471,6 @@ function InventoryTransfer() {
           ...prev,
           transferredBy: userName
         }));
-        
-        console.log("✅ Current user loaded successfully from API:", userName);
-        
         // Store in sessionStorage for future use
         try {
           sessionStorage.setItem('user_data', JSON.stringify(userData));
@@ -514,7 +479,6 @@ function InventoryTransfer() {
         }
       } else if (userFromStorage) {
         // API failed but we have data from sessionStorage
-        console.log("ℹ️ Using user data from sessionStorage");
         setCurrentUser(userFromStorage);
         
         const userName = userFromStorage.full_name || userFromStorage.fullName || userFromStorage.username || "Current User";
@@ -522,18 +486,13 @@ function InventoryTransfer() {
           ...prev,
           transferredBy: userName
         }));
-        
-        console.log("✅ Current user loaded from sessionStorage:", userName);
       } else {
         // No session found anywhere - use default
         console.warn("⚠️ No active session found - using default user");
-        console.log("📊 API Debug Info:", response.debug);
-        
         // Try to get a default user from staff list
         const staffResponse = await handleApiCall("get_inventory_staff");
         if (staffResponse.success && staffResponse.data && staffResponse.data.length > 0) {
           const firstStaff = staffResponse.data[0];
-          console.log("👤 Using first staff member as default:", firstStaff.name);
           setTransferInfo(prev => ({
             ...prev,
             transferredBy: firstStaff.name
@@ -563,7 +522,6 @@ function InventoryTransfer() {
             ...prev,
             transferredBy: userName
           }));
-          console.log("✅ Recovered user from sessionStorage:", userName);
           return;
         }
       } catch (storageErr) {
@@ -586,8 +544,6 @@ function InventoryTransfer() {
       const response = await handleApiCall("get_inventory_staff")
       if (response.success) {
         setStaff(response.data)
-        console.log("👥 Staff loaded successfully:", response.data.length, "members")
-        console.log("👥 Available staff:", response.data.map(emp => emp.name))
         } else {
           console.error("Failed to load inventory staff")
         }
@@ -649,6 +605,20 @@ function InventoryTransfer() {
     setSessionStartTime(new Date());
   };
 
+  // Load initial data on component mount
+  useEffect(() => {
+    const initializeData = async () => {
+      await loadLocations();
+      await loadTransfers();
+      await loadTransferLogs();
+      await loadStaff();
+      await loadCurrentUser();
+      loadExpirySettings();
+    };
+    
+    initializeData();
+  }, []);
+
   // Bulk setup standard units for all medicine products
   const handleBulkSetupUnits = async () => {
     try {
@@ -663,7 +633,7 @@ function InventoryTransfer() {
         }
         
         // Reload available products to refresh unit data
-        await refreshAvailableProducts(sourceLocationId);
+        await refreshAvailableProducts(null);
         
         // Reload product units for all selected products
         if (selectedProducts.length > 0) {
@@ -738,22 +708,16 @@ function InventoryTransfer() {
 
   // Batch Details Modal Functions
   const openBatchDetailsModal = async (transfer) => {
-    console.log("🔍 Opening batch details modal for transfer:", transfer);
-    console.log("🔍 Current showBatchDetailsModal state:", showBatchDetailsModal);
-    console.log("🔍 Current selectedTransferForBatchDetails state:", selectedTransferForBatchDetails);
-    
     setSelectedTransferForBatchDetails(transfer);
     setShowBatchDetailsModal(true);
     
     // Load batch details for this transfer
     try {
-      console.log("🔄 Loading batch details for transfer ID:", transfer.transfer_header_id);
       const batchResponse = await handleApiCall("get_transfer_batch_details", {
         transfer_id: transfer.transfer_header_id
       });
       
       if (batchResponse.success && Array.isArray(batchResponse.data)) {
-        console.log("✅ Batch details loaded:", batchResponse.data);
         // Update the transfer object with batch details
         const updatedTransfer = {
           ...transfer,
@@ -781,8 +745,6 @@ function InventoryTransfer() {
     
     // Add a small delay to check state after setting
     setTimeout(() => {
-      console.log("✅ Batch details modal state updated - showBatchDetailsModal:", showBatchDetailsModal);
-      console.log("✅ Selected transfer set to:", transfer);
     }, 100);
   };
 
@@ -793,15 +755,10 @@ function InventoryTransfer() {
 
   const refreshProductData = async (productId) => {
     try {
-      console.log("🔄 Refreshing FIFO data for product ID:", productId);
       const response = await handleApiCall("get_fifo_stock", { product_id: productId });
-      console.log("📊 FIFO stock response:", response);
-      
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ FIFO data received:", response.data.length, "batches");
         setFifoStockData(response.data);
       } else {
-        console.log("⚠️ No FIFO data found for product", productId);
         setFifoStockData([]);
       }
     } catch (error) {
@@ -812,21 +769,14 @@ function InventoryTransfer() {
 
   const loadTransferHistory = async (productId) => {
     try {
-      console.log("🔄 Loading transfer history for product ID:", productId);
       const response = await handleApiCall("get_transfer_logs", {
         product_id: productId,
         limit: 100
       });
-
-      console.log("📊 Transfer history response:", response);
-
       if (response.success) {
-        console.log("✅ Transfer data received:", response.data);
         if (response.data && response.data.length > 0) {
-          console.log("📦 Found", response.data.length, "transfers for product", productId);
           displayTransferHistory(response.data);
         } else {
-          console.log("⚠️ No transfers found for product", productId);
           displayTransferHistory([]);
         }
       } else {
@@ -951,7 +901,6 @@ function InventoryTransfer() {
       })
       
       if (response.success) {
-        console.log("📊 FIFO Stock Status for Product", productId, ":", response)
         return response
       }
       return null
@@ -963,10 +912,6 @@ function InventoryTransfer() {
 
   const checkFifoAvailability = async (productId, locationId, requestedQuantity) => {
     try {
-      console.log("🔍 FIFO Availability Check Request:")
-      console.log("  - Product ID:", productId)
-      console.log("  - Location ID:", locationId)
-      console.log("  - Requested Quantity:", requestedQuantity)
       
       const response = await handleApiCall("check_fifo_availability", {
         product_id: productId,
@@ -974,10 +919,8 @@ function InventoryTransfer() {
         requested_quantity: requestedQuantity
       })
       
-      console.log("🔍 FIFO Availability Check Response:", response)
       
       if (response.success) {
-        console.log("✅ FIFO Availability Check for Product", productId, ":", response)
         return response
       } else {
         console.error("❌ FIFO Availability Check failed:", response.message)
@@ -990,7 +933,6 @@ function InventoryTransfer() {
   }
 
   const validateFifoStockBeforeTransfer = async (productsToTransfer, sourceLocationId) => {
-    console.log("🔍 Validating FIFO stock for", productsToTransfer.length, "products...")
     
     let insufficientProducts = []
     
@@ -1019,27 +961,19 @@ function InventoryTransfer() {
         const totalAvailable = availability.total_available
         const requestedQty = product.transfer_quantity
         
-        console.log(`📦 ${product.product_name} - FIFO Transfer Details:`)
-        console.log(`   - Oldest batch: ${oldestBatch.batch_reference} (${oldestBatch.entry_date}) - ${oldestBatchQty} units`)
-        console.log(`   - Total available: ${totalAvailable} units across ${availability.batches_count} batches`)
-        console.log(`   - Requested: ${requestedQty} units`)
         
         if (requestedQty > oldestBatchQty) {
-          console.log(`   - ⚠️ Requested quantity (${requestedQty}) exceeds oldest batch (${oldestBatchQty})`)
-          console.log(`   - 🔄 System will automatically consume from ${availability.batches_count} batches in FIFO order`)
           
           // Show which batches will be consumed
           let remainingQty = requestedQty
           let batchIndex = 0
           for (const batch of availability.next_batches) {
             const qtyFromBatch = Math.min(remainingQty, batch.available_quantity)
-            console.log(`   - Batch ${batchIndex + 1}: ${batch.batch_reference} - ${qtyFromBatch} units`)
             remainingQty -= qtyFromBatch
             batchIndex++
             if (remainingQty <= 0) break
           }
         } else {
-          console.log(`   - ✅ Requested quantity (${requestedQty}) fits within oldest batch (${oldestBatchQty})`)
         }
       }
     }
@@ -1053,188 +987,9 @@ function InventoryTransfer() {
       // Show a toast warning to the user
       toast.warning(`⚠️ Some products have insufficient stock. Transfer may fail for: ${insufficientProducts.map(p => p.name).join(', ')}`)
     }
-    
-    console.log("✅ FIFO stock validation completed - transfer will proceed")
-    return true
   }
 
-  // Enhanced FIFO Stock Info Component with Automatic Batch Switching
-  const FifoStockInfo = ({ product, sourceLocationId, showFullDetails = false, transferQuantity = 0 }) => {
-    const [fifoStock, setFifoStock] = useState(null)
-    const [loading, setLoading] = useState(false)
-
-    const loadFifoStock = async () => {
-      setLoading(true)
-      try {
-        const response = await checkFifoStock(product.product_id, sourceLocationId)
-        setFifoStock(response)
-      } catch (error) {
-        console.error("Error loading FIFO stock:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    useEffect(() => {
-      loadFifoStock()
-    }, [product.product_id, sourceLocationId])
-
-    if (loading) {
-      return <div className="text-xs text-gray-500">Loading...</div>
-    }
-
-    if (!fifoStock || !fifoStock.fifo_batches?.length) {
-      return (
-        <div className="text-xs text-gray-500">
-          No FIFO data available
-        </div>
-      )
-    }
-
-    const oldestBatch = fifoStock.fifo_batches[0]
-    const batchCount = fifoStock.batches_count
-
-    // Calculate which batches will be consumed for the transfer quantity
-    const calculateBatchConsumption = () => {
-      if (!transferQuantity || transferQuantity <= 0) return []
-
-      let remainingQty = transferQuantity
-      const consumption = []
-
-      for (const batch of fifoStock.fifo_batches) {
-        if (remainingQty <= 0) break
-
-        const qtyFromBatch = Math.min(remainingQty, batch.available_quantity)
-        consumption.push({
-          batch_reference: batch.batch_reference,
-          available_quantity: batch.available_quantity,
-          quantity_taken: qtyFromBatch,
-          will_be_depleted: qtyFromBatch >= batch.available_quantity
-        })
-
-        remainingQty -= qtyFromBatch
-      }
-
-      return consumption
-    }
-
-    const batchConsumption = calculateBatchConsumption()
-    const willUseMultipleBatches = batchConsumption.length > 1
-
-    return (
-      <div className={`text-xs ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
-        <div className={`p-2 rounded border ${
-          willUseMultipleBatches 
-            ? (isDarkMode ? 'border-orange-500 bg-orange-900/20' : 'border-orange-300 bg-orange-50')
-            : (isDarkMode ? 'border-blue-500 bg-blue-900/20' : 'border-blue-300 bg-blue-50')
-        }`}>
-          <div className="font-medium mb-1">
-            📦 Total Available: {fifoStock.total_available} units across {batchCount} batches
-          </div>
-          
-          {transferQuantity > 0 && (
-            <div className="mt-2">
-              <div className="font-medium mb-1">
-                📋 Transfer Breakdown ({transferQuantity} units)
-              </div>
-              {batchConsumption.map((batch, index) => (
-                <div key={index} className="text-xs">
-                  • {batch.batch_reference}: {batch.quantity_taken} units
-                  {batch.will_be_depleted && " (will be depleted)"}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {showFullDetails && (
-            <div className="mt-2 space-y-1">
-              <div className="font-medium">
-                🕐 Oldest Batch: {oldestBatch.batch_reference} ({oldestBatch.entry_date}) - {oldestBatch.available_quantity} units
-              </div>
-              {fifoStock.fifo_batches.slice(1, 3).map((batch, index) => (
-                <div key={index} className="text-xs">
-                  #{index + 2}: {batch.batch_reference} ({batch.entry_date}) - {batch.available_quantity} units
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="mt-2 text-xs opacity-75">
-            🔄 FIFO: {batchCount} batches, {fifoStock.total_available} total | Next: {oldestBatch.batch_reference} ({oldestBatch.entry_date})
-          </div>
-
-          {transferQuantity > 0 && willUseMultipleBatches && (
-            <div className={`mt-2 p-1 rounded text-xs font-medium ${
-              isDarkMode ? 'bg-orange-900/40 text-orange-200' : 'bg-orange-100 text-orange-800'
-            }`}>
-              ⚡ Auto-switching to multiple batches
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  useEffect(() => {
-    loadExpirySettings() // Load expiry settings first
-    loadTransfers()
-    loadTransferLogs()
-    loadLocations()
-    loadStaff()
-    loadCurrentUser()
-    
-    // Create transfer batch details table if it doesn't exist
-    handleApiCall("create_transfer_batch_details_table").then(response => {
-      console.log("📊 Transfer batch details table creation response:", response);
-    })
-  }, [])
-
-  // Load warehouse products when locations are available
-  useEffect(() => {
-    if (locations.length > 0) {
-      const warehouseLocation = locations.find(loc => 
-        loc.location_name.toLowerCase().includes('warehouse') || loc.location_id === 2
-      )
-      if (warehouseLocation) {
-        console.log("🏭 Auto-loading warehouse products on component mount...")
-        console.log("📍 Warehouse location found:", warehouseLocation.location_name, "(ID:", warehouseLocation.location_id, ")")
-        loadAvailableProducts(warehouseLocation.location_id)
-      } else {
-        console.warn("⚠️ No warehouse location found in locations array, attempting to load with default ID")
-        // Fallback: try to load with default warehouse location ID
-        loadAvailableProducts(2)
-      }
-    }
-  }, [locations])
-
-  // Auto-set valid employee when staff is loaded and current transferredBy is invalid
-  useEffect(() => {
-    if (staff.length > 0 && transferInfo.transferredBy === "Inventory Manager") {
-      // Find the first available staff member
-      const firstStaffMember = staff[0]
-      if (firstStaffMember && firstStaffMember.name) {
-        console.log("👤 Auto-setting transferredBy to first available staff member:", firstStaffMember.name)
-        setTransferInfo(prev => ({
-          ...prev,
-          transferredBy: firstStaffMember.name
-        }))
-      }
-    }
-  }, [staff, transferInfo.transferredBy])
-
-  // Load transfer history when modal is opened
-  useEffect(() => {
-    if (showQuantityHistoryModal && selectedProductForHistory) {
-      // Small delay to ensure modal is rendered
-      const timer = setTimeout(() => {
-        loadTransferHistory(selectedProductForHistory.product_id);
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [showQuantityHistoryModal, selectedProductForHistory])
-
-  // Fixed transfer submission function
+  // Fixed transfer submission function - OPTIMIZED for performance
   const handleTransferSubmit = async () => {
     const productsToTransfer = selectedProducts.filter((p) => p.transfer_quantity > 0)
 
@@ -1258,349 +1013,194 @@ function InventoryTransfer() {
       return
     }
 
-    // Debug logging
-    console.log("🚀 Starting transfer submission...")
-    console.log("Products to transfer:", productsToTransfer)
-    console.log("Store data:", storeData)
-    console.log("Transfer info:", transferInfo)
+    // Get location IDs
+    const sourceLocationId = getLocationIdByName(storeData.originalStore);
+    const destinationLocationId = getLocationIdByName(storeData.destinationStore);
 
-    // Enhanced validation for convenience store transfers
-    const isConvenienceStoreTransfer = storeData.destinationStore.toLowerCase().includes('convenience');
-    const convenience = locations.find(loc => loc.location_name.toLowerCase().includes('convenience'));
-    
-    if (isConvenienceStoreTransfer) {
-      console.log("🏪 Special handling for Warehouse → Convenience Store transfer")
-      
-      // Check for insufficient quantities but don&apos;t block the transfer
-      const insufficientProducts = productsToTransfer.filter(p => {
-        const availableQty = p.oldest_batch_quantity || p.available_for_transfer || p.quantity;
-        return p.transfer_quantity > availableQty;
-      })
-      if (insufficientProducts.length > 0) {
-        const productNames = insufficientProducts.map(p => p.product_name).join(', ')
-        console.warn(`⚠️ Some products exceed available quantity for convenience store: ${productNames}`)
-        toast.warning(`⚠️ Some products exceed available quantity. Transfer may fail for: ${productNames}`)
-        // Don't return - allow the transfer to proceed
-      }
+    if (!sourceLocationId || !destinationLocationId) {
+      toast.error("Invalid source or destination location");
+      return;
     }
 
-    setLoading(true)
+    // Check for insufficient quantities but don't block the transfer
+    const insufficientProducts = productsToTransfer.filter(p => {
+      const availableQty = p.total_quantity || p.available_for_transfer || p.oldest_batch_quantity || 0;
+      return p.transfer_quantity > availableQty;
+    })
+    
+    if (insufficientProducts.length > 0) {
+      const productNames = insufficientProducts.map(p => p.product_name).join(', ')
+      console.warn(`⚠️ Some products exceed available quantity: ${productNames}`)
+      toast.warning(`⚠️ Some products exceed available quantity. Transfer may fail for: ${productNames}`)
+    }
+
+    // Prepare transfer data with unit conversion
+    const transferProducts = productsToTransfer.map(product => {
+      const baseQuantity = getBaseUnitQuantity(product.product_id, product.transfer_quantity);
+      return {
+        product_id: product.product_id,
+        quantity: baseQuantity // Use base unit quantity for transfer
+      };
+    });
+
+    const transferData = {
+      source_location_id: sourceLocationId,
+      destination_location_id: destinationLocationId,
+      employee_id: currentUser?.emp_id || currentUser?.user_id || 1,
+      status: 'approved',
+      products: transferProducts,
+      transferred_by: transferInfo.transferredBy,
+      received_by: transferInfo.receivedBy || null,
+      delivery_date: transferInfo.deliveryDate,
+    };
+
+    console.log("🚀 Transfer Data:", {
+      source: sourceLocationId,
+      destination: destinationLocationId,
+      productCount: transferProducts.length,
+      totalUnits: transferProducts.reduce((sum, p) => sum + p.quantity, 0)
+    });
+
+    setLoading(true);
+    
     try {
-      // Find location IDs with case-insensitive comparison
-      console.log("🔍 Store Data Debug:")
-      console.log("storeData.originalStore:", storeData.originalStore)
-      console.log("storeData.destinationStore:", storeData.destinationStore)
-      console.log("storeData.storesConfirmed:", storeData.storesConfirmed)
+      toast.info("⚡ Processing transfer... This may take a moment for large transfers.");
       
-      const sourceLocation = locations.find((loc) => loc.location_name.toLowerCase() === storeData.originalStore.toLowerCase())
-      const destinationLocation = locations.find((loc) => loc.location_name.toLowerCase() === storeData.destinationStore.toLowerCase())
-
-      console.log("🔍 Location Debug Info:")
-      console.log("Available locations:", locations.map(loc => `${loc.location_name} (ID: ${loc.location_id})`))
-      console.log("Selected original store:", storeData.originalStore)
-      console.log("Selected destination store:", storeData.destinationStore)
-      console.log("Found source location:", sourceLocation)
-      console.log("Found destination location:", destinationLocation)
-
-      if (!sourceLocation || !destinationLocation) {
-        console.error("❌ Location validation failed:")
-        console.error("Source location found:", !!sourceLocation)
-        console.error("Destination location found:", !!destinationLocation)
-        toast.error("Invalid location selection")
-        setLoading(false)
-        return
-      }
-
-      // Validate that we're not transferring to the same location
-      console.log("🔍 Location Comparison Debug:")
-      console.log("Source Location:", sourceLocation.location_name, "(ID:", sourceLocation.location_id, ")")
-      console.log("Destination Location:", destinationLocation.location_name, "(ID:", destinationLocation.location_id, ")")
-      console.log("Location IDs match:", sourceLocation.location_id === destinationLocation.location_id)
-      console.log("Location names match:", sourceLocation.location_name.toLowerCase() === destinationLocation.location_name.toLowerCase())
+      const response = await handleTransferWithFifo(transferData)
       
-      if (sourceLocation.location_id === destinationLocation.location_id) {
-        console.error("❌ Same location transfer detected")
-        console.error("Source and destination have the same location ID:", sourceLocation.location_id)
-        toast.error("Source and destination cannot be the same")
-        setLoading(false)
-        return
-      }
-      
-      // Additional safety check: ensure destination is not a warehouse
-      if (destinationLocation.location_name.toLowerCase().includes('warehouse')) {
-        console.error("❌ Destination is a warehouse location")
-        console.error("Destination location:", destinationLocation.location_name)
-        toast.error("Cannot transfer to a warehouse location")
-        setLoading(false)
-        return
-      }
-
-      // Find employee ID
-      let transferEmployee = staff.find((emp) => emp.name === transferInfo.transferredBy)
-      
-      // Fallback: if employee not found, use the first available staff member
-      if (!transferEmployee && staff.length > 0) {
-        console.warn("⚠️ Employee not found, using first available staff member as fallback")
-        transferEmployee = staff[0]
-        // Update the transferInfo to reflect the actual employee being used
-        setTransferInfo(prev => ({
-          ...prev,
-          transferredBy: transferEmployee.name
-        }))
-      }
-      
-      if (!transferEmployee) {
-        console.error("❌ No staff members available for transfer")
-        toast.error("No staff members available. Please contact administrator.")
-        setLoading(false)
-        return
-      }
-
-      // Prepare transfer data
-      const transferData = {
-        source_location_id: sourceLocation.location_id,
-        destination_location_id: destinationLocation.location_id,
-        employee_id: transferEmployee.emp_id,
-        status: "approved", // Use 'approved' to match database enum
-        delivery_date: transferInfo.deliveryDate || null,
-        products: productsToTransfer.map((product) => {
-          // Convert quantity to base units
-          const baseUnitQuantity = getBaseUnitQuantity(product.product_id, product.transfer_quantity);
-          const selectedUnit = selectedUnits[product.product_id];
-          
-          console.log(`📦 Product: ${product.product_name}`);
-          console.log(`   Selected Unit: ${selectedUnit || 'base'}`);
-          console.log(`   Input Quantity: ${product.transfer_quantity} ${selectedUnit || 'units'}`);
-          console.log(`   Base Unit Quantity: ${baseUnitQuantity} base units`);
-          
-          return {
-            product_id: product.product_id,
-            quantity: baseUnitQuantity, // Send in base units
-            unit_name: selectedUnit || (product.product_type === 'Medicine' ? 'tablet' : 'piece'),
-            display_quantity: product.transfer_quantity, // Original display quantity
-          };
-        }),
-      }
-
-      console.log("📦 Transfer Data Validation:")
-      console.log("Source Location ID:", transferData.source_location_id, "Name:", sourceLocation.location_name)
-      console.log("Destination Location ID:", transferData.destination_location_id, "Name:", destinationLocation.location_name)
-      console.log("Employee ID:", transferData.employee_id, "Name:", transferEmployee.name)
-      console.log("Products to transfer:", productsToTransfer.map(p => `${p.product_name} (${p.transfer_quantity} qty)`))
-      
-      // Double-check convenience store transfer
-      if (isConvenienceStoreTransfer) {
-        console.log("🏪 Convenience Store Transfer Validation:")
-        console.log("Is convenience store transfer:", isConvenienceStoreTransfer)
-        console.log("Destination location name:", destinationLocation.location_name)
-        console.log("Destination location ID:", destinationLocation.location_id)
-        console.log("Expected destination should be convenience store")
-      }
-
-      console.log("📦 Sending transfer data:", transferData)
-      console.log("📍 Transfer Direction: FROM", storeData.originalStore, "TO", storeData.destinationStore)
-      console.log("📦 Products being transferred:", productsToTransfer.map(p => `${p.product_name} (${p.transfer_quantity} qty)`))
-      
-      // Enhanced FIFO Stock Validation
-      console.log("🔍 Performing FIFO stock validation before transfer...")
-      toast.info("🔍 Checking FIFO stock availability...")
-      
-      try {
-        await validateFifoStockBeforeTransfer(productsToTransfer, sourceLocation.location_id)
-        console.log("✅ FIFO validation completed successfully")
-      } catch (fifoError) {
-        console.error("❌ FIFO validation failed:", fifoError.message)
-        console.log("⚠️ FIFO validation failed, but continuing with transfer...")
-        console.log("⚠️ This is a temporary workaround while debugging FIFO issues")
-        // Temporarily skip FIFO validation error to allow transfer to proceed
-        // toast.error(fifoError.message)
-        // setLoading(false)
-        // return
-      }
-      
-      // Special confirmation for convenience store transfers
-      if (isConvenienceStoreTransfer) {
-        console.log("🏪 Confirming convenience store transfer...")
-        toast.info("🔄 Processing transfer to convenience store...")
-      } else {
-        toast.info("🔄 Processing inventory transfer...")
-      }
-      
-      const response = await handleApiCall("create_transfer", transferData)
-      console.log("📥 Transfer creation response:", response)
-
       if (response.success) {
-        // Log the transfer activity with user context
+        toast.success(`✅ Transfer created successfully! ${transferProducts.length} products transferred.`);
+        
+        // Log activity
         try {
-          const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
           await api.callGenericAPI('backend.php', 'log_activity', {
             activity_type: 'INVENTORY_TRANSFER_CREATED',
-            description: `Transfer created from ${transferInfo.sourceLocation} to ${transferInfo.destinationLocation}: ${selectedProducts.length} products`,
+            description: `Transfer created successfully - ${transferProducts.length} products`,
             table_name: 'tbl_transfer_header',
-            record_id: response.transfer_header_id,
-            user_id: userData.user_id || userData.emp_id,
-            username: userData.username,
-            role: userData.role,
+            record_id: response.transfer_id || response.data?.transfer_id,
+            user_id: currentUser?.user_id || currentUser?.emp_id,
+            username: currentUser?.username,
+            role: currentUser?.role,
           });
         } catch (_) {}
         
-        const transferredCount = response.products_transferred || 0;
-        
-        console.log("✅ Transfer successful!")
-        console.log("Transfer ID:", response.transfer_id)
-        console.log("Products transferred:", transferredCount)
-        console.log("Source location:", response.source_location)
-        console.log("Destination location:", response.destination_location)
-        
-        // Simple success message for basic transfer
-        let successMessage = `✅ Transfer completed successfully! ${transferredCount} product(s) moved FROM ${storeData.originalStore} TO ${storeData.destinationStore}.`
-        
-        if (isConvenienceStoreTransfer) {
-          successMessage += " Products are now available in the convenience store inventory."
-        }
-        
-        toast.success(successMessage)
-        
-        console.log("✅ Transfer created with ID:", response.transfer_id)
-
-        // Reset form
-        setShowCreateModal(false)
-        setCurrentStep(1)
-        setStoreData({ 
-          originalStore: "Warehouse", 
-          destinationStore: "", 
-          storesConfirmed: false 
-        })
-        setTransferInfo({ 
-          transferredBy: currentUser?.full_name || "Inventory Manager", 
-          receivedBy: "", 
-          deliveryDate: new Date().toISOString().split('T')[0] 
-        })
-        setSelectedProducts([])
-        setCheckedProducts([])
-
-        // Increment session transfer count
+        // Reset and reload
+        loadTransfers();
+        loadTransferLogs();
+        setShowCreateModal(false);
+        setShowProductSelection(false);
+        setSelectedProducts([]);
         incrementSessionTransfers();
-        
-        // Reload transfers to show the new one
-        console.log("🔄 Reloading transfers...")
-        await loadTransfers()
-        
-        // Reload transfer logs to show the new entries
-        console.log("🔄 Reloading transfer logs...")
-        await loadTransferLogs()
-        
-        // Force reload of available products to reflect the transfer
-        if (sourceLocation) {
-          console.log("🔄 Reloading source location products...")
-          await loadAvailableProducts(sourceLocation.location_id)
-        }
-        
-        // Special notification for convenience store transfers
-        if (isConvenienceStoreTransfer) {
-          setTimeout(() => {
-            toast.info("🏪 You can now view the transferred products in the Convenience Store inventory page.")
-          }, 2000)
-        }
       } else {
-        console.error("❌ Transfer creation failed:", response.message)
-        toast.error(response.message || "Failed to create transfer")
+        toast.error(response.message || "Failed to create transfer");
       }
     } catch (error) {
-      console.error("Error creating transfer:", error)
-      toast.error("Failed to create transfer: " + error.message)
+      console.error("❌ Transfer creation error:", error);
+      toast.error(`Failed to create transfer: ${error.message}`);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
+  // Missing handler functions
   const handleCreateTransfer = () => {
-    setCurrentStep(1)
-    setStoreData({ 
-      originalStore: "Warehouse", // Always reset to Warehouse
-      destinationStore: "", 
-      storesConfirmed: false 
-    })
-    setTransferInfo({ 
-      transferredBy: currentUser?.full_name || "Inventory Manager", // Auto-fill with current user or default
-      receivedBy: "", 
-      deliveryDate: new Date().toISOString().split('T')[0] // Auto-fill with today's date
-    })
-    setSelectedProducts([])
-    setCheckedProducts([])
-    setShowCreateModal(true)
-  }
+    setShowCreateModal(true);
+    setCurrentStep(1);
+    // Reset state
+    setStoreData({
+      originalStore: "Warehouse",
+      destinationStore: "",
+      storesConfirmed: false,
+    });
+    setTransferInfo({
+      transferredBy: currentUser?.full_name || currentUser?.username || transferInfo.transferredBy,
+      receivedBy: "",
+      deliveryDate: new Date().toISOString().split('T')[0],
+    });
+    setSelectedProducts([]);
+    setCheckedProducts([]);
+    setShowProductSelection(false);
+  };
 
   const handleConfirmStores = () => {
     if (!storeData.destinationStore) {
-      toast.error("Please select destination store")
-      return
+      toast.error("Please select a destination store");
+      return;
     }
-    
-    // Find the warehouse location ID
-    const warehouseLocation = locations.find((loc) => 
-      loc.location_name.toLowerCase().includes('warehouse')
-    )
-    if (!warehouseLocation) {
-      toast.error("Warehouse location not found in available locations")
-      return
-    }
-    
-    // Set warehouse as the source location
-    setStoreData((prev) => ({ 
-      ...prev, 
-      originalStore: warehouseLocation.location_name,
-      storesConfirmed: true 
-    }))
-    setCurrentStep(2)
-    
-    // Load products from the warehouse
-    loadAvailableProducts(warehouseLocation.location_id)
-  }
+    setStoreData(prev => ({ ...prev, storesConfirmed: true }));
+    setCurrentStep(2);
+    toast.success("Transfer stores confirmed");
+  };
 
-  const handleNextToProducts = async () => {
+  const handleNextToProducts = () => {
     if (!transferInfo.transferredBy) {
-      toast.error("Transferred by (Original Store) is required")
-      return
+      toast.error("Please enter who is transferring the products");
+      return;
     }
-    
-    // Find warehouse location ID
-    const warehouseLocation = locations.find(loc => loc.location_name.toLowerCase().includes('warehouse'))
-    if (warehouseLocation) {
-      console.log("🏭 Loading warehouse products for transfer...")
-      await loadAvailableProducts(warehouseLocation.location_id)
-    } else {
-      console.warn("⚠️ Warehouse location not found")
-      toast.error("Warehouse location not found")
-      return
+    setCurrentStep(3);
+    // Load products if not already loaded
+    if (availableProducts.length === 0) {
+      loadAvailableProducts();
     }
-    
-    setCurrentStep(3)
-  }
+  };
 
-  const handleProductCheck = (productId, checked) => {
-    if (checked) {
-      setCheckedProducts((prev) => [...prev, productId])
-    } else {
-      setCheckedProducts((prev) => prev.filter((id) => id !== productId))
+  const handleSelectProducts = () => {
+    if (checkedProducts.length === 0) {
+      toast.error("Please select at least one product");
+      return;
     }
-  }
+    
+    const productsToAdd = availableProducts.filter(p => 
+      checkedProducts.includes(p.product_id) && 
+      !selectedProducts.some(sp => sp.product_id === p.product_id)
+    );
+    
+    // Load units for selected products
+    if (productsToAdd.length > 0) {
+      loadUnitsForProducts(productsToAdd).then(() => {
+        setSelectedProducts(prev => [...prev, ...productsToAdd.map(p => ({ ...p, transfer_quantity: 0 }))]);
+        setCheckedProducts([]);
+        setShowProductSelection(false);
+        toast.success(`Added ${productsToAdd.length} product(s) to transfer`);
+      });
+    } else {
+      toast.info("Selected products are already added to transfer");
+    }
+  };
 
-  const handleSelectProducts = async () => {
-    const selected = availableProducts
-      .filter((p) => checkedProducts.includes(p.product_id))
-      .map((p) => ({
-        ...p,
-        transfer_quantity: 0,
-      }))
-    setSelectedProducts(selected)
-    
-    // Load units for the selected products
-    console.log("🔄 Loading units for selected products...");
-    await loadUnitsForProducts(selected);
-    
-    setShowProductSelection(false)
-  }
+  const handleProductCheck = (productId, isChecked) => {
+    if (isChecked) {
+      setCheckedProducts(prev => [...prev, productId]);
+    } else {
+      setCheckedProducts(prev => prev.filter(id => id !== productId));
+    }
+  };
+
+  // Calculate if this is a convenience store transfer
+  const isConvenienceStoreTransfer = storeData.destinationStore?.toLowerCase().includes('convenience') || false;
+
+  // Optimized FIFO transfer handler
+  const handleTransferWithFifo = async (transferData) => {
+    try {
+      const response = await api.callGenericAPI('backend.php', 'create_transfer', transferData);
+      return response;
+    } catch (error) {
+      console.error("❌ Transfer with FIFO error:", error);
+      return {
+        success: false,
+        message: error.message || "Failed to create transfer",
+      };
+    }
+  };
+
+  // Helper to get location ID by name
+  const getLocationIdByName = (locationName) => {
+    const location = locations.find(loc => 
+      loc.location_name.toLowerCase() === locationName.toLowerCase() ||
+      loc.location_name.toLowerCase().includes(locationName.toLowerCase())
+    );
+    return location?.location_id;
+  };
 
   const updateTransferQuantity = (productId, quantity) => {
     const newQuantity = Number.parseInt(quantity) || 0;
@@ -1633,8 +1233,6 @@ function InventoryTransfer() {
 
   // Handle unit selection change
   const handleUnitChange = (productId, unitName) => {
-    console.log(`🔄 Changing unit for product ${productId} to ${unitName}`);
-    
     setSelectedUnits(prev => ({
       ...prev,
       [productId]: unitName
@@ -1974,30 +1572,15 @@ function InventoryTransfer() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            console.log("ℹ️ Details icon clicked for transfer:", log);
-                            console.log("🔍 Fetching fresh transfer details including batch info...");
-                            console.log("📋 Transfer ID:", log.transfer_id);
-                            console.log("📦 Product ID:", log.product_id);
-                            console.log("🏷️ Product Name:", log.product_name);
-                            
                             (async () => {
                               try {
                                 toast.info("🔍 Loading transfer details...");
                                 const full = await handleApiCall("get_transfer_log_by_id", { transfer_id: log.transfer_id });
-                                console.log("📥 API Response:", full);
-                                
                                 if (full?.success && full?.data) {
-                                  console.log("✅ Transfer details loaded successfully");
-                                  console.log("📦 Product Name:", full.data.product_name);
-                                  console.log("🔢 Batch Details Count:", full.data.batch_details?.length || 0);
-                                  console.log("📊 Batch Details:", full.data.batch_details);
-                                  
                                   setSelectedTransferForBatchDetails(full.data);
                                   toast.success(`✅ Loaded details for ${full.data.product_name}`);
                                 } else {
                                   console.warn("⚠️ API returned error or no data, using log data as fallback");
-                                  console.log("⚠️ API Response:", full);
-                                  
                                   // Use the log data with empty batch_details if API fails
                                   setSelectedTransferForBatchDetails({
                                     ...log,
@@ -2014,13 +1597,8 @@ function InventoryTransfer() {
                                 toast.error("❌ Failed to load batch details");
                               } finally {
                                 setShowBatchDetailsModal(true);
-                                console.log("✅ Modal state set - should show modal now");
-                                
                                 // Debug: Check modal state after a short delay
                                 setTimeout(() => {
-                                  console.log("🔍 Modal State Check:");
-                                  console.log("  - showBatchDetailsModal:", showBatchDetailsModal);
-                                  console.log("  - selectedTransferForBatchDetails:", selectedTransferForBatchDetails);
                                 }, 100);
                               }
                             })();
@@ -2375,15 +1953,19 @@ function InventoryTransfer() {
                   <select
                     value={storeData.destinationStore}
                     onChange={(e) => setStoreData((prev) => ({ ...prev, destinationStore: e.target.value }))}
-                    disabled={storeData.storesConfirmed}
+                    disabled={storeData.storesConfirmed || locations.length === 0}
                     className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'border-slate-500 bg-slate-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
                   >
-                    <option value="">Select Destination Store</option>
+                    <option value="">
+                      {locations.length === 0 ? "Loading locations..." : "Select Destination Store"}
+                    </option>
                     {(() => {
                       const filteredLocations = locations.filter((loc) => !loc.location_name.toLowerCase().includes('warehouse'));
-                      console.log("🔍 Destination Dropdown Debug:");
-                      console.log("All locations:", locations.map(loc => `${loc.location_name} (ID: ${loc.location_id})`));
-                      console.log("Filtered locations:", filteredLocations.map(loc => `${loc.location_name} (ID: ${loc.location_id})`));
+                      
+                      if (filteredLocations.length === 0 && locations.length > 0) {
+                        console.warn("⚠️ All locations were filtered out. Available locations:", locations.map(l => l.location_name));
+                      }
+                      
                       return filteredLocations.map((loc) => (
                         <option key={loc.location_id} value={loc.location_name}>
                           {loc.location_name}
@@ -2391,6 +1973,31 @@ function InventoryTransfer() {
                       ));
                     })()}
                   </select>
+                  
+                  {/* Location Status Messages */}
+                  {locations.length === 0 && (
+                    <div className={`mt-2 p-2 border rounded text-sm ${isDarkMode ? 'bg-yellow-900/20 border-yellow-700 text-yellow-300' : 'bg-yellow-50 border-yellow-200 text-yellow-700'}`}>
+                      <div className="flex items-center">
+                        <Clock className="h-4 w-4 mr-1" />
+                        <span>Loading locations from database...</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {(() => {
+                    const filteredLocations = locations.filter((loc) => !loc.location_name.toLowerCase().includes('warehouse'));
+                    if (filteredLocations.length === 0 && locations.length > 0) {
+                      return (
+                        <div className={`mt-2 p-2 border rounded text-sm ${isDarkMode ? 'bg-red-900/20 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                          <div className="flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            <span>No destination locations found (all locations contain "warehouse" in name)</span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   
                   {/* Convenience Store Indicator */}
                   {storeData.destinationStore && storeData.destinationStore.toLowerCase().includes('convenience') && (
@@ -2845,12 +2452,19 @@ function InventoryTransfer() {
                               {product.total_quantity || 0}
                             </td>
                             <td className={`border px-2 py-1 text-sm text-center align-top ${isDarkMode ? 'border-slate-600' : 'border-gray-300'}`}>
-                              <FifoStockInfo 
-                                product={product} 
-                                sourceLocationId={locations.find(loc => loc.location_name.toLowerCase().includes('warehouse'))?.location_id || 2}
-                                transferQuantity={product.transfer_quantity}
-                                showFullDetails={false}
-                              />
+                              <div className="text-xs">
+                                {product.transfer_quantity > 0 ? (
+                                  product.transfer_quantity > (product.total_quantity || 0) ? (
+                                    <span className="text-red-600 font-semibold">⚠️ Over Stock</span>
+                                  ) : product.transfer_quantity > (product.oldest_batch_quantity || 0) ? (
+                                    <span className="text-orange-600 font-semibold">⚡ Multi-Batch</span>
+                                  ) : (
+                                    <span className="text-blue-600 font-semibold">✓ Single Batch</span>
+                                  )
+                                ) : (
+                                  <span className="text-gray-400">Enter quantity</span>
+                                )}
+                              </div>
                             </td>
                             <td className={`border px-2 py-1 text-sm text-center align-top ${isDarkMode ? 'border-slate-600 text-white' : 'border-gray-300 text-gray-900'}`}>
                               ₱{Number.parseFloat(product.srp || 0).toFixed(2)}

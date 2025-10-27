@@ -34,7 +34,7 @@ try {
     
 } catch(PDOException $e) {
     // Log error securely without exposing credentials
-    error_log("Database connection failed: " . $e->getMessage());
+    // error_log("Database connection failed: " . $e->getMessage());
     
     header("Content-Type: application/json");
     
@@ -89,7 +89,7 @@ function getMySQLiConnection() {
         return $mysqli_conn;
         
     } catch(Exception $e) {
-        error_log("MySQLi connection failed: " . $e->getMessage());
+        // error_log("MySQLi connection failed: " . $e->getMessage());
         
         header("Content-Type: application/json");
         

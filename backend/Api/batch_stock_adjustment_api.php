@@ -26,7 +26,7 @@ ob_clean();
 
 // Read and decode incoming JSON request
 $rawData = file_get_contents("php://input");
-error_log("Batch Stock Adjustment API - Raw input: " . $rawData);
+// error_log("Batch Stock Adjustment API - Raw input: " . $rawData);
 
 $data = json_decode($rawData, true);
 
@@ -43,30 +43,30 @@ $action = $data['action'] ?? '';
 // Function to ensure table structure is correct (without SRP)
 function ensureTableStructure($conn) {
     try {
-        error_log("🔧 Starting table structure check...");
+        // error_log("🔧 Starting table structure check...");
         
         // Check if entry_date column exists
         $checkEntryDateStmt = $conn->prepare("SHOW COLUMNS FROM tbl_fifo_stock LIKE 'entry_date'");
         $checkEntryDateStmt->execute();
         $entryDateExists = $checkEntryDateStmt->fetch();
         
-        error_log("🔍 Entry_date column check result: " . ($entryDateExists ? "EXISTS" : "NOT EXISTS"));
+        // error_log("🔍 Entry_date column check result: " . ($entryDateExists ? "EXISTS" : "NOT EXISTS"));
         
         if (!$entryDateExists) {
-            error_log("➕ Adding entry_date column to tbl_fifo_stock...");
+            // error_log("➕ Adding entry_date column to tbl_fifo_stock...");
             // Add entry_date column if it doesn't exist
             $addEntryDateStmt = $conn->prepare("ALTER TABLE tbl_fifo_stock ADD COLUMN entry_date DATE DEFAULT CURDATE()");
             $addEntryDateStmt->execute();
-            error_log("✅ Successfully added entry_date column to tbl_fifo_stock table");
+            // error_log("✅ Successfully added entry_date column to tbl_fifo_stock table");
         } else {
-            error_log("✅ Entry_date column already exists");
+            // error_log("✅ Entry_date column already exists");
         }
         
-        error_log("🏁 Table structure check completed");
+        // error_log("🏁 Table structure check completed");
         
     } catch (Exception $e) {
-        error_log("❌ Error ensuring table structure: " . $e->getMessage());
-        error_log("❌ Error details: " . print_r($e, true));
+        // error_log("❌ Error ensuring table structure: " . $e->getMessage());
+        // error_log("❌ Error details: " . print_r($e, true));
     }
 }
 
@@ -254,8 +254,8 @@ switch ($action) {
 
     case 'create_batch_stock_adjustment':
         try {
-            error_log("🔄 Starting create_batch_stock_adjustment...");
-            error_log("📊 Received data: " . print_r($data, true));
+            // error_log("🔄 Starting create_batch_stock_adjustment...");
+            // error_log("📊 Received data: " . print_r($data, true));
             
             $product_id = $data['product_id'] ?? 0;
             $batch_id = $data['batch_id'] ?? 0;
@@ -266,11 +266,11 @@ switch ($action) {
             $notes = $data['notes'] ?? '';
             $adjusted_by = $data['adjusted_by'] ?? 'admin';
             
-            error_log("📋 Parsed values: product_id=$product_id, batch_id=$batch_id, old_qty=$old_qty, new_qty=$new_qty, adjustment_qty=$adjustment_qty, reason='$reason'");
+            // error_log("📋 Parsed values: product_id=$product_id, batch_id=$batch_id, old_qty=$old_qty, new_qty=$new_qty, adjustment_qty=$adjustment_qty, reason='$reason'");
             
             if (!$product_id || !$batch_id || !$reason) {
                 $errorMsg = "Product ID, Batch ID, and reason are required";
-                error_log("❌ Validation failed: $errorMsg");
+                // error_log("❌ Validation failed: $errorMsg");
                 echo json_encode([
                     "success" => false,
                     "message" => $errorMsg
@@ -280,7 +280,7 @@ switch ($action) {
             
             if ($adjustment_qty == 0) {
                 $errorMsg = "Adjustment quantity cannot be zero";
-                error_log("❌ Validation failed: $errorMsg");
+                // error_log("❌ Validation failed: $errorMsg");
                 echo json_encode([
                     "success" => false,
                     "message" => $errorMsg
@@ -289,32 +289,32 @@ switch ($action) {
             }
             
             // Start transaction
-            error_log("🔄 Starting database transaction...");
+            // error_log("🔄 Starting database transaction...");
             $conn->beginTransaction();
             
             // Determine movement type based on adjustment quantity
             $movement_type = $adjustment_qty > 0 ? 'IN' : 'OUT';
-            error_log("📊 Movement type: $movement_type");
+            // error_log("📊 Movement type: $movement_type");
             
             // Get batch reference
-            error_log("🔍 Getting batch reference for batch_id: $batch_id");
+            // error_log("🔍 Getting batch reference for batch_id: $batch_id");
             $batchRefStmt = $conn->prepare("SELECT batch_reference FROM tbl_fifo_stock WHERE batch_id = ?");
             $batchRefStmt->execute([$batch_id]);
             $batch_reference = $batchRefStmt->fetchColumn();
-            error_log("📋 Batch reference: $batch_reference");
+            // error_log("📋 Batch reference: $batch_reference");
             
             // Update FIFO stock quantity
-            error_log("🔄 Updating FIFO stock quantity...");
+            // error_log("🔄 Updating FIFO stock quantity...");
             $updateStmt = $conn->prepare("
                 UPDATE tbl_fifo_stock 
                 SET available_quantity = available_quantity + ? 
                 WHERE batch_id = ?
             ");
             $updateStmt->execute([$adjustment_qty, $batch_id]);
-            error_log("✅ FIFO stock updated");
+            // error_log("✅ FIFO stock updated");
             
             // Update product stock_status based on total quantity from tbl_fifo_stock
-            error_log("🔄 Updating product stock status...");
+            // error_log("🔄 Updating product stock status...");
             $updateProductStmt = $conn->prepare("
                 UPDATE tbl_product 
                 SET stock_status = CASE 
@@ -325,10 +325,10 @@ switch ($action) {
                 WHERE product_id = ?
             ");
             $updateProductStmt->execute([$product_id, $product_id, $product_id]);
-            error_log("✅ Product stock status updated");
+            // error_log("✅ Product stock status updated");
             
             // Create batch adjustment log entry
-            error_log("🔄 Creating batch adjustment log entry...");
+            // error_log("🔄 Creating batch adjustment log entry...");
             $logStmt = $conn->prepare("
                 INSERT INTO tbl_batch_adjustment_log (
                     product_id, batch_id, batch_reference, old_qty, new_qty, 
@@ -339,10 +339,10 @@ switch ($action) {
                 $product_id, $batch_id, $batch_reference, $old_qty, $new_qty,
                 $adjustment_qty, $movement_type, $reason, $notes, $adjusted_by
             ]);
-            error_log("✅ Batch adjustment log created");
+            // error_log("✅ Batch adjustment log created");
             
             // Create stock movement record (without SRP)
-            error_log("🔄 Creating stock movement record...");
+            // error_log("🔄 Creating stock movement record...");
             $movementStmt = $conn->prepare("
                 INSERT INTO tbl_stock_movements (
                     product_id, batch_id, movement_type, quantity, remaining_quantity,
@@ -353,14 +353,14 @@ switch ($action) {
             // Get expiration date from batch
             $expiration_date = null;
             try {
-                error_log("🔍 Getting expiration date for batch_id: $batch_id");
+                // error_log("🔍 Getting expiration date for batch_id: $batch_id");
                 $batchDetailsStmt = $conn->prepare("SELECT expiration_date FROM tbl_fifo_stock WHERE batch_id = ?");
                 $batchDetailsStmt->execute([$batch_id]);
                 $batchDetails = $batchDetailsStmt->fetch(PDO::FETCH_ASSOC);
                 $expiration_date = $batchDetails['expiration_date'] ?? null;
-                error_log("📅 Expiration date: $expiration_date");
+                // error_log("📅 Expiration date: $expiration_date");
             } catch (Exception $e) {
-                error_log("❌ Error getting batch expiration date: " . $e->getMessage());
+                // error_log("❌ Error getting batch expiration date: " . $e->getMessage());
             }
             
             $movementStmt->execute([
@@ -368,10 +368,10 @@ switch ($action) {
                 $expiration_date, 
                 $batch_reference, "Batch adjustment: " . $reason, $adjusted_by
             ]);
-            error_log("✅ Stock movement record created");
+            // error_log("✅ Stock movement record created");
             
             $conn->commit();
-            error_log("✅ Transaction committed successfully");
+            // error_log("✅ Transaction committed successfully");
             
             echo json_encode([
                 "success" => true,
@@ -384,18 +384,18 @@ switch ($action) {
                     "movement_type" => $movement_type
                 ]
             ]);
-            error_log("✅ Response sent successfully");
+            // error_log("✅ Response sent successfully");
             
         } catch (Exception $e) {
-            error_log("❌ Exception in create_batch_stock_adjustment: " . $e->getMessage());
-            error_log("❌ Exception trace: " . $e->getTraceAsString());
+            // error_log("❌ Exception in create_batch_stock_adjustment: " . $e->getMessage());
+            // error_log("❌ Exception trace: " . $e->getTraceAsString());
             
             if (isset($conn)) {
                 try {
                     $conn->rollback();
-                    error_log("✅ Transaction rolled back");
+                    // error_log("✅ Transaction rolled back");
                 } catch (Exception $rollbackError) {
-                    error_log("❌ Error during rollback: " . $rollbackError->getMessage());
+                    // error_log("❌ Error during rollback: " . $rollbackError->getMessage());
                 }
             }
             

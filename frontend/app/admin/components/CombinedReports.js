@@ -77,9 +77,6 @@ function CombinedReports() {
     try {
       setLoading(true);
       setError(null);
-      
-      console.log(`📊 Fetching ${reportType} data...`);
-      
       const result = await handleApiCall('get_report_data', {
         report_type: reportType,
         start_date: dateRange.startDate,
@@ -130,9 +127,6 @@ function CombinedReports() {
         default:
           break;
       }
-      
-      console.log(`✅ ${reportType} data fetched successfully:`, deduplicatedData.length, 'records');
-      
     } catch (error) {
       console.error(`Error fetching ${reportType} data:`, error);
       
@@ -348,17 +342,12 @@ function CombinedReports() {
   // Combined PDF generation
   const generateCombinedPDF = async (reportTypes) => {
     try {
-      console.log('🧪 Starting combined PDF generation...');
-      console.log('📊 Report types to process:', reportTypes);
-      console.log('📅 Date range:', combineDateRange);
-      
       // Fetch data for all selected report types
       const allReportsData = {};
       let hasAnyData = false;
       
       for (const reportType of reportTypes) {
         try {
-          console.log(`📊 Fetching data for ${reportType}...`);
           const result = await handleApiCall('get_report_data', {
             report_type: reportType,
             start_date: combineDateRange.startDate,
@@ -367,8 +356,6 @@ function CombinedReports() {
           
           if (result.success) {
             allReportsData[reportType] = result.data || [];
-            console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
-            
             if (allReportsData[reportType].length > 0) {
               hasAnyData = true;
             }
@@ -385,10 +372,6 @@ function CombinedReports() {
       if (!hasAnyData) {
         throw new Error('No data found for the selected date range and report types.');
       }
-      
-      console.log('📄 All reports data fetched:', allReportsData);
-      console.log('📄 Creating PDF document...');
-      
       // Create PDF with jsPDF
       const pdf = new jsPDF('p', 'mm', 'a4');
       
@@ -409,18 +392,10 @@ function CombinedReports() {
       let yPosition = 60;
       
       // Add each report's data
-      console.log('🔄 Processing report types for PDF:', reportTypes);
       for (const reportType of reportTypes) {
         const data = allReportsData[reportType] || [];
         const reportConfig = reportTypes.find(t => t.id === reportType);
         const reportName = reportConfig ? reportConfig.name : reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        
-        console.log(`📊 Processing ${reportType}:`, {
-          reportName,
-          dataLength: data.length,
-          hasData: data.length > 0
-        });
-        
         // Check if we need a new page
         if (yPosition > 250) {
           pdf.addPage();
@@ -527,11 +502,7 @@ function CombinedReports() {
       
       // Save PDF
       const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
-      
-      console.log('💾 Saving PDF:', fileName);
       pdf.save(fileName);
-      console.log(`✅ PDF downloaded successfully: ${fileName}`);
-      
     } catch (error) {
       console.error('Error generating PDF:', error);
       throw error;
@@ -540,8 +511,6 @@ function CombinedReports() {
 
   const combineReports = async () => {
     try {
-      console.log('🔄 Combine Reports button clicked!');
-      console.log('📋 Selected report types:', selectedReportTypes);
       setLoading(true);
       
       // Check if at least one report type is selected
@@ -549,14 +518,8 @@ function CombinedReports() {
         alert('Please select at least one report type to generate PDF.');
         return;
       }
-      
-      console.log('🧪 Starting PDF generation with selected report types:', selectedReportTypes);
-      
       // Generate PDF directly - this will fetch fresh data from database
       await generateCombinedPDF(selectedReportTypes);
-      
-      console.log('✅ PDF generation completed');
-      
       // Close current modal
       setShowCombineModal(false);
       
@@ -573,13 +536,6 @@ function CombinedReports() {
       const newSelection = prev.includes(reportTypeId) 
         ? prev.filter(id => id !== reportTypeId)
         : [...prev, reportTypeId];
-      
-      console.log('🔄 Report type changed:', {
-        reportTypeId,
-        action: prev.includes(reportTypeId) ? 'removed' : 'added',
-        newSelection
-      });
-      
       return newSelection;
     });
   };
@@ -587,7 +543,6 @@ function CombinedReports() {
   const openCombineModal = () => {
     // Set all report types as selected by default, not just the current tab
     setSelectedReportTypes(['stock_in', 'stock_out', 'sales', 'inventory_balance']);
-    console.log('🔗 Opening combine modal with all report types selected');
     setCombineDateRange({
       startDate: dateRange.startDate,
       endDate: dateRange.endDate

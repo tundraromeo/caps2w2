@@ -96,7 +96,7 @@ switch ($action) {
                 $original_location = 'Convenience Store'; // Default
             }
             
-            error_log("VALIDATION: Transaction {$transaction_id} - Original: {$original_location}/{$original_terminal}, Current: {$current_location}/{$current_terminal}");
+            // error_log("VALIDATION: Transaction {$transaction_id} - Original: {$original_location}/{$original_terminal}, Current: {$current_location}/{$current_terminal}");
             
             // Check if the return is being processed at the same location
             // Use flexible matching to handle variations like "Pharmacy" vs "Pharmacy Store"
@@ -143,7 +143,7 @@ switch ($action) {
             ]);
             
         } catch (Exception $e) {
-            error_log("Error validating return terminal: " . $e->getMessage());
+            // error_log("Error validating return terminal: " . $e->getMessage());
             echo json_encode([
                 'success' => false,
                 'message' => 'Validation error: ' . $e->getMessage()
@@ -152,7 +152,7 @@ switch ($action) {
         break;
         
     case 'process_customer_return':
-        error_log('POS Return API: Processing customer return with data: ' . json_encode($data));
+        // error_log('POS Return API: Processing customer return with data: ' . json_encode($data));
         try {
             $return_number = $data['return_number'] ?? '';
             $original_transaction_id = $data['original_transaction_id'] ?? '';
@@ -186,7 +186,7 @@ switch ($action) {
             $returnLocationName = $location_name;
             $returnTerminalName = $terminal_name;
             
-            error_log("Using location: ID={$returnLocationId}, Name={$returnLocationName}, Terminal={$returnTerminalName}");
+            // error_log("Using location: ID={$returnLocationId}, Name={$returnLocationName}, Terminal={$returnTerminalName}");
 
             // Look up the employee ID from the username/emp_id
             $userIdToInsert = null;
@@ -197,9 +197,9 @@ switch ($action) {
                 
                 if ($userResult) {
                     $userIdToInsert = $userResult['emp_id'];
-                    error_log("Found employee ID for {$processed_by}: {$userIdToInsert}");
+                    // error_log("Found employee ID for {$processed_by}: {$userIdToInsert}");
                 } else {
-                    error_log("Warning: User '{$processed_by}' not found in tbl_employee, using NULL for user_id");
+                    // error_log("Warning: User '{$processed_by}' not found in tbl_employee, using NULL for user_id");
                 }
             }
 
@@ -263,7 +263,7 @@ switch ($action) {
                 // Stock will be updated when admin approves the return in Return Management
                 
                 // Log that return item was created (stock update will happen after approval)
-                error_log("Return item created for product {$item['product_id']}: {$item['return_quantity']} units (pending approval)");
+                // error_log("Return item created for product {$item['product_id']}: {$item['return_quantity']} units (pending approval)");
                 
                 // Update or remove sales details based on return quantity
                 $stmt = $conn->prepare("
@@ -283,7 +283,7 @@ switch ($action) {
                             WHERE sales_header_id = ? AND product_id = ?
                         ");
                         $stmt->execute([$originalSalesHeaderId, $item['product_id']]);
-                        error_log("Removed sales detail for product {$item['product_id']} - fully returned");
+                        // error_log("Removed sales detail for product {$item['product_id']} - fully returned");
                     } else {
                         // Update the quantity in sales details
                         $stmt = $conn->prepare("
@@ -292,7 +292,7 @@ switch ($action) {
                             WHERE sales_header_id = ? AND product_id = ?
                         ");
                         $stmt->execute([$remainingQuantity, $originalSalesHeaderId, $item['product_id']]);
-                        error_log("Updated sales detail for product {$item['product_id']}: remaining quantity = {$remainingQuantity}");
+                        // error_log("Updated sales detail for product {$item['product_id']}: remaining quantity = {$remainingQuantity}");
                     }
                 }
             }
@@ -306,7 +306,7 @@ switch ($action) {
                     WHERE sales_header_id = ?
                 ");
                 $stmt->execute([$originalSalesHeaderId]);
-                error_log("Marked transaction {$original_transaction_id} as fully returned");
+                // error_log("Marked transaction {$original_transaction_id} as fully returned");
             } else {
                 // Update the total amount
                 $stmt = $conn->prepare("
@@ -315,7 +315,7 @@ switch ($action) {
                     WHERE sales_header_id = ?
                 ");
                 $stmt->execute([$newTotalAmount, $originalSalesHeaderId]);
-                error_log("Updated transaction {$original_transaction_id} total: {$originalTotalAmount} -> {$newTotalAmount}");
+                // error_log("Updated transaction {$original_transaction_id} total: {$originalTotalAmount} -> {$newTotalAmount}");
             }
             
             // Commit transaction
@@ -323,7 +323,7 @@ switch ($action) {
             
             // Trigger notification event for new return
             // This will be picked up by the notification system
-            error_log("New return created: {$return_number} from {$location_name} - Amount: {$total_return_amount}");
+            // error_log("New return created: {$return_number} from {$location_name} - Amount: {$total_return_amount}");
             
             echo json_encode([
                 "success" => true,
@@ -572,7 +572,7 @@ switch ($action) {
                     if ($locationResult) {
                         $location_id = $locationResult['location_id'];
                         $restore_location_name = $location_name;
-                        error_log("Restoring product {$item['product_id']} to return location: {$restore_location_name} (ID: {$location_id})");
+                        // error_log("Restoring product {$item['product_id']} to return location: {$restore_location_name} (ID: {$location_id})");
                     } else {
                         // Fallback: try to find the location ID using partial match
                         $fallbackStmt = $conn->prepare("
@@ -586,12 +586,12 @@ switch ($action) {
                         if ($fallbackResult) {
                             $location_id = $fallbackResult['location_id'];
                             $restore_location_name = $fallbackResult['location_name'];
-                            error_log("Using fallback location: {$restore_location_name} (ID: {$location_id})");
+                            // error_log("Using fallback location: {$restore_location_name} (ID: {$location_id})");
                         } else {
                             // Last resort: use Convenience Store as default
                             $location_id = 4; // Convenience Store
                             $restore_location_name = 'Convenience Store';
-                            error_log("No location found, using default: {$restore_location_name} (ID: {$location_id})");
+                            // error_log("No location found, using default: {$restore_location_name} (ID: {$location_id})");
                         }
                     }
                     
@@ -623,7 +623,7 @@ switch ($action) {
                         $batchStmt->execute([$stockMovement['batch_id'], $item['product_id'], $location_id]);
                         $originalBatch = $batchStmt->fetch(PDO::FETCH_ASSOC);
                         
-                        error_log("Found specific batch from stock movement: batch_id={$stockMovement['batch_id']}, reference={$return['original_transaction_id']}");
+                        // error_log("Found specific batch from stock movement: batch_id={$stockMovement['batch_id']}, reference={$return['original_transaction_id']}");
                     }
                     
                     // Fallback: if no specific batch found, use ANY batch at this location (even if quantity = 0)
@@ -638,8 +638,8 @@ switch ($action) {
                         $stmt->execute([$item['product_id'], $location_id]);
                         $originalBatch = $stmt->fetch(PDO::FETCH_ASSOC);
                         
-                        error_log("DEBUG: Fallback batch selection for product {$item['product_id']} at location {$location_id}");
-                        error_log("DEBUG: Fallback batch result: " . json_encode($originalBatch));
+                        // error_log("DEBUG: Fallback batch selection for product {$item['product_id']} at location {$location_id}");
+                        // error_log("DEBUG: Fallback batch result: " . json_encode($originalBatch));
                     }
                     
                     if ($originalBatch) {
@@ -662,14 +662,14 @@ switch ($action) {
                             'system' => 'Transfer Batch Details'
                         ];
                         
-                        error_log("SUCCESS: Restored to batch {$originalBatch['batch_reference']} (batch_id: {$originalBatch['batch_id']}) for product {$item['product_id']}: {$quantity_to_restore} units (tbd ID: {$originalBatch['id']})");
-                        error_log("VERIFY: New quantity in batch {$originalBatch['id']}: {$newQuantity}");
+                        // error_log("SUCCESS: Restored to batch {$originalBatch['batch_reference']} (batch_id: {$originalBatch['batch_id']}) for product {$item['product_id']}: {$quantity_to_restore} units (tbd ID: {$originalBatch['id']})");
+                        // error_log("VERIFY: New quantity in batch {$originalBatch['id']}: {$newQuantity}");
                     } else {
                         // No batch found - this shouldn't happen, but log it
-                        error_log("ERROR: No batch found to restore for product {$item['product_id']} at location {$location_id}");
+                        // error_log("ERROR: No batch found to restore for product {$item['product_id']} at location {$location_id}");
                         
                         // Try to create a new batch entry if none exists
-                        error_log("ATTEMPTING: Creating new batch entry for product {$item['product_id']} at location {$location_id}");
+                        // error_log("ATTEMPTING: Creating new batch entry for product {$item['product_id']} at location {$location_id}");
                         
                         // Get a default batch_id for this product from tbl_transfer_batch_details
                         $defaultBatchStmt = $conn->prepare("
@@ -700,7 +700,7 @@ switch ($action) {
                             ]);
                             
                             $newBatchId = $conn->lastInsertId();
-                            error_log("CREATED: New batch entry ID {$newBatchId} for product {$item['product_id']} with quantity {$quantity_to_restore}");
+                            // error_log("CREATED: New batch entry ID {$newBatchId} for product {$item['product_id']} with quantity {$quantity_to_restore}");
                             
                             $restored_batches[] = [
                                 'batch_reference' => $batchReference,
@@ -708,7 +708,7 @@ switch ($action) {
                                 'system' => 'New Transfer Batch Details'
                             ];
                         } else {
-                            error_log("CRITICAL: No default batch found for product {$item['product_id']} - cannot restore stock");
+                            // error_log("CRITICAL: No default batch found for product {$item['product_id']} - cannot restore stock");
                         }
                     }
                     

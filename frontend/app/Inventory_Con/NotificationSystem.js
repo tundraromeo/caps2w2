@@ -38,23 +38,12 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
 
    useEffect(() => {
       if (!products.length) {
-        console.log(`🔔 [${componentName}] No products to check for notifications`);
         return;
       }
 
       if (!isLoaded) {
-        console.log(`🔔 [${componentName}] Settings not loaded yet, waiting...`);
         return;
       }
-
-      console.log(`🔔 [${componentName}] Checking notifications for ${products.length} products`);
-      console.log(`🔔 [${componentName}] Settings:`, {
-        lowStockAlerts: settings.lowStockAlerts,
-        lowStockThreshold: settings.lowStockThreshold,
-        expiryAlerts: settings.expiryAlerts,
-        expiryWarningDays: settings.expiryWarningDays
-      });
-
       // Check for expiring products (using earliest_expiration for warehouse)
       const expiringProducts = products.filter(product => {
         const expirationDate = product.earliest_expiration || product.expiration;
@@ -74,16 +63,6 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
         const quantity = parseInt(product.total_quantity || product.product_quantity || product.quantity || 0);
         const isLow = settings.lowStockAlerts && isStockLow(quantity);
         if (isLow) {
-          console.log(`📉 [${componentName}] Low stock product:`, {
-            name: product.product_name,
-            quantity: quantity,
-            threshold: settings.lowStockThreshold,
-            fields: {
-              total_quantity: product.total_quantity,
-              product_quantity: product.product_quantity,
-              quantity: product.quantity
-            }
-          });
         }
         return isLow;
       });
@@ -93,14 +72,6 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
         const quantity = parseInt(product.total_quantity || product.product_quantity || product.quantity || 0);
         return isStockOut(quantity);
       });
-
-      console.log(`🔔 [${componentName}] Alert counts:`, {
-        expiring: expiringProducts.length,
-        expired: expiredProducts.length,
-        lowStock: lowStockProducts.length,
-        outOfStock: outOfStockProducts.length
-      });
-
       // Calculate total alert count
       const totalAlerts = expiredProducts.length + expiringProducts.length + 
                          lowStockProducts.length + outOfStockProducts.length;
@@ -113,10 +84,7 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
       // Only show notifications once per session (per page load) - component specific
       const sessionKey = `${componentName}_notifications_shown`;
       const notificationsShown = window.sessionStorage.getItem(sessionKey);
-      console.log(`🔔 [${componentName}] Session check:`, { sessionKey, notificationsShown });
-      
       if (notificationsShown) {
-        console.log(`🔔 [${componentName}] Notifications already shown this session, skipping`);
         return;
       }
 
@@ -158,7 +126,6 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
       }
 
       if (lowStockProducts.length > 0 && !isAlertDismissed('low-stock')) {
-        console.log(`📉 [${componentName}] Showing low stock notification for ${lowStockProducts.length} products`);
         const productNames = lowStockProducts.slice(0, 3).map(p => p.product_name);
         const moreText = lowStockProducts.length > 3 ? ` and ${lowStockProducts.length - 3} more` : '';
         createDismissibleToast(
@@ -169,7 +136,6 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
           6000
         );
       } else if (lowStockProducts.length > 0) {
-        console.log(`📉 [${componentName}] Low stock alert dismissed, not showing`);
       }
 
       window.sessionStorage.setItem(sessionKey, 'true');
@@ -182,7 +148,6 @@ const NotificationSystem = ({ products = [], onAlertCountChange, componentName =
       window.clearNotificationSession = () => {
         const sessionKey = `${componentName}_notifications_shown`;
         window.sessionStorage.removeItem(sessionKey);
-        console.log(`🧹 [${componentName}] Cleared notification session for testing`);
       };
     }
   }, [componentName]);

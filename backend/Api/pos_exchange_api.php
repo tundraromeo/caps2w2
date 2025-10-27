@@ -252,7 +252,7 @@ switch ($action) {
                         "Exchange return - stock restored for exchange {$exchange_number}"
                     ]);
                 } else {
-                    error_log("Warning: No batch_id found for returned product {$item['product_id']} in exchange {$exchange_number}");
+                    // error_log("Warning: No batch_id found for returned product {$item['product_id']} in exchange {$exchange_number}");
                 }
             }
             
@@ -309,7 +309,7 @@ switch ($action) {
                         "Exchange sale - stock deducted for exchange {$exchange_number}"
                     ]);
                 } else {
-                    error_log("Warning: No batch_id found for exchanged product {$item['product_id']} in exchange {$exchange_number}");
+                    // error_log("Warning: No batch_id found for exchanged product {$item['product_id']} in exchange {$exchange_number}");
                 }
             }
             

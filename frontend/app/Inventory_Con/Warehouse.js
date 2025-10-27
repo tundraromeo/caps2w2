@@ -68,21 +68,11 @@ function resetErrorToast() {
 async function handleApiCall(action, data = {}) {
   try {
     const endpoint = getApiEndpointForAction(action);
-    console.log(`🔗 Making API call: ${action} -> ${endpoint}`, data);
-    console.log(`🔗 Full endpoint URL: ${process.env.NEXT_PUBLIC_API_BASE_URL}/${endpoint}`);
-    
     // DEBUG: Special handling for check_product_name
     if (action === 'check_product_name') {
-      console.log(`🔍 DEBUG: check_product_name should use warehouse_product_name_api.php`);
-      console.log(`🔍 DEBUG: getApiEndpointForAction returned: ${endpoint}`);
     }
     
     const response = await apiHandler.callAPI(endpoint, action, data);
-    
-    console.log(`📥 API response for ${action}:`, response);
-    console.log(`📥 API response type:`, typeof response);
-    console.log(`📥 API response keys:`, response ? Object.keys(response) : 'null');
-    
     if (response && typeof response === "object") {
       // Don't show error toast here - let the calling function handle it
       // This prevents false error messages for informational responses
@@ -123,12 +113,8 @@ async function handleApiCall(action, data = {}) {
 // New function to check if product name exists
 async function checkProductNameExists(productName) {
   try {
-    console.log("🔍 Calling checkProductNameExists with product name:", productName);
-    
     // FORCE: Directly call the new warehouse API endpoint
     const apiUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL}/warehouse_product_name_api.php`;
-    console.log("🔍 FORCE: Directly calling warehouse API:", apiUrl);
-    
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -142,8 +128,6 @@ async function checkProductNameExists(productName) {
     });
     
     const data = await response.json();
-    console.log("🔍 FORCE: Direct API response:", data);
-    
     return data;
   } catch (error) {
     console.error("❌ Error in checkProductNameExists:", error);
@@ -155,16 +139,10 @@ async function checkProductNameExists(productName) {
 // New function to check if barcode exists
 async function checkBarcodeExists(barcode) {
   try {
-    console.log("🔍 Calling checkBarcodeExists with barcode:", barcode);
     const response = await handleApiCall("check_barcode", { 
       barcode: barcode,
       location_name: "WAREHOUSE" // Add location filter for warehouse
     });
-    console.log("🔍 checkBarcodeExists RAW response:", JSON.stringify(response, null, 2));
-    console.log("🔍 checkBarcodeExists response.success:", response.success);
-    console.log("🔍 checkBarcodeExists response.found:", response.found);
-    console.log("🔍 checkBarcodeExists response.product:", response.product);
-    
     // Handle network errors
     if (response.error === "NETWORK_ERROR") {
       safeToast("error", response.message || "Network error checking barcode");
@@ -189,16 +167,6 @@ async function checkBarcodeExists(barcode) {
 // This function creates a NEW FIFO batch entry with the quantity and SRP
 async function updateProductStock(productId, newQuantity, batchReference = "", expirationDate = null, unitCost = 0, newSrp = null, entryBy = "admin") {
   try {
-    console.log("🔄 Creating new FIFO batch for product:", {
-      productId,
-      newQuantity,
-      batchReference,
-      expirationDate,
-      unitCost,
-      newSrp,
-      entryBy
-    });
-    
     // Validate input data
     if (!productId || productId <= 0) {
       console.error("❌ Invalid product ID:", productId);
@@ -231,13 +199,7 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
       new_srp: newSrp, // This is the SRP for the FIFO batch
       entry_by: entryBy
     };
-    
-    console.log("📤 Sending API data for FIFO batch creation:", apiData);
-    
     const response = await handleApiCall("update_product_stock", apiData);
-    
-    console.log("📊 FIFO batch creation response:", response);
-    
     // Log the stock update activity with user context
     if (response.success) {
       try {
@@ -255,7 +217,6 @@ async function updateProductStock(productId, newQuantity, batchReference = "", e
             role: userData.role,
           }),
         });
-        console.log("✅ Activity logged successfully");
       } catch (error) {
         console.warn("⚠️ Failed to log activity:", error);
       }
@@ -325,14 +286,12 @@ function Warehouse() {
     // Check for medicine keywords
     for (const keyword of medicineKeywords) {
       if (lowerName.includes(keyword)) {
-        console.log(`🔍 Auto-detected MEDICINE: "${productName}" contains "${keyword}"`);
         return "Medicine";
       }
     }
     
     // Check for mg dosage (common in medicines)
     if (/\d+\s*mg\b/i.test(productName)) {
-      console.log(`🔍 Auto-detected MEDICINE: "${productName}" contains mg dosage`);
       return "Medicine";
     }
     
@@ -345,12 +304,9 @@ function Warehouse() {
     
     for (const brand of medicineBrands) {
       if (lowerName.includes(brand)) {
-        console.log(`🔍 Auto-detected MEDICINE: "${productName}" contains brand "${brand}"`);
         return "Medicine";
       }
     }
-    
-    console.log(`🔍 Auto-detected NON-MEDICINE: "${productName}" - no medicine keywords found`);
     return "Non-Medicine";
   }
 
@@ -963,8 +919,6 @@ const activeProducts = productsWithBatchInfo.filter(
 // "🔍 Active products after filtering:", activeProducts.length);
 // "🔍 Products with batch info and expiration data loaded");
 // "📅 Sample product expiration data:", activeProducts[0]?.expiration || "No expiration data");
-
-console.log("Active products after filtering:", activeProducts);
 setInventoryData(activeProducts);
 await calculateNotifications(activeProducts);
 updateStats("totalProducts", activeProducts.length);
@@ -1168,8 +1122,6 @@ calculateLowStockAndExpiring(activeProducts);
     
     if (looksLikeBarcode) {
       setProductNameStatusMessage("🔍 Detecting barcode format - checking barcode...");
-      console.log("🔍 Input detected as BARCODE:", input);
-      
       try {
         // Search by barcode first in local inventory
         const existingProductInInventory = inventoryData.find(product => 
@@ -1177,14 +1129,10 @@ calculateLowStockAndExpiring(activeProducts);
         );
         
         if (existingProductInInventory) {
-          console.log("✅ Product found by barcode in inventory data:", existingProductInInventory);
-          
           // Use stored product_type from database, with fallback to auto-detection
           let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
           
           if (!existingProductInInventory.product_type) {
-            console.log("🔍 Barcode check: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
-            
             // Auto-detection logic
             const medicineCategories = [
               "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1197,7 +1145,6 @@ calculateLowStockAndExpiring(activeProducts);
               categoryName.toLowerCase().includes(medCat.toLowerCase())
             )) {
               productType = "Medicine";
-              console.log("🔍 Barcode check: Auto-detected Medicine product based on category:", categoryName);
             } else {
               const medicineKeywords = [
                 "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
@@ -1209,14 +1156,11 @@ calculateLowStockAndExpiring(activeProducts);
               
               if (medicineKeywords.some(keyword => productName.includes(keyword))) {
                 productType = "Medicine";
-                console.log("🔍 Barcode check: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
               } else {
                 productType = "Non-Medicine";
-                console.log("🔍 Barcode check: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
               }
             }
           } else {
-            console.log("🔍 Barcode check: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
           }
           
           // Add product_type to the product object
@@ -1224,8 +1168,6 @@ calculateLowStockAndExpiring(activeProducts);
             ...existingProductInInventory,
             product_type: productType
           };
-          
-          console.log("🔍 Barcode check: Final product type determined:", productType);
           setExistingProduct(productWithType);
           setNewStockQuantity("");
           
@@ -1237,26 +1179,15 @@ calculateLowStockAndExpiring(activeProducts);
           setShowUpdateStockModal(true);
           setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
         } else {
-          console.log("🔍 Product not in inventory data, checking API by barcode...");
           // Check API by barcode
           const barcodeCheck = await checkBarcodeExists(input.trim());
-          console.log("🔍 Barcode check result:", barcodeCheck);
-          console.log("🔍 MANUAL BARCODE CHECK - product object:", barcodeCheck.product);
-          console.log("🔍 MANUAL BARCODE CHECK - product exists:", !!barcodeCheck.product);
-          
           // SIMPLE CHECK - if product exists in response, it was found
           const productFound = barcodeCheck.product !== null && barcodeCheck.product !== undefined && typeof barcodeCheck.product === 'object';
-          console.log("🔍 MANUAL BARCODE CHECK - productFound:", productFound);
-          
           if (productFound) {
-            console.log("✅ Product found by barcode via API:", barcodeCheck.product);
-            
             // Use stored product_type from database, with fallback to auto-detection
             let productType = barcodeCheck.product.product_type || detectProductType(barcodeCheck.product.product_name);
             
             if (!barcodeCheck.product.product_type) {
-              console.log("🔍 Manual barcode API check: No stored product_type, using auto-detection for:", barcodeCheck.product.product_name);
-              
               // Auto-detection logic
               const medicineCategories = [
                 "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1269,7 +1200,6 @@ calculateLowStockAndExpiring(activeProducts);
                 categoryName.toLowerCase().includes(medCat.toLowerCase())
               )) {
                 productType = "Medicine";
-                console.log("🔍 Manual barcode API check: Auto-detected Medicine product based on category:", categoryName);
               } else {
                 const medicineKeywords = [
                   "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
@@ -1281,14 +1211,11 @@ calculateLowStockAndExpiring(activeProducts);
                 
                 if (medicineKeywords.some(keyword => productName.includes(keyword))) {
                   productType = "Medicine";
-                  console.log("🔍 Manual barcode API check: Auto-detected Medicine product based on product name:", barcodeCheck.product.product_name);
                 } else {
                   productType = "Non-Medicine";
-                  console.log("🔍 Manual barcode API check: Auto-detected Non-Medicine product for:", barcodeCheck.product.product_name);
                 }
               }
             } else {
-              console.log("🔍 Manual barcode API check: Using stored product_type:", barcodeCheck.product.product_type, "for:", barcodeCheck.product.product_name);
             }
             
             // Add product_type to the product object
@@ -1296,8 +1223,6 @@ calculateLowStockAndExpiring(activeProducts);
               ...barcodeCheck.product,
               product_type: productType
             };
-            
-            console.log("🔍 Manual barcode API check: Final product type determined:", productType);
             setExistingProduct(productWithType);
             setNewStockQuantity("");
             
@@ -1309,7 +1234,6 @@ calculateLowStockAndExpiring(activeProducts);
             setShowUpdateStockModal(true);
             setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
           } else {
-            console.log("❌ Barcode not found - treating as product name, opening new product modal");
             setNewProductForm({
               product_name: input.trim(), // Put the input in product_name since barcode not found
               category_id: "",
@@ -1352,8 +1276,6 @@ calculateLowStockAndExpiring(activeProducts);
     
     // If not barcode format, treat as product name
     setProductNameStatusMessage("🔍 Checking if product name exists...");
-    console.log("🔍 Input detected as PRODUCT NAME:", input);
-
     try {
       // First, try to find the product in existing inventory data
       const existingProductInInventory = inventoryData.find(product => 
@@ -1361,14 +1283,10 @@ calculateLowStockAndExpiring(activeProducts);
       );
       
       if (existingProductInInventory) {
-        console.log("✅ Product found in inventory data:", existingProductInInventory);
-        
         // Use stored product_type from database, with fallback to auto-detection
         let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
         
         if (!existingProductInInventory.product_type) {
-          console.log("🔍 Product name check: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
-          
           // Auto-detection logic
           const medicineCategories = [
             "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1381,7 +1299,6 @@ calculateLowStockAndExpiring(activeProducts);
             categoryName.toLowerCase().includes(medCat.toLowerCase())
           )) {
             productType = "Medicine";
-            console.log("🔍 Product name check: Auto-detected Medicine product based on category:", categoryName);
           } else {
             const medicineKeywords = [
               "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
@@ -1393,14 +1310,11 @@ calculateLowStockAndExpiring(activeProducts);
             
             if (medicineKeywords.some(keyword => productName.includes(keyword))) {
               productType = "Medicine";
-              console.log("🔍 Product name check: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
             } else {
               productType = "Non-Medicine";
-              console.log("🔍 Product name check: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
             }
           }
         } else {
-          console.log("🔍 Product name check: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
         }
         
         // Add product_type to the product object
@@ -1408,8 +1322,6 @@ calculateLowStockAndExpiring(activeProducts);
           ...existingProductInInventory,
           product_type: productType
         };
-        
-        console.log("🔍 Product name check: Final product type determined:", productType);
         setExistingProduct(productWithType);
         setNewStockQuantity("");
         
@@ -1422,11 +1334,8 @@ calculateLowStockAndExpiring(activeProducts);
         setShowUpdateStockModal(true);
         setProductNameStatusMessage("✅ Product found! Opening update stock modal.");
       } else {
-        console.log("🔍 Product not in inventory data, checking API...");
         // If not in inventory, check API
         const productNameCheck = await checkProductNameExists(input);
-        console.log("🔍 Product name check result:", productNameCheck);
-        
         // Handle both API response formats:
         // 1. sales_api.php: { success: true, found: true, product: {...} }
         // 2. backend.php: { success: true, product: {...} } (no 'found' field)
@@ -1435,14 +1344,10 @@ calculateLowStockAndExpiring(activeProducts);
                              productNameCheck.product;
         
         if (productFound) {
-          console.log("✅ Product found via API, opening update stock modal:", productNameCheck.product);
-          
           // Use stored product_type from database, with fallback to auto-detection
           let productType = productNameCheck.product.product_type || detectProductType(productNameCheck.product.product_name);
           
           if (!productNameCheck.product.product_type) {
-            console.log("🔍 API product name check: No stored product_type, using auto-detection for:", productNameCheck.product.product_name);
-            
             // Auto-detection logic
             const medicineCategories = [
               "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1455,7 +1360,6 @@ calculateLowStockAndExpiring(activeProducts);
               categoryName.toLowerCase().includes(medCat.toLowerCase())
             )) {
               productType = "Medicine";
-              console.log("🔍 API product name check: Auto-detected Medicine product based on category:", categoryName);
             } else {
               const medicineKeywords = [
                 "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
@@ -1467,14 +1371,11 @@ calculateLowStockAndExpiring(activeProducts);
               
               if (medicineKeywords.some(keyword => productName.includes(keyword))) {
                 productType = "Medicine";
-                console.log("🔍 API product name check: Auto-detected Medicine product based on product name:", productNameCheck.product.product_name);
               } else {
                 productType = "Non-Medicine";
-                console.log("🔍 API product name check: Auto-detected Non-Medicine product for:", productNameCheck.product.product_name);
               }
             }
           } else {
-            console.log("🔍 API product name check: Using stored product_type:", productNameCheck.product.product_type, "for:", productNameCheck.product.product_name);
           }
           
           // Add product_type to the product object
@@ -1482,8 +1383,6 @@ calculateLowStockAndExpiring(activeProducts);
             ...productNameCheck.product,
             product_type: productType
           };
-          
-          console.log("🔍 API product name check: Final product type determined:", productType);
           setExistingProduct(productWithType);
           setNewStockQuantity("");
           
@@ -1496,7 +1395,6 @@ calculateLowStockAndExpiring(activeProducts);
           setShowUpdateStockModal(true);
           setProductNameStatusMessage("✅ Product found! Opening update stock modal.");
         } else {
-          console.log("❌ Product not found, opening new product modal");
           // Product doesn't exist - show new product modal
           setNewProductForm({
             product_name: input, // Pre-fill with entered product name
@@ -1557,21 +1455,14 @@ calculateLowStockAndExpiring(activeProducts);
         setScannerStatusMessage("✅ Barcode received! Checking if product exists...");
   
         try {
-          console.log("🔍 Checking barcode in database:", scanned);
-          
           // First, try to find the product in existing inventory data
           const existingProductInInventory = inventoryData.find(product => product.barcode === scanned);
           
           if (existingProductInInventory) {
-            console.log("✅ Product found in inventory data:", existingProductInInventory);
-            console.log("🚪 OPENING MODAL: UPDATE STOCK MODAL (from local inventory)");
-            
             // Use stored product_type from database, with fallback to auto-detection
             let productType = existingProductInInventory.product_type || detectProductType(existingProductInInventory.product_name);
             
             if (!existingProductInInventory.product_type) {
-              console.log("🔍 Scanner: No stored product_type, using auto-detection for:", existingProductInInventory.product_name);
-              
               // Auto-detection logic
               const medicineCategories = [
                 "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1584,7 +1475,6 @@ calculateLowStockAndExpiring(activeProducts);
                 categoryName.toLowerCase().includes(medCat.toLowerCase())
               )) {
                 productType = "Medicine";
-                console.log("🔍 Scanner: Auto-detected Medicine product based on category:", categoryName);
               } else {
                 const medicineKeywords = [
                   "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
@@ -1596,14 +1486,11 @@ calculateLowStockAndExpiring(activeProducts);
                 
                 if (medicineKeywords.some(keyword => productName.includes(keyword))) {
                   productType = "Medicine";
-                  console.log("🔍 Scanner: Auto-detected Medicine product based on product name:", existingProductInInventory.product_name);
                 } else {
                   productType = "Non-Medicine";
-                  console.log("🔍 Scanner: Auto-detected Non-Medicine product for:", existingProductInInventory.product_name);
                 }
               }
             } else {
-              console.log("🔍 Scanner: Using stored product_type:", existingProductInInventory.product_type, "for:", existingProductInInventory.product_name);
             }
             
             // Add product_type to the product object
@@ -1611,8 +1498,6 @@ calculateLowStockAndExpiring(activeProducts);
               ...existingProductInInventory,
               product_type: productType
             };
-            
-            console.log("🔍 Scanner: Final product type determined:", productType);
             setExistingProduct(productWithType);
             setNewStockQuantity("");
             
@@ -1623,45 +1508,18 @@ calculateLowStockAndExpiring(activeProducts);
             setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
             
             setShowUpdateStockModal(true);
-            console.log("🚪 setShowUpdateStockModal(true) CALLED (from local)");
             setScannerStatusMessage("✅ Product found! Opening update stock modal.");
           } else {
-            console.log("🔍 Product not in inventory data, checking API...");
-            console.log("📊 Current inventoryData length:", inventoryData.length);
-            console.log("📊 Scanned barcode:", scanned);
-            
             // If not in inventory, check API
             const barcodeCheck = await checkBarcodeExists(scanned);
-            console.log("🔍 Barcode check result:", barcodeCheck);
-            console.log("🔍 barcodeCheck.success:", barcodeCheck.success);
-            console.log("🔍 barcodeCheck.found:", barcodeCheck.found);
-            console.log("🔍 barcodeCheck.product:", barcodeCheck.product);
-            
             // EXTREME DEBUGGING - Log EVERYTHING
-            console.log("🔍 ========== BARCODE CHECK DETAILS ==========");
-            console.log("🔍 barcodeCheck object:", barcodeCheck);
-            console.log("🔍 barcodeCheck.success type:", typeof barcodeCheck.success, "value:", barcodeCheck.success);
-            console.log("🔍 barcodeCheck.found type:", typeof barcodeCheck.found, "value:", barcodeCheck.found);
-            console.log("🔍 barcodeCheck.product type:", typeof barcodeCheck.product, "value:", barcodeCheck.product);
-            console.log("🔍 barcodeCheck has 'product' property:", 'product' in barcodeCheck);
-            console.log("🔍 barcodeCheck.product is truthy:", !!barcodeCheck.product);
-            
             // SIMPLE CHECK - if product exists in response, it was found
             const productFound = barcodeCheck.product !== null && barcodeCheck.product !== undefined && typeof barcodeCheck.product === 'object';
-            
-            console.log("🔍 productFound result:", productFound);
-            console.log("🔍 ==========================================");
-            
             if (productFound) {
-              console.log("✅ Product found via API, opening update stock modal:", barcodeCheck.product);
-              console.log("🚪 OPENING MODAL: UPDATE STOCK MODAL");
-              
               // Use stored product_type from database, with fallback to auto-detection
               let productType = barcodeCheck.product.product_type || detectProductType(barcodeCheck.product.product_name);
               
               if (!barcodeCheck.product.product_type) {
-                console.log("🔍 Scanner API barcode check: No stored product_type, using auto-detection for:", barcodeCheck.product.product_name);
-                
                 // Auto-detection logic
                 const medicineCategories = [
                   "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1674,7 +1532,6 @@ calculateLowStockAndExpiring(activeProducts);
                   categoryName.toLowerCase().includes(medCat.toLowerCase())
                 )) {
                   productType = "Medicine";
-                  console.log("🔍 Scanner API barcode check: Auto-detected Medicine product based on category:", categoryName);
                 } else {
                   const medicineKeywords = [
                     "tablet", "tablets", "capsule", "capsules", "syrup", "injection",
@@ -1686,14 +1543,11 @@ calculateLowStockAndExpiring(activeProducts);
                   
                   if (medicineKeywords.some(keyword => productName.includes(keyword))) {
                     productType = "Medicine";
-                    console.log("🔍 Scanner API barcode check: Auto-detected Medicine product based on product name:", barcodeCheck.product.product_name);
                   } else {
                     productType = "Non-Medicine";
-                    console.log("🔍 Scanner API barcode check: Auto-detected Non-Medicine product for:", barcodeCheck.product.product_name);
                   }
                 }
               } else {
-                console.log("🔍 Scanner API barcode check: Using stored product_type:", barcodeCheck.product.product_type, "for:", barcodeCheck.product.product_name);
               }
               
               // Add product_type to the product object
@@ -1701,8 +1555,6 @@ calculateLowStockAndExpiring(activeProducts);
                 ...barcodeCheck.product,
                 product_type: productType
               };
-              
-              console.log("🔍 Scanner API barcode check: Final product type determined:", productType);
               setExistingProduct(productWithType);
               setNewStockQuantity("");
               
@@ -1713,11 +1565,8 @@ calculateLowStockAndExpiring(activeProducts);
               setStockUpdateConfigMode(hasBulkFields ? "bulk" : "pieces");
               
               setShowUpdateStockModal(true);
-              console.log("🚪 setShowUpdateStockModal(true) CALLED");
               setScannerStatusMessage("✅ Product found! Opening update stock modal.");
             } else {
-              console.log("❌ Product not found, opening new product modal");
-              console.log("🚪 OPENING MODAL: NEW PRODUCT MODAL");
               // Product doesn't exist - show new product modal
               setNewProductForm({
                 product_name: "",
@@ -1884,21 +1733,11 @@ calculateLowStockAndExpiring(activeProducts);
     }
 
     function openUpdateStockModal(product) {
-      console.log("🔍 Opening Update Stock Modal with product data:", product);
-      console.log("🔍 Product brand:", product.brand);
-      console.log("🔍 Product category:", product.category);
-      console.log("🔍 Product category_name:", product.category_name);
-      console.log("🔍 Product brand_id:", product.brand_id);
-      console.log("🔍 Product category_id:", product.category_id);
-      console.log("🔍 All product keys:", Object.keys(product));
-      
       // Use stored product_type from database, with fallback to auto-detection
       let productType = product.product_type || detectProductType(product.product_name); // Use stored value first
       
       // If no stored product_type, use auto-detection as fallback
       if (!product.product_type) {
-        console.log("🔍 No stored product_type found, using auto-detection for:", product.product_name);
-        
         // Primary detection: Check category name for medicine-related categories
         const medicineCategories = [
           "Medicine", "Pharmaceutical", "Drug", "Prescription", "OTC", 
@@ -1911,7 +1750,6 @@ calculateLowStockAndExpiring(activeProducts);
           categoryName.toLowerCase().includes(medCat.toLowerCase())
         )) {
           productType = "Medicine";
-          console.log("🔍 Auto-detected Medicine product based on category:", categoryName);
         } else {
           // Secondary detection: Check product name for medicine keywords
           const medicineKeywords = [
@@ -1924,14 +1762,11 @@ calculateLowStockAndExpiring(activeProducts);
           
           if (medicineKeywords.some(keyword => productName.includes(keyword))) {
             productType = "Medicine";
-            console.log("🔍 Auto-detected Medicine product based on product name:", product.product_name);
           } else {
             productType = "Non-Medicine";
-            console.log("🔍 Auto-detected Non-Medicine product for:", product.product_name);
           }
         }
       } else {
-        console.log("🔍 Using stored product_type:", product.product_type, "for:", product.product_name);
       }
       
       // Add product_type to the product object
@@ -1939,8 +1774,6 @@ calculateLowStockAndExpiring(activeProducts);
         ...product,
         product_type: productType
       };
-      
-      console.log("🔍 Final product type determined:", productType);
       setExistingProduct(productWithType);
       setNewStockQuantity("");
       setNewStockBoxes("");
@@ -2091,9 +1924,7 @@ calculateLowStockAndExpiring(activeProducts);
     // FIFO Functions
     async function getFifoStock(productId) {
       try {
-        console.log("🔍 Calling get_fifo_stock API with product_id:", productId);
         const response = await handleApiCall("get_fifo_stock", { product_id: productId });
-        console.log("📊 get_fifo_stock API response:", response);
         return response;
       } catch (error) {
         console.error("❌ Error getting FIFO stock:", error);
@@ -2105,10 +1936,8 @@ calculateLowStockAndExpiring(activeProducts);
     // New function to get all batches across all products
     async function getAllBatches() {
       try {
-        console.log("🔍 Calling get_all_batches API");
         const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
         const response = await handleApiCall("get_all_batches", { location_id: locationId });
-        console.log("📊 get_all_batches API response:", response);
         return response;
       } catch (error) {
         console.error("❌ Error getting all batches:", error);
@@ -2123,8 +1952,6 @@ calculateLowStockAndExpiring(activeProducts);
         // "🔄 Loading warehouse products with oldest batch info...");
         const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
 const response = await handleApiCall("get_products_oldest_batch", { location_id: locationId, role: userRole, user_id: currentUser });
-console.log("API response for products:", response);
-        
         if (response.success && Array.isArray(response.data)) {
           // "✅ Products with oldest batch loaded:", response.data.length, "products");
           
@@ -2180,12 +2007,6 @@ console.log("API response for products:", response);
           // "📦 Processed", processedProducts.length, "products with batch info");
           
           // Debug: Log processed products to check SRP data
-          console.log("🔍 First product with batch data:", processedProducts[0]);
-          console.log("🔍 Oldest batch quantity:", processedProducts[0]?.oldest_batch_quantity);
-          console.log("🔍 Oldest batch SRP:", processedProducts[0]?.oldest_batch_srp);
-          console.log("🔍 Product quantity:", processedProducts[0]?.quantity);
-          console.log("🔍 Product SRP:", processedProducts[0]?.srp);
-          
           return processedProducts;
         } else {
           console.warn("⚠️ Failed to load products with oldest batch, falling back to regular products");
@@ -2369,8 +2190,6 @@ const warehouseProducts = productsArray.filter(
         // "🔄 Loading product quantities from tbl_product...");
         const locationId = userRole.toLowerCase() === "admin" ? 2 : (userRole.toLowerCase() === "inventory manager" ? 1 : 2);
 const response = await handleApiCall("get_product_quantities", { location_id: locationId, role: userRole, user_id: currentUser });
-console.log("API response for product quantities:", response);
-        
         if (response.success && Array.isArray(response.data)) {
           // "✅ Product quantities loaded:", response.data.length, "products");
           // "🔍 Sample product data:", response.data.slice(0, 3));
@@ -2438,8 +2257,6 @@ console.log("API response for product quantities:", response);
 
 
     function openQuantityHistoryModal(product) {
-      console.log("🔄 Opening quantity history modal for product:", product.product_name, "ID:", product.product_id);
-      console.log("🔍 Product data when opening modal:", product);
       setSelectedProductForHistory(product);
       setShowQuantityHistoryModal(true);
       setShowCurrentFifoData(true); // Always start with FIFO view
@@ -2453,30 +2270,14 @@ console.log("API response for product quantities:", response);
     }
 
     async function loadQuantityHistory(productId) {
-      console.log("🔄 Loading quantity history for product ID:", productId);
       try {
         const response = await handleApiCall("get_quantity_history", { product_id: productId });
-        console.log("📊 Quantity history response:", response);
-        
         if (response && response.success) {
-          console.log("✅ Quantity history loaded successfully:", response.data?.length || 0, "entries");
-          
           // Debug: Log each movement entry
           if (response.data && response.data.length > 0) {
             response.data.forEach((movement, index) => {
-              console.log(`🔍 Movement ${index + 1}:`, {
-                movement_id: movement.movement_id,
-                movement_type: movement.movement_type,
-                quantity_change: movement.quantity_change,
-                remaining_quantity: movement.remaining_quantity,
-                movement_date: movement.movement_date,
-                reference_no: movement.reference_no,
-                batch_reference: movement.batch_reference,
-                created_by: movement.created_by
-              });
             });
           } else {
-            console.log("🔍 No movement history found for this product");
           }
           
           setQuantityHistoryData(response.data || []);
@@ -2494,24 +2295,18 @@ console.log("API response for product quantities:", response);
 
     // Function to refresh quantity history and FIFO stock data
     async function refreshProductData(productId) {
-      console.log("🔄 Refreshing product data for ID:", productId);
       try {
         // Refresh quantity history (non-critical)
-        console.log("🔄 Loading quantity history...");
         await loadQuantityHistory(productId);
         
         // Refresh FIFO stock data (critical)
-        console.log("🔄 Loading FIFO stock data...");
         await loadFifoStock(productId);
         
         // Also refresh the main product list to update quantities
-        console.log("🔄 Refreshing main product data...");
         await loadData("products");
         
         // Toggle to show current FIFO data instead of history
         setShowCurrentFifoData(true);
-        
-        console.log("✅ Product data refreshed successfully - Now showing current FIFO batches");
         safeToast("success", "Batch data refreshed successfully!");
       } catch (error) {
         console.error("❌ Error refreshing product data:", error);
@@ -2524,24 +2319,10 @@ console.log("API response for product quantities:", response);
 
 
     async function loadFifoStock(productId) {
-      console.log("🔄 Loading FIFO stock for product ID:", productId);
       const response = await getFifoStock(productId);
-      console.log("📊 FIFO stock response:", response);
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ FIFO data loaded successfully:", response.data.length, "batches");
-        console.log("🔍 FIFO batches:", response.data);
-        
         // Debug: Log each batch details
         response.data.forEach((batch, index) => {
-          console.log(`🔍 Batch ${index + 1}:`, {
-            batch_id: batch.batch_id,
-            batch_reference: batch.batch_reference,
-            available_quantity: batch.available_quantity,
-            total_quantity: batch.total_quantity,
-            expiration_date: batch.expiration_date,
-            entry_date: batch.fifo_entry_date,
-            batch_date: batch.batch_date
-          });
         });
         
         setFifoStockData(response.data);
@@ -2556,25 +2337,10 @@ console.log("API response for product quantities:", response);
 
     // New function to load all batches across all products
     async function loadAllBatches() {
-      console.log("🔄 Loading all batches across all products");
       const response = await getAllBatches();
-      console.log("📊 All batches response:", response);
       if (response.success && Array.isArray(response.data)) {
-        console.log("✅ All batches loaded successfully:", response.data.length, "total batches");
-        console.log("🔍 All batches:", response.data);
-        
         // Debug: Log each batch details
         response.data.forEach((batch, index) => {
-          console.log(`🔍 Batch ${index + 1}:`, {
-            product_name: batch.product_name,
-            batch_id: batch.batch_id,
-            batch_reference: batch.batch_reference,
-            available_quantity: batch.available_quantity,
-            total_quantity: batch.total_quantity,
-            expiration_date: batch.expiration_date,
-            entry_date: batch.fifo_entry_date,
-            batch_date: batch.batch_date
-          });
         });
         
         setAllBatchesData(response.data);
@@ -2725,8 +2491,6 @@ console.log("API response for product quantities:", response);
       // Close the modal and show success message
       closeUpdateStockModal();
       safeToast("success", `Stock update added to batch! (${quantityToAdd} ${existingProduct.product_type === "Medicine" ? "tablets" : "pieces"})`);
-      
-      console.log("✅ Stock update added to batch:", tempStockUpdate);
     }
 
     // Handle new product submission - Now adds to temporary storage
@@ -2848,38 +2612,16 @@ console.log("API response for product quantities:", response);
       setLoading(true);
 
       try {
-        console.log("🚀 Saving batch with", temporaryProducts.length, "items");
-        console.log("🔍 Current user:", currentUser);
-        console.log("🔍 Current batch number:", currentBatchNumber);
-        
         // Separate new products and stock updates
         const newProducts = temporaryProducts.filter(p => !p.is_stock_update);
         const stockUpdates = temporaryProducts.filter(p => p.is_stock_update);
-        
-        console.log("📦 New products:", newProducts.length);
-        console.log("📊 Stock updates:", stockUpdates.length);
-        console.log("📋 All temporary products:", temporaryProducts);
-        
         // Process stock updates first - creates NEW FIFO batch entries
         let stockUpdateSuccess = true;
         let failedUpdates = [];
         
         for (const stockUpdate of stockUpdates) {
-          console.log("🔄 Processing stock update for:", stockUpdate.product_name);
-          
           // Get the SRP for this FIFO batch
           const batchSrp = stockUpdate.new_srp || stockUpdate.srp || stockUpdate.unit_price || 0;
-          
-          console.log("📋 FIFO batch data:", {
-            product_id: stockUpdate.product_id,
-            quantity_to_add: stockUpdate.quantity_to_add,
-            batch_reference: currentBatchNumber,
-            expiration: stockUpdate.expiration,
-            unit_cost: batchSrp,
-            new_srp: batchSrp, // SRP for this specific FIFO batch
-            entry_by: currentUser
-          });
-          
           // Validate data before making API call
           if (!stockUpdate.product_id || stockUpdate.product_id <= 0) {
             console.error("❌ Invalid product ID in stock update:", stockUpdate.product_id);
@@ -2925,9 +2667,6 @@ console.log("API response for product quantities:", response);
             batchSrp, // new_srp - this is the SRP for this FIFO batch
             currentUser
           );
-          
-          console.log("📊 FIFO batch creation response for", stockUpdate.product_name, ":", response);
-          
           if (!response.success) {
             console.error("❌ Failed to create FIFO batch for:", stockUpdate.product_name);
             console.error("❌ Error details:", response.message);
@@ -2935,7 +2674,6 @@ console.log("API response for product quantities:", response);
             failedUpdates.push(stockUpdate.product_name);
             stockUpdateSuccess = false;
           } else {
-            console.log("✅ FIFO batch created successfully for:", stockUpdate.product_name);
           }
         }
         
@@ -2995,18 +2733,6 @@ console.log("API response for product quantities:", response);
               total_pieces: product.total_pieces || null
             }))
           };
-
-          console.log("🚀 Saving new products batch:", batchData);
-          console.log("🔍 Product quantities:", newProducts.map(p => ({
-            name: p.product_name,
-            total_pieces: p.total_pieces,
-            total_tablets: p.total_tablets,
-            product_type: p.product_type,
-            calculated_quantity: p.product_type === "Medicine" 
-              ? parseInt(p.total_tablets || 0)
-              : parseInt(p.total_pieces || 0)
-          })));
-          
           const response = await handleApiCall("add_batch_entry", batchData);
           
           if (!response.success) {
@@ -3038,7 +2764,6 @@ console.log("API response for product quantities:", response);
         
         // Force refresh FIFO data for all products that had stock updates
         for (const stockUpdate of stockUpdates) {
-          console.log("🔄 Refreshing FIFO data for updated product:", stockUpdate.product_name);
           await loadFifoStock(stockUpdate.product_id);
         }
         
@@ -3046,14 +2771,11 @@ console.log("API response for product quantities:", response);
         if (stockUpdates.length > 0) {
           if (stockUpdateSuccess) {
             safeToast("success", `All stock updates completed successfully! New batch: ${newBatchNumber}`);
-            console.log("✅ All stock updates completed successfully, new batch number generated:", newBatchNumber);
           } else {
             safeToast("error", `Some stock updates failed: ${failedUpdates.join(', ')}`);
-            console.log("❌ Some stock updates failed:", failedUpdates);
           }
         } else {
           safeToast("success", `Batch saved successfully! New batch: ${newBatchNumber}`);
-          console.log("✅ Batch saved successfully, new batch number generated:", newBatchNumber);
         }
       } catch (error) {
         console.error("❌ Error saving batch:", error);
@@ -3234,8 +2956,6 @@ console.log("API response for product quantities:", response);
       async function fetchWarehouseKPIs() {
         try {
           const response = await handleApiCall("get_warehouse_kpis", { location: "warehouse" });
-          console.log("📊 Warehouse KPIs response:", response);
-          
           if (response && response.success !== false && response !== null) {
             setStats((prev) => ({
               ...prev,
@@ -3259,7 +2979,6 @@ console.log("API response for product quantities:", response);
       loadData("all");
       
       // Auto-start scanner when component mounts (if enabled in settings)
-      console.log("🚀 Auto-starting scanner...");
       setScannerActive(settings.barcodeScanning);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
     }, [])
@@ -3993,15 +3712,6 @@ console.log("API response for product quantities:", response);
                         
                         // Debug logging for first product to see available fields
                         if (product.product_name === 'Hot&Spicicy Ketchup') {
-                          console.log('🔍 SRP Debug for Hot&Spicicy Ketchup:', {
-                            oldest_batch_srp: product.oldest_batch_srp,
-                            first_batch_srp: product.first_batch_srp,
-                            srp: product.srp,
-                            unit_price: product.unit_price,
-                            transfer_srp: product.transfer_srp,
-                            finalValue: srpValue,
-                            allFields: Object.keys(product)
-                          });
                         }
                         
                         return srpValue > 0 ? srpValue.toFixed(2) : '0.00';
@@ -5247,7 +4957,6 @@ console.log("API response for product quantities:", response);
                         ...prev,
                         product_type: newProductType
                       }));
-                      console.log("🔧 Product type manually overridden to:", newProductType);
                     }}
                     className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                     style={{

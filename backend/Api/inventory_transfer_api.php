@@ -35,7 +35,7 @@ try {
     }
     
 } catch (Exception $e) {
-    error_log('Inventory Transfer API Error: ' . $e->getMessage());
+    // error_log('Inventory Transfer API Error: ' . $e->getMessage());
     echo json_encode([
         'success' => false,
         'message' => $e->getMessage()

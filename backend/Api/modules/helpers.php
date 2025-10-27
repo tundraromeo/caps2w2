@@ -76,7 +76,7 @@ function setupApiEnvironment() {
 
     // Get allowed origins from .env
     if (!isset($_ENV['CORS_ALLOWED_ORIGINS']) || empty($_ENV['CORS_ALLOWED_ORIGINS'])) {
-        error_log("WARNING: CORS_ALLOWED_ORIGINS not set in .env file. Using development defaults.");
+        // error_log("WARNING: CORS_ALLOWED_ORIGINS not set in .env file. Using development defaults.");
         $corsOriginsEnv = 'http://localhost:3000,http://localhost:3001';
     } else {
         $corsOriginsEnv = $_ENV['CORS_ALLOWED_ORIGINS'];
@@ -110,13 +110,13 @@ function setupApiEnvironment() {
 // Validate and decode JSON input
 function getJsonInput() {
     $rawData = file_get_contents("php://input");
-    error_log("Raw input: " . $rawData);
+    // error_log("Raw input: " . $rawData);
 
     $data = json_decode($rawData, true);
 
     // Check if JSON is valid
     if (json_last_error() !== JSON_ERROR_NONE) {
-        error_log("JSON decode error: " . json_last_error_msg());
+        // error_log("JSON decode error: " . json_last_error_msg());
         echo json_encode([
             "success" => false,
             "message" => "Invalid JSON input: " . json_last_error_msg(),
@@ -290,8 +290,9 @@ function logActivity($conn, $data) {
 
         return true;
     } catch (Exception $e) {
-        error_log("Activity logging error: " . $e->getMessage());
+        // error_log("Activity logging error: " . $e->getMessage());
         return false;
     }
 }
 ?>
+

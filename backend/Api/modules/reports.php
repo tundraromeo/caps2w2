@@ -28,9 +28,9 @@ class ReportsModule {
                 break;
                 
             case 'stock_out':
-                error_log("DEBUG: Processing stock_out report request");
+                // error_log("DEBUG: Processing stock_out report request");
                 $reportData = $this->getStockOutReport($startDate, $endDate);
-                error_log("DEBUG: stock_out report data count: " . count($reportData));
+                // error_log("DEBUG: stock_out report data count: " . count($reportData));
                 break;
                 
             case 'sales':
@@ -114,10 +114,45 @@ class ReportsModule {
                 JOIN tbl_product p ON sm.product_id = p.product_id
                 WHERE DATE(sm.movement_date) BETWEEN ? AND ?
                 ORDER BY sm.movement_date DESC
-                LIMIT 50
+                LIMIT 500
             ");
             $stmt->execute([$startDate, $endDate]);
             $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Also get transfer data from tbl_transfer_header to show in reports table
+            $transferStmt = $this->conn->prepare("
+                SELECT 
+                    CONCAT('TRANS-', th.transfer_header_id) as movement_id,
+                    CONCAT('Transfer Report ', th.transfer_header_id) as title,
+                    'Transfer Report' as type,
+                    CONCAT('Transfer to ', COALESCE(dl.location_name, 'Warehouse')) as description,
+                    'System' as generatedBy,
+                    DATE(th.date) as date,
+                    TIME(th.date) as time,
+                    'Completed' as status,
+                    'PDF' as format,
+                    '2.5 MB' as fileSize
+                FROM tbl_transfer_header th
+                LEFT JOIN tbl_location dl ON th.destination_location_id = dl.location_id
+                WHERE DATE(th.date) BETWEEN ? AND ?
+                ORDER BY th.date DESC
+                LIMIT 500
+            ");
+            $transferStmt->execute([$startDate, $endDate]);
+            $transferReports = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Merge the reports
+            $reports = array_merge($reports, $transferReports);
+            
+            // Sort by date (most recent first)
+            usort($reports, function($a, $b) {
+                $dateA = $a['date'] . ' ' . $a['time'];
+                $dateB = $b['date'] . ' ' . $b['time'];
+                return strtotime($dateB) - strtotime($dateA);
+            });
+            
+            // Limit to 500 total reports
+            $reports = array_slice($reports, 0, 500);
             
             // Get analytics data
             $analytics = $this->getAnalyticsData();
@@ -275,19 +310,19 @@ class ReportsModule {
      * Get Stock Out Report Data
      */
     private function getStockOutReport($startDate, $endDate) {
-        error_log("DEBUG: getStockOutReport called with startDate: $startDate, endDate: $endDate");
+        // error_log("DEBUG: getStockOutReport called with startDate: $startDate, endDate: $endDate");
         
         // First, let's check if there are any OUT movements at all
         $checkStmt = $this->conn->prepare("SELECT COUNT(*) as total FROM tbl_stock_movements WHERE movement_type = 'OUT'");
         $checkStmt->execute();
         $totalOut = $checkStmt->fetch(PDO::FETCH_ASSOC)['total'];
-        error_log("DEBUG: Total OUT movements in database: $totalOut");
+        // error_log("DEBUG: Total OUT movements in database: $totalOut");
         
         // Check movements in date range
         $rangeStmt = $this->conn->prepare("SELECT COUNT(*) as total FROM tbl_stock_movements WHERE movement_type = 'OUT' AND DATE(movement_date) BETWEEN ? AND ?");
         $rangeStmt->execute([$startDate, $endDate]);
         $rangeOut = $rangeStmt->fetch(PDO::FETCH_ASSOC)['total'];
-        error_log("DEBUG: OUT movements in date range $startDate to $endDate: $rangeOut");
+        // error_log("DEBUG: OUT movements in date range $startDate to $endDate: $rangeOut");
         
         $stmt = $this->conn->prepare("
             SELECT 
@@ -349,9 +384,9 @@ class ReportsModule {
         ");
         $stmt->execute([$startDate, $endDate]);
         $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("DEBUG: getStockOutReport returning " . count($result) . " records");
+        // error_log("DEBUG: getStockOutReport returning " . count($result) . " records");
         if (count($result) > 0) {
-            error_log("DEBUG: Sample stock_out record: " . json_encode($result[0]));
+            // error_log("DEBUG: Sample stock_out record: " . json_encode($result[0]));
         }
         return $result;
     }
@@ -584,7 +619,7 @@ class ReportsModule {
             try {
                 $this->conn->exec("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN is_archived TINYINT(1) DEFAULT 0");
             } catch (Exception $e) {
-                error_log("Could not add is_archived column: " . $e->getMessage());
+                // error_log("Could not add is_archived column: " . $e->getMessage());
             }
         }
         
@@ -888,7 +923,7 @@ class ReportsModule {
             $today = date('Y-m-d');
             
             // Debug logging
-            error_log("Activity Logs Report - Fetching data for today: $today");
+            // error_log("Activity Logs Report - Fetching data for today: $today");
             
             $stmt = $this->conn->prepare("
                 SELECT 
@@ -953,15 +988,15 @@ class ReportsModule {
             $activityLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // Debug logging
-            error_log("Activity Logs Report - Found " . count($activityLogs) . " records for today");
+            // error_log("Activity Logs Report - Found " . count($activityLogs) . " records for today");
             if (count($activityLogs) > 0) {
-                error_log("Activity Logs Report - First record: " . json_encode($activityLogs[0]));
+                // error_log("Activity Logs Report - First record: " . json_encode($activityLogs[0]));
             }
             
             return $activityLogs;
             
         } catch (Exception $e) {
-            error_log("Error in getActivityLogsReport: " . $e->getMessage());
+            // error_log("Error in getActivityLogsReport: " . $e->getMessage());
             return [];
         }
     }
@@ -1083,7 +1118,7 @@ class ReportsModule {
     public function getCombinedReportsData($startDate, $endDate, $reportTypes = ['all']) {
         try {
             // Debug logging
-            error_log("Combined Reports - Received report_types: " . json_encode($reportTypes));
+            // error_log("Combined Reports - Received report_types: " . json_encode($reportTypes));
             
             $reports = [];
             
@@ -1118,41 +1153,99 @@ class ReportsModule {
             
             $params = [$startDate, $endDate];
             
+            // Debug: Log what report types we received
+            // error_log("🔍 FILTER DEBUG: Received reportTypes: " . json_encode($reportTypes));
+            // error_log("🔍 FILTER DEBUG: in_array('all', reportTypes) = " . (in_array('all', $reportTypes) ? 'TRUE' : 'FALSE'));
+            
             // Filter by report types if not 'all'
-            if (!in_array('all', $reportTypes)) {
+            if (!in_array('all', $reportTypes) && !empty($reportTypes)) {
                 $typeConditions = [];
                 foreach ($reportTypes as $type) {
+                    // error_log("🔍 FILTER DEBUG: Processing type: $type");
                     switch ($type) {
                         case 'stock_in':
-                            $typeConditions[] = "(sm.movement_type = 'IN' AND (sm.reference_no NOT LIKE 'ADJ-%' OR sm.reference_no IS NULL))";
+                            $typeConditions[] = "sm.movement_type = 'IN'";
+                            // error_log("✅ FILTER DEBUG: Added condition for stock_in: movement_type = 'IN'");
                             break;
                         case 'stock_out':
-                            $typeConditions[] = "(sm.movement_type = 'OUT' AND (sm.reference_no NOT LIKE 'ADJ-%' OR sm.reference_no IS NULL))";
+                            $typeConditions[] = "sm.movement_type = 'OUT'";
+                            // error_log("✅ FILTER DEBUG: Added condition for stock_out: movement_type = 'OUT'");
                             break;
                         case 'stock_adjustment':
-                            $typeConditions[] = "(sm.reference_no LIKE 'ADJ-%' OR sm.notes LIKE '%adjustment%' OR sm.notes LIKE '%Adjustment%')";
+                            $typeConditions[] = "sm.movement_type = 'ADJUSTMENT'";
+                            // error_log("✅ FILTER DEBUG: Added condition for stock_adjustment: movement_type = 'ADJUSTMENT'");
                             break;
                         case 'transfer':
                             $typeConditions[] = "sm.movement_type = 'TRANSFER'";
+                            // error_log("✅ FILTER DEBUG: Added condition for transfer: movement_type = 'TRANSFER'");
+                            break;
+                        default:
+                            // error_log("⚠️ FILTER DEBUG: Unknown type: $type - skipping");
                             break;
                     }
                 }
                 
+                // error_log("🔍 FILTER DEBUG: Total typeConditions count: " . count($typeConditions));
+                // error_log("🔍 FILTER DEBUG: typeConditions: " . json_encode($typeConditions));
+                
                 if (!empty($typeConditions)) {
-                    $baseQuery .= " AND (" . implode(' OR ', $typeConditions) . ")";
+                    $filterClause = " AND (" . implode(' OR ', $typeConditions) . ")";
+                    $baseQuery .= $filterClause;
+                    // error_log("✅ FILTER DEBUG: Added filter clause to query: " . $filterClause);
+                    // error_log("🚀 STRICT FILTER ENABLED - Only these movement types will be returned");
+                } else {
+                    // If no specific types selected, don't return anything
+                    // error_log("⚠️ FILTER DEBUG: No type conditions specified, returning empty array");
+                    $baseQuery .= " AND 1=0"; // Force return no results
                 }
+            } else if (in_array('all', $reportTypes)) {
+                // 'all' is explicitly included - will get all types from stock_movements table
+                // error_log("📊 FILTER DEBUG: Including all report types from stock_movements table");
+            } else {
+                // Empty reportTypes array - return nothing
+                // error_log("⚠️ FILTER DEBUG: reportTypes is empty, returning nothing");
+                $baseQuery .= " AND 1=0"; // Force return no results
             }
             
             $baseQuery .= " ORDER BY sm.movement_date DESC";
+            
+            // Debug logging before query execution
+            // error_log("🔍 Combined Reports Query:");
+            // error_log("   - Start Date: $startDate");
+            // error_log("   - End Date: $endDate");
+            // error_log("   - Report Types: " . json_encode($reportTypes));
+            // error_log("   - Query: " . $baseQuery);
+            // error_log("   - Params: " . json_encode($params));
             
             $stmt = $this->conn->prepare($baseQuery);
             $stmt->execute($params);
             $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Also get transfer data if needed
+            // error_log("✅ FILTER DEBUG: Retrieved " . count($reports) . " reports from database");
+            if (count($reports) > 0) {
+                $uniqueTypes = array_unique(array_column($reports, 'movement_type'));
+                // error_log("📊 FILTER DEBUG: Movement types found in results: " . json_encode($uniqueTypes));
+                
+                // Log first 5 records to verify they match the filter
+                if (count($reports) > 5) {
+                    $sampleReports = array_slice($reports, 0, 5);
+                    // error_log("📊 FILTER DEBUG: Sample records (first 5):");
+                    foreach ($sampleReports as $index => $report) {
+                        // error_log("   Record " . ($index + 1) . ": movement_type = " . $report['movement_type'] . ", product_name = " . $report['product_name']);
+                    }
+                }
+            }
+            
+            // Only get transfer data if 'all' or 'transfer' is explicitly selected
             $shouldIncludeTransfer = in_array('all', $reportTypes) || in_array('transfer', $reportTypes);
-            error_log("Combined Reports - Should include transfer: " . ($shouldIncludeTransfer ? 'YES' : 'NO'));
+            // error_log("Combined Reports - Report types: " . json_encode($reportTypes));
+            // error_log("Combined Reports - Should include transfer from tbl_transfer_header: " . ($shouldIncludeTransfer ? 'YES' : 'NO'));
+            
+            // IMPORTANT: Only merge transfer data if 'transfer' or 'all' is explicitly checked
             if ($shouldIncludeTransfer) {
+                // error_log("✅ Including TRANSFER data from tbl_transfer_header");
+                // error_log("🚀 transfer IS in selected report types, proceeding...");
+                
                 $transferQuery = "
                     SELECT 
                         th.transfer_header_id as movement_id,
@@ -1165,7 +1258,7 @@ class ReportsModule {
                         th.transfer_header_id as reference_no,
                         DATE(th.date) as movement_date,
                         TIME(th.date) as movement_time,
-                        COALESCE(l.location_name, 'Warehouse') as location_name,
+                        COALESCE(dl.location_name, 'Warehouse') as location_name,
                         COALESCE(s.supplier_name, 'Unknown') as supplier_name,
                         COALESCE(b.brand, 'Generic') as brand,
                         p.expiration as expiration_date,
@@ -1174,7 +1267,7 @@ class ReportsModule {
                     JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
                     JOIN tbl_product p ON td.product_id = p.product_id
                     LEFT JOIN tbl_category c ON p.category_id = c.category_id
-                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_location dl ON th.destination_location_id = dl.location_id
                     LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     WHERE DATE(th.date) BETWEEN ? AND ?
@@ -1185,6 +1278,8 @@ class ReportsModule {
                 $transferStmt->execute([$startDate, $endDate]);
                 $transferReports = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
                 
+                // error_log("📊 Found " . count($transferReports) . " transfer records");
+                
                 // Merge transfer reports with stock movement reports
                 $reports = array_merge($reports, $transferReports);
                 
@@ -1192,6 +1287,8 @@ class ReportsModule {
                 usort($reports, function($a, $b) {
                     return strtotime($b['movement_date']) - strtotime($a['movement_date']);
                 });
+            } else {
+                // error_log("❌ NOT including TRANSFER data - transfer type not selected");
             }
             
             // Get summary statistics
@@ -1297,7 +1394,7 @@ class ReportsModule {
                     sm.movement_id,
                     p.product_name,
                     p.barcode,
-                    c.category_name as category,
+                    COALESCE(c.category_name, 'Uncategorized') as category,
                     sm.quantity,
                     sm.unit_cost as unit_price,
                     (sm.quantity * sm.unit_cost) as total_value,
@@ -1312,6 +1409,7 @@ class ReportsModule {
                     sm.notes
                 FROM tbl_stock_movements sm
                 JOIN tbl_product p ON sm.product_id = p.product_id
+                LEFT JOIN tbl_category c ON p.category_id = c.category_id
                 LEFT JOIN tbl_location l ON p.location_id = l.location_id
                 LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                 LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
@@ -1322,33 +1420,46 @@ class ReportsModule {
             
             if (empty($details)) {
                 // Try to get from transfer reports
+                // Handle report ID format: "TRANS-105" or just "105"
+                $cleanReportId = str_replace('TRANS-', '', $reportId);
+                if (!is_numeric($cleanReportId)) {
+                    // Not a valid transfer ID, return empty
+                    return [
+                        'success' => true,
+                        'details' => [],
+                        'report_id' => $reportId
+                    ];
+                }
+                
                 $transferStmt = $this->conn->prepare("
                     SELECT 
                         th.transfer_header_id as movement_id,
                         p.product_name,
                         p.barcode,
-                        c.category_name as category,
+                        COALESCE(c.category_name, 'Uncategorized') as category,
                         td.qty as quantity,
                         COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0) as unit_price,
                         (td.qty * COALESCE((SELECT fs.srp FROM tbl_fifo_stock fs WHERE fs.product_id = p.product_id AND fs.available_quantity > 0 ORDER BY fs.expiration_date ASC LIMIT 1), 0)) as total_value,
                         'TRANSFER' as movement_type,
-                        th.reference_number as reference_no,
+                        CONCAT('TRANS-', th.transfer_header_id) as reference_no,
                         DATE(th.date) as date,
                         TIME(th.date) as time,
-                        COALESCE(l.location_name, 'Warehouse') as location_name,
+                        COALESCE(dl.location_name, 'Warehouse') as location_name,
                         COALESCE(s.supplier_name, 'Unknown') as supplier_name,
                         COALESCE(b.brand, 'Generic') as brand,
                         p.expiration as expiration_date,
-                        th.notes
+                        CONCAT('Transferred from ', COALESCE(sl.location_name, 'Warehouse'), ' to ', COALESCE(dl.location_name, 'Warehouse')) as notes
                     FROM tbl_transfer_header th
                     JOIN tbl_transfer_dtl td ON th.transfer_header_id = td.transfer_header_id
                     JOIN tbl_product p ON td.product_id = p.product_id
-                    LEFT JOIN tbl_location l ON p.location_id = l.location_id
+                    LEFT JOIN tbl_category c ON p.category_id = c.category_id
+                    LEFT JOIN tbl_location sl ON th.source_location_id = sl.location_id
+                    LEFT JOIN tbl_location dl ON th.destination_location_id = dl.location_id
                     LEFT JOIN tbl_supplier s ON p.supplier_id = s.supplier_id
                     LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
                     WHERE th.transfer_header_id = ?
                 ");
-                $transferStmt->execute([$reportId]);
+                $transferStmt->execute([$cleanReportId]);
                 $details = $transferStmt->fetchAll(PDO::FETCH_ASSOC);
             }
             
@@ -1612,3 +1723,5 @@ function get_warehouse_kpis($conn, $data) {
     }
 }
 ?>
+
+

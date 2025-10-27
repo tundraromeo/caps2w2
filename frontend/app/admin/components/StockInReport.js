@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useTheme } from './ThemeContext';
 import { useNotification } from './NotificationContext';
+import { toast } from 'react-toastify';
 
 // Use environment-based API base URL
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/backend.php`;
@@ -19,20 +20,7 @@ function StockInReport() {
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Start from 30 days ago
     endDate: new Date().toISOString().split('T')[0]
   });
-  const [showCombineModal, setShowCombineModal] = useState(false);
-  const [selectedReportTypes, setSelectedReportTypes] = useState(['stock_in']);
-  const [combineDateRange, setCombineDateRange] = useState({
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
-  });
-
-  const reportTypes = [
-    { id: 'stock_in', name: 'Stock In Reports' },
-    { id: 'stock_out', name: 'Stock Out Reports' },
-    { id: 'sales', name: 'Sales Reports' },
-    { id: 'cashier_performance', name: 'Cashier Performance Reports' },
-    { id: 'inventory_balance', name: 'Inventory Balance Reports' }
-  ];
+  // Removed modal states and functions
 
   // API Functions - same approach as inventory stock adjustment
   const handleApiCall = async (action, data = {}) => {
@@ -74,17 +62,11 @@ function StockInReport() {
       });
       
       // Debug: Log all data first
-      console.log('Raw API response:', result.data);
-      console.log('Date range:', dateRange);
-      
       // The API already filters by date range, so we can use the data directly
       let stockInData = result.data || [];
       
       // Debug: Log the structure of first few items to understand the data
       if (stockInData.length > 0) {
-        console.log('📊 Sample data structure:', stockInData.slice(0, 2));
-        console.log('📊 Total records before deduplication:', stockInData.length);
-        console.log('📊 Movement IDs found:', stockInData.map(item => item.movement_id || item.id).slice(0, 10));
       }
       
       // CRITICAL: Remove duplicates based on movement_id to prevent same transaction showing multiple times
@@ -98,7 +80,6 @@ function StockInReport() {
         // If movement_id exists, use it for deduplication
         if (movementId && movementId !== 'undefined') {
           if (seenMovementIds.has(movementId)) {
-            console.log('Removing duplicate entry with movement_id:', movementId);
             return false; // Skip this duplicate entry
           }
           seenMovementIds.add(movementId);
@@ -109,7 +90,6 @@ function StockInReport() {
         const uniqueKey = `${item.product_name || ''}_${item.barcode || ''}_${item.date || ''}_${item.time || ''}_${item.quantity || ''}`;
         
         if (seenEntries.has(uniqueKey)) {
-          console.log('Removing duplicate entry without movement_id:', uniqueKey);
           return false;
         }
         
@@ -119,8 +99,6 @@ function StockInReport() {
       
       setStockInData(stockInData);
       setError(null);
-      console.log('Stock-in data fetched successfully:', stockInData.length, 'records');
-      
     } catch (error) {
       console.error('Error fetching stock-in data:', error);
       setStockInData([]);
@@ -138,48 +116,17 @@ function StockInReport() {
     }
   };
 
-  const combineReports = async () => {
-    try {
-      console.log('🔄 Combine Reports button clicked!');
-      setLoading(true);
-      
-      // Check if we have data first
-      if (stockInData.length === 0) {
-        console.warn('⚠️ No stock-in data available for PDF generation');
-        alert('No data available to generate PDF. Please ensure you have stock-in data for the selected date range.');
-        return;
-      }
-      
-      console.log('🧪 Starting PDF generation with data:', stockInData.length, 'records');
-      
-      // Generate PDF directly instead of opening modal
-      await generateCombinedPDF(['stock_in']);
-      
-      console.log('✅ PDF generation completed');
-      
-      // Close current modal
-      setShowCombineModal(false);
-      
-    } catch (error) {
-      console.error('❌ Error combining reports:', error);
-      alert('Error generating PDF: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Removed combineReports function
 
   const generateCombinedPDF = async (reportTypes) => {
     try {
-      console.log('🧪 Starting PDF generation...');
-      console.log('🧪 Report types:', reportTypes);
-      console.log('🧪 Stock in data length:', stockInData.length);
-      console.log('🧪 jsPDF available:', typeof jsPDF !== 'undefined');
-      console.log('🧪 html2canvas available:', typeof html2canvas !== 'undefined');
-      
       // Check if we have data
       if (stockInData.length === 0) {
         console.warn('⚠️ No stock-in data available for PDF generation');
-        alert('No data available to generate PDF. Please ensure you have stock-in data for the selected date range.');
+        toast.warn('No data available to generate PDF. Please ensure you have stock-in data for the selected date range.', {
+          position: "top-right",
+          autoClose: 4000,
+        });
         return;
       }
       
@@ -323,63 +270,45 @@ function StockInReport() {
       document.body.appendChild(tempDiv);
       
       // Generate canvas from HTML
-      console.log('🧪 Generating canvas from HTML...');
       const canvas = await html2canvas(tempDiv, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff'
       });
-      console.log('✅ Canvas generated successfully:', canvas);
-      
       // Remove temporary div
       document.body.removeChild(tempDiv);
       
       // Create PDF
-      console.log('🧪 Creating PDF document...');
       const imgData = canvas.toDataURL('image/png');
-      console.log('🧪 Image data generated, length:', imgData.length);
-      
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgWidth = 210;
       const pageHeight = 295;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       let heightLeft = imgHeight;
-      
-      console.log('🧪 PDF dimensions - imgWidth:', imgWidth, 'imgHeight:', imgHeight, 'pageHeight:', pageHeight);
-      
       let position = 0;
-      
-      console.log('🧪 Adding first page to PDF...');
       pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
       
       while (heightLeft >= 0) {
         position = heightLeft - imgHeight;
-        console.log('🧪 Adding additional page to PDF...');
         pdf.addPage();
         pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
       }
-      
-      console.log('✅ PDF document created successfully');
-      
       // Save PDF
-      const fileName = `Combined_Reports_${combineDateRange.startDate}_to_${combineDateRange.endDate}.pdf`;
-      
-      console.log('🧪 Attempting to save PDF:', fileName);
-      console.log('🧪 PDF object:', pdf);
-      
+      const fileName = `Stock_In_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
       try {
         pdf.save(fileName);
-        console.log('✅ PDF saved successfully:', fileName);
-        alert('PDF downloaded successfully! Check your Downloads folder.');
+        toast.success('PDF downloaded successfully! Check your Downloads folder.', {
+          position: "top-right",
+          autoClose: 3000,
+        });
       } catch (saveError) {
         console.error('❌ PDF save failed:', saveError);
         
         // Try alternative method
         try {
-          console.log('🧪 Trying alternative save method...');
           const pdfBlob = pdf.output('blob');
           const url = URL.createObjectURL(pdfBlob);
           
@@ -393,9 +322,10 @@ function StockInReport() {
           document.body.removeChild(downloadLink);
           
           setTimeout(() => URL.revokeObjectURL(url), 1000);
-          
-          console.log('✅ Alternative save method successful');
-          alert('PDF downloaded successfully via alternative method! Check your Downloads folder.');
+          toast.success('PDF downloaded successfully via alternative method! Check your Downloads folder.', {
+            position: "top-right",
+            autoClose: 3000,
+          });
         } catch (altError) {
           console.error('❌ Alternative save method also failed:', altError);
           throw new Error('Both PDF save methods failed: ' + altError.message);
@@ -408,24 +338,7 @@ function StockInReport() {
     }
   };
 
-  const handleReportTypeChange = (reportTypeId) => {
-    setSelectedReportTypes(prev => {
-      if (prev.includes(reportTypeId)) {
-        return prev.filter(id => id !== reportTypeId);
-      } else {
-        return [...prev, reportTypeId];
-      }
-    });
-  };
-
-  const openCombineModal = () => {
-    setSelectedReportTypes(['stock_in']); // Default to stock in
-    setCombineDateRange({
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0]
-    });
-    setShowCombineModal(true);
-  };
+  // Removed handleReportTypeChange and openCombineModal functions
 
   useEffect(() => {
     fetchAllStockInData();
@@ -569,8 +482,21 @@ function StockInReport() {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={openCombineModal}
-              disabled={loading}
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  await generateCombinedPDF(['stock_in']);
+                } catch (error) {
+                  console.error('Error generating PDF:', error);
+                  toast.error('Error generating PDF: ' + error.message, {
+                    position: "top-right",
+                    autoClose: 4000,
+                  });
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading || stockInData.length === 0}
               className="px-3 py-1 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2 text-sm"
               style={{
                 backgroundColor: theme.bg.hover,
@@ -578,44 +504,7 @@ function StockInReport() {
                 border: `1px solid ${theme.border.default}`
               }}
             >
-                  📋 Combine Reports
-                </button>
-                <button
-                  onClick={() => {
-                    console.log('🧪 Testing simple PDF generation...');
-                    try {
-                      if (typeof jsPDF === 'undefined') {
-                        throw new Error('jsPDF library not loaded');
-                      }
-                      
-                      const pdf = new jsPDF();
-                      pdf.setFontSize(16);
-                      pdf.setFont(undefined, 'bold');
-                      pdf.text('ENGUIO PHARMACY SYSTEM', 20, 20);
-                      pdf.setFontSize(12);
-                      pdf.setFont(undefined, 'normal');
-                      pdf.text('Test PDF Report', 20, 35);
-                      pdf.text('Date: ' + new Date().toLocaleDateString(), 20, 45);
-                      pdf.text('This is a test PDF', 20, 55);
-                      
-                      console.log('🧪 Attempting to save test PDF...');
-                      pdf.save('test_stock_in_report.pdf');
-                      console.log('✅ Test PDF saved successfully');
-                      alert('Test PDF downloaded successfully! Check your Downloads folder.');
-                    } catch (error) {
-                      console.error('❌ Test PDF failed:', error);
-                      alert('Test PDF failed: ' + error.message);
-                    }
-                  }}
-                  className="px-3 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.bg.hover,
-                    borderColor: theme.border.default,
-                    color: theme.text.secondary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                >
-                  🧪 Test PDF
+              📥 Download Report
             </button>
           </div>
         </div>
@@ -784,173 +673,6 @@ function StockInReport() {
         </div>
       </div>
 
-      {/* Combine Reports Modal */}
-      {showCombineModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div 
-            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
-            style={{ 
-              backgroundColor: theme.bg.card,
-              borderColor: theme.colors.success,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(34, 197, 94, 0.2)'
-            }}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
-              <div>
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                  Combine Stock In Reports
-                </h3>
-                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
-                  Select date range and report types to download as a single PDF
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCombineModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6">
-              {/* Quick Select Date Range */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Quick Select</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Today', days: 0 },
-                    { label: 'Yesterday', days: -1 },
-                    { label: 'This Week', days: -7 },
-                    { label: 'Last Week', days: -14 },
-                    { label: 'This Month', days: -30 },
-                    { label: 'Last Month', days: -60 }
-                  ].map((option) => (
-                    <button
-                      key={option.label}
-                      onClick={() => {
-                        const today = new Date();
-                        const targetDate = new Date(today.getTime() + (option.days * 24 * 60 * 60 * 1000));
-                        const dateStr = targetDate.toISOString().split('T')[0];
-                        
-                        if (option.days === 0) {
-                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
-                        } else if (option.days === -1) {
-                          setCombineDateRange({ startDate: dateStr, endDate: dateStr });
-                        } else {
-                          setCombineDateRange({ startDate: dateStr, endDate: today.toISOString().split('T')[0] });
-                        }
-                      }}
-                      className="px-3 py-2 text-sm rounded-md border transition-all duration-200 hover:scale-105"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Date Range */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Custom Date Range</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>Start Date</label>
-                    <input
-                      type="date"
-                      value={combineDateRange.startDate}
-                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: theme.text.secondary }}>End Date</label>
-                    <input
-                      type="date"
-                      value={combineDateRange.endDate}
-                      onChange={(e) => setCombineDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-3 py-2 border rounded-md text-sm"
-                      style={{
-                        backgroundColor: theme.bg.input,
-                        borderColor: theme.border.default,
-                        color: theme.text.primary
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Report Type Selection */}
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Types to Combine</h4>
-                <div className="space-y-2">
-                  {reportTypes.map((type) => (
-                    <label key={type.id} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedReportTypes.includes(type.id)}
-                        onChange={() => handleReportTypeChange(type.id)}
-                        className="rounded border-gray-300"
-                      />
-                      <span className="text-sm" style={{ color: theme.text.secondary }}>
-                        {type.name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={combineReports}
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.colors.accent,
-                    color: theme.text.primary
-                  }}
-                >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                      Generating PDF...
-                    </>
-                  ) : (
-                    <>
-                      📋 Download PDF
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowCombineModal(false)}
-                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.bg.hover,
-                    borderColor: theme.border.default,
-                    color: theme.text.secondary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                >
-                  ✕ Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

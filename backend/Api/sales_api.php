@@ -239,7 +239,7 @@ try {
                     ]);
                     
                 } catch (Exception $logError) {
-                    error_log("Activity logging error: " . $logError->getMessage());
+                    // error_log("Activity logging error: " . $logError->getMessage());
                 }
 
                 $conn->commit();

@@ -91,7 +91,7 @@ class LoginManager {
             ]);
 
         } catch (Exception $e) {
-            error_log("Login error: " . $e->getMessage());
+            // error_log("Login error: " . $e->getMessage());
             return $this->errorResponse("An error occurred during login: " . $e->getMessage());
         }
     }
@@ -115,21 +115,21 @@ class LoginManager {
 
             // Validate emp_id
             if (!$empId) {
-                error_log("Logout failed: No emp_id provided");
+                // error_log("Logout failed: No emp_id provided");
                 return $this->errorResponse("Employee ID is required for logout");
             }
 
-            error_log("Starting logout process for emp_id: $empId, login_id: " . ($loginId ?: 'NULL'));
+            // error_log("Starting logout process for emp_id: $empId, login_id: " . ($loginId ?: 'NULL'));
 
             // Update logout time in tbl_login
             $logoutResult = $this->updateLogoutTime($empId, $loginId);
             
             if ($logoutResult === 0) {
-                error_log("Logout record creation failed for emp_id: $empId");
+                // error_log("Logout record creation failed for emp_id: $empId");
                 return $this->errorResponse("Failed to create logout record");
             }
 
-            error_log("Logout record created successfully for emp_id: $empId");
+            // error_log("Logout record created successfully for emp_id: $empId");
 
             // Log logout activity
             if ($empId) {
@@ -145,7 +145,7 @@ class LoginManager {
             return $this->successResponse(['message' => 'Logout successful', 'emp_id' => $empId]);
 
         } catch (Exception $e) {
-            error_log("Logout error: " . $e->getMessage());
+            // error_log("Logout error: " . $e->getMessage());
             return $this->errorResponse("An error occurred during logout: " . $e->getMessage());
         }
     }
@@ -297,7 +297,7 @@ class LoginManager {
      */
     private function updateLogoutTime($empId, $loginId) {
         if (!$empId) {
-            error_log("No emp_id provided for logout");
+            // error_log("No emp_id provided for logout");
             return 0;
         }
 
@@ -313,7 +313,7 @@ class LoginManager {
         $employee = $result->fetch_assoc();
 
         if (!$employee) {
-            error_log("Employee not found for emp_id: $empId");
+            // error_log("Employee not found for emp_id: $empId");
             return 0;
         }
 
@@ -341,10 +341,10 @@ class LoginManager {
             $result = $updateStmt->execute();
             
             if ($result && $updateStmt->affected_rows > 0) {
-                error_log("SUCCESS: Updated login record to offline for emp_id: $empId, login_id: {$loginRecord['login_id']}");
+                // error_log("SUCCESS: Updated login record to offline for emp_id: $empId, login_id: {$loginRecord['login_id']}");
                 return 1;
             } else {
-                error_log("FAILED: Could not update login record for emp_id: $empId - " . $this->conn->error);
+                // error_log("FAILED: Could not update login record for emp_id: $empId - " . $this->conn->error);
                 return 0;
             }
         } else {
@@ -371,10 +371,10 @@ class LoginManager {
             
             if ($result) {
                 $logoutRecordId = $this->conn->insert_id;
-                error_log("SUCCESS: Created offline record for emp_id: $empId, logout_id: $logoutRecordId");
+                // error_log("SUCCESS: Created offline record for emp_id: $empId, logout_id: $logoutRecordId");
                 return 1;
             } else {
-                error_log("FAILED: Could not create offline record for emp_id: $empId - " . $this->conn->error);
+                // error_log("FAILED: Could not create offline record for emp_id: $empId - " . $this->conn->error);
                 return 0;
             }
         }
@@ -426,7 +426,7 @@ class LoginManager {
             return $terminalId;
 
         } catch (Exception $e) {
-            error_log("Terminal registration error: " . $e->getMessage());
+            // error_log("Terminal registration error: " . $e->getMessage());
             return null;
         }
     }
@@ -455,7 +455,7 @@ class LoginManager {
             $stmt->execute();
 
         } catch (Exception $e) {
-            error_log("Activity logging error: " . $e->getMessage());
+            // error_log("Activity logging error: " . $e->getMessage());
         }
     }
 
@@ -514,7 +514,7 @@ try {
     }
 
 } catch (Exception $e) {
-    error_log("Login API error: " . $e->getMessage());
+    // error_log("Login API error: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => 'An error occurred']);
 }
 ?>

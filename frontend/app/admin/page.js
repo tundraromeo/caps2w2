@@ -48,8 +48,6 @@ const logoutUser = async () => {
       try {
         const user = JSON.parse(userData);
         empId = user.user_id || user.emp_id || null;
-        console.log('Admin Logout - Parsed user data:', user);
-        console.log('Admin Logout - Found emp_id:', empId);
       } catch (e) {
         console.error('Failed to parse user data:', e);
       }
@@ -60,12 +58,8 @@ const logoutUser = async () => {
       const localEmpId = localStorage.getItem('pos-emp-id');
       if (localEmpId) {
         empId = parseInt(localEmpId);
-        console.log('Admin Logout - Using emp_id from localStorage:', empId);
       }
     }
-    
-    console.log('Admin Logout attempt - Final Emp ID:', empId);
-    
     // Call logout API if we have an empId
     if (empId) {
       try {
@@ -83,34 +77,27 @@ const logoutUser = async () => {
         const result = await response.json();
         
         if (result.success) {
-          console.log('✅ Admin logout successful - Server confirmed logout');
         } else {
           console.warn('⚠️ Admin logout warning:', result.message);
         }
       } catch (apiError) {
         console.warn('⚠️ Admin logout API error:', apiError);
-        console.log('📍 Proceeding with local cleanup even though API call failed');
         // Continue with local cleanup even if API fails
       }
     } else {
       console.warn('⚠️ No employee ID found in session or local storage');
-      console.log('📍 Clearing local session data and redirecting to login');
     }
     
     // Always clear all stored data and redirect
-    console.log('🧹 Cleaning up: Clearing all session and local storage');
     sessionStorage.clear();
     localStorage.removeItem('pos-terminal');
     localStorage.removeItem('pos-cashier');
     localStorage.removeItem('pos-emp-id');
-    console.log('✅ Cleanup complete, redirecting to login page');
-    
     // Redirect to login page
     window.location.href = '/';
     return true;
   } catch (error) {
     console.error('❌ Logout error:', error);
-    console.log('📍 Proceeding with local logout despite errors');
     // Clear local data and redirect even if there's an error
     sessionStorage.clear();
     localStorage.removeItem('pos-terminal');
@@ -234,7 +221,6 @@ function AdminContent() {
   useEffect(() => {
     const userData = sessionStorage.getItem('user_data');
     if (!userData) {
-      console.log('🚫 No user data found, redirecting to login');
       router.push('/');
       return;
     }
@@ -244,7 +230,6 @@ function AdminContent() {
       // Check if user has admin permissions
       const role = user.role?.toLowerCase() || '';
       if (!role.includes('admin') && !role.includes('manager') && !role.includes('supervisor')) {
-        console.log('🚫 User does not have admin permissions, redirecting to login');
         router.push('/');
         return;
       }
@@ -269,12 +254,9 @@ function AdminContent() {
           });
           
           if (response.ok) {
-            console.log('✅ Auto logout successful');
           } else {
-            console.log('⚠️ Auto logout failed, but continuing...');
           }
         } catch (error) {
-          console.log('⚠️ Auto logout error:', error.message);
         }
         
         // Clear session storage

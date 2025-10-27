@@ -83,3 +83,5 @@ function check_barcode($conn, $data) {
     }
 }
 ?>
+
+

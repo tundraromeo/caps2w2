@@ -14,8 +14,6 @@ class OnlinePrinting {
       if (typeof window === 'undefined' || !window.print) {
         throw new Error('Browser printing not supported');
       }
-
-      console.log('Online printing initialized successfully');
       return true;
     } catch (error) {
       console.error('Online printing initialization failed:', error);

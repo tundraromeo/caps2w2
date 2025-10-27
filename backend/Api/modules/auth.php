@@ -90,7 +90,7 @@ function handle_login($conn, $data) {
                         $terminal_id = (int)$conn->lastInsertId();
                     }
                 } catch (Exception $terminalError) {
-                    error_log('Terminal error: ' . $terminalError->getMessage());
+                    // error_log('Terminal error: ' . $terminalError->getMessage());
                 }
             }
 
@@ -147,11 +147,11 @@ function handle_login($conn, $data) {
                         ':record_id' => $login_id_inserted
                     ]);
                 } catch (Exception $activityError) {
-                    error_log("Activity logging error: " . $activityError->getMessage());
+                    // error_log("Activity logging error: " . $activityError->getMessage());
                 }
 
             } catch (Exception $loginLogError) {
-                error_log("Login logging error: " . $loginLogError->getMessage());
+                // error_log("Login logging error: " . $loginLogError->getMessage());
                 // Continue with login even if logging fails
             }
 
@@ -168,7 +168,7 @@ function handle_login($conn, $data) {
                     ':record_id' => $login_id_inserted
                 ]);
             } catch (Exception $activityLogError) {
-                error_log("Activity logging error: " . $activityLogError->getMessage());
+                // error_log("Activity logging error: " . $activityLogError->getMessage());
             }
 
             echo json_encode([
@@ -243,7 +243,7 @@ function handle_logout($conn, $data) {
                 }
             }
         } catch (Exception $logoutLogError) {
-            error_log("Logout logging error");
+            // error_log("Logout logging error");
         }
 
         // Log logout activity to system activity logs
@@ -267,7 +267,7 @@ function handle_logout($conn, $data) {
                     ]);
                 }
             } catch (Exception $activityLogError) {
-                error_log("Activity logging error: " . $activityLogError->getMessage());
+                // error_log("Activity logging error: " . $activityLogError->getMessage());
             }
         }
 
@@ -617,7 +617,7 @@ function handle_get_login_activity($conn, $data) {
         }
 
         // Debug: log how many rows were found
-        error_log('[get_login_activity] rows=' . $rowCount . ', fallback=' . count($fallback));
+        // error_log('[get_login_activity] rows=' . $rowCount . ', fallback=' . count($fallback));
 
         echo json_encode(['success' => true, 'data' => $rows, 'fallback' => $fallback]);
     } catch (Exception $e) {
@@ -895,7 +895,7 @@ function handle_get_all_logs($conn, $data) {
             $movementData = $stmtMovement->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             // Continue even if movement data fails
-            error_log("Movement data fetch failed: " . $e->getMessage());
+            // error_log("Movement data fetch failed: " . $e->getMessage());
         }
 
         // Fetch inventory transfer history
@@ -937,7 +937,7 @@ function handle_get_all_logs($conn, $data) {
             $transferData = $stmtTransfer->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             // Continue even if transfer data fails
-            error_log("Transfer data fetch failed: " . $e->getMessage());
+            // error_log("Transfer data fetch failed: " . $e->getMessage());
         }
 
         // Fetch login activity; materialize both login and logout as separate entries
@@ -1016,3 +1016,4 @@ function handle_get_all_logs($conn, $data) {
     }
 }
 ?>
+

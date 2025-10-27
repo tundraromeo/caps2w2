@@ -26,7 +26,7 @@ ob_clean();
 
 // Read and decode incoming JSON request
 $rawData = file_get_contents("php://input");
-error_log("Stock Summary API - Raw input: " . $rawData);
+// error_log("Stock Summary API - Raw input: " . $rawData);
 
 $data = json_decode($rawData, true);
 

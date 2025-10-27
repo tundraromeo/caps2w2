@@ -397,10 +397,10 @@ try {
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // Debug: Log the query and results
-            error_log("DEBUG Pharmacy API: Query executed with params: " . json_encode($params));
-            error_log("DEBUG Pharmacy API: Found " . count($rows) . " products");
+            // error_log("DEBUG Pharmacy API: Query executed with params: " . json_encode($params));
+            // error_log("DEBUG Pharmacy API: Found " . count($rows) . " products");
             if (count($rows) > 0) {
-                error_log("DEBUG Pharmacy API: First product: " . json_encode($rows[0]));
+                // error_log("DEBUG Pharmacy API: First product: " . json_encode($rows[0]));
             }
             
             echo json_encode([
@@ -491,7 +491,7 @@ try {
             }
             
             // Debug: Log the location ID
-            error_log("DEBUG get_pharmacy_batch_details: pharmacy location_id=$location_id");
+            // error_log("DEBUG get_pharmacy_batch_details: pharmacy location_id=$location_id");
             
             // Get the product details to find related products with same name/barcode
             $productStmt = $conn->prepare("SELECT product_name, barcode FROM tbl_product WHERE product_id = ?");
@@ -517,8 +517,8 @@ try {
             $placeholders = str_repeat('?,', count($relatedProductIds) - 1) . '?';
             
             // Debug: Log the parameters
-            error_log("DEBUG get_pharmacy_batch_details: product_id=$product_id, location_id=$location_id");
-            error_log("DEBUG get_pharmacy_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
+            // error_log("DEBUG get_pharmacy_batch_details: product_id=$product_id, location_id=$location_id");
+            // error_log("DEBUG get_pharmacy_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
             
             // Get batch transfer details from tbl_transfer_batch_details for all related products
             // Only show batches that still have available quantity (not completely consumed)
@@ -558,8 +558,8 @@ try {
             // All batches should now be retrieved without location filter
             
             // Debug: Log the results
-            error_log("DEBUG get_pharmacy_batch_details: batchDetails count=" . count($batchDetails));
-            error_log("DEBUG get_pharmacy_batch_details: batchDetails=" . json_encode($batchDetails));
+            // error_log("DEBUG get_pharmacy_batch_details: batchDetails count=" . count($batchDetails));
+            // error_log("DEBUG get_pharmacy_batch_details: batchDetails=" . json_encode($batchDetails));
             
             // If still no data, try to get FIFO stock data directly for all related products
             if (empty($batchDetails)) {
@@ -648,7 +648,7 @@ try {
             ]);
             
             } catch (Exception $e) {
-                error_log("Error in get_pharmacy_batch_details: " . $e->getMessage());
+                // error_log("Error in get_pharmacy_batch_details: " . $e->getMessage());
                 ob_clean();
                 echo json_encode([
                     "success" => false,
@@ -883,7 +883,7 @@ try {
                             }
                         } else {
                             // Fallback: If no batches consumed, try to find a valid batch_id
-                            error_log("Warning: No FIFO batches consumed for product $product_id in pharmacy, attempting fallback");
+                            // error_log("Warning: No FIFO batches consumed for product $product_id in pharmacy, attempting fallback");
                             
                             // Try to get any batch_id associated with this product
                             $batchStmt = $conn->prepare("
@@ -915,7 +915,7 @@ try {
                                     'Pharmacy Cashier'
                                 ]);
                             } else {
-                                error_log("Error: No valid batch_id found for product $product_id in pharmacy");
+                                // error_log("Error: No valid batch_id found for product $product_id in pharmacy");
                                 throw new Exception("No valid batch found for product $product_id");
                             }
                         }

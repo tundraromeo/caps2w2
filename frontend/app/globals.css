@@ -826,3 +826,26 @@ main .responsive-text-2xl {
   .responsive-text-xl { font-size: 1.125rem; }
   .responsive-text-2xl { font-size: 1.25rem; }
 }
+
+/* Smooth table transitions to prevent glitching */
+.inventory-table-container {
+  transition: opacity 0.2s ease-in-out;
+}
+
+.inventory-table tbody tr {
+  transition: all 0.15s ease-in-out;
+}
+
+.inventory-table tbody tr:hover {
+  transform: translateY(-1px);
+}
+
+/* Prevent layout shift during auto-refresh */
+.inventory-table tbody {
+  will-change: contents;
+}
+
+/* Smooth updates without flickering */
+.data-update-smooth {
+  transition: background-color 0.2s ease;
+}

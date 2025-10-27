@@ -37,6 +37,30 @@ function handle_add_convenience_product($conn, $data) {
 
         // Execute the statement
         if ($stmt->execute()) {
+            $product_id = $conn->lastInsertId();
+            
+            // Create stock movement for the added quantity (STOCK IN)
+            if ($quantity > 0) {
+                try {
+                    $movementStmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements (
+                            product_id, batch_id, movement_type, quantity, remaining_quantity,
+                            reference_no, notes, created_by
+                        ) VALUES (?, NULL, 'IN', ?, ?, ?, ?, ?)
+                    ");
+                    $movementStmt->execute([
+                        $product_id, 
+                        $quantity, 
+                        $quantity, // remaining = added quantity
+                        'PROD-ADD-' . $product_id,
+                        'New convenience store product added',
+                        'admin'
+                    ]);
+                } catch (Exception $e) {
+                    // error_log("Failed to create stock movement for product $product_id: " . $e->getMessage());
+                }
+            }
+            
             echo json_encode(["success" => true, "message" => "Product added successfully"]);
         } else {
             echo json_encode(["success" => false, "message" => "Failed to add product"]);
@@ -84,6 +108,30 @@ function handle_add_pharmacy_product($conn, $data) {
 
         // Execute the statement
         if ($stmt->execute()) {
+            $product_id = $conn->lastInsertId();
+            
+            // Create stock movement for the added quantity (STOCK IN)
+            if ($quantity > 0) {
+                try {
+                    $movementStmt = $conn->prepare("
+                        INSERT INTO tbl_stock_movements (
+                            product_id, batch_id, movement_type, quantity, remaining_quantity,
+                            reference_no, notes, created_by
+                        ) VALUES (?, NULL, 'IN', ?, ?, ?, ?, ?)
+                    ");
+                    $movementStmt->execute([
+                        $product_id, 
+                        $quantity, 
+                        $quantity, // remaining = added quantity
+                        'PROD-ADD-' . $product_id,
+                        'New pharmacy product added',
+                        'admin'
+                    ]);
+                } catch (Exception $e) {
+                    // error_log("Failed to create stock movement for product $product_id: " . $e->getMessage());
+                }
+            }
+            
             echo json_encode(["success" => true, "message" => "Product added successfully"]);
         } else {
             echo json_encode(["success" => false, "message" => "Failed to add product"]);
@@ -210,8 +258,11 @@ function handle_add_product($conn, $data) {
         if ($stmt->execute()) {
             $product_id = $conn->lastInsertId();
 
-            // FIFO: Create stock movement record for new stock
-            if ($batch_id && $quantity > 0) {
+            // FIFO: Create stock movement record for new stock (STOCK IN)
+            if ($quantity > 0) {
+                // Use batch_id if available, otherwise use NULL
+                $movement_batch_id = $batch_id ?: null;
+                
                 $movementStmt = $conn->prepare("
                     INSERT INTO tbl_stock_movements (
                         product_id, batch_id, movement_type, quantity, remaining_quantity,
@@ -219,39 +270,49 @@ function handle_add_product($conn, $data) {
                     ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?)
                 ");
                 $movementStmt->execute([
-                    $product_id, $batch_id, $quantity, $quantity, 
+                    $product_id, $movement_batch_id, $quantity, $quantity, 
                     $srp, $expiration, $reference, $entry_by
                 ]);
+                
+                // error_log("✅ Stock IN movement created for product_id: $product_id, quantity: $quantity");
 
-                // Create stock summary record with the new srp
-                $summaryStmt = $conn->prepare("
-                    INSERT INTO tbl_stock_summary (
-                        product_id, batch_id, available_quantity, srp,
-                        expiration_date, batch_reference, total_quantity
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                        available_quantity = available_quantity + VALUES(available_quantity),
-                        total_quantity = total_quantity + VALUES(total_quantity),
-                        srp = VALUES(srp),
-                        last_updated = CURRENT_TIMESTAMP
-                ");
-                $summaryStmt->execute([
-                    $product_id, $batch_id, $quantity, $srp,
-                    $expiration, $reference, $quantity
-                ]);
+                // Create stock summary record with the new srp (only if batch_id exists)
+                if ($movement_batch_id) {
+                    $summaryStmt = $conn->prepare("
+                        INSERT INTO tbl_stock_summary (
+                            product_id, batch_id, available_quantity, srp,
+                            expiration_date, batch_reference, total_quantity
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            available_quantity = available_quantity + VALUES(available_quantity),
+                            total_quantity = total_quantity + VALUES(total_quantity),
+                            srp = VALUES(srp),
+                            last_updated = CURRENT_TIMESTAMP
+                    ");
+                    $summaryStmt->execute([
+                        $product_id, $movement_batch_id, $quantity, $srp,
+                        $expiration, $reference, $quantity
+                    ]);
+                }
 
-                // Create FIFO stock entry - REQUIRED for new products
-                $fifoStmt = $conn->prepare("
-                    INSERT INTO tbl_fifo_stock (
-                        product_id, batch_id, batch_reference, quantity, available_quantity,
-                        srp, expiration_date, entry_date, entry_by, location_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)
-                ");
+                // Create FIFO stock entry - REQUIRED for new products (only if batch_id exists)
+                if ($movement_batch_id) {
+                    $fifoStmt = $conn->prepare("
+                        INSERT INTO tbl_fifo_stock (
+                            product_id, batch_id, batch_reference, quantity, available_quantity,
+                            srp, expiration_date, entry_date, entry_by, location_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)
+                    ");
 
-                $fifoStmt->execute([
-                    $product_id, $batch_id, $reference, $quantity, $quantity,
-                    $srp, $expiration, $entry_by, $location_id
-                ]);
+                    $fifoStmt->execute([
+                        $product_id, $movement_batch_id, $reference, $quantity, $quantity,
+                        $srp, $expiration, $entry_by, $location_id
+                    ]);
+                    
+                    // error_log("✅ FIFO stock entry created for product_id: $product_id");
+                } else {
+                    // error_log("⚠️ No batch_id - skipping FIFO stock entry for product_id: $product_id");
+                }
 
                 $fifo_created = true;
             }
@@ -259,7 +320,8 @@ function handle_add_product($conn, $data) {
             $conn->commit();
             echo json_encode([
                 "success" => true, 
-                "message" => "Product added successfully with FIFO tracking",
+                "message" => "Product added successfully with Stock IN tracking",
+                "stock_movement_created" => isset($fifo_created),
                 "fifo_stock_created" => $fifo_created ?? false
             ]);
         } else {
@@ -1505,3 +1567,4 @@ function handle_get_location_products($conn, $data) {
 }
 
 ?>
+

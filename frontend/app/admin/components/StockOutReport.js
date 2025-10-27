@@ -22,16 +22,12 @@ function StockOutReport() {
       endDate: today.toISOString().split('T')[0]
     };
   });
-  const [showCombineModal, setShowCombineModal] = useState(false);
-  const [selectedReportTypes, setSelectedReportTypes] = useState(['stock_out']);
+  // Removed modal states
 
   const fetchAllStockOutData = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      console.log('📤 Fetching stock-out data...');
-      
       const res = await axios.post(API_BASE_URL, {
         action: 'get_report_data',
         report_type: 'stock_out',
@@ -46,7 +42,6 @@ function StockOutReport() {
       
       if (res.data?.success) {
         setStockOutData(res.data.data || []);
-        console.log('✅ Stock-out data fetched successfully:', res.data.data?.length || 0, 'records');
       } else {
         setStockOutData([]);
         setError(res.data?.message || 'Failed to fetch stock-out data');
@@ -68,33 +63,10 @@ function StockOutReport() {
     }
   };
 
-  const combineReports = async () => {
-    try {
-      setLoading(true);
-      
-      console.log('🔄 Generating combined PDF from StockOutReport component');
-      
-      // Generate PDF directly with stock_out data
-      await generateCombinedPDF(['stock_out']);
-      
-      // Close modal
-      setShowCombineModal(false);
-      
-      // Show success message
-      console.log('✅ Combined PDF generated successfully from StockOutReport');
-      
-    } catch (error) {
-      console.error('Error combining reports:', error);
-      alert('Error generating PDF: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Removed combineReports function
 
   const generateCombinedPDF = async (reportTypes) => {
     try {
-      console.log('📄 Generating PDF for report types:', reportTypes);
-      
       // Use the same API approach as the main Reports component
       const API_BASE_URL = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/backend.php`;
       
@@ -104,7 +76,6 @@ function StockOutReport() {
       
       for (const reportType of reportTypes) {
         try {
-          console.log(`📊 Fetching data for ${reportType}...`);
           const res = await axios.post(API_BASE_URL, {
             action: 'get_report_data',
             report_type: reportType,
@@ -119,8 +90,6 @@ function StockOutReport() {
           
           if (res.data?.success) {
             allReportsData[reportType] = res.data.data || [];
-            console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
-            
             if (allReportsData[reportType].length > 0) {
               hasAnyData = true;
             }
@@ -138,9 +107,6 @@ function StockOutReport() {
       if (!hasAnyData) {
         throw new Error('No data found for the selected date range and report types.');
       }
-      
-      console.log('📄 Creating PDF document...');
-      
       // Create PDF with jsPDF
       const pdf = new jsPDF('p', 'mm', 'a4');
       
@@ -164,13 +130,6 @@ function StockOutReport() {
       for (const reportType of reportTypes) {
         const data = allReportsData[reportType] || [];
         const reportName = reportType === 'stock_out' ? 'Stock Out Report' : reportType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        
-        console.log(`📊 Processing ${reportType}:`, {
-          reportName,
-          dataLength: data.length,
-          hasData: data.length > 0
-        });
-        
         // Check if we need a new page
         if (yPosition > 250) {
           pdf.addPage();
@@ -261,31 +220,14 @@ function StockOutReport() {
       
       // Save PDF
       const fileName = `Stock_Out_Report_${dateRange.startDate}_to_${dateRange.endDate}.pdf`;
-      
-      console.log('💾 Saving PDF:', fileName);
       pdf.save(fileName);
-      console.log(`✅ PDF downloaded successfully: ${fileName}`);
-      
     } catch (error) {
       console.error('Error generating PDF:', error);
       throw error;
     }
   };
 
-  const handleReportTypeChange = (reportTypeId) => {
-    setSelectedReportTypes(prev => {
-      if (prev.includes(reportTypeId)) {
-        return prev.filter(id => id !== reportTypeId);
-      } else {
-        return [...prev, reportTypeId];
-      }
-    });
-  };
-
-  const openCombineModal = () => {
-    setSelectedReportTypes(['stock_out']);
-    setShowCombineModal(true);
-  };
+  // Removed handleReportTypeChange and openCombineModal functions
 
   useEffect(() => {
     fetchAllStockOutData();
@@ -334,8 +276,21 @@ function StockOutReport() {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={openCombineModal}
-              disabled={loading}
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  await generateCombinedPDF(['stock_out']);
+                } catch (error) {
+                  console.error('Error generating PDF:', error);
+                  toast.error('Error generating PDF: ' + error.message, {
+                    position: "top-right",
+                    autoClose: 4000,
+                  });
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading || stockOutData.length === 0}
               className="px-3 py-1 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center gap-2 text-sm"
               style={{
                 backgroundColor: theme.bg.hover,
@@ -343,7 +298,7 @@ function StockOutReport() {
                 border: `1px solid ${theme.border.default}`
               }}
             >
-              📋 Combine Reports
+              📥 Download Report
             </button>
           </div>
         </div>
@@ -511,91 +466,6 @@ function StockOutReport() {
         </div>
       </div>
 
-      {/* Combine Modal */}
-      {showCombineModal && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div 
-            className="rounded-xl shadow-2xl max-w-md w-full mx-4 border-2"
-            style={{ 
-              backgroundColor: theme.bg.card,
-              borderColor: theme.colors.warning,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(147, 51, 234, 0.2)'
-            }}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: theme.border.default }}>
-              <div>
-                <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
-                  📤 Stock Out Report Download
-                </h3>
-                <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
-                  Generate PDF report for stock out data
-                </p>
-              </div>
-              <button
-                onClick={() => setShowCombineModal(false)}
-                className="transition-colors"
-                style={{ color: theme.text.muted }}
-                onMouseEnter={(e) => e.target.style.color = theme.text.secondary}
-                onMouseLeave={(e) => e.target.style.color = theme.text.muted}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6">
-              <div className="mb-6">
-                <h4 className="text-sm font-medium mb-3" style={{ color: theme.text.primary }}>Report Information</h4>
-                <div className="text-xs mb-2" style={{ color: theme.text.muted }}>
-                  Date range: {dateRange.startDate} to {dateRange.endDate}
-                </div>
-                <div className="text-xs mb-2" style={{ color: theme.text.muted }}>
-                  Records found: {stockOutData.length}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={combineReports}
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.colors.accent,
-                    color: theme.text.primary
-                  }}
-                >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                      Generating PDF...
-                    </>
-                  ) : (
-                    <>
-                      📥 Download Stock Out PDF
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowCombineModal(false)}
-                  className="px-4 py-2 rounded-md font-medium transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
-                  style={{
-                    backgroundColor: theme.bg.hover,
-                    borderColor: theme.border.default,
-                    color: theme.text.secondary,
-                    border: `1px solid ${theme.border.default}`
-                  }}
-                >
-                  ✕ Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

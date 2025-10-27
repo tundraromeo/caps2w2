@@ -51,7 +51,6 @@ export default function PharmacyDashboard() {
   useEffect(() => {
     const userData = sessionStorage.getItem('user_data');
     if (!userData) {
-      console.log('🚫 No user data found, redirecting to login');
       router.push('/');
       return;
     }
@@ -61,12 +60,9 @@ export default function PharmacyDashboard() {
       // Check if user has pharmacy/pharmacist permissions
       const role = user.role?.toLowerCase() || '';
       if (!role.includes('pharmacist') && !role.includes('pharmacy') && !role.includes('admin') && !role.includes('inventory')) {
-        console.log('🚫 User does not have pharmacy permissions, redirecting to login');
         router.push('/');
         return;
       }
-
-      console.log('✅ User authenticated for pharmacy dashboard');
       setIsAuthenticated(true);
     } catch (e) {
       console.error('❌ Failed to parse user data:', e);

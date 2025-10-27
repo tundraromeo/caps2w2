@@ -154,7 +154,6 @@ function CreatePurchaseOrder() {
           emp_id: userData.user_id || 1, // Fallback to 1 if not found
           full_name: userData.full_name || userData.username || 'Unknown User'
         });
-        console.log('✅ Current user loaded:', userData.full_name, 'ID:', userData.user_id);
       } catch (error) {
         console.error('❌ Error parsing user session:', error);
         // Set default fallback user
@@ -184,7 +183,6 @@ function CreatePurchaseOrder() {
 
   // Debug: Monitor selectedProducts changes
   useEffect(() => {
-    console.log('selectedProducts changed:', selectedProducts);
   }, [selectedProducts]);
 
   // Create Purchase Order functions
@@ -312,7 +310,7 @@ function CreatePurchaseOrder() {
   };
 
   const updateProduct = (index, field, value) => {
-    console.log('updateProduct called:', { index, field, value }); // Debug log
+     // Debug log
     const updatedProducts = [...selectedProducts];
     let safeValue = value;
 
@@ -341,36 +339,27 @@ function CreatePurchaseOrder() {
   // Function to automatically move PO to delivered table after creation
   const movePOToDeliveredTable = async (poNumber, poId) => {
     try {
-      console.log(`🚀 Moving PO ${poNumber} (ID: ${poId}) to delivered table...`);
-      
       // Switch to the Purchase Orders tab immediately
-      console.log('🔄 Switching to Purchase Orders tab...');
       setActiveTab('list');
       setPoFilter('delivered'); // Show the delivered tab where the new PO should appear
       
       // Refresh data after switching tabs
-      console.log('🔄 Refreshing all purchase orders...');
       await fetchAllPurchaseOrders();
       
       // Force refresh the delivered tab data multiple times to ensure it loads
-      console.log('🔄 Refreshing delivered tab data...');
       await fetchPurchaseOrders('delivered');
       
       // Additional refreshes to ensure data is loaded
       setTimeout(async () => {
-        console.log('🔄 Second refresh for delivered tab...');
         await fetchPurchaseOrders('delivered');
       }, 200);
       
       setTimeout(async () => {
-        console.log('🔄 Final refresh for delivered tab...');
         await fetchPurchaseOrders('delivered');
-        console.log('✅ Final refresh completed for delivered tab');
       }, 1000);
       
       // Verify the PO appears in delivered table
       setTimeout(async () => {
-        console.log(`🔍 Verifying PO ${poNumber} appears in delivered table...`);
         await fetchPurchaseOrders('delivered');
         
         // Check if PO is in the delivered list - use the updated filtering logic
@@ -411,22 +400,16 @@ function CreatePurchaseOrder() {
           const foundPO = deliveredPOs.find(po => po.po_number === poNumber);
           
           if (foundPO) {
-            console.log(`✅ Successfully verified PO ${poNumber} is in delivered table`);
             toast.success(`✅ PO ${poNumber} is now visible in the delivered table!`);
           } else {
-            console.log(`⚠️ PO ${poNumber} not found in delivered table yet, will retry...`);
-            console.log(`🔍 Current delivered POs:`, deliveredPOs.map(po => po.po_number));
-            
             // Retry one more time
             setTimeout(async () => {
               await fetchPurchaseOrders('delivered');
               const retryPOs = purchaseOrders.filter(po => po.status === 'delivered');
               const retryFoundPO = retryPOs.find(po => po.po_number === poNumber);
               if (retryFoundPO) {
-                console.log(`✅ PO ${poNumber} found on retry`);
                 toast.success(`✅ PO ${poNumber} is now visible in the delivered table!`);
               } else {
-                console.log(`❌ PO ${poNumber} still not found in delivered table`);
                 toast.warning(`⚠️ PO ${poNumber} created but may take a moment to appear in delivered table`);
               }
             }, 2000);
@@ -519,14 +502,9 @@ function CreatePurchaseOrder() {
       });
 
       const result = await response.json();
-      console.log('📊 PO Creation Response:', result);
-      
       if (result.success) {
         toast.success(`Purchase Order ${result.po_number} created successfully!`);
-        console.log(`✅ PO Created: ${result.po_number} (ID: ${result.purchase_header_id})`);
-        
         // PO is automatically created with 'delivered' status in backend
-        console.log(`✅ PO ${result.po_number} created with delivered status automatically`);
         toast.info(`📦 Purchase Order ${result.po_number} created and automatically moved to delivered table!`);
         
         // Automatically move PO to delivered table
@@ -548,54 +526,16 @@ function CreatePurchaseOrder() {
     try {
       // Always fetch ALL purchase orders and products, then filter on frontend
       let url = `${API_BASE}?action=purchase_orders_with_products&_t=${Date.now()}&_r=${Math.random()}`;
-      
-      console.log('🔍 Fetching Purchase Orders from URL:', url);
-      console.log('🔍 API_BASE:', API_BASE);
-      
       const response = await fetch(url);
-      console.log('🔍 Response status:', response.status);
-      console.log('🔍 Response ok:', response.ok);
-      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('🔍 Raw API Response:', data);
       if (data.success) {
-        console.log('Fetched All Purchase Orders with Products:', {
-          totalPOs: data.data.length,
-          sampleData: data.data.slice(0, 2).map(po => ({ 
-            id: po.purchase_header_id, 
-            status: po.status, 
-            po_number: po.po_number,
-            products: po.products?.length || 0,
-            productDetails: po.products?.map(p => ({
-              name: p.product_name,
-              item_status: p.item_status,
-              received_qty: p.received_qty,
-              quantity: p.quantity
-            })) || []
-          }))
-        });
-        
         // Debug: Log ALL delivered POs specifically
         const deliveredPOs = data.data.filter(po => po.status === 'delivered');
-        console.log(`🔍 Found ${deliveredPOs.length} POs with 'delivered' status:`, deliveredPOs.map(po => ({
-          id: po.purchase_header_id,
-          po_number: po.po_number,
-          status: po.status,
-          productsCount: po.products?.length || 0
-        })));
-        
         // SIMPLIFIED: Just show all data for now
-        console.log(`🔍 SIMPLIFIED: Showing ALL ${data.data.length} POs`);
-        console.log(`🔍 Data:`, data.data.map(po => ({
-          id: po.purchase_header_id,
-          po_number: po.po_number,
-          status: po.status
-        })));
-        
         setPurchaseOrders(data.data);
       } else {
         toast.error('Failed to load purchase orders');
@@ -654,31 +594,13 @@ function CreatePurchaseOrder() {
   const fetchAllPurchaseOrders = async () => {
     try {
       const url = `${API_BASE}?action=purchase_orders_with_products`;
-      console.log('🔍 fetchAllPurchaseOrders - URL:', url);
-      console.log('🔍 fetchAllPurchaseOrders - API_BASE:', API_BASE);
-      
       const response = await fetch(url);
-      console.log('🔍 fetchAllPurchaseOrders - Response status:', response.status);
-      console.log('🔍 fetchAllPurchaseOrders - Response ok:', response.ok);
-      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('🔍 fetchAllPurchaseOrders - Raw response:', data);
-      
       if (data.success) {
-        console.log('✅ fetchAllPurchaseOrders - Success! Setting purchase orders:', {
-          count: data.data.length,
-          totalProducts: data.data.reduce((sum, po) => sum + (po.products?.length || 0), 0),
-          sampleProducts: data.data.slice(0, 2).map(po => ({
-            po_id: po.purchase_header_id,
-            po_number: po.po_number,
-            status: po.status,
-            products: po.products?.map(p => ({ name: p.product_name, status: p.item_status })) || []
-          }))
-        });
         setAllPurchaseOrders(data.data);
       } else {
         console.error('❌ fetchAllPurchaseOrders - API returned error:', data.error);
@@ -859,17 +781,6 @@ function CreatePurchaseOrder() {
     };
     
     // Debug logging
-    console.log('PO Counts Debug:', {
-      totalPOs: allPurchaseOrders.length,
-      counts: result,
-      samplePOs: allPurchaseOrders.slice(0, 2).map(po => ({
-        po_id: po.purchase_header_id,
-        status: po.status,
-        productsCount: po.products?.length || 0,
-        productStatuses: po.products?.map(p => p.item_status) || []
-      }))
-    });
-    
     return result;
   }, [allPurchaseOrders]);
 
@@ -980,8 +891,6 @@ function CreatePurchaseOrder() {
       } catch (statusError) {
         console.warn('Could not update PO status to received:', statusError);
       }
-
-      console.log(`Auto-receive successful for PO ${poId}. Receiving ID: ${result.receiving_id}`);
       return result;
       
     } catch (error) {
@@ -1256,12 +1165,8 @@ function CreatePurchaseOrder() {
   // Function to return delivery for a PO - updates backend status to return
   const handleReturnDelivery = async (poId) => {
     try {
-      console.log('Starting return delivery process for PO ID:', poId);
-      
       // Get PO details first
       const url = `${API_BASE}?action=purchase_order_details&po_id=${poId}`;
-      console.log('Fetching URL:', url);
-      
       const response = await fetch(url);
       const data = await response.json();
       
@@ -1340,14 +1245,8 @@ function CreatePurchaseOrder() {
   // Function to return all complete items in a PO
   const handleReturnCompleteItems = async (poId) => {
     try {
-      console.log('Starting return process for PO ID:', poId);
-      console.log('API_BASE URL:', API_BASE);
-      
-      
       // Get PO details first
       const url = `${API_BASE}?action=purchase_order_details&po_id=${poId}`;
-      console.log('Fetching URL:', url);
-      
       // Add timeout and better error handling for fetch
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
@@ -1361,15 +1260,11 @@ function CreatePurchaseOrder() {
       });
       
       clearTimeout(timeoutId);
-      console.log('Response received:', response);
-      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('Response data:', data);
-      
       if (data.success) {
         // Filter only complete products
         const completeProducts = data.details.filter(detail => {
@@ -1464,8 +1359,6 @@ function CreatePurchaseOrder() {
   // Function to return partial products from a PO
   const handleReturnPartialProducts = async (poId) => {
     try {
-      console.log('Starting return partial products process for PO ID:', poId);
-      
       // Get PO details first
       const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
       const data = await response.json();
@@ -1518,11 +1411,6 @@ function CreatePurchaseOrder() {
             const updateData = await updateResponse.json();
             if (updateData.success) {
               successCount++;
-              console.log('✅ Product status updated to returned:', {
-                purchase_dtl_id: product.purchase_dtl_id,
-                product_name: product.product_name,
-                response: updateData
-              });
             } else {
               errorCount++;
               console.error('Failed to update product status:', updateData.error);
@@ -1549,7 +1437,6 @@ function CreatePurchaseOrder() {
             if (receivingResponse.ok) {
               const receivingData = await receivingResponse.json();
               if (receivingData.success) {
-                console.log('✅ Receiving status updated to Cancel');
               }
             }
           } catch (receivingError) {
@@ -1604,16 +1491,6 @@ function CreatePurchaseOrder() {
       const response = await fetch(`${API_BASE}?action=receiving_list`);
       const data = await response.json();
       if (data.success) {
-        console.log('Receiving List Debug:', {
-          count: data.data.length,
-          sampleData: data.data.slice(0, 3).map(item => ({
-            receiving_id: item.receiving_id,
-            po_number: item.po_number,
-            status: item.status || item.display_status,
-            received_items: item.received_items
-          }))
-        });
-        
         // Auto-update pending statuses to completed for items that have been received
         const pendingItems = data.data.filter(item => 
           item.display_status === 'Ready' || item.status === 'pending'
@@ -1653,14 +1530,6 @@ function CreatePurchaseOrder() {
     try {
       const response = await fetch(`${API_BASE}?action=received_items_details&receiving_id=${receivingId}`);
       const data = await response.json();
-      console.log('📦 Received Items Details API Response:', {
-        success: data.success,
-        receivingId,
-        data: data.data,
-        details: data.data?.details,
-        received_items: data.data?.received_items
-      });
-      
       if (data.success) {
         setSelectedReceivedItems(data.data);
         setShowReceivedItemsModal(true);
@@ -1737,14 +1606,6 @@ function CreatePurchaseOrder() {
           missing_qty: 0 // Complete products have no missing items
         }]
       };
-
-      console.log('Auto-receiving complete product:', {
-        poId,
-        product: product.product_name,
-        received_qty: product.received_qty,
-        receiveData
-      });
-
       // Call the receive items API
       const response = await fetch(`${API_BASE}?action=receive_items`, {
         method: 'POST',
@@ -2138,14 +1999,6 @@ function CreatePurchaseOrder() {
 
       // Categorize products individually
       const categorized = processIndividualProductStatus(itemsWithQuantities);
-      
-      console.log('📊 Individual Product Categorization:', {
-        complete: categorized.complete.length,
-        partial: categorized.partial.length,
-        delivered: categorized.delivered.length,
-        details: categorized
-      });
-
       // Prepare data for updating received quantities (this will update item_status per product)
       const receiveData = {
         purchase_header_id: selectedPOForReceive.header.purchase_header_id,
@@ -2211,7 +2064,6 @@ function CreatePurchaseOrder() {
         
         // AUTO-SWITCH TO COMPLETE TAB if all items are complete
         if (categorized.complete.length > 0 && categorized.partial.length === 0 && categorized.delivered.length === 0) {
-          console.log('🎯 All items completed! Switching to Complete tab...');
           toast.info(`📦 Purchase Order moved to Complete tab! Ready for final receiving.`);
           
           // Switch to Complete tab to show the completed PO
@@ -2219,9 +2071,7 @@ function CreatePurchaseOrder() {
           
           // Refresh the Complete tab data
           setTimeout(async () => {
-            console.log('🔄 Refreshing Complete tab data...');
             await fetchPurchaseOrders('complete');
-            console.log('✅ Complete tab refreshed');
           }, 300);
         }
       } else {
@@ -2252,14 +2102,6 @@ function CreatePurchaseOrder() {
 
       // Categorize products individually
       const categorized = processIndividualProductStatus(itemsWithQuantities);
-      
-      console.log('📊 Individual Product Categorization (Receive):', {
-        complete: categorized.complete.length,
-        partial: categorized.partial.length,
-        delivered: categorized.delivered.length,
-        details: categorized
-      });
-      
       // Prepare the data to send with individual product status
       const receiveData = {
         purchase_header_id: selectedPOForReceive.header.purchase_header_id,
@@ -2443,14 +2285,6 @@ function CreatePurchaseOrder() {
     try {
       // Categorize products individually based on received quantities
       const categorized = processIndividualProductStatus(partialDeliveryFormData.items);
-      
-      console.log('📊 Partial Delivery - Individual Product Categorization:', {
-        complete: categorized.complete.length,
-        partial: categorized.partial.length,
-        delivered: categorized.delivered.length,
-        details: categorized
-      });
-
       const partialDeliveryData = {
         purchase_header_id: selectedPOForPartialDelivery.header.purchase_header_id,
         items: partialDeliveryFormData.items.map(item => ({
@@ -2501,8 +2335,6 @@ function CreatePurchaseOrder() {
         
         // AUTO-MOVE TO RECEIVED STATUS if all items are now complete
         if (overallStatus === 'complete') {
-          console.log('🎯 All items completed via partial delivery! Moving to received status...');
-          
           // Update PO status directly to 'received' instead of 'complete'
           try {
             await updatePOStatus(partialDeliveryData.purchase_header_id, 'received');
@@ -2890,7 +2722,6 @@ function CreatePurchaseOrder() {
                 <button
                   key={f.key}
                   onClick={() => {
-                    console.log('🔍 Tab clicked:', f.key);
                     setPoFilter(f.key);
                   }}
                   className={`relative py-2 text-sm font-medium whitespace-nowrap transition-colors ${
@@ -3126,21 +2957,7 @@ function CreatePurchaseOrder() {
                                 const hasReturnedProducts = products.some(product => product.item_status === 'returned');
                                 
                                 // Debug: Log the detection
-                                console.log('🔍 Returned Products Detection:', {
-                                  poId: po.purchase_header_id,
-                                  poFilter,
-                                  isInReturnsTab,
-                                  hasReturnedProducts,
-                                  allPurchaseOrdersCount: allPurchaseOrders.length,
-                                  currentPurchaseOrdersCount: purchaseOrders.length,
-                                  products: products.map(p => ({ 
-                                    product_id: p.product_id, 
-                                    item_status: p.item_status 
-                                  }))
-                                });
-                                
                                 // Force hide Received button if we're in Returns tab
-                                console.log('🔍 Current poFilter:', poFilter, 'Expected: return');
                                 if (poFilter === 'return') {
                                   // For returned POs or POs in Returns tab, only show Return button (no Received button)
                                   return (
@@ -3237,8 +3054,6 @@ function CreatePurchaseOrder() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {(() => {
                     // Debug: Log the receiving list to see the current status values
-                    console.log('Current receiving list data:', receivingList);
-                    
                     // Group receiving records by PO number to avoid duplicates
                     const groupedByPO = receivingList.reduce((acc, item) => {
                       const poKey = item.po_number || `PO-${item.purchase_header_id}`;

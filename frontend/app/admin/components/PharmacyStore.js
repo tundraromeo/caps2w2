@@ -57,8 +57,6 @@ const PharmacyStore = () => {
 
   // API function - using centralized API system to avoid CORS issues
   async function handleApiCall(action, data = {}) {
-    console.log("🚀 API Call Payload:", { action, ...data });
-
     try {
       let response;
       
@@ -93,8 +91,6 @@ const PharmacyStore = () => {
           // For batch tracking specific actions, use the centralized API with batch_tracking.php endpoint
           response = await api.callGenericAPI('batch_tracking.php', action, data);
       }
-
-      console.log("✅ API Success Response:", response);
       return response || { success: false, message: "No response received" };
       
     } catch (error) {
@@ -153,7 +149,6 @@ const PharmacyStore = () => {
       
       // Here you could trigger an API call to create purchase orders
       // or send notifications to suppliers
-      console.log("Auto-reorder triggered for products:", lowStockProducts);
     }
   }
 
@@ -162,7 +157,6 @@ const PharmacyStore = () => {
     try {
       const response = await api.testConnection();
       if (response.success) {
-        console.log("✅ API connected successfully");
         return true;
       } else {
         throw new Error(`Server error: ${response.message}`);
@@ -177,17 +171,11 @@ const PharmacyStore = () => {
   // Function to get pharmacy location using centralized API
   const loadPharmacyLocation = async () => {
     try {
-      console.log("🔍 Loading pharmacy location...");
       const response = await api.getLocations();
-      console.log("📍 Locations response:", response);
-      
       if (response.success && response.data) {
         const pharmacy = response.data.find(loc => loc.location_name.toLowerCase().includes('pharmacy'));
-        console.log("🏥 Found pharmacy location:", pharmacy);
-        
         if (pharmacy) {
           setPharmacyLocationId(pharmacy.location_id);
-          console.log("✅ Set pharmacy location ID:", pharmacy.location_id);
           return pharmacy.location_id;
         } else {
           console.warn("⚠️ No pharmacy location found in:", response.data);
@@ -207,23 +195,17 @@ const PharmacyStore = () => {
   };
 
   // Function to load products using centralized API
-  const loadProducts = async () => {
+  const loadProducts = async (showLoading = true) => {
     if (!pharmacyLocationId) {
-      console.log("⚠️ No pharmacy location ID, skipping product load");
       return;
     }
     
-    setIsLoading(true);
+    if (showLoading) setIsLoading(true);
     try {
-      console.log("🔄 Loading pharmacy products for location ID:", pharmacyLocationId);
-      
       const response = await api.getPharmacyProducts({
         location_name: 'pharmacy',
         location_id: pharmacyLocationId
       });
-      
-      console.log("📦 API Response:", response);
-      
       if (response.success && response.data) {
         // Filter out archived products and products with 0 quantity
         const activeProducts = response.data.filter(product => {
@@ -231,49 +213,52 @@ const PharmacyStore = () => {
           const isActive = product.status !== 'archived';
           const hasQuantity = quantity > 0;
           
-          if (!isActive) console.log("❌ Filtered out archived:", product.product_name);
-          if (!hasQuantity) console.log("⚠️ Product with 0 quantity:", product.product_name, "- keeping for visibility");
+          if (!isActive) 
+          if (!hasQuantity) 
           
           // Show all active products even if quantity is 0
           return isActive;
         });
-        
-        console.log(`✅ Loaded ${activeProducts.length} active products out of ${response.data.length} total`);
-        
         // Debug: Log first few products to check SRP values
-        console.log("🔍 First 3 products with SRP data:", activeProducts.slice(0, 3).map(p => ({
-          name: p.product_name,
-          srp: p.srp,
-          first_batch_srp: p.first_batch_srp,
-          total_quantity: p.total_quantity,
-          quantity: p.quantity
-        })));
-        
-        setInventory(activeProducts);
-        setFilteredInventory(activeProducts);
-        calculateNotifications(activeProducts);
+        // Only update if data actually changed to prevent unnecessary re-renders
+        if (JSON.stringify(activeProducts) !== JSON.stringify(inventory)) {
+          setInventory(activeProducts);
+          setFilteredInventory(activeProducts);
+          calculateNotifications(activeProducts);
+        }
       } else {
         console.error("❌ API Error:", response.message);
-        toast.error(response.message || "Failed to load products");
-        setInventory([]);
-        setFilteredInventory([]);
+        if (showLoading) {
+          toast.error(response.message || "Failed to load products");
+        }
+        if (inventory.length === 0) {
+          setInventory([]);
+          setFilteredInventory([]);
+        }
       }
     } catch (error) {
       console.error("❌ Error loading products:", error);
-      toast.error("Failed to load products: " + error.message);
-      setInventory([]);
-      setFilteredInventory([]);
+      if (showLoading) {
+        toast.error("Failed to load products: " + error.message);
+      }
+      if (inventory.length === 0) {
+        setInventory([]);
+        setFilteredInventory([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
+  };
+
+  // Silent refresh for auto-updates without loading states
+  const loadProductsSilently = async () => {
+    await loadProducts(false);
   };
 
   // Initialize component
   useEffect(() => {
     const initialize = async () => {
-      console.log("🚀 Initializing Pharmacy Inventory...");
       const locationId = await loadPharmacyLocation();
-      console.log("📍 Pharmacy Location ID:", locationId);
       if (locationId) {
         await loadProducts();
       } else {
@@ -288,8 +273,7 @@ const PharmacyStore = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       if (pharmacyLocationId && !isLoading) {
-        console.log("🔄 Auto-refreshing pharmacy products...");
-        loadProducts();
+        loadProductsSilently();
       }
     }, 5000); // 5 seconds - very frequent to catch POS sales immediately
 
@@ -317,8 +301,6 @@ const PharmacyStore = () => {
       
       // Check if this refresh is for Pharmacy
       if (location && location.toLowerCase().includes('pharmacy')) {
-        console.log('🔄 Inventory refresh triggered for Pharmacy:', { action, message, transferDetailsUpdated });
-        
         // Show toast notification with transfer details info
         let notificationMessage = `🔄 ${message} - Refreshing inventory...`;
         if (transferDetailsUpdated) {
@@ -441,30 +423,17 @@ const PharmacyStore = () => {
   const loadTransferHistory = async (productId) => {
     setLoadingBatch(true);
     try {
-      console.log("Loading batch transfer details for product ID:", productId);
-      console.log("Pharmacy location ID:", pharmacyLocationId);
-      
       // Use same logic as Convenience Store - call get_pharmacy_batch_details
       const response = await handleApiCall("get_pharmacy_batch_details", {
         location_id: pharmacyLocationId,
         product_id: productId
       });
-
-      console.log("Batch transfer details response:", response);
-      
       if (response.success && response.data) {
-        console.log("Transfer data received:", response.data);
         const batchDetails = response.data.batch_details || [];
         const summary = response.data.summary || {};
-        
-        console.log("Batch details extracted:", batchDetails);
-        console.log("Summary extracted:", summary);
-        
         if (batchDetails.length > 0) {
-          console.log("✅ Found batch transfer details");
           displayBatchTransferDetails(batchDetails, summary);
         } else {
-          console.log("⚠️ No batch transfer details found, showing empty state");
           displayBatchTransferDetails([], {});
         }
       } else {
@@ -481,7 +450,6 @@ const PharmacyStore = () => {
 
   const displayBatchTransferDetails = (batchDetails, summary) => {
     // This function is now handled by React state instead of direct DOM manipulation
-    console.log("Displaying batch transfer details:", batchDetails);
     setQuantityHistoryData(batchDetails || []);
   };
 
@@ -732,8 +700,8 @@ const PharmacyStore = () => {
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto max-h-96">
-          <table className="w-full min-w-max" style={{ color: theme.text.primary }}>
+        <div className="overflow-x-auto max-h-96 inventory-table-container">
+          <table className="w-full min-w-max inventory-table" style={{ color: theme.text.primary }}>
             <thead className="border-b sticky top-0 z-10" style={{ backgroundColor: theme.bg.secondary, borderColor: theme.border.default }}>
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: theme.text.primary }}>
@@ -766,10 +734,13 @@ const PharmacyStore = () => {
               </tr>
             </thead>
             <tbody className="divide-y" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.light }}>
-              {isLoading ? (
+              {isLoading && inventory.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-6 py-4 text-center" style={{ color: theme.text.secondary }}>
-                    Loading products...
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2" style={{ borderColor: theme.colors.accent }}></div>
+                      <span>Loading products...</span>
+                    </div>
                   </td>
                 </tr>
               ) : items.length > 0 ? (

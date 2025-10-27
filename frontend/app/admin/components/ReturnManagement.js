@@ -66,8 +66,6 @@ export default function ReturnManagement() {
     setLoading(true);
     try {
       const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/pos_return_api.php`;
-      console.log('🔍 Admin - Loading pending returns from:', url);
-      
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -78,10 +76,7 @@ export default function ReturnManagement() {
       });
 
       const data = await response.json();
-      console.log('🔍 Admin - API Response:', data);
-      
       if (data.success) {
-        console.log('✅ Admin - Setting pending returns:', data.data.length);
         setPendingReturns(data.data);
         setLastRefresh(new Date());
       } else {
@@ -97,7 +92,6 @@ export default function ReturnManagement() {
   const loadReturnHistory = async () => {
     setLoading(true);
     try {
-      console.log('Loading return history...');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://enguio.shop/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,14 +100,9 @@ export default function ReturnManagement() {
           limit: 100
         })
       });
-
-      console.log('Response status:', response.status);
       const data = await response.json();
-      console.log('Return history API response:', data);
-      
       if (data.success) {
         // Show all returns in history tab (including completed, approved, rejected)
-        console.log('Setting return history:', data.data.length, 'returns');
         setReturnHistory(data.data);
         setLastRefresh(new Date());
       } else {
@@ -332,13 +321,6 @@ export default function ReturnManagement() {
 
   const filteredReturns = () => {
     const returns = activeTab === 'pending' ? pendingReturns : returnHistory;
-    console.log('Filtering returns:', {
-      activeTab,
-      returnsCount: returns.length,
-      filters,
-      returns: returns
-    });
-    
     const filtered = returns.filter(returnItem => {
       if (filters.status !== 'all' && returnItem.status !== filters.status) return false;
       if (filters.location !== 'all' && returnItem.location_name !== filters.location) return false;
@@ -346,8 +328,6 @@ export default function ReturnManagement() {
       if (filters.dateTo && new Date(returnItem.created_at) > new Date(filters.dateTo)) return false;
       return true;
     });
-    
-    console.log('Filtered results:', filtered.length);
     return filtered;
   };
 

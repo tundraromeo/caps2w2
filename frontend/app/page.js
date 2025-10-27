@@ -10,8 +10,6 @@ import { getApiUrl, getApiConfigStatus } from './lib/apiConfig';
 const API_BASE_URL = getApiUrl('login.php');
 
 // Debug logging
-console.log('API_BASE_URL being used:', API_BASE_URL);
-console.log('API Config Status:', getApiConfigStatus());
 
 export default function LoginForm() {
   const [username, setUsername] = useState("");
@@ -35,8 +33,7 @@ export default function LoginForm() {
 
   const generateCaptcha = async () => {
     try {
-      console.log('Generating captcha...');
-      
+
       let responseData = null;
       
       // Try axios first
@@ -69,8 +66,7 @@ export default function LoginForm() {
           }
           
           const textResponse = await fetchResponse.text();
-          console.log('Raw fetch response:', textResponse);
-          
+
           // Try to parse as JSON
           if (textResponse && textResponse.trim() !== '') {
             responseData = JSON.parse(textResponse);
@@ -82,14 +78,12 @@ export default function LoginForm() {
           throw fetchError;
         }
       }
-      
-      console.log('Captcha API response:', responseData);
-      
+
       // Check if response has success field and it's true
       if (responseData && typeof responseData === 'object' && responseData.success === true) {
         setCaptchaQuestion(responseData.question);
         setCaptchaAnswer(responseData.answer.toString());
-        console.log('Captcha set:', responseData.question, 'Answer:', responseData.answer);
+
       } else {
         console.warn('Captcha API returned invalid response, using fallback');
         // Use fallback if API returns success: false or invalid response
@@ -97,7 +91,7 @@ export default function LoginForm() {
         const num2 = Math.floor(Math.random() * 10) + 1;
         setCaptchaQuestion(`What is ${num1} + ${num2}?`);
         setCaptchaAnswer((num1 + num2).toString());
-        console.log('Using fallback captcha:', `${num1} + ${num2} = ${num1 + num2}`);
+
       }
     } catch (err) {
       console.error('Captcha generation error:', err);
@@ -107,7 +101,7 @@ export default function LoginForm() {
       const num2 = Math.floor(Math.random() * 10) + 1;
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);
       setCaptchaAnswer((num1 + num2).toString());
-      console.log('Using fallback captcha due to error:', `${num1} + ${num2} = ${num1 + num2}`);
+
     }
   };
 

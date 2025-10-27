@@ -20,28 +20,22 @@ class PrinterIntegration {
   // Initialize printer integration
   async initialize() {
     if (this.isInitialized) {
-      console.log('Printer integration already initialized');
       return this.isConnected;
     }
 
     this.isInitialized = true;
-    console.log('🚀 Initializing printer integration...');
-
     try {
       // Try to initialize QZ Tray
       const qzConnected = await this.initializeQZTray();
       
       if (qzConnected) {
-        console.log('✅ QZ Tray connected successfully');
         this.notifyStatusChange('connected');
         return true;
       } else {
-        console.log('⚠️ QZ Tray not available, using browser print fallback');
         this.notifyStatusChange('unavailable');
         
         // Initialize browser print fallback
         if (this.browserPrintFallback && typeof window !== 'undefined') {
-          console.log('✅ Browser print fallback available');
           return true;
         }
         
@@ -77,8 +71,6 @@ class PrinterIntegration {
           try {
             // Connect to QZ Tray
             await this.qz.websocket.connect();
-            console.log("✅ QZ Tray connected!");
-            
             this.isConnected = true;
             this.reconnectAttempts = 0;
             
@@ -96,7 +88,6 @@ class PrinterIntegration {
             return false;
           }
         } else {
-          console.log("🔌 QZ Tray already connected.");
           this.isConnected = true;
           this.stopAutoReconnect();
           return true;
@@ -125,13 +116,11 @@ class PrinterIntegration {
 
     for (const src of sources) {
       try {
-        console.log(`📦 Attempting to load QZ Tray from: ${src}`);
         await this.loadScript(src);
         
         // Wait for qz object to be available
         for (let i = 0; i < 10; i++) {
           if (typeof qz !== 'undefined') {
-            console.log(`✅ QZ Tray loaded from: ${src}`);
             return true;
           }
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -167,25 +156,18 @@ class PrinterIntegration {
     if (this.reconnectInterval) {
       return;
     }
-
-    console.log('🔄 Starting auto-reconnect for QZ Tray...');
-    
     this.reconnectInterval = setInterval(async () => {
       // Check if we should continue reconnecting
       if (this.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.log('❌ Max reconnect attempts reached');
         this.stopAutoReconnect();
         return;
       }
 
       this.reconnectAttempts++;
-      console.log(`🔄 Reconnect attempt ${this.reconnectAttempts}...`);
-
       try {
         const connected = await this.initializeQZTray();
         
         if (connected) {
-          console.log('✅ Auto-reconnect successful!');
           this.stopAutoReconnect();
           this.notifyStatusChange('connected');
         } else {
@@ -203,31 +185,26 @@ class PrinterIntegration {
     if (this.reconnectInterval) {
       clearInterval(this.reconnectInterval);
       this.reconnectInterval = null;
-      console.log('⏸️ Auto-reconnect stopped');
     }
   }
 
   // Manual connection (for test connection button)
   async connect() {
-    console.log('🔌 Manual connection attempt...');
     this.notifyStatusChange('connecting');
     
     try {
       const connected = await this.initializeQZTray();
       
       if (connected) {
-        console.log('✅ Manual connection successful');
         this.notifyStatusChange('connected');
         return { success: true, message: 'Connected to QZ Tray successfully' };
       } else {
         // Browser print is always available as fallback
-        console.log('ℹ️ QZ Tray not available, browser print is ready');
         this.notifyStatusChange('fallback');
         return { success: true, message: 'Browser print is ready (QZ Tray not needed)' };
       }
     } catch (error) {
       // Browser print is always available as fallback
-      console.log('ℹ️ QZ Tray not available, browser print is ready:', error.message);
       this.lastError = error;
       this.notifyStatusChange('fallback');
       return { success: true, message: 'Browser print is ready' };
@@ -327,7 +304,6 @@ class PrinterIntegration {
 
     try {
       const printers = await this.qz.printers.get();
-      console.log('📋 Available printers:', printers);
       return printers;
     } catch (error) {
       console.error('Failed to get printers:', error);
@@ -392,7 +368,6 @@ class PrinterIntegration {
         if (printers && printers.length > 0) {
           // Use the first available printer
           printerToUse = printers[0];
-          console.log(`📋 Using printer: ${printerToUse}`);
         }
       } catch (e) {
         console.warn('Could not get printer list, using default:', e);
@@ -422,10 +397,6 @@ class PrinterIntegration {
 
       // Send to QZ Tray printer
       await qz.print(config, printData);
-      
-      console.log("🖨️ Printed successfully via QZ Tray!");
-
-      console.log('✅ Receipt printed successfully via QZ Tray');
       return {
         success: true,
         message: 'Receipt printed successfully',
@@ -701,7 +672,6 @@ ${this.generateReceiptContent(data)}
     
     this.isConnected = false;
     this.notifyStatusChange('disconnected');
-    console.log('🔌 Printer disconnected');
   }
 }
 

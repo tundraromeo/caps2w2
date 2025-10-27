@@ -50,15 +50,10 @@ function UserManagement() {
 
   const fetchRolesAndShifts = async () => {
     try {
-      console.log('Fetching roles and shifts...');
-      
       // Fetch roles
       const rolesResponse = await axios.post(API_BASE_URL, {
         action: "get_roles"
       });
-      
-      console.log('Roles response:', rolesResponse.data);
-      
       if (rolesResponse.data.success) {
         const roleMap = {};
         rolesResponse.data.data.forEach(role => {
@@ -66,7 +61,6 @@ function UserManagement() {
         });
         setRoles(roleMap);
         setRolesList(rolesResponse.data.data);
-        console.log('Roles loaded:', rolesResponse.data.data);
       } else {
         console.error('Failed to fetch roles:', rolesResponse.data.message);
         toast.error('Failed to load roles from database');
@@ -76,19 +70,13 @@ function UserManagement() {
       const shiftsResponse = await axios.post(API_BASE_URL, {
         action: "get_shifts"
       });
-      
-      console.log('Shifts response:', shiftsResponse.data);
-      
       if (shiftsResponse.data.success) {
         const shiftMap = {};
         shiftsResponse.data.data.forEach(shift => {
-          console.log('Processing shift:', shift);
           shiftMap[shift.shift_id] = shift.shift_name;
         });
         setShifts(shiftMap);
         setShiftsList(shiftsResponse.data.data);
-        console.log('Shifts loaded successfully:', shiftsResponse.data.data);
-        console.log('Shift map created:', shiftMap);
       } else {
         console.error('Failed to fetch shifts:', shiftsResponse.data.message);
         toast.error('Failed to load shifts from database: ' + shiftsResponse.data.message);

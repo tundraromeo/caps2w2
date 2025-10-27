@@ -35,6 +35,7 @@ export default function POS() {
   const gcashBtnRef = useRef(null);
   const refNumRef = useRef(null);
   const checkoutBtnRef = useRef(null);
+  const discountBtnRef = useRef(null);
   const cartListRef = useRef(null);
   const cartItemRefs = useRef([]);
   const prevCartLenRef = useRef(0);
@@ -100,7 +101,7 @@ export default function POS() {
           const onlinePrint = new window.OnlinePrinting();
           await onlinePrint.initialize();
             setOnlinePrinting(onlinePrint);
-          console.log('✅ Browser printing initialized');
+
           setPrinterStatus('ready');
         }
       } catch (error) {
@@ -136,11 +137,11 @@ export default function POS() {
         }, 100);
       });
     }
-  }, [showCredentialsModal, credentialsFocusIndex]);
+    }, [showCredentialsModal, credentialsFocusIndex]);
 
   // Debug log for credentials data changes
   useEffect(() => {
-    console.log('Credentials data changed:', credentialsData);
+
   }, [credentialsData]);
 
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -186,7 +187,7 @@ export default function POS() {
     if (confirm('Clear all sales history? This will remove old sales with incorrect date format.')) {
       localStorage.removeItem('pos-sales-history');
       setSalesHistory([]);
-      console.log('🗑️ Cleared old sales history');
+
     }
   };
   const [showDiscountModal, setShowDiscountModal] = useState(false);
@@ -318,15 +319,10 @@ export default function POS() {
       setChange(finalChange);
       
       // Debug logging for change calculation
-      console.log(`💰 Change Calculation Debug:`, {
-        payableTotal: base,
-        amountPaid: paidAmount,
-        calculatedChange: calculatedChange,
-        finalChange: finalChange
-      });
+
     } else {
       setChange(0);
-      console.log(`💰 Change Calculation Debug: No amount paid or invalid amount`);
+
     }
   }, [amountPaid, payableTotal]);
 
@@ -391,13 +387,17 @@ export default function POS() {
 
   const normalizeProducts = (rows) => {
     if (!Array.isArray(rows)) return [];
-    
-    console.log('🔍 normalizeProducts input:', rows);
-    
-    // Process all products first
-    const processedProducts = rows.map((d) => {
+
+    // Process all products first with safety checks
+    const processedProducts = rows
+      .filter(d => d && (d.id || d.product_id || d.productId)) // Only process valid products with any ID field
+      .map((d) => {
       const id = d.id ?? d.product_id ?? d.productId;
-      const name = d.name ?? d.product_name ?? d.productName ?? '';
+      const name = String(d.name ?? d.product_name ?? d.productName ?? '').trim();
+      
+      // Skip products with no name
+      if (!name || name === '') return null;
+      
       // Get expiration date first to determine which price to use
       const expirationDate = d.expiration ?? d.expiration_date ?? d.transfer_expiration ?? null;
       
@@ -415,9 +415,9 @@ export default function POS() {
         priceRaw = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(d.price) || 0));
       }
       const quantityRaw = d.quantity ?? d.available_quantity ?? d.stock ?? 0;
-      const category = d.category ?? d.category_name ?? 'Uncategorized';
+      const category = String(d.category ?? d.category_name ?? 'Uncategorized');
       const location = d.location_name ?? d.location ?? null;
-      const description = d.description ?? '';
+      const description = String(d.description ?? '');
       const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
       const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
       
@@ -442,7 +442,8 @@ export default function POS() {
         is_bulk: Boolean(isBulkProduct),
         expiration_date: expirationDate // Add expiration date
       };
-    });
+    })
+    .filter(product => product !== null); // Remove null products
 
     // Deduplicate products by ID - keep the one with EARLIEST expiration (FIFO principle)
     const uniqueProducts = [];
@@ -468,10 +469,7 @@ export default function POS() {
           if (index !== -1) {
             uniqueProducts[index] = product;
             productMap.set(product.id, product);
-            console.log(`🔄 Prioritized "${product.name}" expiring on ${product.expiration_date} over ${existingProduct.expiration_date} (FIFO - Earliest Expiry First)`);
           }
-        } else {
-          console.log(`🔄 Kept "${existingProduct.name}" expiring on ${existingProduct.expiration_date} over ${product.expiration_date} (FIFO - Earliest Expiry First)`);
         }
       }
     });
@@ -487,7 +485,6 @@ export default function POS() {
       return a.name.localeCompare(b.name); // Then alphabetically
     });
     
-    console.log('🔍 normalizeProducts output (deduplicated by expiration):', uniqueProducts);
     return uniqueProducts;
   };
 
@@ -501,19 +498,26 @@ export default function POS() {
 
     const queryLower = query.toLowerCase();
     const suggestions = products
-      .filter(product => 
-        product.name.toLowerCase().includes(queryLower) ||
-        product.description.toLowerCase().includes(queryLower) ||
-        product.category.toLowerCase().includes(queryLower)
-      )
+      .filter(product => {
+        // Safety checks - ensure product and required fields exist
+        if (!product || !product.name) return false;
+        
+        const name = String(product.name || '').toLowerCase();
+        const description = String(product.description || '').toLowerCase();
+        const category = String(product.category || '').toLowerCase();
+        
+        return name.includes(queryLower) ||
+               description.includes(queryLower) ||
+               category.includes(queryLower);
+      })
       .slice(0, 5) // Limit to 5 suggestions
       .map(product => ({
         id: product.id,
-        name: product.name,
-        description: product.description,
-        category: product.category,
-        price: product.price,
-        quantity: product.quantity
+        name: product.name || '',
+        description: product.description || '',
+        category: product.category || 'Uncategorized',
+        price: product.price || 0,
+        quantity: product.quantity || 0
       }));
 
     setSearchSuggestions(suggestions);
@@ -526,12 +530,12 @@ export default function POS() {
     // Debounce: ignore identical scans within 800ms (prevents double-processing from multiple inputs)
     const now = Date.now();
     if (lastScanRef.current.code === code && (now - lastScanRef.current.time) < 800) {
-      console.log('⏭️ Ignored duplicate scan:', code);
       return;
     }
     lastScanRef.current = { code, time: now };
     
-    console.log(`🔍 Scanning barcode: ${code} for location: ${locationName}`);
+    // Clear previous scanned product state to start fresh
+    setBarcodeScannedProduct(null);
     
     try {
       // Clear search term immediately for better UX
@@ -573,7 +577,6 @@ export default function POS() {
         })
       });
       const json = await res.json();
-      console.log(`📡 API Response for ${locationName}:`, json);
       
       if (json?.success && json?.data && Array.isArray(json.data) && json.data.length > 0) {
         // Product found via barcode in current location; show only this product in the list
@@ -581,11 +584,13 @@ export default function POS() {
         setBarcodeScannedProduct(scannedProduct);
 
         const pRaw = scannedProduct;
-        console.log('🔍 Barcode scanned product raw data:', pRaw);
         // Use same price logic as normalizeProducts
         const unitPrice = Number(pRaw.unit_price) || 0;
         const srp = Number(pRaw.srp) || 0;
         const price = (unitPrice > 0) ? unitPrice : (srp > 0 ? srp : (Number(pRaw.price) || 0));
+        
+        // Get expiration date
+        const expirationDate = pRaw.expiration ?? pRaw.expiration_date ?? pRaw.transfer_expiration ?? null;
         
         const normalized = {
           id: Number(pRaw.product_id ?? pRaw.id ?? 0) || (pRaw.product_id ?? pRaw.id),
@@ -594,53 +599,42 @@ export default function POS() {
           quantity: Number(pRaw.available_quantity ?? pRaw.quantity ?? 0) || 0,
           category: String(pRaw.category ?? 'Uncategorized'),
           barcode: String(pRaw.barcode ?? ''),
-          location_name: String(pRaw.location_name ?? '')
+          location_name: String(pRaw.location_name ?? ''),
+          expiration_date: expirationDate,
+          requires_prescription: pRaw.requires_prescription ?? pRaw.prescription_required ?? pRaw.prescription ?? false,
+          is_bulk: pRaw.bulk ?? pRaw.is_bulk ?? false
         };
-        console.log('✨ Barcode normalized product:', normalized);
+        
+        // Check if this product is already in cart and adjust available quantity
+        const cartItem = cart.find(item => item.product.id === normalized.id);
+        if (cartItem) {
+          normalized.quantity = Math.max(0, normalized.quantity - cartItem.quantity);
+        }
+        
+        // Replace products list with the scanned product to show only this product
         setProducts([normalized]);
         setSelectedIndex(0);
         setNavigationIndex(1);
-        // Increment quantity by 1 per successful scan (double scan => qty 2)
-        setQuantityInputs(prev => {
-          const current = Number(prev?.[normalized.id] || 0);
-          const stock = Number(normalized.quantity || 0);
-          const next = current > 0 ? current + 1 : 1;
-          const clamped = stock > 0 ? Math.min(next, stock) : next;
-          return { ...prev, [normalized.id]: clamped };
-        });
+        
+        // Always set quantity input to 1 when scanning
+        setQuantityInputs(prev => ({
+          ...prev,
+          [normalized.id]: 1
+        }));
+        
+        // Auto-focus quantity input field for immediate editing
+        setTimeout(() => {
+          const qtyInput = document.getElementById(`qty-input-${normalized.id}`);
+          if (qtyInput) {
+            qtyInput.focus();
+            qtyInput.select(); // Select all text for easy replacement
+          }
+        }, 100);
         
         // Clear barcode indicator after 5 seconds
         setTimeout(() => setBarcodeScannedProduct(null), 5000);
-        
-        // Auto-focus on quantity input for the scanned product
-        setTimeout(() => {
-          const el = document.getElementById(`qty-input-${normalized.id}`);
-          if (el) {
-            el.focus();
-            el.select?.();
-          }
-        }, 120);
-        
-        // Show success message
-        console.log(`✅ Product found in ${locationName}: ${scannedProduct.product_name || scannedProduct.name}`);
         return;
       }
-      
-      // Product not found in convenience store
-      console.log(`❌ Product not found in ${locationName}`);
-      toast.error(
-        <div>
-          <div className="font-bold">Product with barcode {code} not found in {locationName}.</div>
-          <div className="mt-2 text-sm">
-            <div>Please check if:</div>
-            <div>1. The barcode is correct</div>
-            <div>2. The product exists in this store</div>
-            <div>3. The product needs to be transferred to {locationName}</div>
-            <div>4. The product is not archived</div>
-          </div>
-        </div>,
-        { autoClose: 6000 }
-      );
     } catch (e) {
       console.error('Barcode scan error:', e);
       toast.error(
@@ -655,8 +649,6 @@ export default function POS() {
   // Load all available products for the current location (wrapped in useCallback to prevent infinite loops)
   const loadAllProducts = useCallback(async () => {
     try {
-      console.log(`🔄 Loading all products for location: ${locationName}`);
-      
       // Get location ID for the current location
       const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
@@ -677,8 +669,6 @@ export default function POS() {
         });
         
         if (currentLocation) {
-          console.log(`📍 Found location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
-          
           // Load products for this specific location using convenience store API with accurate stock quantities
           const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/convenience_store_api.php`, {
             method: 'POST',
@@ -690,16 +680,8 @@ export default function POS() {
           });
           
           const productData = await productResponse.json();
-          console.log('🔍 Raw API response for products:', productData);
           if (productData?.success && Array.isArray(productData.data)) {
-            console.log('📦 Raw product data:', productData.data);
             const normalized = normalizeProducts(productData.data);
-            console.log('✨ Normalized products:', normalized);
-            
-            // Log quantity and price information for debugging
-            normalized.forEach(product => {
-              console.log(`📊 Product: ${product.name} - Available Quantity: ${product.quantity} - Price: ₱${product.price} - Location: ${product.location_name || 'Unknown'}`);
-            });
             
             // Additional client-side filtering to ensure products are from correct location
             const filteredProducts = normalized.filter(product => {
@@ -712,33 +694,17 @@ export default function POS() {
             });
             
             setProducts(filteredProducts);
-            console.log(`✅ Loaded ${filteredProducts.length} products for ${currentLocation.location_name}`);
-            
-            // Log some product details for debugging
-            if (filteredProducts.length > 0) {
-              console.log(`📦 Sample products:`, filteredProducts.slice(0, 3).map(p => ({
-                name: p.name,
-                category: p.category,
-                stock: p.quantity,
-                price: p.price,
-                location: p.location_name || currentLocation.location_name
-              })));
-            }
           } else {
             console.warn(`No products found for location: ${currentLocation.location_name}`);
             setProducts([]);
           }
         } else {
-          console.error(`❌ Location "${locationName}" not found in database`);
-          console.log('Available locations:', locationData.data.map(l => l.location_name));
           setProducts([]);
         }
       } else {
-        console.error('Failed to load locations');
         setProducts([]);
       }
     } catch (error) {
-      console.error('Error loading products:', error);
       setProducts([]);
     }
   }, [locationName]); // Only re-create function when locationName changes
@@ -748,8 +714,6 @@ export default function POS() {
     const query = String(term || '').trim();
     if (!query) return;
     try {
-      console.log(`🔎 Searching products by name in ${locationName}: "${query}"`);
-
       // Resolve current location_id first - ensure exact match
       const locationResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
@@ -776,9 +740,8 @@ export default function POS() {
         return;
       }
 
-      console.log(`📍 Using location: ${currentLocation.location_name} (ID: ${currentLocation.location_id})`);
-
       // Query inventory with search term - only for this specific location using convenience store API
+      
       const productResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/convenience_store_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -788,13 +751,16 @@ export default function POS() {
           search: query
         })
       });
-      const productData = await productResponse.json().catch(() => ({}));
+
+      const productData = await productResponse.json().catch((err) => {
+        console.error('❌ JSON Parse Error:', err);
+        return {};
+      });
 
       if (productData?.success && Array.isArray(productData.data)) {
-        console.log('🔍 Raw API Response for search:', productData);
+
         const normalized = normalizeProducts(productData.data);
-        console.log('🔍 Normalized products:', normalized);
-        
+
         // Additional client-side filtering to ensure products are from correct location
         const filteredProducts = normalized.filter(product => {
           // If product has location info, verify it matches
@@ -805,24 +771,15 @@ export default function POS() {
           return true;
         });
         
-        // Additional filtering for more precise search results
-        const preciseFilteredProducts = filteredProducts.filter(product => {
-          if (!query) return true;
-          
-          const productName = (product.name || product.product_name || '').toLowerCase().trim();
-          const searchTerm = query.toLowerCase().trim();
-          
-          // ULTRA STRICT MODE: Only show exact matches
-          // This completely prevents "paracetamol 500mg" from appearing when searching "paracetamol"
-          return productName === searchTerm;
-        });
+        // No additional client-side filtering needed - API already handles search correctly
+        // Just use the filtered products directly
+        const preciseFilteredProducts = filteredProducts;
         
         setProducts(preciseFilteredProducts);
         setBarcodeScannedProduct(null);
         setSelectedIndex(0);
         setNavigationIndex(1);
-        console.log(`✅ Found ${preciseFilteredProducts.length} product(s) for "${query}" in ${currentLocation.location_name}`);
-        
+
         // Focus qty input of first result for quick entry
         const firstId = preciseFilteredProducts[0]?.id;
         setTimeout(() => {
@@ -833,11 +790,19 @@ export default function POS() {
           }
         }, 120);
       } else {
-        console.log(`ℹ️ No products found for "${query}" in ${currentLocation.location_name}`);
+        console.warn(`⚠️ API returned unexpected response:`, productData);
+
+        if (productData?.message) {
+          console.error('❌ API Error Message:', productData.message);
+        }
         setProducts([]);
       }
     } catch (err) {
-      console.error('Search failed:', err);
+      console.error('❌ Search failed:', err);
+      console.error('❌ Error details:', {
+        message: err.message,
+        stack: err.stack
+      });
       setProducts([]);
     }
   };
@@ -864,7 +829,7 @@ export default function POS() {
   // Refresh inventory - clear products (user must manually reload)
   const refreshInventory = async () => {
     try {
-      console.log(`🔄 Clearing inventory for ${locationName}...`);
+
       // Clear products - user must manually load
       setProducts([]);
       
@@ -891,26 +856,30 @@ export default function POS() {
       clearTimeout(autoScanTimeoutRef.current);
     }
     
-    // Add character to buffer
-    setAutoScanBuffer(prev => prev + char);
-    
-    // Set timeout to process barcode after 150ms of no input (increased for reliability)
-    autoScanTimeoutRef.current = setTimeout(() => {
-      const barcode = autoScanBuffer + char;
-      if (barcode.length >= 4) { // Minimum barcode length
-        console.log(`🔍 Auto-scanned barcode: ${barcode}`);
-        
-        // Validate barcode format (basic check)
-        if (/^\d+$/.test(barcode)) {
-          handleBarcodeScan(barcode);
-        } else {
-          console.log(`⚠️ Invalid barcode format: ${barcode}`);
-          // Still try to scan in case it's a valid format we don&apos;t recognize
-          handleBarcodeScan(barcode);
+         // Add character to buffer using functional update
+     setAutoScanBuffer(prev => {
+       const newBuffer = prev + char;
+       
+       // Set timeout to process barcode after 200ms of no input
+      autoScanTimeoutRef.current = setTimeout(() => {
+        if (newBuffer.length >= 4) { // Minimum barcode length
+
+          // Validate barcode format (basic check)
+          if (/^\d+$/.test(newBuffer)) {
+            handleBarcodeScan(newBuffer);
+          } else {
+
+            // Still try to scan in case it's a valid format we don&apos;t recognize
+            handleBarcodeScan(newBuffer);
+          }
+          
+          // Clear the buffer after processing to prepare for next scan
+          setAutoScanBuffer('');
         }
-      }
-      setAutoScanBuffer('');
-    }, 150);
+      }, 200);
+      
+      return newBuffer;
+    });
   };
 
 
@@ -963,7 +932,7 @@ export default function POS() {
   useEffect(() => {
     if (!searchTerm || searchTerm.trim() === '') {
       // Clear products when search is empty - user must manually load products
-      console.log('🔄 Search cleared - products cleared, user must manually load');
+
       setProducts([]);
     }
   }, [searchTerm]);
@@ -975,7 +944,7 @@ export default function POS() {
     const newLocation = getLocationFromTerminal(terminalName);
     if (newLocation !== locationName) {
       setLocationName(newLocation);
-      console.log(`📍 Terminal "${terminalName}" mapped to location: ${newLocation}`);
+
     }
   }, [terminalName]);
 
@@ -992,7 +961,7 @@ export default function POS() {
     
     // Show location change notification
     if (typeof window !== 'undefined') {
-      console.log(`Location changed to: ${locationName}`);
+
     }
     
     // ❌ REMOVED: Auto-load products for the new location
@@ -1038,15 +1007,32 @@ export default function POS() {
       [product.id]: 1
     }));
     
-    // Move to Checkout and focus Amount Paid for quick payment
+    // Show success message
+    toast.success(`Added to cart: ${product.name} x${quantity}`);
+    
+    // Check if coming from barcode scan before clearing it
+    const wasFromBarcode = !!barcodeScannedProduct;
+    
+    // If adding from barcode scan, clear products list and barcode state so next scan will work properly
+    if (wasFromBarcode) {
+      // Clear the barcode scanned product state immediately
+      setBarcodeScannedProduct(null);
+      
+      // Clear the products list so next scan replaces it cleanly
+      setTimeout(() => {
+        setProducts([]);
+      }, 200);
+    }
+    
+    // Always auto-navigate to checkout section and focus Discount button after adding to cart
+    // User can press F4 or Alt+D to open discount modal
+    // User can press Alt+A to go back to products if they want to add more items
     setNavigationIndex(2);
     setCheckoutFocusIndex(0);
     setTimeout(() => {
-      try { amountPaidRef.current?.focus?.(); } catch (_) {}
-    }, 0);
+      try { discountBtnRef.current?.focus?.(); } catch (_) {}
+    }, 100);
 
-    // Show success message
-    console.log(`✅ Added ${quantity}x ${product.name} to cart. Stock updated.`);
   };
 
   // Remove item from cart and restore stock
@@ -1056,8 +1042,7 @@ export default function POS() {
     
     // Remove from cart
     setCart(prevCart => prevCart.filter(item => item.product.id !== productId));
-    
-    console.log(`✅ Removed item from cart. Stock restored.`);
+
   };
 
   // Clear cart and restore all stock
@@ -1073,8 +1058,7 @@ export default function POS() {
     setPayableTotal(0);
     setDiscountAmount(0);
     setDiscountType(null);
-    
-    console.log(`✅ Cart cleared. All stock restored.`);
+
   };
 
   // Filter products based on search term and selected category, then sort by EXPIRATION DATE (FIFO)
@@ -1248,6 +1232,22 @@ export default function POS() {
         return;
       }
 
+      // Global shortcut to go back to products/add items via Alt+A
+      if (e.altKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        setNavigationIndex(1); // Go to products section
+        setSelectedIndex(0); // Reset to first product
+        // Clear products to allow fresh scan
+        setProducts([]);
+        // Focus barcode scanner for quick scanning
+        setTimeout(() => {
+          const barcodeInput = document.getElementById('barcode-scanner');
+          if (barcodeInput) {
+            barcodeInput.focus();
+          }
+        }, 100);
+        return;
+      }
 
       // Global toggle for Customer Return modal via Alt+R
       if (e.altKey && (e.key === 'r' || e.key === 'R')) {
@@ -1436,9 +1436,9 @@ export default function POS() {
 
       // Handle keys inside Today's Total Sales Modal
       if (showTotalSalesModal) {
-        console.log('🔑 Key pressed in sales modal:', e.key);
+
         if (e.key === 'Escape') {
-          console.log('🚪 Closing sales modal via ESC');
+
           e.preventDefault();
           setShowTotalSalesModal(false);
           return;
@@ -1734,10 +1734,10 @@ export default function POS() {
         case 'a':
         case 'A':
           e.preventDefault();
-          console.log('🔑 ArrowLeft pressed - navigationIndex:', navigationIndex, 'checkoutFocusIndex:', checkoutFocusIndex);
+
           if (navigationIndex === 2 && (checkoutFocusIndex === 1 || checkoutFocusIndex === 2)) {
             // Handle payment method navigation in checkout
-            console.log('💳 Toggling payment method');
+
             if (checkoutFocusIndex === 1) {
               setCheckoutFocusIndex(2); // Move to GCash
             } else if (checkoutFocusIndex === 2) {
@@ -1756,10 +1756,10 @@ export default function POS() {
         case 'd':
         case 'D':
           e.preventDefault();
-          console.log('🔑 ArrowRight pressed - navigationIndex:', navigationIndex, 'checkoutFocusIndex:', checkoutFocusIndex);
+
           if (navigationIndex === 2 && (checkoutFocusIndex === 1 || checkoutFocusIndex === 2)) {
             // Handle payment method navigation in checkout
-            console.log('💳 Toggling payment method');
+
             if (checkoutFocusIndex === 1) {
               setCheckoutFocusIndex(2); // Move to GCash
             } else if (checkoutFocusIndex === 2) {
@@ -1779,9 +1779,10 @@ export default function POS() {
             // Focus search bar
             document.getElementById('search-input')?.focus();
           } else if (navigationIndex === 1 && sortedFilteredProducts[selectedIndex]) {
-            // Add selected product to cart and move to cart Quick Add dropdown
+            // Add selected product to cart with quantity from input field
             const product = sortedFilteredProducts[selectedIndex];
-            addToCart(product, 1);
+            const qty = quantityInputs[product.id] || 1;
+            addToCart(product, qty);
             
             // Move to checkout and focus on first cart item's Quick Add dropdown
             setNavigationIndex(2);
@@ -1847,8 +1848,11 @@ export default function POS() {
     
     const formatPriceLine = (label, amount) => {
       const amountStr = parseFloat(amount).toFixed(2);
-      const spaces = Math.max(0, receiptWidth - label.length - amountStr.length);
-      return label + ' '.repeat(spaces) + amountStr;
+      // Use padding to align the amount to the right
+      const paddingNeeded = Math.max(0, receiptWidth - label.length - amountStr.length);
+      // Create a string with spaces for padding
+      const padding = ' '.repeat(paddingNeeded);
+      return `${label}${padding}${amountStr}`;
     };
     
     const centerText = (text) => {
@@ -1897,11 +1901,16 @@ export default function POS() {
       content += `TOTAL : ${totalQty} items (${totalItems} ${totalItems === 1 ? 'item' : 'items'})\n`;
     }
     
+    // Subtotal - simplified for debugging
+    const subtotalValue = parseFloat(data.subtotal || data.total || 0).toFixed(2);
+    content += `SUBTOTAL: ${subtotalValue}\n`;
+    
     // Discount
     if (data.discountType && parseFloat(data.discountAmount) > 0) {
       const discountPercent = data.discountPercent || 0;
+      const discountAmt = parseFloat(data.discountAmount || 0).toFixed(2);
       content += `Discount: ${data.discountType}${discountPercent > 0 ? ` (${discountPercent.toFixed(0)}%)` : ''}\n`;
-      content += formatPriceLine('Discount Amt:', data.discountAmount) + '\n';
+      content += `Discount Amt: ${discountAmt}\n`;
     }
     
     content += '-'.repeat(receiptWidth) + '\n';
@@ -2006,13 +2015,23 @@ export default function POS() {
     // Ensure change is calculated correctly
     const finalChange = change || 0;
     
-    // Calculate discount percentage
+    // Calculate discount percentage and amount
     let discountPercent = 0;
-    if (discountType && discountOptions.length > 0) {
+    let calculatedDiscountAmount = discountAmount || 0;
+    
+    // Always recalculate discount if discountType is set to ensure accuracy
+    if (discountType && total > 0) {
+      let rate = 0;
       const dbOption = discountOptions.find(o => String(o.type).toLowerCase() === String(discountType).toLowerCase());
       if (dbOption && Number.isFinite(dbOption.rate)) {
-        discountPercent = dbOption.rate > 1 ? dbOption.rate : dbOption.rate * 100;
+        rate = dbOption.rate;
+        if (rate > 1) rate = rate / 100;
+        discountPercent = rate * 100;
+      } else {
+        rate = 0.20; // Fallback: 20% for PWD or Senior
+        discountPercent = 20;
       }
+      calculatedDiscountAmount = Number((total * rate).toFixed(2));
     }
     
     const receiptData = {
@@ -2031,7 +2050,7 @@ export default function POS() {
       })),
       subtotal: total,
       discountType: discountType || null,
-      discountAmount: discountAmount,
+      discountAmount: calculatedDiscountAmount,
       discountPercent: discountPercent,
       grandTotal: payableTotal,
       paymentMethod: paymentMethod.toLowerCase(), // Keep lowercase for comparison
@@ -2041,14 +2060,13 @@ export default function POS() {
     };
 
     try {
-      console.log('📤 Receipt data:', receiptData);
-      
+
       // Try automatic network printing first
       const printerIP = localStorage.getItem('printerIP'); // Store printer IP in localStorage
       const printerPort = localStorage.getItem('printerPort') || '9100'; // Default TCP/IP port
       
       if (printerIP) {
-        console.log(`🖨️ Attempting automatic printing to ${printerIP}:${printerPort}...`);
+
         try {
           // Send to backend for TCP/IP printing
           const printResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/print_direct.php`, {
@@ -2068,13 +2086,12 @@ export default function POS() {
             return { success: true, message: 'Printed automatically', transactionId, method: 'direct' };
           }
         } catch (e) {
-          console.log('Direct print failed, falling back to browser print:', e);
+
         }
       }
       
       // Fallback: Browser print dialog
-      console.log('🖨️ Opening browser print dialog...');
-      
+
       // Generate HTML receipt
       const htmlReceipt = generateHTMLReceipt(receiptData);
       
@@ -2103,8 +2120,7 @@ export default function POS() {
           }, 100);
         }, 200);
       };
-      
-      console.log('✅ Print dialog opened!');
+
       return { success: true, message: 'Print dialog opened', transactionId, method: 'browser' };
       
     } catch (error) {
@@ -2119,8 +2135,7 @@ export default function POS() {
     setIsTestingPrinter(true);
     
     try {
-      console.log('🧪 Testing printer connection...');
-      
+
       // Test data for receipt
       const testData = {
         storeName: "ENGUIO'S PHARMACY",
@@ -2141,12 +2156,12 @@ export default function POS() {
       };
       
       // Try to print using the regular print function
-      console.log('🔍 Attempting to print test receipt...');
+
       const result = await printReceipt(testData);
       
       if (result && result.success) {
         toast.success('✅ Test print successful! Check your printer.');
-        console.log('✅ Test print completed successfully:', result);
+
       } else {
         toast.error('❌ Test print failed: ' + (result?.message || 'Unknown error'));
         console.error('❌ Test print failed:', result);
@@ -2165,7 +2180,7 @@ export default function POS() {
   };
 
   // Persist sale to backend (always called, even if printing fails)
-  const persistSale = async ({ transactionId, payableTotal, referenceNumber, terminalName, cart, paymentMethod }) => {
+  const persistSale = async ({ transactionId, payableTotal, referenceNumber, terminalName, cart, paymentMethod, discountType, discountAmount }) => {
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       const empId = userData.emp_id || userData.user_id || null;
@@ -2183,15 +2198,7 @@ export default function POS() {
       const action = isPharmacy 
         ? 'process_pharmacy_sale'
         : 'process_convenience_sale';
-      
-      console.log(`🔄 Processing ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale via ${apiUrl}`);
-      console.log(`📦 Sale data:`, {
-        action: action,
-        transaction_id: transactionId,
-        total_amount: payableTotal,
-        items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
-      });
-      
+
       // Use appropriate API based on location/terminal
       const res1 = await fetch(apiUrl, {
         method: 'POST',
@@ -2206,24 +2213,23 @@ export default function POS() {
           location_name: locationName,
           emp_id: empId,
           username,
+          discount_type: discountType || null,
+          discount_amount: discountAmount || 0,
           items: cart.map(it => ({ product_id: it.product.id, quantity: it.quantity, price: it.product.price }))
         })
       });
       const json1 = await res1.json().catch(() => ({}));
-      console.log(`✅ ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale processed:`, json1);
-      
+
       if (!json1.success) {
         console.error(`❌ ${isPharmacy ? 'Pharmacy' : 'Convenience'} sale failed:`, json1.message);
         throw new Error(json1.message || 'Sale processing failed');
       }
 
       // Now save the sale to POS sales tables
-      console.log('🔄 Saving sale to POS sales tables...');
-      
+
       // Use the empId already declared above, or get from localStorage as fallback
       const finalEmpId = empId || localStorage.getItem('pos-emp-id') || '1';
-      console.log('👤 Using employee ID:', finalEmpId);
-      
+
       const salesRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2234,6 +2240,8 @@ export default function POS() {
           referenceNumber: paymentMethod === 'gcash' ? referenceNumber : null,
           terminalName: terminalToUse,
           paymentMethod: paymentMethod,
+          discountType: discountType || null,
+          discountAmount: discountAmount || 0,
           emp_id: parseInt(finalEmpId), // Pass employee ID
           items: cart.map(it => ({ 
             product_id: it.product.id, 
@@ -2243,8 +2251,7 @@ export default function POS() {
         })
       });
       const salesJson = await salesRes.json().catch(() => ({}));
-      console.log('✅ POS sale saved:', salesJson);
-      
+
       if (!salesJson.success) {
         console.error('❌ Failed to save POS sale:', salesJson.message);
         throw new Error(salesJson.message || 'Failed to save POS sale record');
@@ -2461,10 +2468,9 @@ export default function POS() {
           transactionId: transactionId.trim(),
           items: items
         }));
-        console.log('Transaction found:', transaction);
-        console.log('Items loaded:', items);
-        console.log('Items count:', items.length);
-        
+
+
+
         if (items.length > 0) {
           toast.success(`Found ${items.length} item(s) in transaction`);
         } else {
@@ -2519,9 +2525,9 @@ export default function POS() {
       if (data?.success && Array.isArray(data.data)) {
         setRecentTransactions(data.data);
         setShowRecentTransactions(true);
-        console.log('Recent transactions loaded:', data.data);
+
       } else {
-        console.log('No recent transactions found');
+
         setRecentTransactions([]);
       }
     } catch (error) {
@@ -2584,8 +2590,7 @@ export default function POS() {
       }
       
       // If validation passes, continue with return processing
-      console.log('✅ Return terminal validation passed');
-      
+
     } catch (error) {
       console.error('Error validating return terminal:', error);
       toast.error('Unable to validate return terminal. Please try again.');
@@ -2640,7 +2645,6 @@ export default function POS() {
         }).filter(item => item.return_quantity > 0) // Only include items with return quantity > 0
       };
 
-      console.log('Calling pos_return_api.php for return processing with data:', returnData);
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/pos_return_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2649,7 +2653,6 @@ export default function POS() {
           ...returnData
         })
       });
-      console.log('Response status:', response.status);
 
       const result = await response.json();
       if (result.success) {
@@ -2731,43 +2734,35 @@ export default function POS() {
 
   // Fetch today's total sales for current cashier
   const fetchTodaySales = async () => {
-    console.log('🔄 fetchTodaySales called');
+
     setTodaySalesData(prev => ({ ...prev, loading: true }));
     
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       const username = 'all'; // Always show all sales for today
-      
-      console.log('👤 User data:', userData);
-      console.log('👤 Username:', username);
-      console.log('📍 Location:', locationName);
-      console.log('💻 Terminal:', terminalName);
-      
+
+
+
+
       const requestBody = {
         action: 'get_today_sales',
         cashier_username: username,
         location_name: locationName,
         terminal_name: terminalName
       };
-      
-      console.log('📤 API Request:', requestBody);
-      
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost/caps2w2/backend/Api'}/sales_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
-      
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
-      
+
+
       const data = await response.json();
-      console.log('📊 Sales API Response:', data);
-      
+
       if (data?.success && data?.data) {
         const salesData = data.data;
-        console.log('📈 Sales Data:', salesData);
-        
+
         const newSalesData = {
           totalSales: Number(salesData.total_sales || 0),
           totalTransactions: Number(salesData.total_transactions || 0),
@@ -2776,11 +2771,10 @@ export default function POS() {
           totalDiscount: Number(salesData.total_discount || 0),
           loading: false
         };
-        
-        console.log('💾 Setting sales data:', newSalesData);
+
         setTodaySalesData(newSalesData);
       } else {
-        console.log('⚠️ No sales data found or API error:', data);
+
         // Set default values if no data found
         setTodaySalesData({
           totalSales: 0,
@@ -2814,10 +2808,8 @@ export default function POS() {
       // Get user data from sessionStorage
       const userData = sessionStorage.getItem('user_data');
       const empId = userData ? JSON.parse(userData).user_id : null;
-      
-      console.log('POS Logout attempt - User data:', userData);
-      console.log('POS Logout attempt - Emp ID:', empId);
-      
+
+
       // Validate empId before attempting logout
       if (!empId) {
         console.warn('No employee ID found, clearing local session only');
@@ -2826,8 +2818,7 @@ export default function POS() {
         try {
           // Call logout API with credentials to include session cookies
           const logoutUrl = getApiUrl('login.php');
-          console.log('🔄 Calling logout API:', logoutUrl);
-          
+
           const response = await fetch(logoutUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2843,10 +2834,9 @@ export default function POS() {
           }
           
           const result = await response.json();
-          console.log('POS Logout API response:', result);
-          
+
           if (result.success) {
-            console.log('✅ POS logout successful');
+
             toast.success('Logged out successfully');
           } else {
             console.warn('⚠️ POS logout warning:', result.message);
@@ -2854,7 +2844,7 @@ export default function POS() {
           }
         } catch (fetchError) {
           console.error('❌ Logout API call failed:', fetchError);
-          console.log('Proceeding with local logout only');
+
           toast.warning('Logged out locally');
         }
       }
@@ -2863,11 +2853,10 @@ export default function POS() {
       toast.warning('Logged out locally');
     } finally {
       // Always clear session and redirect regardless of API call result
-      console.log('🧹 Clearing local session data');
+
       sessionStorage.removeItem('user_data');
       localStorage.clear(); // Clear any other stored data
-      
-      console.log('🔄 Redirecting to login page');
+
       router.push('/');
     }
   };
@@ -2882,7 +2871,7 @@ export default function POS() {
     try {
       // Fetch current user data
       const response = await apiHandler.getCurrentUser();
-      console.log('API Response:', response); // Debug log
+       // Debug log
       
       if (response.success && response.data) {
         setCredentialsData({
@@ -2892,7 +2881,7 @@ export default function POS() {
           newPassword: '',
           confirmPassword: ''
         });
-        console.log('Set credentials data from API:', response.data); // Debug log
+         // Debug log
       } else {
         // If API fails, use fallback data
         setCredentialsData({
@@ -2902,7 +2891,7 @@ export default function POS() {
           newPassword: '',
           confirmPassword: ''
         });
-        console.log('Set fallback credentials data'); // Debug log
+         // Debug log
       }
       setShowCredentialsModal(true);
       setCredentialsFocusIndex(0);
@@ -2940,7 +2929,7 @@ export default function POS() {
         ...prev,
         [field]: value
       };
-      console.log('Updated credentials data:', newData); // Debug log
+       // Debug log
       return newData;
     });
   };
@@ -3050,6 +3039,20 @@ export default function POS() {
       return;
     }
     
+    // Calculate discount amount to ensure it's accurate BEFORE printing
+    let finalDiscountAmount = discountAmount || 0;
+    if (discountType && finalDiscountAmount === 0 && total > 0) {
+      let rate = 0;
+      const dbOption = discountOptions.find(o => String(o.type).toLowerCase() === String(discountType).toLowerCase());
+      if (dbOption && Number.isFinite(dbOption.rate) && dbOption.rate > 0 && dbOption.rate < 1.01) {
+        rate = dbOption.rate;
+        if (rate > 1) rate = rate / 100;
+      } else {
+        rate = 0.20; // Fallback: 20% for PWD or Senior
+      }
+      finalDiscountAmount = Number((total * rate).toFixed(2));
+    }
+    
     // Try to print receipt (but don&apos;t block checkout if it fails)
     const printResult = await printReceipt();
 
@@ -3068,7 +3071,7 @@ export default function POS() {
       })),
       subtotal: total,
       discountType: discountType || null,
-      discountAmount: discountAmount,
+      discountAmount: finalDiscountAmount,
       grandTotal: payableTotal,
       paymentMethod: paymentMethod?.toUpperCase?.() || '',
       amountPaid: parseFloat(amountPaid),
@@ -3082,23 +3085,18 @@ export default function POS() {
 
     // Persist to backend regardless of print success
     try {
-      await persistSale({ transactionId: printResult?.transactionId, payableTotal, referenceNumber, terminalName, cart, paymentMethod });
+      await persistSale({ transactionId: printResult?.transactionId, payableTotal, referenceNumber, terminalName, cart, paymentMethod, discountType, discountAmount: finalDiscountAmount });
       
       // Update local product quantities after successful sale
-      console.log(`🔄 Updating local stock for ${cart.length} items...`);
-      
+
       for (const item of cart) {
         const quantity = Number(item.quantity || 0);
-        console.log(`📦 Updating local stock: ${item.product.name} x${quantity} (ID: ${item.product.id})`);
-        
+
         // Update local product quantity
         updateLocalStock(item.product.id, -quantity);
-        
-        console.log(`✅ Local stock updated for ${item.product.name}: -${quantity} units`);
+
       }
-      
-      console.log(`✅ All stock updates completed successfully`);
-      
+
     } catch (error) {
       console.error('❌ Failed to persist sale:', error);
       toast.warning('Sale completed but failed to update inventory. Please check stock levels manually.');
@@ -3114,13 +3112,18 @@ export default function POS() {
     setShowRefInput(false);
     setShowThankYouModal(true);
     
+    // Reset discount after checkout
+    setDiscountAmount(0);
+    setDiscountType(null);
+    setDiscountSelection('PWD');
+    
     // Refresh product list to show updated quantities
     if (barcodeScannedProduct) {
       // If we had a barcode scan, refresh that product's data
       handleBarcodeScan(barcodeScannedProduct.barcode || barcodeScannedProduct.product_id);
     } else {
       // Clear products after checkout - user must manually reload
-      console.log(`🔄 Clearing products after checkout - user must manually reload`);
+
       setProducts([]);
     }
     
@@ -3132,9 +3135,9 @@ export default function POS() {
     
     // Show appropriate message based on print success
     if (printResult.success) {
-      console.log('Transaction completed successfully with receipt processed.');
+
     } else {
-      console.log('Transaction completed successfully but receipt processing failed:', printResult.message);
+
       // Optionally show a warning to the user about printing failure
       setTimeout(() => {
         toast.warning(
@@ -3335,14 +3338,6 @@ export default function POS() {
                   >
                     🔍 Search
                   </button>
-                  <button
-                    onClick={testPrinter}
-                    disabled={isTestingPrinter}
-                    className={`px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-lg font-bold shadow-lg hover:shadow-xl ${isTestingPrinter ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    title="Test printer with sample receipt"
-                  >
-                    {isTestingPrinter ? '⏳ Testing...' : '🖨️ Test Print'}
-                  </button>
                   </div>
                 </div>
                 
@@ -3361,10 +3356,29 @@ export default function POS() {
                 className="absolute -top-9999 left-0 opacity-0"
                 autoFocus
                 onKeyDown={(e) => {
-                  // Only process printable characters
+                  // Only process printable characters - barcode scanner doesn't send Enter
                   if (e.key.length === 1 && e.key.charCodeAt(0) >= 32) {
                     handleAutoScan(e.key);
                   }
+                }}
+                onInput={(e) => {
+                  // This fires after barcode is scanned and handleAutoScan processes it
+                  setTimeout(() => {
+                    const product = products.find(p => p.id === barcodeScannedProduct?.id || p.id === barcodeScannedProduct?.product_id);
+                    if (product) {
+                      const input = document.getElementById(`qty-input-${product.id}`);
+                      if (input) {
+                        const currentValue = parseInt(input.value) || 0;
+                        const newValue = currentValue + 1;
+                        input.value = newValue;
+                        // Update state
+                        setQuantityInputs(prev => ({
+                          ...prev,
+                          [product.id]: newValue
+                        }));
+                      }
+                    }
+                  }, 100);
                 }}
                 placeholder="Barcode scanner input"
               />
@@ -3631,6 +3645,7 @@ export default function POS() {
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
+                                  e.stopPropagation(); // Prevent global handler from firing
                                   addToCart(product, quantityInputs[product.id] || 1);
                                 }
                               }}
@@ -3652,7 +3667,10 @@ export default function POS() {
                         </td>
                         <td className="px-4 py-4 text-right">
                           <button
-                            onClick={() => addToCart(product, 1)}
+                            onClick={() => {
+                              const qty = quantityInputs[product.id] || 1;
+                              addToCart(product, qty);
+                            }}
                             className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-5 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
                           >
                             ➕ Add
@@ -3851,6 +3869,7 @@ export default function POS() {
                   <div className="bg-white border-2 border-gray-200 rounded-lg p-4 space-y-4">
                     <div className="flex gap-3">
                       <button
+                        ref={discountBtnRef}
                         type="button"
                         className="px-4 py-2 rounded-lg bg-purple-600 text-white text-base font-bold hover:bg-purple-700 transition-colors shadow-md"
                         onClick={() => { setDiscountSelection(discountType || 'PWD'); setShowDiscountModal(true); }}
@@ -4120,20 +4139,15 @@ export default function POS() {
                 {(() => {
                   // Filter sales based on today only checkbox
                   const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
-                  console.log('📅 Today filter date:', today);
-                  console.log('📊 Total sales history:', salesHistory.length);
-                  console.log('🔍 Sales history dates:', salesHistory.map(s => ({ id: s.transactionId, date: s.date })));
-                  
+
                   const filteredSales = showTodayOnly 
                     ? salesHistory.filter(sale => {
                         const matches = sale.date === today;
-                        console.log(`🔍 Sale ${sale.transactionId}: date="${sale.date}", matches today: ${matches}`);
+
                         return matches;
                       })
                     : salesHistory;
-                  
-                  console.log('✅ Filtered sales count:', filteredSales.length);
-                  
+
                   if (filteredSales.length === 0) {
                     return (
                       <div className="p-6 text-gray-500 text-center">
@@ -4862,9 +4876,9 @@ export default function POS() {
           className="fixed inset-0 flex items-center justify-center bg-transparent backdrop-blur-sm z-[90]"
           data-modal="sales-modal"
           onKeyDown={(e) => {
-            console.log('🔑 Modal container key pressed:', e.key);
+
             if (e.key === 'Escape') {
-              console.log('🚪 Closing modal from container');
+
               e.preventDefault();
               setShowTotalSalesModal(false);
             }

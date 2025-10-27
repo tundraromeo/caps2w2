@@ -169,7 +169,7 @@ try {
                 $stmt->execute($params);
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (Exception $e) {
-                error_log("SQL Error in get_convenience_products_fifo: " . $e->getMessage());
+                // error_log("SQL Error in get_convenience_products_fifo: " . $e->getMessage());
                 echo json_encode([
                     "success" => false,
                     "message" => "Database error: " . $e->getMessage(),
@@ -343,7 +343,7 @@ try {
                 $stmt->execute($params);
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (Exception $e) {
-                error_log("SQL Error in get_convenience_products: " . $e->getMessage());
+                // error_log("SQL Error in get_convenience_products: " . $e->getMessage());
                 echo json_encode([
                     "success" => false,
                     "message" => "Database error: " . $e->getMessage(),
@@ -469,7 +469,7 @@ try {
                 $stmt->execute($params);
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (Exception $e) {
-                error_log("SQL Error in get_convenience_products: " . $e->getMessage());
+                // error_log("SQL Error in get_convenience_products: " . $e->getMessage());
                 echo json_encode([
                     "success" => false,
                     "message" => "Database error: " . $e->getMessage(),
@@ -524,7 +524,7 @@ try {
             }
             
             // Debug: Log the location ID
-            error_log("DEBUG get_convenience_batch_details: convenience store location_id=$location_id");
+            // error_log("DEBUG get_convenience_batch_details: convenience store location_id=$location_id");
             
             // Get the product details to find related products with same name/barcode
             $productStmt = $conn->prepare("SELECT product_name, barcode FROM tbl_product WHERE product_id = ?");
@@ -550,8 +550,8 @@ try {
             $placeholders = str_repeat('?,', count($relatedProductIds) - 1) . '?';
             
             // Debug: Log the parameters
-            error_log("DEBUG get_convenience_batch_details: product_id=$product_id, location_id=$location_id");
-            error_log("DEBUG get_convenience_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
+            // error_log("DEBUG get_convenience_batch_details: product_id=$product_id, location_id=$location_id");
+            // error_log("DEBUG get_convenience_batch_details: relatedProductIds=" . json_encode($relatedProductIds));
             
             // Get batch transfer details from tbl_transfer_batch_details for all related products
             // Only show batches that still have available quantity (not completely consumed)
@@ -591,8 +591,8 @@ try {
             // All batches should now be retrieved without location filter
             
             // Debug: Log the results
-            error_log("DEBUG get_convenience_batch_details: batchDetails count=" . count($batchDetails));
-            error_log("DEBUG get_convenience_batch_details: batchDetails=" . json_encode($batchDetails));
+            // error_log("DEBUG get_convenience_batch_details: batchDetails count=" . count($batchDetails));
+            // error_log("DEBUG get_convenience_batch_details: batchDetails=" . json_encode($batchDetails));
             
             // If still no data, try to get FIFO stock data directly for all related products
             if (empty($batchDetails)) {
@@ -900,10 +900,10 @@ try {
             $location_name = 'Convenience Store';
             
             // Debug logging
-            error_log("Convenience Store Sale Processing: Transaction ID: $transaction_id, Total: $total_amount, Items: " . json_encode($items));
+            // error_log("Convenience Store Sale Processing: Transaction ID: $transaction_id, Total: $total_amount, Items: " . json_encode($items));
             
             if (empty($items) || $total_amount <= 0) {
-                error_log("Convenience Store Sale Error: Invalid sale data - Items: " . json_encode($items) . ", Total: $total_amount");
+                // error_log("Convenience Store Sale Error: Invalid sale data - Items: " . json_encode($items) . ", Total: $total_amount");
                 echo json_encode(['success' => false, 'message' => 'Invalid sale data']);
                 break;
             }
@@ -943,9 +943,9 @@ try {
                         $fifoStmt->execute([$product_id, $location_id]);
                         $fifoBatches = $fifoStmt->fetchAll(PDO::FETCH_ASSOC);
                         
-                        error_log("FIFO batches found for product $product_id: " . count($fifoBatches) . " batches");
+                        // error_log("FIFO batches found for product $product_id: " . count($fifoBatches) . " batches");
                         if (empty($fifoBatches)) {
-                            error_log("WARNING: No FIFO batches found for product $product_id in location $location_id");
+                            // error_log("WARNING: No FIFO batches found for product $product_id in location $location_id");
                         }
                         
                         $remaining_to_consume = $quantity;
@@ -956,7 +956,7 @@ try {
                             
                             $consume_qty = min($batch['available_quantity'], $remaining_to_consume);
                             
-                            error_log("Consuming from batch {$batch['batch_reference']}: $consume_qty units (available: {$batch['available_quantity']})");
+                            // error_log("Consuming from batch {$batch['batch_reference']}: $consume_qty units (available: {$batch['available_quantity']})");
                             
                             // Update transfer batch details quantity (FIFO consumption)
                             $updateBatchStmt = $conn->prepare("
@@ -966,7 +966,7 @@ try {
                             ");
                             $updateBatchStmt->execute([$consume_qty, $batch['batch_id'], $location_id]);
                             $batchRowsAffected = $updateBatchStmt->rowCount();
-                            error_log("Batch transfer details updated: batch_id {$batch['batch_id']}, location_id $location_id, consumed: $consume_qty, rows affected: $batchRowsAffected");
+                            // error_log("Batch transfer details updated: batch_id {$batch['batch_id']}, location_id $location_id, consumed: $consume_qty, rows affected: $batchRowsAffected");
                             
                             $consumed_batches[] = [
                                 'batch_id' => $batch['batch_id'],
@@ -979,7 +979,7 @@ try {
                         
                         // NOTE: FIFO stock already updated above per batch (lines 754-787)
                         // No need to update again here as it would cause double subtraction
-                        error_log("FIFO stock already updated per batch above - no additional subtraction needed");
+                        // error_log("FIFO stock already updated per batch above - no additional subtraction needed");
                         
                         // Update stock summary
                         $updateStockSummaryStmt = $conn->prepare("
@@ -991,7 +991,7 @@ try {
                         ");
                         $updateStockSummaryStmt->execute([$quantity, $quantity, $product_id]);
                         $stockSummaryRowsAffected = $updateStockSummaryStmt->rowCount();
-                        error_log("Stock summary update result: Rows affected: $stockSummaryRowsAffected");
+                        // error_log("Stock summary update result: Rows affected: $stockSummaryRowsAffected");
                         
                         // Update transfer batch details quantity (fallback if no FIFO data)
                         if (empty($consumed_batches)) {
@@ -1017,7 +1017,7 @@ try {
                                 ");
                                 $updateTransferBatchStmt->execute([$quantity, $relatedProductId]);
                                     $transferBatchRowsAffected = $updateTransferBatchStmt->rowCount();
-                                    error_log("Transfer batch details update for product $relatedProductId: Rows affected: $transferBatchRowsAffected");
+                                    // error_log("Transfer batch details update for product $relatedProductId: Rows affected: $transferBatchRowsAffected");
                                 }
                             }
                         }
@@ -1026,7 +1026,7 @@ try {
                         $currentQtyStmt = $conn->prepare("SELECT COALESCE(SUM(available_quantity), 0) FROM tbl_fifo_stock WHERE product_id = ?");
                         $currentQtyStmt->execute([$product_id]);
                         $current_quantity = $currentQtyStmt->fetchColumn();
-                        error_log("Current product quantity after sale (from FIFO): $current_quantity");
+                        // error_log("Current product quantity after sale (from FIFO): $current_quantity");
                         
                         // Log stock movement for each consumed batch
                         if (!empty($consumed_batches)) {
@@ -1052,14 +1052,14 @@ try {
                                         "POS Sale - FIFO: {$consumed['batch_reference']} ({$consumed['quantity_consumed']} units)",
                                         'POS System'
                                     ]);
-                                    error_log("Stock movement logged: Product $product_id, Batch {$consumed['batch_id']}, Quantity {$consumed['quantity_consumed']}");
+                                    // error_log("Stock movement logged: Product $product_id, Batch {$consumed['batch_id']}, Quantity {$consumed['quantity_consumed']}");
                                 } else {
-                                    error_log("WARNING: Batch ID {$consumed['batch_id']} not found in tbl_batch - skipping stock movement log");
+                                    // error_log("WARNING: Batch ID {$consumed['batch_id']} not found in tbl_batch - skipping stock movement log");
                                 }
                             }
                         } else {
                             // Fallback: If no batches consumed, try to find a valid batch_id or create one
-                            error_log("Warning: No FIFO batches consumed for product $product_id, attempting fallback");
+                            // error_log("Warning: No FIFO batches consumed for product $product_id, attempting fallback");
                             
                             // Try to get any batch_id associated with this product
                             $batchStmt = $conn->prepare("
@@ -1091,7 +1091,7 @@ try {
                                     'POS System'
                                 ]);
                             } else {
-                                error_log("Error: No valid batch_id found for product $product_id");
+                                // error_log("Error: No valid batch_id found for product $product_id");
                                 throw new Exception("No valid batch found for product $product_id");
                             }
                         }
@@ -1099,7 +1099,7 @@ try {
                 }
                 
                 $conn->commit();
-                error_log("Convenience Store Sale Success: Transaction $transaction_id completed successfully");
+                // error_log("Convenience Store Sale Success: Transaction $transaction_id completed successfully");
                 echo json_encode([
                     'success' => true,
                     'message' => 'Convenience store sale processed with FIFO consumption',
@@ -1232,7 +1232,7 @@ try {
                 $stmt->execute($params);
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (Exception $e) {
-                error_log("SQL Error in get_pos_products_fifo: " . $e->getMessage());
+                // error_log("SQL Error in get_pos_products_fifo: " . $e->getMessage());
                 echo json_encode([
                     "success" => false,
                     "message" => "Database error: " . $e->getMessage(),
@@ -1345,7 +1345,7 @@ try {
                 $stmt->execute($params);
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (Exception $e) {
-                error_log("SQL Error in get_convenience_products: " . $e->getMessage());
+                // error_log("SQL Error in get_convenience_products: " . $e->getMessage());
                 echo json_encode([
                     "success" => false,
                     "message" => "Database error: " . $e->getMessage(),

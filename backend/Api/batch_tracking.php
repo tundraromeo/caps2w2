@@ -341,7 +341,7 @@ function updateProductStock($conn, $data) {
             if ($existingBatch) {
                 // Use existing batch
                 $batch_id = $existingBatch['batch_id'];
-                error_log("✅ Using existing batch - Batch ID: $batch_id, Reference: $batch_reference");
+                // error_log("✅ Using existing batch - Batch ID: $batch_id, Reference: $batch_reference");
             } else {
                 // Create new batch
                 $batchStmt = $conn->prepare("
@@ -352,7 +352,7 @@ function updateProductStock($conn, $data) {
                 ");
                 $batchStmt->execute([$batch_reference, $productDetails['supplier_id'], $productDetails['location_id'], $entry_by, '']);
                 $batch_id = $conn->lastInsertId();
-                error_log("✅ New batch created - Batch ID: $batch_id, Reference: $batch_reference");
+                // error_log("✅ New batch created - Batch ID: $batch_id, Reference: $batch_reference");
             }
         }
         

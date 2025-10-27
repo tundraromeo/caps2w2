@@ -13,12 +13,8 @@
 // Get base URL from environment variable with fallback
 const getBaseUrl = () => {
   // Debug logging
-  console.log('🔍 Environment variable NEXT_PUBLIC_API_BASE_URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
-  console.log('🔍 Node Environment:', process.env.NODE_ENV);
-  
   // Use environment variable if available
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    console.log('✅ Using configured API URL:', process.env.NEXT_PUBLIC_API_BASE_URL);
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
   
@@ -43,8 +39,6 @@ const getBaseUrl = () => {
     // Using production backend URL
     console.warn('⚠️ PRODUCTION: Using hardcoded backend URL. Consider using environment variable instead.');
     const backendUrl = 'https://enguio.shop/backend/Api';
-    console.log('✅ Using production backend:', backendUrl);
-    
     return backendUrl;
   }
   
@@ -55,12 +49,10 @@ const getBaseUrl = () => {
   
   if (isLocalhost) {
     const localUrl = 'http://localhost/caps2w2/backend/Api';
-    console.log('⚠️ Using local development URL (localhost only):', localUrl);
     return localUrl;
   }
   
   // For production, use the production backend
-  console.log('🌐 Production detected, using production backend');
   return 'https://enguio.shop/backend/Api';
 };
 

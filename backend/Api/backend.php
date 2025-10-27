@@ -9138,7 +9138,29 @@ case 'get_products_oldest_batch_for_transfer':
                         
                         $fifoStmt->execute($fifoParams);
                         
-                        // 4. Insert unit configuration into tbl_product_units for Medicine products with bulk mode
+                        // 4. Log stock movement (IN) for the new product
+                        $movementStmt = $conn->prepare("
+                            INSERT INTO tbl_stock_movements (
+                                product_id, batch_id, movement_type, quantity, remaining_quantity,
+                                expiration_date, reference_no, notes, created_by
+                            ) VALUES (?, ?, 'IN', ?, ?, ?, ?, ?, ?)
+                        ");
+                        
+                        $movementParams = [
+                            $product_id,
+                            $batch_id,
+                            $product['quantity'], // quantity added
+                            $product['quantity'], // remaining_quantity (after addition)
+                            $product['expiration'] ?? null,
+                            $batch_reference,
+                            "Batch entry added: {$product['product_name']}",
+                            $entry_by
+                        ];
+                        
+                        error_log("Logging stock IN movement for product_id: $product_id");
+                        $movementStmt->execute($movementParams);
+                        
+                        // 5. Insert unit configuration into tbl_product_units for Medicine products with bulk mode
                         if ($product_type === 'Medicine' && isset($product['configMode']) && $product['configMode'] === 'bulk') {
                             // Check if we have the necessary bulk configuration data
                             if (isset($product['boxes']) && isset($product['strips_per_box']) && isset($product['tablets_per_strip'])) {
@@ -10418,6 +10440,14 @@ case 'get_products_oldest_batch_for_transfer':
             $startDate = $data['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
             $endDate = $data['end_date'] ?? date('Y-m-d');
             $reportTypes = $data['report_types'] ?? ['all'];
+            
+            // CRITICAL: Log what we received
+            error_log("🚨 BACKEND ENTRY POINT - Received report_types: " . json_encode($reportTypes));
+            error_log("🚨 Is array? " . (is_array($reportTypes) ? 'YES' : 'NO'));
+            if (is_array($reportTypes)) {
+                error_log("🚨 Array length: " . count($reportTypes));
+                error_log("🚨 Contains 'all'? " . (in_array('all', $reportTypes) ? 'YES' : 'NO'));
+            }
             
             $reportsModule = new ReportsModule($conn);
             $result = $reportsModule->getCombinedReportsData($startDate, $endDate, $reportTypes);

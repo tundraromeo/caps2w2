@@ -71,7 +71,7 @@ const Reports = () => {
   const [showCombineModal, setShowCombineModal] = useState(false);
   const [combineStartDate, setCombineStartDate] = useState('2025-10-20');
   const [combineEndDate, setCombineEndDate] = useState('2025-10-24');
-  const [selectedReportTypes, setSelectedReportTypes] = useState(['all']);
+  const [selectedReportTypes, setSelectedReportTypes] = useState([]); // Start with empty array
 
   // Fetch data from database
   useEffect(() => {
@@ -123,13 +123,16 @@ const Reports = () => {
   const fetchReportsData = async (showToast = false) => {
     setIsLoading(true);
     try {
-      const response = await api.callGenericAPI('sales_api.php', 'get_report_data', {
+      const response = await api.callGenericAPI('backend.php', 'get_report_data', {
         report_type: 'all',
         start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         end_date: new Date().toISOString().split('T')[0]
       });
       
       if (response.success) {
+        // 
+        // 
+        
         setReports(response.reports || []);
         setFilteredReports(response.reports || []);
         setAnalyticsData(response.analytics || {
@@ -144,6 +147,7 @@ const Reports = () => {
           toast.success('Reports data refreshed successfully');
         }
       } else {
+        console.error('❌ Failed to fetch reports:', response.message);
         toast.error('Failed to fetch reports data: ' + response.message);
       }
     } catch (error) {
@@ -258,7 +262,7 @@ const Reports = () => {
     setIsLoading(true);
     
     try {
-      const response = await api.callGenericAPI('sales_api.php', 'get_report_details', {
+      const response = await api.callGenericAPI('backend.php', 'get_report_details', {
         report_id: report.movement_id 
       });
       
@@ -305,7 +309,7 @@ const Reports = () => {
           return;
       }
 
-      const response = await api.callGenericAPI('sales_api.php', 'generate_report', {
+      const response = await api.callGenericAPI('backend.php', 'generate_report', {
         report_type: reportType,
         generated_by: 'Inventory Manager',
         parameters: parameters
@@ -315,7 +319,7 @@ const Reports = () => {
         toast.success(`${reportType.replace('_', ' ')} report generated successfully`);
         // Refresh the reports list
         fetchReportsData();
-        console.log('Report generated with ID:', response.report_id);
+        // 
       } else {
         toast.error('Failed to generate report: ' + response.message);
       }
@@ -327,73 +331,38 @@ const Reports = () => {
     }
   };
 
-  // Helper function to generate PDF from data with filtering
+  // Helper function to generate PDF from data (reports are already filtered when passed)
   const generatePDFFromData = async (reports, dateRange, selectedReportTypes = ['all']) => {
-    console.log('📄 Creating PDF document...');
-    console.log('🔍 Selected report types:', selectedReportTypes);
+    // 
+    // 
+    // 
     
     // Load PDF libraries dynamically with error handling
     let PDFLib;
     try {
       const libraries = await loadPDFLibraries();
       PDFLib = libraries.jsPDF;
-      console.log('✅ PDF libraries loaded successfully for PDF generation');
+      // 
     } catch (error) {
       console.error('❌ Failed to load PDF libraries for PDF generation:', error);
       throw new Error('PDF libraries could not be loaded. Please refresh the page and try again.');
     }
     
-    // Filter reports based on selected types
-    let filteredReports = reports;
-    if (!selectedReportTypes.includes('all')) {
-      console.log('🔍 Filtering reports by selected types:', selectedReportTypes);
-      
-      // Map report type keys to movement types
-      const typeMapping = {
-        'stock_in': 'IN',
-        'stock_out': 'OUT', 
-        'stock_adjustment': 'ADJUSTMENT',
-        'transfer': 'TRANSFER'
-      };
-      
-      const movementTypes = selectedReportTypes.map(type => typeMapping[type]).filter(Boolean);
-      console.log('🎯 Filtering by movement types:', movementTypes);
-      
-      filteredReports = reports.filter(report => movementTypes.includes(report.movement_type));
-      console.log(`📊 Filtered reports: ${filteredReports.length} out of ${reports.length} total`);
-    } else {
-      console.log('📊 Including all report types');
-    }
-    
-    if (filteredReports.length === 0) {
+    // Reports are already filtered when passed to this function
+    // No need to filter again
+    if (reports.length === 0) {
       throw new Error('No reports found for the selected report types');
-    }
-    
-    // Show filtering info
-    if (!selectedReportTypes.includes('all')) {
-      const typeNames = selectedReportTypes.map(type => {
-        const typeMapping = {
-          'stock_in': 'Stock In',
-          'stock_out': 'Stock Out', 
-          'stock_adjustment': 'Stock Adjustment',
-          'transfer': 'Transfer'
-        };
-        return typeMapping[type] || type;
-      }).join(', ');
-      toast.info(`📊 Filtering reports: ${typeNames} (${filteredReports.length} records found)`);
-    } else {
-      toast.info(`📊 Including all report types (${filteredReports.length} records found)`);
     }
     
     // Create PDF with simplified approach
     const pdf = new PDFLib('p', 'mm', 'a4');
     let yPosition = 20;
     const pageWidth = 210;
-    const margin = 20;
+    const margin = 0.5; // Very thin margin
     const contentWidth = pageWidth - (margin * 2);
     
     // Helper function to add text with word wrap
-    const addTextWithWrap = (text, fontSize = 10, isBold = false) => {
+    const addTextWithWrap = (text, fontSize = 10, isBold = false, align = 'left') => {
       pdf.setFontSize(fontSize);
       if (isBold) {
         pdf.setFont(undefined, 'bold');
@@ -402,7 +371,26 @@ const Reports = () => {
       }
       
       const lines = pdf.splitTextToSize(text, contentWidth);
-      pdf.text(lines, margin, yPosition);
+      
+      // Calculate x position based on alignment
+      let xPos = margin;
+      if (align === 'center') {
+        xPos = pageWidth / 2;
+        const textOptions = { align: 'center' };
+        lines.forEach((line, index) => {
+          pdf.text(line, xPos, yPosition + (index * fontSize * 0.35), textOptions);
+        });
+      } else if (align === 'right') {
+        xPos = pageWidth - margin;
+        const textOptions = { align: 'right' };
+        lines.forEach((line, index) => {
+          pdf.text(line, xPos, yPosition + (index * fontSize * 0.35), textOptions);
+        });
+      } else {
+        // left alignment (default)
+        pdf.text(lines, margin, yPosition);
+      }
+      
       yPosition += lines.length * (fontSize * 0.35);
       
       // Check if we need a new page
@@ -435,7 +423,7 @@ const Reports = () => {
         pdf.rect(xPos, yPosition - 4, cellWidth, 7);
         
         // Add text with proper spacing
-        const text = column.substring(0, Math.floor(cellWidth / 2)); // Limit text based on width
+        const text = column; // Use full column name
         pdf.text(text, xPos + 1, yPosition);
         xPos += cellWidth;
       });
@@ -455,17 +443,23 @@ const Reports = () => {
           pdf.rect(margin, yPosition - 4, contentWidth, 7, 'F');
         }
         
+        // Format date properly - extract just the date part (YYYY-MM-DD)
+        let formattedDate = String(item.movement_date || '');
+        if (formattedDate.includes(' ')) {
+          formattedDate = formattedDate.split(' ')[0]; // Get just the date part
+        }
+        
         const rowData = [
-          String(item.product_name || '').substring(0, 25),
-          String(item.barcode || '').substring(0, 20),
-          String(item.category || '').substring(0, 25),
+          String(item.product_name || '').substring(0, 40),
+          String(item.barcode || ''), // Full barcode
+          String(item.category || ''), // Full category text
           String(item.quantity?.toLocaleString() || ''),
           `₱${parseFloat(item.srp || 0).toFixed(2)}`,
-          String(item.movement_type || ''),
-          String(item.reference_no || '').substring(0, 20),
-          String(item.movement_date || '').substring(0, 8),
-          String(item.location_name || '').substring(0, 12),
-          String(item.brand || '').substring(0, 12)
+          String(item.movement_type || ''), // Full type
+          String(item.reference_no || '').substring(0, 25), // Reference
+          formattedDate.substring(0, 10), // Full date display
+          String(item.location_name || '').substring(0, 30), // Location
+          String(item.brand || '').substring(0, 30) // Brand
         ];
         
         rowData.forEach((cellValue, colIndex) => {
@@ -476,7 +470,7 @@ const Reports = () => {
           pdf.rect(xPos, yPosition - 4, cellWidth, 7);
           
           // Add text with proper spacing
-          const text = cellValue.toString().substring(0, Math.floor(cellWidth / 1.5)); // Limit text based on width
+          const text = cellValue.toString(); // Use full value
           pdf.text(text, xPos + 1, yPosition);
           xPos += cellWidth;
         });
@@ -493,52 +487,55 @@ const Reports = () => {
       addTextWithWrap('', 8);
     };
     
-    // Header
-    addTextWithWrap('ENGUIO PHARMACY SYSTEM', 16, true);
-    addTextWithWrap('Combined Reports', 12, true);
+    // Header - Centered
+    addTextWithWrap('ENGUIO PHARMACY SYSTEM', 16, true, 'center');
+    addTextWithWrap('Combined Reports', 12, true, 'center');
     addTextWithWrap('', 8);
     
-    // Report Information
-    addTextWithWrap('Report Information:', 10, true);
-    addTextWithWrap(`Date Range: ${dateRange.start} to ${dateRange.end}`, 9);
-    addTextWithWrap(`Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 9);
-    addTextWithWrap(`Generated by: System`, 9);
-    addTextWithWrap(`Total Reports: ${reports.length}`, 9);
+    // Report Information - Centered
+    addTextWithWrap('Report Information:', 10, true, 'center');
+    addTextWithWrap(`Date Range: ${dateRange.start} to ${dateRange.end}`, 9, false, 'center');
+    addTextWithWrap(`Generated: ${new Date().toLocaleDateString('en-PH')} at ${new Date().toLocaleTimeString('en-PH')}`, 9, false, 'center');
+    addTextWithWrap(`Generated by: System`, 9, false, 'center');
+    addTextWithWrap(`Total Records: ${reports.length}`, 9, false, 'center');
     addTextWithWrap('', 8);
     
     // Define table columns and widths - optimized to prevent overlap
-    const columns = ['Product Name', 'Barcode', 'Category', 'Qty', 'SRP', 'Type', 'Reference', 'Date', 'Location', 'Brand'];
-    const columnWidths = [30, 25, 30, 10, 12, 8, 25, 12, 15, 15]; // Better spacing
+    const columns = ['Product Name','Barcode','Category','Qty', 'SRP', 'Type', 'Reference', 'Date', 'Location', 'Brand'];
+    const columnWidths = [25, 30, 35, 8, 18, 16, 22, 12, 18, 20]; // Fill the page width better 
     
-    // Group filtered reports by movement type
+    // Group reports by type for separate tables
     const groupedReports = {
-      'IN': filteredReports.filter(r => r.movement_type === 'IN'),
-      'OUT': filteredReports.filter(r => r.movement_type === 'OUT'),
-      'ADJUSTMENT': filteredReports.filter(r => r.movement_type === 'ADJUSTMENT'),
-      'TRANSFER': filteredReports.filter(r => r.movement_type === 'TRANSFER')
+      'IN': reports.filter(r => r.movement_type === 'IN'),
+      'OUT': reports.filter(r => r.movement_type === 'OUT'),
+      'ADJUSTMENT': reports.filter(r => r.movement_type === 'ADJUSTMENT'),
+      'TRANSFER': reports.filter(r => r.movement_type === 'TRANSFER')
     };
     
     // Draw separate tables for each report type
+    let hasAnyData = false;
+    const typeLabels = {
+      'IN': 'Stock In',
+      'OUT': 'Stock Out', 
+      'ADJUSTMENT': 'Stock Adjustment',
+      'TRANSFER': 'Transfer'
+    };
+    
     Object.entries(groupedReports).forEach(([type, data]) => {
       if (data.length > 0) {
-        const typeTitle = `${type === 'IN' ? 'Stock In' : 
-                          type === 'OUT' ? 'Stock Out' : 
-                          type === 'ADJUSTMENT' ? 'Stock Adjustment' : 
-                          'Transfer'} Reports (${data.length} records)`;
-        
-        drawTable(data, typeTitle, columns, columnWidths);
+        hasAnyData = true;
+        const typeName = typeLabels[type] || type;
+        const title = `${typeName} (${data.length} records)`;
+        drawTable(data, title, columns, columnWidths);
       }
     });
     
-    // Summary
-    addTextWithWrap('Summary:', 10, true);
+    // Summary by report type
+    addTextWithWrap('Summary:', 10, true, 'center');
     Object.entries(groupedReports).forEach(([type, data]) => {
       if (data.length > 0) {
-        const typeName = type === 'IN' ? 'Stock In' : 
-                        type === 'OUT' ? 'Stock Out' : 
-                        type === 'ADJUSTMENT' ? 'Stock Adjustment' : 
-                        'Transfer';
-        addTextWithWrap(`${typeName}: ${data.length} records`, 9);
+        const typeName = typeLabels[type] || type;
+        addTextWithWrap(`${typeName}: ${data.length} records`, 9, false, 'center');
       }
     });
     
@@ -559,12 +556,12 @@ const Reports = () => {
       fileName = `Combined_Reports_${typeNames}_${dateRange.start}_to_${dateRange.end}.pdf`;
     }
     
-    console.log('💾 Saving PDF:', fileName);
+    // 
     
     // Simple save method
     pdf.save(fileName);
     
-    console.log(`✅ PDF downloaded successfully: ${fileName}`);
+    // 
     
     // Show success message
     toast.success(`📥 PDF downloaded successfully: ${fileName}`, {
@@ -580,13 +577,22 @@ const Reports = () => {
   const handleCombineReports = async (dateRange, reportTypes = ['all']) => {
     setIsLoading(true);
     try {
-      console.log('🎯 handleCombineReports called with:');
-      console.log('📅 Date range:', dateRange);
-      console.log('📊 Report types:', reportTypes);
-      console.log('🔢 Report types length:', reportTypes.length);
-      console.log('✅ Is all included?', reportTypes.includes('all'));
+      // 
+      // 
+      // 
+      // 
+      // 
       
       // Combined reports feature is now enabled
+      
+      // Debug: Log what we're sending to the backend
+      const requestBody = {
+        action: 'get_combined_reports_data',
+        start_date: dateRange.start,
+        end_date: dateRange.end,
+        report_types: reportTypes
+      };
+      // 
       
       // Fetch reports data with better error handling
       let response;
@@ -596,51 +602,45 @@ const Reports = () => {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            action: 'get_combined_reports_data',
-            start_date: dateRange.start,
-            end_date: dateRange.end,
-            report_types: reportTypes
-          })
+          body: JSON.stringify(requestBody)
         });
       } catch (fetchError) {
         console.error('Network error:', fetchError);
         
         // Try fallback to sales_api.php if combined_reports_api.php fails
-        console.log('Attempting fallback to sales_api.php...');
+        // 
         try {
-          const fallbackResponse = await api.callGenericAPI('sales_api.php', 'get_report_data', {
-            report_type: 'all',
-            start_date: dateRange.start,
-            end_date: dateRange.end
+          // Try to get actual data from backend directly
+          // 
+          
+          // Get data from backend.php get_combined_reports_data endpoint
+          const directBackendResponse = await fetchWithCORS(`${API_BASE_URL}/backend.php`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'get_combined_reports_data',
+              start_date: dateRange.start,
+              end_date: dateRange.end,
+              report_types: reportTypes
+            })
           });
           
-          // Check if fallback response is valid
-          if (!fallbackResponse || !fallbackResponse.success) {
-            throw new Error('Fallback API also returned invalid response');
+          if (!directBackendResponse.ok) {
+            throw new Error('Unable to fetch data from database');
           }
           
-          // Convert the response format to match expected format
-          const fallbackData = {
-            success: true,
-            reports: fallbackResponse.reports || [],
-            summary: {
-              total_records: fallbackResponse.reports?.length || 0,
-              date_range: `${dateRange.start} to ${dateRange.end}`,
-              generated_at: new Date().toISOString(),
-              report_types: reportTypes
-            }
-          };
+          const directData = await directBackendResponse.json();
           
-          // Process the fallback data
-          const reports = fallbackData.reports || [];
-          if (reports.length === 0) {
-            toast.error('No data found for the selected date range');
-            return;
+          if (!directData.success || !directData.reports) {
+            throw new Error('No data found in database for selected criteria');
           }
           
-          // Validate and clean the fallback data before processing
-          const cleanedReports = reports.map(report => ({
+          // 
+          
+          // Validate and clean the data before processing
+          const cleanedReports = directData.reports.map(report => ({
             ...report,
             product_name: String(report.product_name || ''),
             barcode: String(report.barcode || ''),
@@ -654,12 +654,30 @@ const Reports = () => {
             srp: Number(report.srp) || 0
           }));
           
-          console.log('🔍 Fallback reports from API:', cleanedReports.length);
-          console.log('📊 Fallback movement types:', [...new Set(cleanedReports.map(r => r.movement_type))]);
-          console.log('🎯 Requested report types:', reportTypes);
+          // 
+          // console.log('📊 Direct backend movement types:', [...new Set(cleanedReports.map(r => r.movement_type))]);
+          // 
           
-          // Continue with PDF generation using fallback data
-          await generatePDFFromData(cleanedReports, dateRange, reportTypes);
+          // CRITICAL: Apply strict filtering even in fallback
+          const typeMapping = {
+            'stock_in': 'IN',
+            'stock_out': 'OUT', 
+            'stock_adjustment': 'ADJUSTMENT',
+            'transfer': 'TRANSFER'
+          };
+          
+          let filteredReports = cleanedReports;
+          if (!reportTypes.includes('all') && reportTypes.length > 0) {
+            const movementTypes = reportTypes.map(type => typeMapping[type]).filter(Boolean);
+            // 
+            filteredReports = cleanedReports.filter(report => {
+              return movementTypes.includes(report.movement_type);
+            });
+            // 
+          }
+          
+          // Continue with PDF generation using direct backend data
+          await generatePDFFromData(filteredReports, dateRange, reportTypes);
           return;
           
         } catch (fallbackError) {
@@ -710,12 +728,145 @@ const Reports = () => {
         srp: Number(report.srp) || 0
       }));
       
-      console.log('🔍 Raw reports from API:', cleanedReports.length);
-      console.log('📊 Sample movement types:', [...new Set(cleanedReports.map(r => r.movement_type))]);
-      console.log('🎯 Requested report types:', reportTypes);
+      // 
+      // console.log('📊 ALL movement types found:', [...new Set(cleanedReports.map(r => r.movement_type))]);
+      // 
       
-      // Use the helper function to generate PDF
-      await generatePDFFromData(cleanedReports, dateRange, reportTypes);
+      // CRITICAL VALIDATION: Check if backend returned unwanted data
+      if (!reportTypes.includes('all')) {
+        const typeMapping = {
+          'stock_in': 'IN',
+          'stock_out': 'OUT',
+          'stock_adjustment': 'ADJUSTMENT',
+          'transfer': 'TRANSFER'
+        };
+        const allowedTypes = reportTypes.map(t => typeMapping[t]).filter(Boolean);
+        
+        const foundTypes = [...new Set(cleanedReports.map(r => r.movement_type))];
+        const unwantedTypes = foundTypes.filter(t => !allowedTypes.includes(t));
+        
+        if (unwantedTypes.length > 0) {
+          console.error(`⚠️ BACKEND ERROR: Returned unwanted types: ${unwantedTypes.join(', ')} when only requesting: ${allowedTypes.join(', ')}`);
+        }
+      }
+      
+      // Count records by type
+      const typeCounts = cleanedReports.reduce((acc, report) => {
+        acc[report.movement_type] = (acc[report.movement_type] || 0) + 1;
+        return acc;
+      }, {});
+      // 
+      
+      // Check for TRANSFER in raw data (should NOT exist if not selected)
+      const hasTransfer = cleanedReports.some(r => r.movement_type === 'TRANSFER');
+      if (hasTransfer && !reportTypes.includes('transfer') && !reportTypes.includes('all')) {
+        console.error('⚠️ WARNING: TRANSFER found in raw data but NOT selected in reportTypes!');
+        const transferCount = cleanedReports.filter(r => r.movement_type === 'TRANSFER').length;
+        console.error(`⚠️ Found ${transferCount} TRANSFER records when they should NOT be included`);
+      }
+      
+      // Filter reports client-side based on selected report types (STRICT FILTERING)
+      let finalReports = cleanedReports;
+      if (!reportTypes.includes('all') && reportTypes.length > 0) {
+        // 
+        
+        const typeMapping = {
+          'stock_in': 'IN',
+          'stock_out': 'OUT', 
+          'stock_adjustment': 'ADJUSTMENT',
+          'transfer': 'TRANSFER'
+        };
+        
+        const movementTypes = reportTypes.map(type => typeMapping[type]).filter(Boolean);
+        // 
+        // 
+        // console.log('📊 Movement types before filter:', [...new Set(cleanedReports.map(r => r.movement_type))]);
+        
+        // STRICT FILTERING: Only include selected types
+        finalReports = cleanedReports.filter(report => {
+          const matches = movementTypes.includes(report.movement_type);
+          if (!matches && report.movement_type) {
+            // 
+          }
+          return matches;
+        });
+        
+        // Double-check: Ensure no TRANSFER records if not selected
+        if (!reportTypes.includes('transfer') && !reportTypes.includes('all')) {
+          finalReports = finalReports.filter(report => report.movement_type !== 'TRANSFER');
+          // 
+        }
+        
+        // 
+        // console.log('📊 Movement types after filter:', [...new Set(finalReports.map(r => r.movement_type))]);
+        
+        // Show user what types are included
+        toast.info(`Filtered to ${finalReports.length} records with types: ${movementTypes.join(', ')}`);
+      } else {
+        // 
+      }
+      
+      if (finalReports.length === 0) {
+        toast.error('No reports found for the selected report types and date range');
+        return;
+      }
+      
+      // FINAL STRICT FILTER: Double-check that ONLY selected types are included
+      const movementTypeMap = {
+        'stock_in': 'IN',
+        'stock_out': 'OUT',
+        'stock_adjustment': 'ADJUSTMENT',
+        'transfer': 'TRANSFER'
+      };
+      
+      // Get allowed movement types (if 'all' is selected, allow all movement types)
+      const allowedMovementTypes = reportTypes.includes('all') 
+        ? ['IN', 'OUT', 'ADJUSTMENT', 'TRANSFER'] 
+        : reportTypes.map(t => movementTypeMap[t]).filter(Boolean);
+      // 
+      
+      // Verify EVERY record matches the selected types (only if not 'all')
+      const verifiedReports = reportTypes.includes('all')
+        ? finalReports // No filtering if 'all' is selected
+        : finalReports.filter(report => {
+            const reportMovementType = String(report.movement_type || '').toUpperCase();
+            const isAllowed = allowedMovementTypes.includes(reportMovementType);
+            
+            if (!isAllowed) {
+              console.error(`❌ BLOCKED FROM PDF: ${report.product_name} - movement_type: ${reportMovementType} (not in allowed types: ${allowedMovementTypes.join(', ')})`);
+            }
+            
+            return isAllowed;
+          });
+      
+      // 
+      // console.log('📊 Movement types in verified reports:', [...new Set(verifiedReports.map(r => r.movement_type))]);
+      
+      if (verifiedReports.length === 0) {
+        toast.error('No matching records found for the selected report types');
+        return;
+      }
+      
+      // Show summary of what will be downloaded
+      const typeSummary = {};
+      verifiedReports.forEach(report => {
+        const type = report.movement_type || 'UNKNOWN';
+        typeSummary[type] = (typeSummary[type] || 0) + 1;
+      });
+      
+      const summaryText = Object.entries(typeSummary)
+        .map(([type, count]) => `${type}: ${count}`)
+        .join(', ');
+      
+      toast.info(`Generating PDF with ${verifiedReports.length} records (${summaryText})`, {
+        autoClose: 3000,
+        position: "top-center"
+      });
+      
+      // 
+      
+      // Use the helper function to generate PDF with STRICTLY FILTERED reports
+      await generatePDFFromData(verifiedReports, dateRange, reportTypes);
       
     } catch (error) {
       console.error('Error combining reports:', error);
@@ -748,7 +899,7 @@ const Reports = () => {
     }
   };
 
-  const handleQuickCombine = async (quickSelect) => {
+  const handleQuickCombine = (quickSelect) => {
     const today = new Date();
     let startDate, endDate;
     
@@ -791,13 +942,19 @@ const Reports = () => {
         return;
     }
     
-    // Call the real combine reports function
-    await handleCombineReports({ start: startDate, end: endDate });
+    // Only update the date fields in the modal, DON'T trigger download
+    setCombineStartDate(startDate);
+    setCombineEndDate(endDate);
+    
+    toast.success(`Date range set to ${startDate} - ${endDate}`, {
+      autoClose: 2000,
+      position: "top-right"
+    });
   };
 
   const handleDownload = async (report) => {
     try {
-      console.log('📥 Downloading individual report:', report);
+      // 
       toast.info('Generating PDF... Please wait.');
       
       // Load PDF libraries
@@ -843,6 +1000,11 @@ const Reports = () => {
 
   // CSV Export and Print functions removed - only PDF download is available
 
+  // Report types clarification:
+  // Stock In = Product entry & warehouse stock update (from supplier/delivery)
+  // Stock Out = Stock removal/consumption (sales, returns, adjustments)
+  // Stock Adjustment = Manual adjustments to stock quantities
+  // Transfer = Stock movement between locations/warehouses
   const reportTypes = ["all", "Stock In Report", "Stock Out Report", "Stock Adjustment Report", "Transfer Report"];
   const dateRanges = ["all", "today", "week", "month"];
 
@@ -949,7 +1111,11 @@ const Reports = () => {
             {autoRefresh ? 'Auto Refresh ON' : 'Auto Refresh OFF'}
           </button>
           <button 
-            onClick={() => setShowCombineModal(true)}
+            onClick={() => {
+              setShowCombineModal(true);
+              // Reset to empty when opening modal - user must select explicitly
+              setSelectedReportTypes([]);
+            }}
             disabled={isLoading}
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors"
           >
@@ -1138,18 +1304,36 @@ const Reports = () => {
       }`}>
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
             <div className="relative">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-md">
-              <FaFilter className="h-4 w-4 text-white" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg shadow-md">
+                <FaFilter className="h-4 w-4 text-white" />
+              </div>
+              <div>
+                <h3 className={`text-lg font-semibold ${
+                  isDarkMode ? 'text-white' : 'text-slate-800'
+                }`}>Search & Filter Reports</h3>
+                <p className={`text-xs ${
+                  isDarkMode ? 'text-slate-300' : 'text-slate-600'
+                }`}>Find specific reports quickly</p>
+              </div>
             </div>
-            <div>
-              <h3 className={`text-lg font-semibold ${
-                isDarkMode ? 'text-white' : 'text-slate-800'
-              }`}>Search & Filter Reports</h3>
-              <p className={`text-xs ${
-                isDarkMode ? 'text-slate-300' : 'text-slate-600'
-              }`}>Find specific reports quickly</p>
-            </div>
+            <button
+              onClick={() => {
+                // 
+                fetchReportsData(true);
+              }}
+              className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                isDarkMode 
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span className="text-sm font-medium">Refresh</span>
+            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="md:col-span-2">
@@ -1174,36 +1358,97 @@ const Reports = () => {
             </div>
           </div>
           <div>
-              <label className={`block text-xs font-medium mb-1 ${
+              <label className={`block text-xs font-medium mb-1 flex items-center gap-2 ${
                 isDarkMode ? 'text-slate-300' : 'text-slate-700'
-              }`}>Report Type</label>
+              }`}>
+                <FaFilter className="h-3 w-3" />
+                Report Type
+                {selectedType !== "all" && (
+                  <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${
+                    isDarkMode ? 'bg-blue-900 text-blue-200' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    Active
+                  </span>
+                )}
+                <div className="group relative ml-auto">
+                  <FaInfoCircle className="h-3 w-3 cursor-help" />
+                  <div className="absolute right-0 top-6 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                    <strong>Report Types:</strong><br/>
+                    📦 <strong>Stock In:</strong> Product entry & warehouse stock update<br/>
+                    📤 <strong>Stock Out:</strong> Stock removal/consumption<br/>
+                    🚚 <strong>Transfer:</strong> Stock movement between locations
+                  </div>
+                </div>
+              </label>
             <select
               value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+              onChange={(e) => {
+                setSelectedType(e.target.value);
+                toast.info(`Filtered by: ${e.target.value === "all" ? "All Types" : e.target.value}`, {
+                  autoClose: 2000,
+                  position: "top-center"
+                });
+              }}
+                className={`w-full px-3 py-2 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                   isDarkMode 
-                    ? 'bg-slate-700 border-slate-600 text-white' 
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                    ? selectedType !== "all"
+                      ? 'bg-slate-700 border-blue-500 text-white' 
+                      : 'bg-slate-700 border-slate-600 text-white'
+                    : selectedType !== "all"
+                      ? 'bg-slate-50 border-blue-500 text-slate-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}
             >
-              {reportTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type === "all" ? "All Types" : type}
-                </option>
-              ))}
+              {reportTypes.map((type) => {
+                // Customize display names for clarity
+                const displayName = type === "all" ? "All Types" :
+                                   type === "Stock In Report" ? "📦 Stock In (Entry/Update)" :
+                                   type === "Stock Out Report" ? "📤 Stock Out (Sales/Consumption)" :
+                                   type === "Transfer Report" ? "🚚 Transfer (Between Locations)" :
+                                   type;
+                return (
+                  <option key={type} value={type}>
+                    {displayName}
+                  </option>
+                );
+              })}
             </select>
           </div>
           <div>
-              <label className={`block text-xs font-medium mb-1 ${
+              <label className={`block text-xs font-medium mb-1 flex items-center gap-2 ${
                 isDarkMode ? 'text-slate-300' : 'text-slate-700'
-              }`}>Date Range</label>
+              }`}>
+                <FaCalendar className="h-3 w-3" />
+                Date Range
+                {selectedDateRange !== "all" && (
+                  <span className={`ml-1 px-2 py-0.5 text-xs rounded-full ${
+                    isDarkMode ? 'bg-green-900 text-green-200' : 'bg-green-100 text-green-700'
+                  }`}>
+                    Filtered
+                  </span>
+                )}
+              </label>
             <select
               value={selectedDateRange}
-              onChange={(e) => setSelectedDateRange(e.target.value)}
-                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+              onChange={(e) => {
+                setSelectedDateRange(e.target.value);
+                const rangeLabel = e.target.value === "all" ? "All Time" :
+                                  e.target.value === "today" ? "Today" :
+                                  e.target.value === "week" ? "Last 7 Days" :
+                                  e.target.value === "month" ? "Last 30 Days" : e.target.value;
+                toast.info(`Date range set to: ${rangeLabel}`, {
+                  autoClose: 2000,
+                  position: "top-center"
+                });
+              }}
+                className={`w-full px-3 py-2 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                   isDarkMode 
-                    ? 'bg-slate-700 border-slate-600 text-white' 
-                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                    ? selectedDateRange !== "all"
+                      ? 'bg-slate-700 border-green-500 text-white' 
+                      : 'bg-slate-700 border-slate-600 text-white'
+                    : selectedDateRange !== "all"
+                      ? 'bg-slate-50 border-green-500 text-slate-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}
             >
               {dateRanges.map((range) => (
@@ -1246,13 +1491,45 @@ const Reports = () => {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {(selectedType !== "all" || selectedDateRange !== "all") && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setSelectedType("all");
+                        setSelectedDateRange("all");
+                        toast.success('Filters cleared', {
+                          autoClose: 2000,
+                          position: "top-center"
+                        });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors ${
+                        isDarkMode 
+                          ? 'bg-red-900/30 hover:bg-red-800/40 border border-red-700 text-red-300' 
+                          : 'bg-red-100 hover:bg-red-200 border border-red-300 text-red-700'
+                      }`}
+                    >
+                      <FaTimes className="h-3 w-3" />
+                      <span className="text-xs font-medium">Clear Filters</span>
+                    </button>
+                    <div className={`px-3 py-1.5 rounded-lg flex items-center gap-2 ${
+                      isDarkMode ? 'bg-blue-900/30 border border-blue-700' : 'bg-blue-100 border border-blue-300'
+                    }`}>
+                      <FaFilter className="h-3 w-3 text-blue-500" />
+                      <span className={`text-xs font-medium ${
+                        isDarkMode ? 'text-blue-200' : 'text-blue-700'
+                      }`}>
+                        Filters Active
+                      </span>
+                    </div>
+                  </>
+                )}
                 <div className={`px-4 py-2 rounded-full ${
                   isDarkMode ? 'bg-slate-700' : 'bg-slate-100'
                 }`}>
                   <span className={`text-sm font-medium ${
                     isDarkMode ? 'text-slate-300' : 'text-slate-700'
                   }`}>
-              {filteredReports.length} reports found
+              {filteredReports.length} {filteredReports.length === 1 ? 'report' : 'reports'} found
                   </span>
                 </div>
             </div>
@@ -1309,7 +1586,7 @@ const Reports = () => {
                   : 'bg-white divide-slate-200'
               }`}>
                 {items.map((item, index) => (
-                  <tr key={item.movement_id} className={`transition-all duration-200 group ${
+                  <tr key={`${item.movement_id}-${index}`} className={`transition-all duration-200 group ${
                     isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'
                   }`}>
                     <td className="px-6 py-5">
@@ -1879,7 +2156,7 @@ const Reports = () => {
                         key={option.key}
                         onClick={() => handleQuickCombine(option.key)}
                         disabled={isLoading}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors duration-200"
+                        className="px-4 py-2 text-white rounded-lg hover:bg-opacity-90 disabled:opacity-50 transition-colors duration-200 bg-blue-600 hover:bg-blue-700"
                       >
                         {option.label}
                       </button>
@@ -1948,31 +2225,31 @@ const Reports = () => {
                           type="checkbox"
                           checked={selectedReportTypes.includes(type.key)}
                           onChange={(e) => {
-                            console.log('🔍 Checkbox changed:', type.key, 'checked:', e.target.checked);
-                            console.log('📋 Current selectedReportTypes:', selectedReportTypes);
+                            // 
+                            // 
                             
                             if (type.key === 'all') {
                               if (e.target.checked) {
-                                console.log('✅ Selecting ALL reports');
+                                // 
                                 setSelectedReportTypes(['all']);
                               } else {
-                                console.log('❌ Deselecting ALL reports');
+                                // 
                                 setSelectedReportTypes([]);
                               }
                             } else {
                               const newTypes = selectedReportTypes.filter(t => t !== 'all');
                               if (e.target.checked) {
-                                console.log('➕ Adding report type:', type.key);
+                                // 
                                 setSelectedReportTypes([...newTypes, type.key]);
                               } else {
-                                console.log('➖ Removing report type:', type.key);
+                                // 
                                 setSelectedReportTypes(newTypes.filter(t => t !== type.key));
                               }
                             }
                             
                             // Log the final state after a short delay
                             setTimeout(() => {
-                              console.log('🎯 Final selectedReportTypes after change:', selectedReportTypes);
+                              // 
                             }, 100);
                           }}
                           className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
@@ -1996,22 +2273,28 @@ const Reports = () => {
               <div className="flex justify-end gap-3">
                 <button 
                   onClick={() => {
-                    if (combineStartDate && combineEndDate) {
-                      console.log('🚀 Combine Reports button clicked!');
-                      console.log('📅 Date range:', { start: combineStartDate, end: combineEndDate });
-                      console.log('📊 Selected report types:', selectedReportTypes);
-                      console.log('🔢 Report types length:', selectedReportTypes.length);
-                      
-                      handleCombineReports(
-                        { start: combineStartDate, end: combineEndDate },
-                        selectedReportTypes
-                      );
-                      setShowCombineModal(false);
-                    } else {
+                    if (!combineStartDate || !combineEndDate) {
                       toast.error('Please select both start and end dates');
+                      return;
                     }
+                    
+                    if (selectedReportTypes.length === 0) {
+                      toast.error('Please select at least one report type');
+                      return;
+                    }
+                    
+                    // 
+                    // 
+                    // 
+                    // 
+                    
+                    handleCombineReports(
+                      { start: combineStartDate, end: combineEndDate },
+                      selectedReportTypes
+                    );
+                    setShowCombineModal(false);
                   }}
-                  disabled={isLoading || !combineStartDate || !combineEndDate}
+                  disabled={isLoading || !combineStartDate || !combineEndDate || selectedReportTypes.length === 0}
                   className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors duration-200"
                 >
                   <FaFileAlt className="h-4 w-4" />

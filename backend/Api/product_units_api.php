@@ -382,7 +382,7 @@ try {
     }
     
 } catch (Exception $e) {
-    error_log("Product Units API Error: " . $e->getMessage());
+    // error_log("Product Units API Error: " . $e->getMessage());
     echo json_encode([
         "success" => false,
         "message" => "Server error: " . $e->getMessage()

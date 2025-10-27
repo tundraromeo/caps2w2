@@ -101,7 +101,6 @@ const StockAdjustment = () => {
   // API Functions
   const handleApiCall = async (action, data = {}) => {
     try {
-      console.log(`🔄 API Call: ${action}`, data);
       // Use the centralized API handler
       const result = await apiHandler.callGenericAPI('inventory_transfer_api.php', action, data);
       return result;
@@ -114,8 +113,6 @@ const StockAdjustment = () => {
   // Stock Adjustment API Functions
   const handleStockAdjustmentApiCall = async (action, data = {}) => {
     try {
-      console.log(`🔄 Stock Adjustment API Call: ${action}`, data);
-      
       // Use dynamic API URL from environment
       const url = getApiUrl('stock_adjustment_api.php');
       
@@ -135,7 +132,6 @@ const StockAdjustment = () => {
       }
       
       const result = await response.json();
-      console.log(`✅ Stock Adjustment API Success: ${action}`, result);
       return result;
     } catch (error) {
       console.error(`❌ Stock Adjustment API Error (${action}):`, error);
@@ -151,7 +147,6 @@ const StockAdjustment = () => {
   // Batch Adjustment API Functions
   const handleBatchApiCall = async (action, data = {}) => {
     try {
-      console.log(`🔄 Batch API Call: ${action}`, data);
       // Use the centralized API handler
       const result = await apiHandler.callGenericAPI('batch_stock_adjustment_api.php', action, data);
       return result;
@@ -165,8 +160,6 @@ const StockAdjustment = () => {
   const fetchAdjustments = async (includeArchived = false) => {
     setIsLoading(true);
     try {
-      console.log('🔄 Fetching batch adjustment data...', { includeArchived, showArchived });
-      
       // Use the stock adjustment API to get adjustment history
       const result = await handleStockAdjustmentApiCall('get_batch_adjustment_history', {
         page: page,
@@ -176,10 +169,6 @@ const StockAdjustment = () => {
       
       if (result.success) {
         let allData = result.data || [];
-        
-        console.log('📈 Total records:', allData.length);
-        console.log('📊 Sample raw data:', allData.slice(0, 2));
-        
         // Process the data to match expected format
         const processedData = allData.map(item => ({
           ...item,
@@ -213,15 +202,8 @@ const StockAdjustment = () => {
         const uniqueData = processedData.filter((item, index, self) => 
           index === self.findIndex(t => t.id === item.id && t.created_at === item.created_at)
         );
-        
-        console.log('📊 Original data length:', processedData.length);
-        console.log('📊 Unique data length:', uniqueData.length);
-        console.log('📊 Sample processed data:', processedData.slice(0, 2));
-        
         setAdjustments(uniqueData);
         setTotalRecords(result.total || uniqueData.length);
-        
-        console.log('✅ Batch adjustments fetched successfully:', processedData.length, 'records');
       } else {
         throw new Error(result.message || 'Failed to fetch batch adjustments');
       }
@@ -308,8 +290,6 @@ const StockAdjustment = () => {
   // Archive adjustment (soft delete for batch adjustments)
   const archiveAdjustment = async (logId) => {
     try {
-      console.log('🔄 Archiving adjustment with log_id:', logId);
-      
       // Get the current user
       const userData = sessionStorage.getItem('user_data');
       const archivedBy = userData ? JSON.parse(userData).username || 'admin' : 'admin';
@@ -338,16 +318,11 @@ const StockAdjustment = () => {
   const fetchLocations = async () => {
     setLoadingLocations(true);
     try {
-      console.log('🔄 Fetching locations from tbl_location...');
       // Use backend.php for get_locations endpoint
       const result = await apiHandler.callGenericAPI('backend.php', 'get_locations', {});
-      console.log('📥 Locations API response:', result);
-      
       if (result.success && result.data && result.data.length > 0) {
-        console.log('✅ Locations fetched successfully:', result.data);
         setAvailableLocations(result.data);
       } else {
-        console.log('⚠️ No locations data, using fallback locations');
         setAvailableLocations([
           { location_id: 1, location_name: 'Main Warehouse' },
           { location_id: 2, location_name: 'Warehouse' },
@@ -374,50 +349,30 @@ const StockAdjustment = () => {
     setLoadingProducts(true);
     try {
       const locationToUse = specificLocationId || selectedLocationFilter || currentLocation;
-      console.log('🔄 Fetching products for location:', locationToUse);
-      console.log('📍 specificLocationId:', specificLocationId);
-      console.log('📍 selectedLocationFilter:', selectedLocationFilter);
-      console.log('📍 currentLocation:', currentLocation);
-      
       // Try the new stock adjustment API first (gets products from actual locations)
-      console.log('🔄 Calling get_products_for_stock_adjustment with location_id:', locationToUse);
       let result = await handleStockAdjustmentApiCall('get_products_for_stock_adjustment', {
         location_id: locationToUse
       });
-      
-      console.log('📥 Products API response (stock_adjustment):', result);
-      console.log('📊 Result success:', result.success);
-      console.log('📊 Result data length:', result.data ? result.data.length : 'no data');
-      
       // If no products found, try get_products_oldest_batch as fallback
       if (!result.success || !result.data || result.data.length === 0) {
-        console.log('🔄 No products from stock_adjustment, trying oldest_batch...');
         result = await handleApiCall('get_products_oldest_batch', {
           status: 'active',
           limit: 1000,
           location_id: locationToUse
         });
-        console.log('📥 Products API response (oldest_batch):', result);
       }
       
       // If still no products found, try regular get_products endpoint
       if (!result.success || !result.data || result.data.length === 0) {
-        console.log('🔄 No products from oldest_batch, trying regular get_products...');
         result = await handleApiCall('get_products', {
           location_id: locationToUse
         });
-        console.log('📥 Products API response (regular):', result);
       }
       
       if (result.success) {
         const productsData = result.data || [];
-        console.log('✅ Products fetched successfully:', productsData.length, 'products');
-        console.log('📦 Sample products:', productsData.slice(0, 3));
-        console.log('📍 Products for location:', locationToUse);
-        console.log('📦 All products:', productsData);
         setProducts(productsData);
       } else {
-        console.log('⚠️ No products data received from both endpoints');
         setProducts([]);
       }
     } catch (error) {
@@ -442,25 +397,12 @@ const StockAdjustment = () => {
       if (result.success) {
         const batches = result.data.batches || [];
         const product = result.data.product;
-        
-        console.log('📦 Batches received:', batches);
-        console.log('💰 Sample batch SRP:', batches[0]?.srp);
-        console.log('📅 Sample batch expiration:', batches[0]?.expiration_date);
-        
         // Find the original product from the products list to preserve the correct total_quantity
         const originalProduct = products.find(p => p.product_id == productId);
         const originalTotalQuantity = originalProduct?.total_quantity || 0;
         
         // Calculate total quantity from batches for verification
         const batchTotalQuantity = batches.reduce((sum, batch) => sum + (parseFloat(batch.current_qty) || 0), 0);
-        
-        console.log('🔍 Quantity Comparison:', {
-          productId: productId,
-          originalTotalQuantity: originalTotalQuantity,
-          batchTotalQuantity: batchTotalQuantity,
-          difference: originalTotalQuantity - batchTotalQuantity
-        });
-        
         // Use the original total_quantity from the product list (more reliable)
         // Only fall back to batch calculation if original is not available
         const finalTotalQuantity = originalTotalQuantity > 0 ? originalTotalQuantity : batchTotalQuantity;
@@ -484,10 +426,6 @@ const StockAdjustment = () => {
             difference: originalTotalQuantity - batchTotalQuantity
           });
         } else {
-          console.log(`✅ Quantities match for product ${productId}:`, {
-            original: originalTotalQuantity,
-            batchTotal: batchTotalQuantity
-          });
         }
       }
     } catch (error) {
@@ -503,12 +441,6 @@ const StockAdjustment = () => {
   const handleProductSelect = (productId) => {
     const product = products.find(p => p.product_id == productId);
     if (product) {
-      console.log('🔍 Product Selected:', {
-        productId: productId,
-        productName: product.product_name,
-        originalTotalQuantity: product.total_quantity,
-        barcode: product.barcode
-      });
       setSelectedProduct(product);
       fetchProductBatches(productId);
     }
@@ -516,23 +448,8 @@ const StockAdjustment = () => {
 
   // Handle batch adjust button click
   const handleBatchAdjust = (batch) => {
-    console.log('🔘 Batch adjust button clicked for batch:', batch);
-    console.log('💰 Batch SRP:', batch.srp);
-    console.log('📅 Batch Expiration:', batch.expiration_date);
-    
     setSelectedBatch(batch);
     setBatchAdjustment({
-      batch_id: batch.batch_id,
-      batch_reference: batch.batch_reference,
-      old_qty: batch.current_qty,
-      new_qty: batch.current_qty,
-      adjustment_qty: 0,
-      reason: "",
-      notes: "",
-      srp: batch.srp || 0,
-      expiration_date: batch.expiration_date || ""
-    });
-    console.log('✅ Batch adjustment state set:', {
       batch_id: batch.batch_id,
       batch_reference: batch.batch_reference,
       old_qty: batch.current_qty,
@@ -548,12 +465,8 @@ const StockAdjustment = () => {
 
   // Handle opening batch adjustment modal
   const handleOpenBatchAdjustmentModal = async () => {
-    console.log('🔄 Opening batch adjustment modal...');
-    console.log('📍 Current availableLocations:', availableLocations);
-    
     // Fetch locations if not already loaded
     if (availableLocations.length === 0) {
-      console.log('📍 No locations loaded, fetching...');
       await fetchLocations();
     }
     
@@ -580,13 +493,6 @@ const StockAdjustment = () => {
   const handleBatchQuantityChange = (newQty) => {
     const oldQty = batchAdjustment.old_qty;
     const adjustmentQty = newQty - oldQty;
-    
-    console.log('🔢 Quantity change:', {
-      oldQty: oldQty,
-      newQty: newQty,
-      adjustmentQty: adjustmentQty
-    });
-    
     setBatchAdjustment(prev => ({
       ...prev,
       new_qty: newQty,
@@ -597,18 +503,8 @@ const StockAdjustment = () => {
   // Create batch adjustment
   const createBatchAdjustment = async () => {
     if (isSubmitting) {
-      console.log('🚫 Already submitting, preventing duplicate submission');
       return; // Prevent multiple submissions
     }
-    
-    console.log('🔄 Starting batch adjustment creation...');
-    console.log('📊 Form data:', {
-      selectedProduct: selectedProduct,
-      selectedBatch: selectedBatch,
-      batchAdjustment: batchAdjustment,
-      isSubmitting: isSubmitting
-    });
-    
     // Enhanced validation with detailed error messages
     if (!selectedProduct) {
       toast.error('Please select a product first');
@@ -635,8 +531,6 @@ const StockAdjustment = () => {
     }
 
     setIsSubmitting(true);
-    console.log('✅ Validation passed, submitting...');
-
     try {
       const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
       
@@ -652,13 +546,7 @@ const StockAdjustment = () => {
         expiration_date: batchAdjustment.expiration_date,
         adjusted_by: userData.username || userData.emp_id || 'inventory_manager'
       };
-      
-      console.log('📤 Sending request data:', requestData);
-      
       const result = await handleStockAdjustmentApiCall('create_batch_stock_adjustment', requestData);
-      
-      console.log('📥 Received response:', result);
-
       if (result.success) {
         toast.success('Batch adjustment created successfully');
         setShowBatchAdjustmentModal(false);
@@ -676,7 +564,6 @@ const StockAdjustment = () => {
       toast.error('Failed to create batch adjustment: ' + error.message);
     } finally {
       setIsSubmitting(false);
-      console.log('🏁 Submission completed');
     }
   };
 
@@ -1138,14 +1025,16 @@ const StockAdjustment = () => {
                         >
                           <FaEye className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => handleArchive(item.id)}
-                          className="text-red-600 hover:text-red-900 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                          disabled={item.is_archived === 1}
-                          title={item.is_archived === 1 ? "Already archived" : "Archive this adjustment"}
-                        >
-                          <FaArchive className="h-4 w-4" />
-                        </button>
+                        {!showArchived && (
+                          <button 
+                            onClick={() => handleArchive(item.id)}
+                            className="text-red-600 hover:text-red-900 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={item.is_archived === 1}
+                            title={item.is_archived === 1 ? "Already archived" : "Archive this adjustment"}
+                          >
+                            <FaArchive className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1471,7 +1360,6 @@ const StockAdjustment = () => {
                       value={selectedLocationFilter || currentLocation || ''}
                       onChange={async (e) => {
                         const locationId = e.target.value ? parseInt(e.target.value) : null;
-                        console.log('📍 Location selected:', locationId, e.target.value);
                         setSelectedLocationFilter(locationId);
                         // Reset product selection when location changes
                         setSelectedProduct(null);
@@ -1480,7 +1368,6 @@ const StockAdjustment = () => {
                         
                         // Fetch products for the selected location
                         if (locationId) {
-                          console.log('🔄 Fetching products for location:', locationId);
                           await fetchProducts(locationId);
                         }
                       }}
@@ -1740,7 +1627,7 @@ const StockAdjustment = () => {
                                 value={batchAdjustment.adjustment_qty === 0 ? '' : batchAdjustment.adjustment_qty}
                                 onChange={(e) => {
                                   const inputValue = e.target.value;
-                                  console.log('Input value:', inputValue); // Debug log
+                                   // Debug log
                                   
                                   // Handle empty input
                                   if (inputValue === '') {
@@ -1774,19 +1661,18 @@ const StockAdjustment = () => {
                                 className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 ${isDark ? 'border-gray-600 bg-gray-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
                                 placeholder="Enter adjustment amount (+/-)"
                                 onKeyDown={(e) => {
-                                  console.log('Key pressed:', e.key, 'Key code:', e.keyCode); // Debug log
+                                   // Debug log
                                   
                                   // TEMPORARILY ALLOW ALL KEYS FOR TESTING
                                   // Don't prevent any keys - let everything through
-                                  console.log('Allowing key:', e.key);
                                   return;
                                 }}
                                 onFocus={(e) => {
-                                  console.log('Input focused'); // Debug log
+                                   // Debug log
                                   e.target.select();
                                 }}
                                 onInput={(e) => {
-                                  console.log('Input event:', e.target.value); // Debug log
+                                   // Debug log
                                 }}
                               />
                               <button
@@ -1845,7 +1731,6 @@ const StockAdjustment = () => {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  console.log('Test minus button clicked');
                                   setBatchAdjustment(prev => ({
                                     ...prev,
                                     adjustment_qty: -5,
@@ -1859,7 +1744,6 @@ const StockAdjustment = () => {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  console.log('Test plus button clicked');
                                   setBatchAdjustment(prev => ({
                                     ...prev,
                                     adjustment_qty: 5,
@@ -2022,14 +1906,6 @@ const StockAdjustment = () => {
               </button>
               <button 
                 onClick={() => {
-                  console.log('🔘 Save button clicked');
-                  console.log('🔍 Button state check:', {
-                    selectedBatch: !!selectedBatch,
-                    hasReason: !!batchAdjustment.reason,
-                    adjustmentQty: batchAdjustment.adjustment_qty,
-                    isSubmitting: isSubmitting,
-                    buttonDisabled: !selectedBatch || !batchAdjustment.reason || batchAdjustment.adjustment_qty === 0 || isSubmitting
-                  });
                   createBatchAdjustment();
                 }}
                 disabled={!selectedBatch || !batchAdjustment.reason || batchAdjustment.adjustment_qty === 0 || isSubmitting}

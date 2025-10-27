@@ -27,10 +27,10 @@ function checkProductNameWarehouse($conn, $data) {
         $location_id = $data['location_id'] ?? null;
         
         // DEBUG: Log the input parameters
-        error_log("DEBUG: checkProductNameWarehouse called with:");
-        error_log("  product_name: " . $product_name);
-        error_log("  location_name: " . $location_name);
-        error_log("  location_id: " . ($location_id ?? 'null'));
+        // error_log("DEBUG: checkProductNameWarehouse called with:");
+        // error_log("  product_name: " . $product_name);
+        // error_log("  location_name: " . $location_name);
+        // error_log("  location_id: " . ($location_id ?? 'null'));
         
         if (empty($product_name)) {
             return [
@@ -86,17 +86,17 @@ function checkProductNameWarehouse($conn, $data) {
         }
         
         // DEBUG: Log the SQL query and parameters
-        error_log("DEBUG: SQL Query: " . $sql);
-        error_log("DEBUG: Parameters: " . json_encode($params));
+        // error_log("DEBUG: SQL Query: " . $sql);
+        // error_log("DEBUG: Parameters: " . json_encode($params));
         
         $stmt = $conn->prepare($sql);
         $stmt->execute($params);
         $product = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // DEBUG: Log the result
-        error_log("DEBUG: Query result: " . ($product ? "FOUND" : "NOT FOUND"));
+        // error_log("DEBUG: Query result: " . ($product ? "FOUND" : "NOT FOUND"));
         if ($product) {
-            error_log("DEBUG: Product found: " . json_encode($product));
+            // error_log("DEBUG: Product found: " . json_encode($product));
         }
         
         if ($product) {
@@ -108,20 +108,20 @@ function checkProductNameWarehouse($conn, $data) {
             ];
         } else {
             // DEBUG: Try a LIKE search as fallback to see if there are similar products
-            error_log("DEBUG: Exact match failed, trying LIKE search...");
+            // error_log("DEBUG: Exact match failed, trying LIKE search...");
             $likeSql = str_replace("p.product_name = ?", "LOWER(p.product_name) LIKE LOWER(?)", $sql);
             $likeParams = $params;
             $likeParams[0] = "%{$product_name}%"; // Replace first parameter with LIKE pattern
             
-            error_log("DEBUG: LIKE SQL Query: " . $likeSql);
-            error_log("DEBUG: LIKE Parameters: " . json_encode($likeParams));
+            // error_log("DEBUG: LIKE SQL Query: " . $likeSql);
+            // error_log("DEBUG: LIKE Parameters: " . json_encode($likeParams));
             
             $likeStmt = $conn->prepare($likeSql);
             $likeStmt->execute($likeParams);
             $likeProduct = $likeStmt->fetch(PDO::FETCH_ASSOC);
             
             if ($likeProduct) {
-                error_log("DEBUG: LIKE search found product: " . json_encode($likeProduct));
+                // error_log("DEBUG: LIKE search found product: " . json_encode($likeProduct));
                 return [
                     "success" => true,
                     "found" => true,

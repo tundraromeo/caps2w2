@@ -27,8 +27,6 @@ class QZTrayIntegration {
       // Connect to QZ Tray
       await this.qz.websocket.connect();
       this.isConnected = true;
-      
-      console.log('QZ Tray connected successfully');
       return true;
     } catch (error) {
       console.error('QZ Tray initialization failed:', error);
@@ -56,7 +54,6 @@ class QZTrayIntegration {
 
     try {
       const printers = await this.qz.printers.get();
-      console.log('Available printers:', printers);
       return printers;
     } catch (error) {
       console.error('Failed to get printers:', error);
@@ -67,7 +64,6 @@ class QZTrayIntegration {
   // Set default printer
   setPrinter(printerName) {
     this.printerName = printerName;
-    console.log('Printer set to:', printerName);
   }
 
   // Print receipt using QZ Tray
@@ -116,8 +112,6 @@ class QZTrayIntegration {
 
       // Send to printer
       await this.qz.print(config, printJob);
-      
-      console.log('Receipt printed successfully via QZ Tray');
       return {
         success: true,
         message: 'Receipt printed successfully',
@@ -162,7 +156,6 @@ class QZTrayIntegration {
     if (this.isConnected && this.qz) {
       this.qz.websocket.disconnect();
       this.isConnected = false;
-      console.log('QZ Tray disconnected');
     }
   }
 }

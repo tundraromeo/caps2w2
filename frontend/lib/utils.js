@@ -19,7 +19,6 @@ export async function logActivity({ activityType, description, userId = null, me
 
     // Log to console in development
     if (process.env.NODE_ENV === 'development') {
-      console.log('Activity Log:', activityData);
     }
 
     // Send to API endpoint if available

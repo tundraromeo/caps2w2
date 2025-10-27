@@ -143,7 +143,7 @@ function Dashboard() {
   // Fetch payment methods data with global period filter
   const fetchPaymentMethodsWithPeriod = async (period = 'all') => {
     try {
-      console.log('💳 Fetching payment methods with period:', period);
+
       const response = await fetch(`${getApiUrl('dashboard_sales_api.php')}?_t=${Date.now()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -168,12 +168,11 @@ function Dashboard() {
       
       // Try to parse JSON
       const result = JSON.parse(text);
-      console.log('💳 Payment methods result:', result);
-      
+
       if (result.success) {
-        console.log('✅ Payment methods loaded:', result.data?.length, 'methods');
+
         if (result.debug) {
-          console.log('📅 Payment methods date range:', result.debug);
+
         }
         return result.data || [];
       } else {
@@ -303,12 +302,12 @@ function Dashboard() {
   // Handle payment period change (legacy - no longer used)
   const handlePaymentPeriodChange = async (newPeriod) => {
     // This function is no longer used since Payment Methods now uses global filter
-    console.log('Payment period change deprecated - using global filter instead');
+
   };
 
   // Handle global period change
   const handleGlobalPeriodChange = async (newPeriod) => {
-    console.log('📅 Global period changing from', globalPeriod, 'to', newPeriod);
+
     if (newPeriod !== globalPeriod) {
       setGlobalPeriod(newPeriod);
       // Trigger immediate data fetch with new period
@@ -320,9 +319,8 @@ function Dashboard() {
   const fetchDashboardDataWithPeriod = async (period) => {
     try {
       setLoading(true);
-      console.log('🔄 Fetching dashboard data with period:', period);
-      console.log('📅 Period filter applied:', period);
-      
+
+
       const response = await fetch(`${getApiUrl('backend.php')}?_t=${Date.now()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -333,21 +331,19 @@ function Dashboard() {
       });
       
       const result = await response.json();
-      console.log('📊 Dashboard data received:', result);
-      
+
       // Log debug information if available
       if (result.debug) {
-        console.log('🔍 Debug info:', result.debug);
-        console.log('📅 Period filter:', result.debug.period);
-        console.log('📈 Chart data count:', result.debug.chart_data_count);
-        console.log('💼 Has transactions:', result.debug.has_transactions);
-        console.log('📅 Date filter info:', result.debug.date_filter_info);
+
+
+
+
+
       }
       
       // Fetch payment methods data using specific period
       const paymentMethodsData = await fetchPaymentMethodsWithPeriod(period);
-      console.log('💳 Payment methods data:', paymentMethodsData);
-      
+
       if (result.success) {
         setDashboardData({
           summaryCards: result.data.summaryCards || [],
@@ -360,8 +356,7 @@ function Dashboard() {
 
         // Fetch actual cashier performance data with specific period
         await fetchCashierPerformanceWithPeriod(period);
-        
-        console.log('✅ Dashboard data loaded successfully with period:', period);
+
       } else {
         console.error('❌ API Error:', result.message);
         toast.error('Failed to load dashboard data: ' + result.message);
@@ -377,7 +372,7 @@ function Dashboard() {
   // Fetch cashier performance data with specific period
   const fetchCashierPerformanceWithPeriod = async (period) => {
     try {
-      console.log('🔍 Fetching cashier performance with period:', period);
+
       const perfRes = await fetch(`${getApiUrl('employee_manager.php')}?_t=${Date.now()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -386,20 +381,17 @@ function Dashboard() {
           period: period
         })
       });
-      
-      console.log('📡 Response status:', perfRes.status);
-      
+
       if (perfRes.ok) {
         const perfData = await perfRes.json();
-        console.log('📊 Cashier performance data:', perfData);
-        
+
         if (perfData.success && perfData.performance) {
           const cashierRows = perfData.performance.map(perf => ({
             name: perf.cashier_name || perf.username || 'Unknown',
             refund: parseFloat(perf.total_returns || 0).toFixed(2),
             sales: parseFloat(perf.total_sales || 0).toFixed(2)
           }));
-          console.log('✅ Mapped cashier rows:', cashierRows);
+
           setDashboardData(prev => ({ ...prev, employeePerformance: cashierRows }));
         } else {
           console.warn('⚠️ No performance data or API failed:', perfData);

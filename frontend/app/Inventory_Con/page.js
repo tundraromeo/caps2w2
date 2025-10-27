@@ -69,12 +69,9 @@ export default function InventoryPage() {
         });
         
         if (response.ok) {
-          console.log('✅ Auto logout successful');
         } else {
-          console.log('⚠️ Auto logout failed, but continuing...');
         }
       } catch (error) {
-        console.log('⚠️ Auto logout error:', error.message);
       }
       
       // Clear session storage
@@ -122,8 +119,6 @@ export default function InventoryPage() {
         try {
           const user = JSON.parse(userData);
           empId = user.user_id || user.emp_id || null;
-          console.log('Inventory Logout - Parsed user data:', user);
-          console.log('Inventory Logout - Found emp_id:', empId);
         } catch (e) {
           console.error('Failed to parse user data:', e);
         }
@@ -134,12 +129,8 @@ export default function InventoryPage() {
         const localEmpId = localStorage.getItem('pos-emp-id');
         if (localEmpId) {
           empId = parseInt(localEmpId);
-          console.log('Inventory Logout - Using emp_id from localStorage:', empId);
         }
       }
-      
-      console.log('Inventory Logout attempt - Final Emp ID:', empId);
-      
       // Call logout API if we have an empId
       if (empId) {
         try {
@@ -161,10 +152,7 @@ export default function InventoryPage() {
           
           if (contentType && contentType.includes('application/json')) {
             const result = await response.json();
-            console.log('Inventory Logout API response:', result);
-            
             if (result.success) {
-              console.log('✅ Inventory logout successful - Server confirmed logout');
             } else {
               console.warn('⚠️ Inventory logout warning:', result.message);
             }
@@ -176,24 +164,19 @@ export default function InventoryPage() {
           }
         } catch (apiError) {
           console.warn('⚠️ Inventory logout API error:', apiError);
-          console.log('📍 Proceeding with local cleanup even though API call failed');
           // Continue with local cleanup even if API fails
         }
       } else {
         console.warn('⚠️ No employee ID found in session or local storage');
-        console.log('📍 Clearing local session data and redirecting to login');
       }
     } catch (error) {
       console.error('❌ Inventory logout error:', error);
-      console.log('📍 Proceeding with local logout despite errors');
     } finally {
       // Always clear session and redirect
-      console.log('🧹 Cleaning up: Clearing all session and local storage');
       sessionStorage.clear(); // Clear all session data
       localStorage.removeItem('pos-terminal');
       localStorage.removeItem('pos-cashier');
       localStorage.removeItem('pos-emp-id');
-      console.log('✅ Cleanup complete, redirecting to login page');
       router.push('/');
     }
   };

@@ -258,7 +258,7 @@ function populateFromStockMovements($db, $location_id, $product_id = 0) {
         return $batchDetails;
         
     } catch (Exception $e) {
-        error_log("Error populating from stock movements: " . $e->getMessage());
+        // error_log("Error populating from stock movements: " . $e->getMessage());
         return [];
     }
 }
@@ -355,7 +355,7 @@ function populateMissingBatchDetails($db, $data) {
                 ]);
                 $inserted_count++;
             } else {
-                error_log("Warning: Skipping transfer batch detail - fifo_id is null for product_id: " . $movement['product_id'] . ", batch_id: " . $movement['batch_id']);
+                // error_log("Warning: Skipping transfer batch detail - fifo_id is null for product_id: " . $movement['product_id'] . ", batch_id: " . $movement['batch_id']);
             }
         }
         
