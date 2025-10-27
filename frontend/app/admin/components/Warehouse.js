@@ -1109,8 +1109,13 @@ calculateLowStockAndExpiring(activeProducts);
 
     setIsCheckingProductName(true);
     
-    // Smart detection: Check if input looks like a barcode (numbers/alphanumeric without spaces)
-    const looksLikeBarcode = /^[A-Za-z0-9-_]+$/.test(input.trim()) && input.trim().length >= 6;
+    // Smart detection: Check if input looks like a barcode 
+    // Barcode should be mostly numeric or have specific patterns (e.g., EAN-13: 13 digits)
+    // Common barcode formats: UPC (12 digits), EAN-13 (13 digits), some alphanumeric codes
+    const trimmedInput = input.trim();
+    const isNumeric = /^\d+$/.test(trimmedInput);
+    const hasEnoughNumbers = (trimmedInput.match(/\d/g) || []).length >= 8; // At least 8 digits
+    const looksLikeBarcode = (isNumeric && trimmedInput.length >= 8) || (hasEnoughNumbers && /^[A-Za-z0-9-_]+$/.test(trimmedInput) && trimmedInput.length >= 10);
     
     if (looksLikeBarcode) {
       setProductNameStatusMessage("🔍 Detecting barcode format - checking barcode...");
@@ -1255,13 +1260,13 @@ calculateLowStockAndExpiring(activeProducts);
             setShowUpdateStockModal(true);
             setProductNameStatusMessage("✅ Product found by barcode! Opening update stock modal.");
           } else {
-            console.log("❌ Barcode not found, opening new product modal");
+            console.log("❌ Barcode not found - treating as product name, opening new product modal");
             setNewProductForm({
-              product_name: "",
+              product_name: input.trim(), // Put the input in product_name since barcode not found
               category_id: "",
               product_type: "",
               configMode: "bulk",
-              barcode: input.trim(), // Pre-fill barcode
+              barcode: "", // Leave barcode empty - user can add it later if needed
               description: "",
               srp: "",
               brand_id: "",
@@ -1281,7 +1286,7 @@ calculateLowStockAndExpiring(activeProducts);
               total_pieces: ""
             });
             setShowNewProductModal(true);
-            setProductNameStatusMessage("✅ New barcode detected! Opening new product modal.");
+            setProductNameStatusMessage("✅ Opening new product modal. Please add barcode if available.");
           }
         }
       } catch (error) {

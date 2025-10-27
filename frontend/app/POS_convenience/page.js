@@ -421,6 +421,9 @@ export default function POS() {
       const isBulkProduct = d.bulk ?? d.is_bulk ?? false;
       const prescriptionFromDB = d.requires_prescription ?? d.prescription_required ?? d.prescription ?? false;
       
+      // Extract SRP field for receipt display
+      const srpRaw = Number(d.srp) || Number(d.transfer_srp) || 0;
+      
       // Expiration date already determined above
       
       // Logic: If it's a bulk product OR convenience store terminal, prescription should be NO
@@ -430,6 +433,7 @@ export default function POS() {
         id: Number(id ?? 0) || id,
         name: String(name),
         price: Number(priceRaw) || 0,
+        srp: Number(srpRaw) || 0,
         quantity: Number(quantityRaw) || 0,
         category: String(category),
         description: String(description),
@@ -1670,7 +1674,10 @@ export default function POS() {
             setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
           } else if (checkoutFocusIndex === 2) {
             setPaymentMethod('gcash'); 
-            setAmountPaid(payableTotal.toString()); // Auto-set amount for GCash
+            // Don't auto-set amount for GCash - let user enter it to allow change
+            if (!amountPaid) {
+              setAmountPaid(payableTotal.toString()); // Only set if empty as a default
+            }
             setShowRefInput(true); 
             // GCash → Reference
             setCheckoutFocusIndex(3);
@@ -1853,7 +1860,7 @@ export default function POS() {
     
     // Header
     content += '='.repeat(receiptWidth) + '\n';
-    content += centerText(data.storeName || "ENGUIO'S PHARMACY") + '\n';
+    content += `${data.storeName || "ENGUIO'S PHARMACY"}\n`;
     content += '='.repeat(receiptWidth) + '\n';
     
     // Receipt info
@@ -1864,55 +1871,65 @@ export default function POS() {
     content += `Terminal: ${data.terminalName || 'POS'}\n`;
     content += '-'.repeat(receiptWidth) + '\n';
     
+    // Items header - Removed to make it cleaner
+    content += '-'.repeat(receiptWidth) + '\n';
+    
     // Items
     if (data.items && data.items.length > 0) {
       data.items.forEach(item => {
-        const qty = String(item.quantity || 1).padStart(2);
-        const name = String(item.name || 'Unknown').substring(0, 20).padEnd(20);
-        const price = parseFloat(item.price || item.price || 0).toFixed(2);
-        const total = (parseFloat(item.total || 0)).toFixed(2);
+        const qty = String(item.quantity || 1);
+        const name = String(item.name || 'Unknown');
+        const srp = parseFloat(item.srp || item.price || 0).toFixed(2);
+        const total = (parseInt(qty) * parseFloat(item.price || 0)).toFixed(2);
         
-        content += `${qty}x ${name}\n`;
-        content += `${''.padEnd(15)}@${price} = ${total}\n`;
+        // Format: Product name on first line, qty srp total on second line
+        content += `${name}\n`;
+        content += `qty:${qty} srp:${srp} total:${total}\n`;
       });
     }
     
     content += '-'.repeat(receiptWidth) + '\n';
     
-    // Subtotal
-    content += formatPriceLine('SUBTOTAL:', data.subtotal || data.total || 0) + '\n';
+    // Calculate total quantity and number of items
+    if (data.items && data.items.length > 0) {
+      const totalQty = data.items.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+      const totalItems = data.items.length;
+      content += `TOTAL : ${totalQty} items (${totalItems} ${totalItems === 1 ? 'item' : 'items'})\n`;
+    }
     
     // Discount
     if (data.discountType && parseFloat(data.discountAmount) > 0) {
-      content += `Discount: ${data.discountType}\n`;
+      const discountPercent = data.discountPercent || 0;
+      content += `Discount: ${data.discountType}${discountPercent > 0 ? ` (${discountPercent.toFixed(0)}%)` : ''}\n`;
       content += formatPriceLine('Discount Amt:', data.discountAmount) + '\n';
     }
     
     content += '-'.repeat(receiptWidth) + '\n';
     
     // Grand total
-    content += formatPriceLine('GRAND TOTAL:', data.grandTotal || data.total || 0) + '\n';
+    content += 'GRAND TOTAL: ' + parseFloat(data.grandTotal || data.total || 0).toFixed(2) + '\n';
     content += '-'.repeat(receiptWidth) + '\n';
     
     // Payment info
-    content += `PAYMENT: ${(data.paymentMethod || 'Unknown').toUpperCase()}\n`;
-    
     if (data.paymentMethod?.toLowerCase() === 'cash') {
-      content += formatPriceLine('CASH:', data.amountPaid || 0) + '\n';
-      content += formatPriceLine('CHANGE:', data.change || 0) + '\n';
+      content += `${(data.paymentMethod || 'CASH').toUpperCase()}: ${parseFloat(data.amountPaid || 0).toFixed(2)}\n`;
+      content += `CHANGE: ${parseFloat(data.change || 0).toFixed(2)}\n`;
     } else if (data.paymentMethod?.toLowerCase() === 'gcash') {
+      content += `${(data.paymentMethod || 'GCASH').toUpperCase()}: ${parseFloat(data.amountPaid || 0).toFixed(2)}\n`;
       if (data.gcashRef) {
         content += `GCASH REF: ${data.gcashRef}\n`;
       }
-      content += formatPriceLine('AMOUNT PAID:', data.amountPaid || 0) + '\n';
-      content += formatPriceLine('CHANGE:', data.change || 0) + '\n';
+      content += `CHANGE: ${parseFloat(data.change || 0).toFixed(2)}\n`;
+    } else {
+      content += `${(data.paymentMethod || 'UNKNOWN').toUpperCase()}: ${parseFloat(data.amountPaid || 0).toFixed(2)}\n`;
+      content += `CHANGE: ${parseFloat(data.change || 0).toFixed(2)}\n`;
     }
     
     // Footer
     content += '='.repeat(receiptWidth) + '\n';
-    content += centerText('Thank you!') + '\n';
-    content += centerText('Please come again') + '\n';
-    content += centerText('This is your official receipt') + '\n';
+    content += 'Thank you!\n';
+    content += 'Please come again\n';
+    content += 'This is your official receipt\n';
     content += '='.repeat(receiptWidth) + '\n';
     
     return `<!DOCTYPE html>
@@ -1930,16 +1947,30 @@ export default function POS() {
     
     body {
       font-family: 'Courier New', monospace;
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.6;
       width: 75mm;
       margin: 0 auto;
       padding: 3mm;
       color: #000;
       background: #fff;
+      text-align: center;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     
-    .line { white-space: pre; font-family: 'Courier New', monospace; }
+    .line { 
+      white-space: pre; 
+      font-family: 'Courier New', monospace; 
+      font-weight: 700;
+      color: #000;
+      text-align: left;
+    }
+    
+    .line.text-center {
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -1959,8 +1990,33 @@ export default function POS() {
 
     // Prepare receipt data
     const sessionUser = (typeof window !== 'undefined') ? JSON.parse(sessionStorage.getItem('user_data') || '{}') : {};
+    
+    // Determine store name based on locationName or terminalName
+    let storeName = "ENGUIO'S CONVENIENCE STORE"; // Default
+    
+    // Check if it's pharmacy based on terminal name or location
+    if (terminalName.toLowerCase().includes('pharmacy') || 
+        locationName.toLowerCase().includes('pharmacy')) {
+      storeName = "ENGUIO'S PHARMACY";
+    } else if (terminalName.toLowerCase().includes('convenience') || 
+               locationName.toLowerCase().includes('convenience')) {
+      storeName = "ENGUIO'S CONVENIENCE STORE";
+    }
+    
+    // Ensure change is calculated correctly
+    const finalChange = change || 0;
+    
+    // Calculate discount percentage
+    let discountPercent = 0;
+    if (discountType && discountOptions.length > 0) {
+      const dbOption = discountOptions.find(o => String(o.type).toLowerCase() === String(discountType).toLowerCase());
+      if (dbOption && Number.isFinite(dbOption.rate)) {
+        discountPercent = dbOption.rate > 1 ? dbOption.rate : dbOption.rate * 100;
+      }
+    }
+    
     const receiptData = {
-      storeName: "ENGUIO'S PHARMACY",
+      storeName: storeName,
       date: dateStr,
       time: timeStr,
       transactionId: transactionId,
@@ -1970,16 +2026,18 @@ export default function POS() {
         name: item.product.name,
         quantity: item.quantity,
         price: item.product.price,
+        srp: item.product.srp || item.product.price,
         total: item.product.price * item.quantity
       })),
       subtotal: total,
       discountType: discountType || null,
       discountAmount: discountAmount,
+      discountPercent: discountPercent,
       grandTotal: payableTotal,
-      paymentMethod: paymentMethod.toUpperCase(),
+      paymentMethod: paymentMethod.toLowerCase(), // Keep lowercase for comparison
       amountPaid: parseFloat(amountPaid),
-      change: change,
-      gcashRef: paymentMethod === 'gcash' ? referenceNumber : null
+      change: finalChange,
+      gcashRef: paymentMethod.toLowerCase() === 'gcash' ? referenceNumber : null
     };
 
     try {
@@ -3852,13 +3910,24 @@ export default function POS() {
                           ref={gcashBtnRef}
                           type="button"
                           className={`flex-1 py-3 rounded-lg text-base font-bold transition-colors ${paymentMethod === 'gcash' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${checkoutFocusIndex === 2 ? 'ring-2 ring-blue-500' : ''}`}
-                          onClick={() => { setPaymentMethod('gcash'); setShowRefInput(true); setCheckoutFocusIndex(3); }}
+                          onClick={() => { 
+                            setPaymentMethod('gcash'); 
+                            setShowRefInput(true); 
+                            // Only set default amount if empty
+                            if (!amountPaid) {
+                              setAmountPaid(payableTotal.toString());
+                            }
+                            setCheckoutFocusIndex(3); 
+                          }}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
                               setPaymentMethod('gcash');
                               setShowRefInput(true);
-                              setAmountPaid(payableTotal.toString()); // Auto-set amount for GCash
+                              // Don't auto-set amount - let user enter it to allow change
+                              if (!amountPaid) {
+                                setAmountPaid(payableTotal.toString()); // Only set if empty as a default
+                              }
                               // Sequential navigation: Payment Method → GCash Reference
                               setCheckoutFocusIndex(3);
                               setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);

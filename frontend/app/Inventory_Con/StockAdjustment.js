@@ -90,6 +90,7 @@ const StockAdjustment = () => {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [showAdjustmentHistory, setShowAdjustmentHistory] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showArchived, setShowArchived] = useState(false); // Toggle for archived view
 
   // Helper function to safely parse numbers
   const safeParseFloat = (value, defaultValue = 0) => {
@@ -161,15 +162,16 @@ const StockAdjustment = () => {
   };
 
   // Fetch stock adjustments with comprehensive data
-  const fetchAdjustments = async () => {
+  const fetchAdjustments = async (includeArchived = false) => {
     setIsLoading(true);
     try {
-      console.log('🔄 Fetching batch adjustment data...');
+      console.log('🔄 Fetching batch adjustment data...', { includeArchived, showArchived });
       
       // Use the stock adjustment API to get adjustment history
       const result = await handleStockAdjustmentApiCall('get_batch_adjustment_history', {
         page: page,
-        limit: rowsPerPage
+        limit: rowsPerPage,
+        include_archived: includeArchived || showArchived
       });
       
       if (result.success) {
@@ -182,6 +184,8 @@ const StockAdjustment = () => {
         const processedData = allData.map(item => ({
           ...item,
           id: item.log_id,
+          log_id: item.log_id, // Keep log_id for archiving
+          is_archived: item.is_archived || 0, // Include archived status
           source: 'batch_adjustment',
           full_date: item.created_at,
           date: item.created_at ? new Date(item.created_at).toLocaleDateString() : '',
@@ -301,9 +305,33 @@ const StockAdjustment = () => {
     setEditingAdjustment(null);
   };
 
-  // Delete adjustment (disabled for batch adjustments - they are immutable)
-  const deleteAdjustment = async (id) => {
-    toast.warning('Batch adjustments cannot be deleted. They are permanent records for audit purposes.');
+  // Archive adjustment (soft delete for batch adjustments)
+  const archiveAdjustment = async (logId) => {
+    try {
+      console.log('🔄 Archiving adjustment with log_id:', logId);
+      
+      // Get the current user
+      const userData = sessionStorage.getItem('user_data');
+      const archivedBy = userData ? JSON.parse(userData).username || 'admin' : 'admin';
+      
+      // Call the batch_stock_adjustment_api to archive
+      const result = await handleBatchApiCall('archive_batch_adjustment', {
+        log_id: logId,
+        archived_by: archivedBy
+      });
+      
+      if (result.success) {
+        toast.success('Adjustment archived successfully');
+        // Refresh the adjustments list
+        await fetchAdjustments();
+        await fetchStats();
+      } else {
+        toast.error(result.message || 'Failed to archive adjustment');
+      }
+    } catch (error) {
+      console.error('Error archiving adjustment:', error);
+      toast.error('Failed to archive adjustment: ' + error.message);
+    }
   };
 
   // Fetch available locations from tbl_location
@@ -735,6 +763,16 @@ const StockAdjustment = () => {
   useEffect(() => {
     fetchAdjustments();
   }, [page]);
+  
+  // Fetch archived or active items when toggle changes
+  useEffect(() => {
+    if (currentLocation !== null) {
+      fetchAdjustments();
+      fetchStats();
+      // Reset to page 1 when switching views
+      setPage(1);
+    }
+  }, [showArchived]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -801,8 +839,8 @@ const StockAdjustment = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    await deleteAdjustment(id);
+  const handleArchive = async (id) => {
+    await archiveAdjustment(id);
   };
 
   const handleView = (adjustment) => {
@@ -831,8 +869,17 @@ const StockAdjustment = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>Stock Adjustment</h1>
-          <p className={`${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Manage inventory adjustments and stock modifications</p>
+          <div className="flex items-center gap-3">
+            <h1 className={`text-3xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`}>Stock Adjustment</h1>
+            {showArchived && (
+              <span className="px-3 py-1 bg-red-600 text-white text-sm font-semibold rounded-md">
+                Archived View
+              </span>
+            )}
+          </div>
+          <p className={`${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+            {showArchived ? 'Viewing archived adjustments' : 'Manage inventory adjustments and stock modifications'}
+          </p>
         </div>
         <div className="flex gap-3">
           <button 
@@ -848,6 +895,17 @@ const StockAdjustment = () => {
           >
             <FaEye className="h-4 w-4" />
             View Adjustment History
+          </button>
+          <button 
+            onClick={() => setShowArchived(!showArchived)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md ${
+              showArchived 
+                ? 'bg-red-600 text-white hover:bg-red-700' 
+                : 'bg-gray-600 text-white hover:bg-gray-700'
+            }`}
+          >
+            <FaArchive className="h-4 w-4" />
+            {showArchived ? 'Show Active' : 'Show Archived'}
           </button>
         </div>
       </div>
@@ -1076,12 +1134,15 @@ const StockAdjustment = () => {
                         <button 
                           onClick={() => handleView(item)}
                           className="text-green-600 hover:text-green-900 p-1"
+                          title="View Details"
                         >
                           <FaEye className="h-4 w-4" />
                         </button>
                         <button 
-                          onClick={() => handleDelete(item.id)}
-                          className="text-red-600 hover:text-red-900 p-1"
+                          onClick={() => handleArchive(item.id)}
+                          className="text-red-600 hover:text-red-900 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={item.is_archived === 1}
+                          title={item.is_archived === 1 ? "Already archived" : "Archive this adjustment"}
                         >
                           <FaArchive className="h-4 w-4" />
                         </button>

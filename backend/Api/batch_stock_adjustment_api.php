@@ -79,8 +79,15 @@ switch ($action) {
             $page = $data['page'] ?? 1;
             $limit = $data['limit'] ?? 10;
             $offset = ($page - 1) * $limit;
+            $includeArchived = $data['include_archived'] ?? false;
             
             // Get batch adjustment history from tbl_batch_adjustment_log
+            // Filter out archived records unless specifically requested
+            $whereClause = "WHERE bal.is_archived IS NULL OR bal.is_archived = 0";
+            if ($includeArchived) {
+                $whereClause = "";
+            }
+            
             $stmt = $conn->prepare("
                 SELECT 
                     bal.log_id,
@@ -95,12 +102,14 @@ switch ($action) {
                     bal.notes,
                     bal.adjusted_by,
                     bal.created_at,
+                    bal.is_archived,
                     p.product_name,
                     p.barcode,
                     fs.expiration_date
                 FROM tbl_batch_adjustment_log bal
                 LEFT JOIN tbl_product p ON bal.product_id = p.product_id
                 LEFT JOIN tbl_fifo_stock fs ON bal.batch_id = fs.batch_id
+                $whereClause
                 ORDER BY bal.created_at DESC
                 LIMIT " . (int)$limit . " OFFSET " . (int)$offset
             );
@@ -109,7 +118,11 @@ switch ($action) {
             $adjustments = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // Get total count
-            $countStmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_batch_adjustment_log");
+            $countWhereClause = "WHERE is_archived IS NULL OR is_archived = 0";
+            if ($includeArchived) {
+                $countWhereClause = "";
+            }
+            $countStmt = $conn->prepare("SELECT COUNT(*) as total FROM tbl_batch_adjustment_log $countWhereClause");
             $countStmt->execute();
             $totalCount = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
             
@@ -517,6 +530,117 @@ switch ($action) {
             echo json_encode([
                 "success" => false,
                 "message" => "Test error: " . $e->getMessage()
+            ]);
+        }
+        break;
+
+    case 'archive_batch_adjustment':
+        try {
+            $log_id = $data['log_id'] ?? 0;
+            $archived_by = $data['archived_by'] ?? 'admin';
+            
+            if (!$log_id) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Log ID is required"
+                ]);
+                break;
+            }
+            
+            // Check if columns exist, if not add them
+            $checkIsArchivedStmt = $conn->prepare("SHOW COLUMNS FROM tbl_batch_adjustment_log LIKE 'is_archived'");
+            $checkIsArchivedStmt->execute();
+            $isArchivedExists = $checkIsArchivedStmt->fetch();
+            
+            if (!$isArchivedExists) {
+                // Add is_archived column if it doesn't exist
+                $addIsArchivedStmt = $conn->prepare("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN is_archived TINYINT(1) DEFAULT 0");
+                $addIsArchivedStmt->execute();
+            }
+            
+            $checkArchivedByStmt = $conn->prepare("SHOW COLUMNS FROM tbl_batch_adjustment_log LIKE 'archived_by'");
+            $checkArchivedByStmt->execute();
+            $archivedByExists = $checkArchivedByStmt->fetch();
+            
+            if (!$archivedByExists) {
+                $addArchivedByStmt = $conn->prepare("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN archived_by VARCHAR(100) DEFAULT NULL");
+                $addArchivedByStmt->execute();
+            }
+            
+            $checkArchivedDateStmt = $conn->prepare("SHOW COLUMNS FROM tbl_batch_adjustment_log LIKE 'archived_date'");
+            $checkArchivedDateStmt->execute();
+            $archivedDateExists = $checkArchivedDateStmt->fetch();
+            
+            if (!$archivedDateExists) {
+                $addArchivedDateStmt = $conn->prepare("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN archived_date DATE DEFAULT NULL");
+                $addArchivedDateStmt->execute();
+            }
+            
+            $checkArchivedTimeStmt = $conn->prepare("SHOW COLUMNS FROM tbl_batch_adjustment_log LIKE 'archived_time'");
+            $checkArchivedTimeStmt->execute();
+            $archivedTimeExists = $checkArchivedTimeStmt->fetch();
+            
+            if (!$archivedTimeExists) {
+                $addArchivedTimeStmt = $conn->prepare("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN archived_time TIME DEFAULT NULL");
+                $addArchivedTimeStmt->execute();
+            }
+            
+            // Mark adjustment as archived
+            $stmt = $conn->prepare("
+                UPDATE tbl_batch_adjustment_log 
+                SET is_archived = 1,
+                    archived_by = ?,
+                    archived_date = CURDATE(),
+                    archived_time = CURTIME()
+                WHERE log_id = ?
+            ");
+            $stmt->execute([$archived_by, $log_id]);
+            
+            echo json_encode([
+                "success" => true,
+                "message" => "Batch adjustment archived successfully"
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage()
+            ]);
+        }
+        break;
+
+    case 'restore_batch_adjustment':
+        try {
+            $log_id = $data['log_id'] ?? 0;
+            
+            if (!$log_id) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Log ID is required"
+                ]);
+                break;
+            }
+            
+            // Restore adjustment by setting is_archived to 0
+            $stmt = $conn->prepare("
+                UPDATE tbl_batch_adjustment_log 
+                SET is_archived = 0,
+                    archived_by = NULL,
+                    archived_date = NULL,
+                    archived_time = NULL
+                WHERE log_id = ?
+            ");
+            $stmt->execute([$log_id]);
+            
+            echo json_encode([
+                "success" => true,
+                "message" => "Batch adjustment restored successfully"
+            ]);
+            
+        } catch (Exception $e) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Database error: " . $e->getMessage()
             ]);
         }
         break;

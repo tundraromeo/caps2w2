@@ -416,8 +416,28 @@ function handle_get_batch_adjustment_history($conn, $data) {
         $page = $data['page'] ?? 1;
         $limit = $data['limit'] ?? 10;
         $offset = ($page - 1) * $limit;
+        $includeArchived = $data['include_archived'] ?? false;
         
-        $stmt = $conn->prepare("
+        // Check if is_archived column exists
+        $checkColumnStmt = $conn->prepare("SHOW COLUMNS FROM tbl_batch_adjustment_log LIKE 'is_archived'");
+        $checkColumnStmt->execute();
+        $columnExists = $checkColumnStmt->fetch();
+        
+        if (!$columnExists) {
+            try {
+                $conn->exec("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN is_archived TINYINT(1) DEFAULT 0");
+            } catch (Exception $e) {
+                error_log("Could not add is_archived column: " . $e->getMessage());
+            }
+        }
+        
+        // Build WHERE clause based on include_archived parameter
+        $whereClause = "";
+        if (!$includeArchived) {
+            $whereClause = "WHERE bal.is_archived IS NULL OR bal.is_archived = 0";
+        }
+        
+        $sql = "
             SELECT DISTINCT
                 bal.log_id,
                 bal.product_id,
@@ -433,6 +453,7 @@ function handle_get_batch_adjustment_history($conn, $data) {
                 bal.adjusted_by,
                 bal.movement_type,
                 bal.created_at,
+                COALESCE(bal.is_archived, 0) as is_archived,
                 COALESCE(tbd.srp, fs.srp, 0) as srp,
                 COALESCE(tbd.expiration_date, fs.expiration_date) as expiration_date,
                 c.category_name,
@@ -443,20 +464,27 @@ function handle_get_batch_adjustment_history($conn, $data) {
             LEFT JOIN tbl_brand b ON p.brand_id = b.brand_id
             LEFT JOIN tbl_transfer_batch_details tbd ON bal.batch_id = tbd.batch_id AND bal.product_id = tbd.product_id
             LEFT JOIN tbl_fifo_stock fs ON bal.batch_id = fs.batch_id AND bal.product_id = fs.product_id
+            " . $whereClause . "
             ORDER BY bal.created_at DESC
             LIMIT ? OFFSET ?
-        ");
+        ";
+        
+        $stmt = $conn->prepare($sql);
         $stmt->execute([$limit, $offset]);
         $adjustments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         // Debug logging
-        error_log("Batch Adjustment History - Found " . count($adjustments) . " adjustments");
+        error_log("Batch Adjustment History - Found " . count($adjustments) . " adjustments (include_archived: " . ($includeArchived ? 'true' : 'false') . ")");
         if (!empty($adjustments)) {
             error_log("Batch Adjustment History - Sample adjustment: " . json_encode($adjustments[0]));
         }
         
         // Get total count
-        $countStmt = $conn->prepare("SELECT COUNT(*) FROM tbl_batch_adjustment_log");
+        $countSql = "SELECT COUNT(*) FROM tbl_batch_adjustment_log";
+        if (!$includeArchived) {
+            $countSql .= " WHERE is_archived IS NULL OR is_archived = 0";
+        }
+        $countStmt = $conn->prepare($countSql);
         $countStmt->execute();
         $total = $countStmt->fetchColumn();
         
@@ -489,6 +517,7 @@ function handle_get_batch_adjustment_stats($conn, $data) {
                 SUM(CASE WHEN movement_type = 'OUT' THEN 1 ELSE 0 END) as subtractions,
                 SUM(adjustment_qty) as net_quantity
             FROM tbl_batch_adjustment_log
+            WHERE is_archived IS NULL OR is_archived = 0
         ");
         $stmt->execute();
         $stats = $stmt->fetch(PDO::FETCH_ASSOC);

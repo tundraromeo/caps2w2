@@ -655,6 +655,34 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
     fetchReportData();
   };
 
+  // Handle archive adjustment for stock_adjustment reports
+  const handleArchiveAdjustment = async (row) => {
+    try {
+      // Get current user data
+      const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
+      
+      // Call the archive endpoint
+      const response = await axios.post(`${API_BASE_URL}/batch_stock_adjustment_api.php`, {
+        action: 'archive_batch_adjustment',
+        log_id: row.log_id || row.id,
+        archived_by: userData.full_name || userData.username || 'Admin'
+      });
+
+      if (response.data?.success) {
+        // Show success message
+        alert('✅ Batch adjustment archived successfully');
+        
+        // Refresh the report data to hide the archived record
+        fetchReportData();
+      } else {
+        alert('❌ Failed to archive adjustment: ' + (response.data?.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error archiving adjustment:', error);
+      alert('❌ Error archiving adjustment: ' + error.message);
+    }
+  };
+
   const getReportColumns = () => {
     switch (reportType) {
       case 'stock_in':
@@ -666,7 +694,7 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
       case 'inventory_balance':
         return ['Product Name', 'Barcode', 'Category', 'Current Stock', 'Unit Price', 'Total Value', 'Location', 'Supplier', 'Brand', 'Expiration', 'Status'];
       case 'stock_adjustment':
-        return ['Date', 'Time', 'Product Name', 'Barcode', 'Quantity', 'Movement Type', 'Reason', 'Adjusted By', 'Reference No'];
+        return ['Product Name', 'Quantity', 'SRP', 'Total', 'Actions'];
       case 'supplier':
         return ['Supplier Name', 'Contact', 'Email', 'Products Supplied', 'Total Stock', 'Total Value', 'Deliveries Count'];
       case 'cashier_performance':
@@ -724,7 +752,33 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
             </span>
           );
         }
+        // For stock_adjustment, show absolute value with movement indicator
+        if (reportType === 'stock_adjustment') {
+          const qty = Math.abs(parseFloat(row[columnKey]) || 0);
+          const movementType = row['movement_type'] || '';
+          const prefix = movementType === 'IN' ? '+' : '-';
+          return (
+            <span className="px-2 py-1 rounded text-sm font-medium" 
+                  style={{ 
+                    backgroundColor: movementType === 'IN' ? theme.colors.successBg : theme.colors.dangerBg,
+                    color: movementType === 'IN' ? theme.colors.success : theme.colors.danger
+                  }}>
+              {prefix}{qty}
+            </span>
+          );
+        }
         return row[columnKey] || '0';
+      case 'srp':
+        return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
+      case 'total':
+        // For stock_adjustment, calculate based on quantity and srp
+        if (reportType === 'stock_adjustment') {
+          const qty = Math.abs(parseFloat(row['quantity']) || 0);
+          const srp = parseFloat(row['srp'] || 0);
+          const total = qty * srp;
+          return `₱${total.toFixed(2)}`;
+        }
+        return row[columnKey] ? `₱${parseFloat(row[columnKey]).toFixed(2)}` : '₱0.00';
       case 'current_stock':
       case 'items_sold':
       case 'transactions_count':
@@ -1453,7 +1507,22 @@ function IndividualReport({ reportType, reportName, reportIcon }) {
                       <tr key={index} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                         {getReportColumns().map((column, colIndex) => (
                           <td key={colIndex} className="p-4 align-middle" style={{ color: theme.text.secondary }}>
-                            {formatReportCell(row, column)}
+                            {column === 'Actions' && reportType === 'stock_adjustment' ? (
+                              <button
+                                onClick={() => handleArchiveAdjustment(row)}
+                                disabled={row.is_archived}
+                                className="px-3 py-1 rounded-md text-sm font-medium transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                                style={{
+                                  backgroundColor: row.is_archived ? theme.bg.hover : theme.colors.warning,
+                                  color: theme.text.primary
+                                }}
+                                title={row.is_archived ? 'Already archived' : 'Archive this adjustment'}
+                              >
+                                {row.is_archived ? '📦 Archived' : '📦 Archive'}
+                              </button>
+                            ) : (
+                              formatReportCell(row, column)
+                            )}
                           </td>
                         ))}
                       </tr>

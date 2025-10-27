@@ -609,7 +609,7 @@ ${this.generateReceiptContent(data)}
     content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
     
     // Grand total
-    content += `<div class="line">${formatPriceLine('GRAND TOTAL:', parseFloat(data.grandTotal || data.total || 0))}</div>\n`;
+    content += `<div class="line">GRAND TOTAL: ${parseFloat(data.grandTotal || data.total || 0).toFixed(2)}</div>\n`;
     content += `<div class="line divider">${'-'.repeat(receiptWidth)}</div>\n`;
     
     // Payment info
@@ -632,20 +632,14 @@ ${this.generateReceiptContent(data)}
     let content = '';
     
     items.forEach(item => {
-      const name = String(item.name || 'Unknown').substring(0, 15);
+      const name = String(item.name || 'Unknown');
       const qty = String(item.quantity || 1);
-      const price = parseFloat(item.price || 0).toFixed(2);
+      const srp = parseFloat(item.srp || item.price || 0).toFixed(2);
       const total = (parseInt(qty) * parseFloat(item.price || 0)).toFixed(2);
       
-      // Simple, clear format
-      const qtyStr = qty.padStart(2);
-      const nameStr = name.padEnd(20);
-      const priceStr = price;
-      const totalStr = total;
-      
-      // Format: QTY (right) + ITEM (left) + PRICE + TOTAL
-      content += `<div class="line">${qtyStr}x ${nameStr}</div>\n`;
-      content += `<div class="line">${''.padEnd(15)}@${priceStr} = ${totalStr}</div>\n`;
+      // Format: Product name on first line, qty srp total on second line
+      content += `${name}\n`;
+      content += `qty:${qty} srp:${srp} total:${total}\n`;
     });
     
     return content;

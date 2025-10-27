@@ -400,10 +400,22 @@ function Reports() {
             }
           });
           
+          console.log(`📊 Response for ${reportType}:`, {
+            success: res.data?.success,
+            dataLength: res.data?.data?.length || 0,
+            message: res.data?.message,
+            fullResponse: res.data
+          });
+          
           if (res.data?.success) {
             allReportsData[reportType] = res.data.data || [];
             console.log(`✅ Fetched ${allReportsData[reportType].length} records for ${reportType}`);
-            console.log(`📊 Sample data for ${reportType}:`, allReportsData[reportType].length > 0 ? allReportsData[reportType][0] : 'No data');
+            if (allReportsData[reportType].length > 0) {
+              console.log(`📊 Sample data for ${reportType}:`, allReportsData[reportType][0]);
+              console.log(`📊 All fields for first record:`, Object.keys(allReportsData[reportType][0]));
+            } else {
+              console.log(`❌ No data items for ${reportType}`);
+            }
             
             if (allReportsData[reportType].length > 0) {
               hasAnyData = true;
@@ -502,6 +514,10 @@ function Reports() {
         { id: 'stock_adjustment', name: 'Stock Adjustment Report', icon: '⚖️' }
       ];
       
+      console.log(`📊 Report types to process:`, reportTypes);
+      console.log(`📊 All reports data keys:`, Object.keys(allReportsData));
+      console.log(`📊 Full allReportsData:`, allReportsData);
+      
       // Add each report's data
       for (const reportType of reportTypes) {
         const data = allReportsData[reportType] || [];
@@ -512,7 +528,8 @@ function Reports() {
           reportName,
           dataLength: data.length,
           hasData: data.length > 0,
-          sampleData: data.length > 0 ? data[0] : null
+          sampleData: data.length > 0 ? data[0] : null,
+          dataKeys: data.length > 0 ? Object.keys(data[0]) : []
         });
         
         // Check if we need a new page
@@ -528,11 +545,13 @@ function Reports() {
         yPosition += 10;
         
         if (data.length === 0) {
+          console.log(`❌ No data for ${reportType} - showing empty message`);
           pdf.setFontSize(9);
           pdf.setFont(undefined, 'normal');
-          pdf.text('No data available for this report type in the selected date range.', 20, yPosition);
+          pdf.text(`No data available for ${reportName} in the selected date range.`, 20, yPosition);
           yPosition += 15;
         } else {
+          console.log(`✅ Processing ${reportType} with ${data.length} records`);
           // Add report-specific summary
           pdf.setFontSize(9);
           pdf.setFont(undefined, 'bold');
@@ -567,7 +586,21 @@ function Reports() {
           const tableData = limitedData.map(row => {
             return columns.map(column => {
               const columnKey = column.toLowerCase().replace(/\s+/g, '_');
-              let cellValue = row[columnKey] || 'N/A';
+              
+              // Map display column names to backend field names
+              const fieldMapping = {
+                'supplier': 'supplier_name',
+                'product_name': 'product_name',
+                'reference_no': 'reference_no',
+                'received_by': 'received_by',
+                'adjusted_by': 'adjusted_by',
+                'previous_quantity': 'previous_quantity',
+                'new_quantity': 'new_quantity'
+              };
+              
+              // Get the actual field name from the backend
+              const actualField = fieldMapping[columnKey] || columnKey;
+              let cellValue = row[actualField] || row[columnKey] || 'N/A';
               
               // Format values
               if (columnKey.includes('total_value') || columnKey.includes('total_amount') || columnKey.includes('unit_price') || columnKey.includes('average_transaction')) {
@@ -887,24 +920,38 @@ function Reports() {
   const formatReportCell = (row, column, reportType) => {
     const columnKey = column.toLowerCase().replace(/\s+/g, '_');
     
+    // Map display column names to backend field names
+    const fieldMapping = {
+      'supplier': 'supplier_name',
+      'product_name': 'product_name',
+      'reference_no': 'reference_no',
+      'received_by': 'received_by',
+      'adjusted_by': 'adjusted_by',
+      'previous_quantity': 'previous_quantity',
+      'new_quantity': 'new_quantity'
+    };
+    
+    // Get the actual field name from the backend
+    const actualField = fieldMapping[columnKey] || columnKey;
+    
     switch (columnKey) {
       case 'total_value':
       case 'total_amount':
       case 'unit_price':
-        return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
+        return `₱${parseFloat(row[actualField] || 0).toFixed(2)}`;
       case 'date':
-        return row[columnKey] ? new Date(row[columnKey]).toLocaleDateString('en-PH') : 'N/A';
+        return row[actualField] ? new Date(row[actualField]).toLocaleDateString('en-PH') : 'N/A';
       case 'time':
-        return row[columnKey] ? new Date(`2000-01-01T${row[columnKey]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+        return row[actualField] ? new Date(`2000-01-01T${row[actualField]}`).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
       case 'quantity':
         if (reportType === 'stock_in') {
           return (
             <span className="px-2 py-1 rounded text-sm font-medium" style={{ backgroundColor: theme.colors.successBg, color: theme.colors.success }}>
-              +{row[columnKey] || '0'}
+              +{row[actualField] || '0'}
             </span>
           );
         }
-        return row[columnKey] || '0';
+        return row[actualField] || '0';
       case 'current_stock':
       case 'items_sold':
       case 'transactions_count':
@@ -912,17 +959,17 @@ function Reports() {
       case 'products_supplied':
       case 'total_stock':
       case 'deliveries_count':
-        return row[columnKey] || '0';
+        return row[actualField] || '0';
       case 'average_transaction':
-        return `₱${parseFloat(row[columnKey] || 0).toFixed(2)}`;
+        return `₱${parseFloat(row[actualField] || 0).toFixed(2)}`;
       case 'status':
-        const status = row[columnKey];
+        const status = row[actualField];
         if (status === 'Low Stock') return '⚠️ Low Stock';
         if (status === 'Out of Stock') return '❌ Out of Stock';
         if (status === 'In Stock') return '✅ In Stock';
         return status || 'N/A';
       default:
-        return row[columnKey] || 'N/A';
+        return row[actualField] || row[columnKey] || 'N/A';
     }
   };
 

@@ -174,8 +174,8 @@ class OnlinePrinting {
             <thead>
               <tr>
                 <th class="qty">QTY</th>
-                <th class="item">ITEM</th>
-                <th class="price">PRICE</th>
+                <th class="item">ITEMS</th>
+                <th class="price">SRP</th>
                 <th class="total">TOTAL</th>
               </tr>
             </thead>
@@ -218,15 +218,15 @@ class OnlinePrinting {
     return items.map(item => {
       const name = item.name || 'Unknown';
       const qty = parseInt(item.quantity || 1);
-      const price = parseFloat(item.price || 0);
-      const total = qty * price;
+      const srp = parseFloat(item.srp || item.price || 0);
+      const total = qty * parseFloat(item.price || 0);
       
       return `
         <tr>
-          <td class="qty">${qty}</td>
-          <td class="item">${name}</td>
-          <td class="price">₱${price.toFixed(2)}</td>
-          <td class="total">₱${total.toFixed(2)}</td>
+          <td class="qty" style="width: 8%; text-align: center;">${qty}</td>
+          <td class="item" style="width: 52%; padding-left: 3px; padding-right: 3px;">${name}</td>
+          <td class="price" style="width: 20%; text-align: right; padding-right: 3px;">${srp.toFixed(2)}</td>
+          <td class="total" style="width: 20%; text-align: right;">${total.toFixed(2)}</td>
         </tr>
       `;
     }).join('');

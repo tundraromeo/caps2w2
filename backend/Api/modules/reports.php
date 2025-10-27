@@ -575,23 +575,40 @@ class ReportsModule {
      * Get Stock Adjustment Report Data
      */
     private function getStockAdjustmentReport($startDate, $endDate) {
+        // Check if is_archived column exists, add it if not
+        $checkColumnStmt = $this->conn->prepare("SHOW COLUMNS FROM tbl_batch_adjustment_log LIKE 'is_archived'");
+        $checkColumnStmt->execute();
+        $columnExists = $checkColumnStmt->fetch();
+        
+        if (!$columnExists) {
+            try {
+                $this->conn->exec("ALTER TABLE tbl_batch_adjustment_log ADD COLUMN is_archived TINYINT(1) DEFAULT 0");
+            } catch (Exception $e) {
+                error_log("Could not add is_archived column: " . $e->getMessage());
+            }
+        }
+        
         $stmt = $this->conn->prepare("
             SELECT 
-                sm.movement_id,
-                DATE(sm.movement_date) as date,
-                TIME(sm.movement_date) as time,
+                bal.log_id as id,
+                bal.log_id,
+                DATE(bal.created_at) as date,
+                TIME(bal.created_at) as time,
                 p.product_name,
                 p.barcode,
-                sm.quantity,
-                sm.movement_type,
-                sm.notes as reason,
-                sm.created_by as adjusted_by,
-                sm.reference_no
-            FROM tbl_stock_movements sm
-            JOIN tbl_product p ON sm.product_id = p.product_id
-            WHERE sm.movement_type IN ('ADJUSTMENT', 'CORRECTION')
-            AND DATE(sm.movement_date) BETWEEN ? AND ?
-            ORDER BY sm.movement_date DESC
+                ABS(bal.adjustment_qty) as quantity,
+                bal.movement_type,
+                bal.reason,
+                bal.adjusted_by as adjusted_by,
+                bal.batch_reference as reference_no,
+                COALESCE(bal.is_archived, 0) as is_archived,
+                COALESCE(p.srp, 0) as srp,
+                (ABS(bal.adjustment_qty) * COALESCE(p.srp, 0)) as total
+            FROM tbl_batch_adjustment_log bal
+            JOIN tbl_product p ON bal.product_id = p.product_id
+            WHERE (bal.is_archived IS NULL OR bal.is_archived = 0)
+            AND DATE(bal.created_at) BETWEEN ? AND ?
+            ORDER BY bal.created_at DESC
         ");
         $stmt->execute([$startDate, $endDate]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);

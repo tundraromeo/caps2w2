@@ -20,19 +20,25 @@ function formatPriceLine($label, $amount, $width) {
     return $label . str_repeat(' ', max(0, $spaces)) . $amountStr;
 }
 
-// Function to wrap item name
-function wrapItemName($text, $width) {
-    $text = trim((string)$text);
-    if ($text === '') return [''];
-    $wrapped = wordwrap($text, $width, "\n", true);
-    return explode("\n", $wrapped);
-}
+// ESC/POS commands for text formatting
+$escBoldOn = "\x1B\x45\x01";      // Bold ON
+$escBoldOff = "\x1B\x45\x00";     // Bold OFF
+$escDoubleStrikeOn = "\x1B\x47\x01";  // Double-strike ON (makes text darker)
+$escDoubleStrikeOff = "\x1B\x47\x00"; // Double-strike OFF
+$escBigTextOn = "\x1B\x21\x30";    // Double width and double height
+$escBigTextOff = "\x1B\x21\x00";   // Normal size
+$escCenter = "\x1B\x61\x01";       // Center alignment
+$escLeft = "\x1B\x61\x00";         // Left alignment
 
-// Build receipt content (raw text for QZ Tray)
+// Build receipt content with darker text
 $receipt = '';
+$receipt .= $escDoubleStrikeOn; // Enable double-strike for darker text
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
-$receipt .= str_pad("ENGUIO'S PHARMACY", $receiptWidth, ' ', STR_PAD_BOTH) . "\n";
+// Use storeName from input, fallback to defaults based on context
+$storeName = $input['storeName'] ?? "ENGUIO'S PHARMACY";
+$receipt .= $storeName . "\n";
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
+$receipt .= $escDoubleStrikeOff; // Disable for normal text
 $receipt .= 'Date: ' . ($input['date'] ?? date('Y-m-d')) . "\n";
 $receipt .= 'Time: ' . ($input['time'] ?? date('H:i:s')) . "\n";
 $receipt .= 'TXN ID: ' . ($input['transactionId'] ?? 'N/A') . "\n";
@@ -40,11 +46,7 @@ $receipt .= 'Cashier: ' . ($input['cashier'] ?? 'Admin') . "\n";
 $receipt .= 'Terminal: ' . ($input['terminalName'] ?? 'POS') . "\n";
 $receipt .= str_repeat('-', $receiptWidth) . "\n";
 
-// Items header
-$receipt .= str_pad('QTY', 4)
-  . str_pad('ITEM', 18)
-  . str_pad('PRICE', 8, ' ', STR_PAD_LEFT)
-  . str_pad('TOTAL', 8, ' ', STR_PAD_LEFT) . "\n";
+// Items header - Removed to make it cleaner
 $receipt .= str_repeat('-', $receiptWidth) . "\n";
 
 // Items
@@ -53,21 +55,12 @@ if (!empty($input['items'])) {
         $name = $item['name'] ?? 'Unknown';
         $qty = (int)($item['quantity'] ?? 1);
         $price = (float)($item['price'] ?? 0);
+        $srp = (float)($item['srp'] ?? $price); // Use SRP if available, fallback to price
         $total = $qty * $price;
-
-        $lines = wrapItemName($name, 18);
-        $first = array_shift($lines);
-
-        // First line with qty, price, total
-        $receipt .= str_pad($qty, 4)
-          . str_pad(substr($first, 0, 18), 18)
-          . str_pad(number_format($price, 2), 8, ' ', STR_PAD_LEFT)
-          . str_pad(number_format($total, 2), 8, ' ', STR_PAD_LEFT) . "\n";
-
-        // Continuation lines (wrapped item names)
-        foreach ($lines as $cont) {
-            $receipt .= str_repeat(' ', 4) . str_pad(substr($cont, 0, 18), 18) . "\n";
-        }
+        
+        // Format: Product name on first line, qty srp total on second line
+        $receipt .= $name . "\n";
+        $receipt .= 'qty:' . $qty . ' srp:' . number_format($srp, 2) . ' total:' . number_format($total, 2) . "\n";
     }
 } else {
     $receipt .= "No items found\n";
@@ -75,13 +68,22 @@ if (!empty($input['items'])) {
 
 $receipt .= str_repeat('-', $receiptWidth) . "\n";
 
-// Subtotal
-$subtotal = (float)($input['subtotal'] ?? $input['total'] ?? 0);
-$receipt .= formatPriceLine('SUBTOTAL:', $subtotal, $receiptWidth) . "\n";
+// Calculate total quantity and number of items
+if (!empty($input['items'])) {
+    $totalQty = 0;
+    foreach ($input['items'] as $item) {
+        $totalQty += (int)($item['quantity'] ?? 1);
+    }
+    $totalItems = count($input['items']);
+    $receipt .= "TOTAL : {$totalQty} items ({$totalItems} " . ($totalItems == 1 ? 'item' : 'items') . ")\n";
+}
 
 // Discount (if any)
 if (!empty($input['discountType']) && isset($input['discountAmount']) && (float)$input['discountAmount'] > 0) {
-    $receipt .= 'Discount: ' . $input['discountType'] . "\n";
+    $discountPercent = isset($input['discountPercent']) && $input['discountPercent'] > 0 
+                       ? ' (' . round($input['discountPercent']) . '%)' 
+                       : '';
+    $receipt .= 'Discount: ' . $input['discountType'] . $discountPercent . "\n";
     $discountAmt = (float)$input['discountAmount'];
     $receipt .= formatPriceLine('Discount Amt:', $discountAmt, $receiptWidth) . "\n";
 }
@@ -89,38 +91,41 @@ if (!empty($input['discountType']) && isset($input['discountAmount']) && (float)
 // Grand Total
 $totalAmount = (float)($input['grandTotal'] ?? $input['total'] ?? 0);
 $receipt .= str_repeat('-', $receiptWidth) . "\n";
-$receipt .= formatPriceLine('GRAND TOTAL:', $totalAmount, $receiptWidth) . "\n";
+$receipt .= 'GRAND TOTAL: ' . number_format($totalAmount, 2) . "\n";
 $receipt .= str_repeat('-', $receiptWidth) . "\n";
 
 // Payment details
-$receipt .= 'PAYMENT: ' . strtoupper($input['paymentMethod'] ?? 'Unknown') . "\n";
-
 $pmLower = strtolower((string)($input['paymentMethod'] ?? ''));
 if ($pmLower === 'cash') {
-    $receipt .= formatPriceLine('CASH:', $input['amountPaid'] ?? 0, $receiptWidth) . "\n";
-    $receipt .= formatPriceLine('CHANGE:', $input['change'] ?? 0, $receiptWidth) . "\n";
+    $receipt .= strtoupper($input['paymentMethod'] ?? 'CASH') . ': ' . number_format((float)($input['amountPaid'] ?? 0), 2) . "\n";
+    $receipt .= 'CHANGE: ' . number_format((float)($input['change'] ?? 0), 2) . "\n";
 } elseif ($pmLower === 'gcash') {
+    $receipt .= strtoupper($input['paymentMethod'] ?? 'GCASH') . ': ' . number_format((float)($input['amountPaid'] ?? 0), 2) . "\n";
     if (!empty($input['gcashRef'])) {
         $receipt .= 'GCASH REF: ' . $input['gcashRef'] . "\n";
     }
-    $receipt .= formatPriceLine('AMOUNT PAID:', $input['amountPaid'] ?? 0, $receiptWidth) . "\n";
-    $receipt .= formatPriceLine('CHANGE:', $input['change'] ?? 0, $receiptWidth) . "\n";
+    $receipt .= 'CHANGE: ' . number_format((float)($input['change'] ?? 0), 2) . "\n";
+} else {
+    $receipt .= strtoupper($input['paymentMethod'] ?? 'UNKNOWN') . ': ' . number_format((float)($input['amountPaid'] ?? 0), 2) . "\n";
+    $receipt .= 'CHANGE: ' . number_format((float)($input['change'] ?? 0), 2) . "\n";
 }
 
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
-$receipt .= str_pad('Thank you!', $receiptWidth, ' ', STR_PAD_BOTH) . "\n";
-$receipt .= str_pad('Please come again', $receiptWidth, ' ', STR_PAD_BOTH) . "\n";
-$receipt .= str_pad('This is your official receipt', $receiptWidth, ' ', STR_PAD_BOTH) . "\n";
+$receipt .= 'Thank you!' . "\n";
+$receipt .= 'Please come again' . "\n";
+$receipt .= 'This is your official receipt' . "\n";
+$receipt .= str_repeat('=', $receiptWidth) . "\n";
+$receipt .= "\n\n\n"; // Feed lines for paper cut
 
-// Feed lines for paper cut
-$receipt .= "\n\n\n";
+// Wrap entire receipt with darker text formatting
+$finalReceipt = $escDoubleStrikeOn . $receipt . $escDoubleStrikeOff;
 
 // Return raw receipt data for QZ Tray
 echo json_encode([
     'success' => true,
     'message' => 'Raw receipt data generated for QZ Tray',
     'data' => [
-        'rawReceipt' => $receipt,
+        'rawReceipt' => $finalReceipt,
         'transactionId' => ($input['transactionId'] ?? null)
     ]
 ]);
