@@ -1991,7 +1991,7 @@ function InventoryTransfer() {
                         <div className={`mt-2 p-2 border rounded text-sm ${isDarkMode ? 'bg-red-900/20 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-700'}`}>
                           <div className="flex items-center">
                             <AlertCircle className="h-4 w-4 mr-1" />
-                            <span>No destination locations found (all locations contain "warehouse" in name)</span>
+                            <span>No destination locations found (all locations contain &quot;warehouse&quot; in name)</span>
                           </div>
                         </div>
                       );
