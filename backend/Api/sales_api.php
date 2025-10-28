@@ -201,9 +201,17 @@ try {
                 // If no reference number was provided (cash), store the client txn id so we can locate it later if needed
                 $header_reference = $reference_number !== null && $reference_number !== '' ? $reference_number : ($client_txn_id ?: '');
 
+                // Get senior citizen information if discount is applied
+                $senior_id_number = isset($data['seniorIdNumber']) && !empty($data['seniorIdNumber']) ? $data['seniorIdNumber'] : null;
+                $senior_name = isset($data['seniorName']) && !empty($data['seniorName']) ? $data['seniorName'] : null;
+
+                // Get split payment information
+                $cash_amount = isset($data['cashAmount']) && !empty($data['cashAmount']) ? floatval($data['cashAmount']) : null;
+                $gcash_amount = isset($data['gcashAmount']) && !empty($data['gcashAmount']) ? floatval($data['gcashAmount']) : null;
+
                 // Create sales header
-                $hdrStmt = $conn->prepare("INSERT INTO tbl_pos_sales_header (transaction_id, total_amount, reference_number, terminal_id) VALUES (?, ?, ?, ?)");
-                $hdrStmt->execute([$transaction_id, $total_amount, $header_reference, $terminal_id]);
+                $hdrStmt = $conn->prepare("INSERT INTO tbl_pos_sales_header (transaction_id, total_amount, reference_number, terminal_id, senior_id_number, senior_name, cash_amount, gcash_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $hdrStmt->execute([$transaction_id, $total_amount, $header_reference, $terminal_id, $senior_id_number, $senior_name, $cash_amount, $gcash_amount]);
                 $sales_header_id = (int)$conn->lastInsertId();
 
                 // Insert each item into details (quantity already updated by convenience_store_api.php or pharmacy_api.php)

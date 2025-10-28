@@ -22,13 +22,19 @@ export default function POS() {
   const [quantityInputs, setQuantityInputs] = useState({});
   const [selectedIndex, setSelectedIndex] = useState(0); // For product grid
   const [navigationIndex, setNavigationIndex] = useState(0); // 0: Search, 1: Products, 2: Checkout
-  const [paymentMethod, setPaymentMethod] = useState(''); // 'cash' or 'gcash'
+  const [paymentMethod, setPaymentMethod] = useState(''); // 'cash' or 'gcash' or 'split'
   const [terminalName, setTerminalName] = useState('Convenience POS');
   const [locationName, setLocationName] = useState('Convenience Store');
   const [amountPaid, setAmountPaid] = useState('');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [showRefInput, setShowRefInput] = useState(false);
   const [change, setChange] = useState(0);
+  // Split Payment
+  const [useSplitPayment, setUseSplitPayment] = useState(false);
+  const [cashAmount, setCashAmount] = useState('');
+  const [gcashAmount, setGcashAmount] = useState('');
+  const cashAmountRef = useRef(null);
+  const gcashAmountRef = useRef(null);
   const [checkoutFocusIndex, setCheckoutFocusIndex] = useState(0); // 0: Amount, 1: Cash, 2: GCash, 3: Ref, 4: Checkout
   const amountPaidRef = useRef(null);
   const cashBtnRef = useRef(null);
@@ -91,6 +97,13 @@ export default function POS() {
   const [printingMethod, setPrintingMethod] = useState('browser'); // browser only
   const [isTestingPrinter, setIsTestingPrinter] = useState(false);
 
+  // Payment method modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentModalFocusIndex, setPaymentModalFocusIndex] = useState(0); // 0: Cash, 1: GCash, 2: Ref#, 3: Confirm
+  const paymentModalRefs = useRef([]);
+  const paymentCashBtnRef = useRef(null);
+  const paymentAmountInputRef = useRef(null);
+
 
   // Initialize printing integration - Browser print only
   useEffect(() => {
@@ -138,6 +151,17 @@ export default function POS() {
       });
     }
     }, [showCredentialsModal, credentialsFocusIndex]);
+
+  // Auto-focus payment modal on Cash button
+  useEffect(() => {
+    if (showPaymentModal) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          paymentCashBtnRef.current?.focus();
+        }, 100);
+      });
+    }
+  }, [showPaymentModal]);
 
   // Debug log for credentials data changes
   useEffect(() => {
@@ -196,6 +220,25 @@ export default function POS() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountOptions, setDiscountOptions] = useState([]); // [{id, type, rate}]
   const [payableTotal, setPayableTotal] = useState(0);
+  const [seniorIdNumber, setSeniorIdNumber] = useState('');
+  const [seniorName, setSeniorName] = useState('');
+  const seniorIdInputRef = useRef(null);
+  const seniorNameInputRef = useRef(null);
+
+  // Auto-focus Senior ID input when Senior discount is selected
+  useEffect(() => {
+    if (showDiscountModal && discountSelection) {
+      const isSeniorDiscount = (discountSelection === 'Senior Citizen' || discountSelection === 'Senior' || String(discountSelection).toLowerCase().includes('senior'));
+      if (isSeniorDiscount) {
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            seniorIdInputRef.current?.focus();
+          }, 150);
+        });
+      }
+    }
+  }, [discountSelection, showDiscountModal]);
+
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [adjustmentProductId, setAdjustmentProductId] = useState(null);
   const [adjustmentQty, setAdjustmentQty] = useState('1');
@@ -311,20 +354,25 @@ export default function POS() {
   // Compute change based on payable total - prevent negative change
   useEffect(() => {
     const base = payableTotal;
-    if (amountPaid && !isNaN(amountPaid)) {
+    
+    if (useSplitPayment) {
+      // Split payment: calculate based on cash + gcash
+      const cash = parseFloat(cashAmount) || 0;
+      const gcash = parseFloat(gcashAmount) || 0;
+      const totalPaid = cash + gcash;
+      const calculatedChange = totalPaid - base;
+      const finalChange = Math.max(0, calculatedChange);
+      setChange(finalChange);
+    } else if (amountPaid && !isNaN(amountPaid)) {
       const paidAmount = parseFloat(amountPaid);
       const calculatedChange = paidAmount - base;
       // Only allow positive change or zero - no negative amounts
       const finalChange = Math.max(0, calculatedChange);
       setChange(finalChange);
-      
-      // Debug logging for change calculation
-
     } else {
       setChange(0);
-
     }
-  }, [amountPaid, payableTotal]);
+  }, [amountPaid, payableTotal, useSplitPayment, cashAmount, gcashAmount]);
 
   useEffect(() => {
     if (navigationIndex === 2) {
@@ -1024,13 +1072,13 @@ export default function POS() {
       }, 200);
     }
     
-    // Always auto-navigate to checkout section and focus Discount button after adding to cart
-    // User can press F4 or Alt+D to open discount modal
+    // Always auto-navigate to checkout section and focus Amount Paid after adding to cart
+    // User can press Alt+D to open discount modal if needed
     // User can press Alt+A to go back to products if they want to add more items
     setNavigationIndex(2);
     setCheckoutFocusIndex(0);
     setTimeout(() => {
-      try { discountBtnRef.current?.focus?.(); } catch (_) {}
+      try { amountPaidRef.current?.focus?.(); } catch (_) {}
     }, 100);
 
   };
@@ -1229,6 +1277,31 @@ export default function POS() {
         e.preventDefault();
         setDiscountSelection(discountType || 'PWD');
         setShowDiscountModal(prev => !prev);
+        return;
+      }
+
+      // Global toggle for Split Payment via Alt+S
+      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        // Only toggle if there are items in cart
+        if (cart.length > 0 && navigationIndex === 2) {
+          setUseSplitPayment(prev => {
+            const newValue = !prev;
+            if (newValue) {
+              // Switching to split payment
+              setAmountPaid('');
+              setCashAmount('');
+              setGcashAmount('');
+              setPaymentMethod('split');
+            } else {
+              // Switching back to single payment
+              setCashAmount('');
+              setGcashAmount('');
+              setPaymentMethod('');
+            }
+            return newValue;
+          });
+        }
         return;
       }
 
@@ -1493,13 +1566,33 @@ export default function POS() {
 
       // Handle keys inside Discount Modal
       if (showDiscountModal) {
+        // Check if user is typing in Senior ID or Senior Name input fields
+        const isTypingInSeniorFields = 
+          document.activeElement === seniorIdInputRef.current || 
+          document.activeElement === seniorNameInputRef.current;
+        
+        // If typing in senior fields, allow normal input behavior for arrow keys and Enter
+        if (isTypingInSeniorFields) {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            setShowDiscountModal(false);
+            return;
+          }
+          // Allow all other keys (including arrow keys and Enter) to work normally in input
+          // Don't handle them here - let the input's own onKeyDown handle them
+          if (e.key === 'Enter' || e.key.includes('Arrow')) {
+            return;
+          }
+        }
+        
         if (e.key === 'Escape') {
           e.preventDefault();
           setShowDiscountModal(false);
           return;
         }
-        // Up/Down cycles options too (in addition to Left/Right)
-        if (["ArrowUp", "w", "W"].includes(e.key)) {
+        
+        // Arrow Up/Down navigation (only if NOT typing in senior input fields)
+        if (e.key === "ArrowUp") {
           e.preventDefault();
           const options = [...getDiscountTypesFromDb(), 'None'];
           const idx = options.indexOf(discountSelection);
@@ -1507,7 +1600,7 @@ export default function POS() {
           setDiscountSelection(options[next]);
           return;
         }
-        if (["ArrowDown", "s", "S"].includes(e.key)) {
+        if (e.key === "ArrowDown") {
           e.preventDefault();
           const options = [...getDiscountTypesFromDb(), 'None'];
           const idx = options.indexOf(discountSelection);
@@ -1517,20 +1610,34 @@ export default function POS() {
         }
         if (e.key === 'Enter') {
           e.preventDefault();
+          // Check if Senior discount is selected
+          const isSeniorDiscount = (discountSelection === 'Senior Citizen' || discountSelection === 'Senior' || String(discountSelection).toLowerCase().includes('senior'));
+          
+          // Validate senior information if needed
+          if (isSeniorDiscount && discountSelection !== 'None') {
+            if (!seniorIdNumber.trim()) {
+              toast.error('Please enter Senior Citizen ID Number');
+              return;
+            }
+            if (!seniorName.trim()) {
+              toast.error('Please enter Senior Citizen Full Name');
+              return;
+            }
+          }
+          
           if (discountSelection === 'None') {
             setDiscountType(null);
+            setSeniorIdNumber('');
+            setSeniorName('');
           } else {
             setDiscountType(discountSelection);
+            // Clear senior info if not senior discount
+            if (!isSeniorDiscount) {
+              setSeniorIdNumber('');
+              setSeniorName('');
+            }
           }
           setShowDiscountModal(false);
-          return;
-        }
-        if (["ArrowLeft", "a", "A", "ArrowRight", "d", "D"].includes(e.key)) {
-          e.preventDefault();
-          const options = [...getDiscountTypesFromDb(), 'None'];
-          const idx = options.indexOf(discountSelection);
-          const next = (idx + (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' ? -1 : 1) + options.length) % options.length;
-          setDiscountSelection(options[next]);
           return;
         }
         return; // block other shortcuts while discount modal open
@@ -1663,9 +1770,26 @@ export default function POS() {
           e.preventDefault();
           // Sequential navigation with Enter key
           if (checkoutFocusIndex === 0) {
-            // Amount Paid → Payment Method
-            setCheckoutFocusIndex(1);
-            setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+            // Amount Paid → Check if payment method already selected and amount is valid
+            if (paymentMethod && amountPaid && parseFloat(amountPaid) >= payableTotal) {
+              // If payment method already selected and amount is valid
+              if (paymentMethod === 'gcash' && showRefInput && !referenceNumber.trim()) {
+                // GCash needs reference number
+                setCheckoutFocusIndex(3);
+                setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);
+              } else {
+                // All conditions met - execute checkout directly
+                handleCheckout();
+              }
+            } else if (paymentMethod) {
+              // Payment method selected but amount not valid - go to checkout button
+              setCheckoutFocusIndex(4);
+              setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+            } else {
+              // No payment method yet, go to payment selection
+              setCheckoutFocusIndex(1);
+              setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+            }
           } else if (checkoutFocusIndex === 1) {
             setPaymentMethod('cash'); 
             setShowRefInput(false);
@@ -1813,14 +1937,9 @@ export default function POS() {
 
   // Cart functions
   const updateCartItemQuantity = (productId, newQuantity) => {
+    // Enforce minimum quantity of 1
     if (newQuantity < 1) {
-      // Get the current quantity in cart to restore stock
-      const currentItem = cart.find(item => item.product.id === productId);
-      if (currentItem) {
-        updateLocalStock(productId, currentItem.quantity);
-      }
-      removeFromCart(productId);
-      return;
+      newQuantity = 1;
     }
     
     // Find the current item to calculate stock difference
@@ -1910,7 +2029,23 @@ export default function POS() {
       const discountPercent = data.discountPercent || 0;
       const discountAmt = parseFloat(data.discountAmount || 0).toFixed(2);
       content += `Discount: ${data.discountType}${discountPercent > 0 ? ` (${discountPercent.toFixed(0)}%)` : ''}\n`;
-      content += `Discount Amt: ${discountAmt}\n`;
+      content += `Discount Amt: -${discountAmt}\n`;
+      
+      // Senior Citizen Information
+      const isSeniorDiscount = data.discountType && (
+        data.discountType.toLowerCase().includes('senior') || 
+        String(data.discountType).toLowerCase() === 'senior citizen'
+      );
+      if (isSeniorDiscount && (data.seniorIdNumber || data.seniorName)) {
+        content += '-'.repeat(receiptWidth) + '\n';
+        content += 'SENIOR CITIZEN INFO:\n';
+        if (data.seniorIdNumber) {
+          content += `ID Number: ${data.seniorIdNumber}\n`;
+        }
+        if (data.seniorName) {
+          content += `Name: ${data.seniorName}\n`;
+        }
+      }
     }
     
     content += '-'.repeat(receiptWidth) + '\n';
@@ -1920,7 +2055,20 @@ export default function POS() {
     content += '-'.repeat(receiptWidth) + '\n';
     
     // Payment info
-    if (data.paymentMethod?.toLowerCase() === 'cash') {
+    if (data.paymentMethod?.toLowerCase() === 'split') {
+      // Split payment: show cash + gcash breakdown
+      content += 'PAYMENT BREAKDOWN:\n';
+      const cashAmt = parseFloat(data.cashAmount || 0);
+      const gcashAmt = parseFloat(data.gcashAmount || 0);
+      const totalPaid = cashAmt + gcashAmt;
+      content += `  CASH: ${cashAmt.toFixed(2)}\n`;
+      content += `  GCASH: ${gcashAmt.toFixed(2)}\n`;
+      if (data.gcashRef) {
+        content += `  GCASH REF: ${data.gcashRef}\n`;
+      }
+      content += `TOTAL PAID: ${totalPaid.toFixed(2)}\n`;
+      content += `CHANGE: ${parseFloat(data.change || 0).toFixed(2)}\n`;
+    } else if (data.paymentMethod?.toLowerCase() === 'cash') {
       content += `${(data.paymentMethod || 'CASH').toUpperCase()}: ${parseFloat(data.amountPaid || 0).toFixed(2)}\n`;
       content += `CHANGE: ${parseFloat(data.change || 0).toFixed(2)}\n`;
     } else if (data.paymentMethod?.toLowerCase() === 'gcash') {
@@ -1932,6 +2080,33 @@ export default function POS() {
     } else {
       content += `${(data.paymentMethod || 'UNKNOWN').toUpperCase()}: ${parseFloat(data.amountPaid || 0).toFixed(2)}\n`;
       content += `CHANGE: ${parseFloat(data.change || 0).toFixed(2)}\n`;
+    }
+    
+    // VAT Breakdown (BIR Compliance)
+    content += '-'.repeat(receiptWidth) + '\n';
+    const VAT_RATE = 0.12;
+    const grandTotal = parseFloat(data.grandTotal || 0);
+    const isSeniorOrPWD = data.discountType && (
+      data.discountType.toLowerCase().includes('senior') ||
+      data.discountType.toLowerCase().includes('pwd')
+    );
+    
+    if (isSeniorOrPWD) {
+      // Senior/PWD sales are VAT-exempt
+      const vatExemptSale = grandTotal;
+      content += `VATable Sale: 0.00\n`;
+      content += `VAT Exempt Sale: ${vatExemptSale.toFixed(2)}\n`;
+      content += `VAT Zero-Rated: 0.00\n`;
+      content += `VAT 12%: 0.00\n`;
+    } else {
+      // Regular sales: Calculate VAT (VAT is embedded in price)
+      // Formula: VATable Sale = Total / 1.12, VAT = Total - VATable Sale
+      const vatableSale = grandTotal / 1.12;
+      const vatAmount = grandTotal - vatableSale;
+      content += `VATable Sale: ${vatableSale.toFixed(2)}\n`;
+      content += `VAT Exempt Sale: 0.00\n`;
+      content += `VAT Zero-Rated: 0.00\n`;
+      content += `VAT 12%: ${vatAmount.toFixed(2)}\n`;
     }
     
     // Footer
@@ -2053,10 +2228,15 @@ export default function POS() {
       discountAmount: calculatedDiscountAmount,
       discountPercent: discountPercent,
       grandTotal: payableTotal,
-      paymentMethod: paymentMethod.toLowerCase(), // Keep lowercase for comparison
+      paymentMethod: useSplitPayment ? 'split' : paymentMethod.toLowerCase(), // 'split', 'cash', or 'gcash'
       amountPaid: parseFloat(amountPaid),
       change: finalChange,
-      gcashRef: paymentMethod.toLowerCase() === 'gcash' ? referenceNumber : null
+      gcashRef: (useSplitPayment && referenceNumber) || (paymentMethod.toLowerCase() === 'gcash' ? referenceNumber : null),
+      seniorIdNumber: (discountType && String(discountType).toLowerCase().includes('senior')) ? seniorIdNumber : null,
+      seniorName: (discountType && String(discountType).toLowerCase().includes('senior')) ? seniorName : null,
+      // Split payment info
+      cashAmount: useSplitPayment ? parseFloat(cashAmount) || 0 : null,
+      gcashAmount: useSplitPayment ? parseFloat(gcashAmount) || 0 : null
     };
 
     try {
@@ -2243,6 +2423,8 @@ export default function POS() {
           discountType: discountType || null,
           discountAmount: discountAmount || 0,
           emp_id: parseInt(finalEmpId), // Pass employee ID
+          seniorIdNumber: (discountType && (String(discountType).toLowerCase().includes('senior'))) ? seniorIdNumber : null,
+          seniorName: (discountType && (String(discountType).toLowerCase().includes('senior'))) ? seniorName : null,
           items: cart.map(it => ({ 
             product_id: it.product.id, 
             quantity: it.quantity, 
@@ -3022,21 +3204,48 @@ export default function POS() {
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     
+    // Show payment modal if payment method not selected yet
+    if (!paymentMethod) {
+      setShowPaymentModal(true);
+      setPaymentModalFocusIndex(0);
+      return;
+    }
+    
     // Prevent multiple simultaneous executions
     if (isCheckoutProcessing) return;
     setIsCheckoutProcessing(true);
     
-    // Validate payment
-    if (!amountPaid || isNaN(amountPaid) || parseFloat(amountPaid) < payableTotal) {
-      toast.warning('Please enter a valid amount that covers the total cost.');
-      setIsCheckoutProcessing(false);
-      return;
-    }
-    
-    if (paymentMethod === 'gcash' && !referenceNumber.trim()) {
-      toast.warning('Please enter GCash reference number.');
-      setIsCheckoutProcessing(false);
-      return;
+    // Validate payment - Split payment or single payment
+    if (useSplitPayment || paymentMethod === 'split') {
+      // Split payment validation
+      const cash = parseFloat(cashAmount) || 0;
+      const gcash = parseFloat(gcashAmount) || 0;
+      const totalPaid = cash + gcash;
+      
+      if (totalPaid < payableTotal) {
+        toast.warning(`Insufficient payment! Total needed: ₱${payableTotal.toFixed(2)}, Paid: ₱${totalPaid.toFixed(2)}`);
+        setIsCheckoutProcessing(false);
+        return;
+      }
+      
+      if (gcash > 0 && !referenceNumber.trim()) {
+        toast.warning('Please enter GCash reference number for GCash payment.');
+        setIsCheckoutProcessing(false);
+        return;
+      }
+    } else {
+      // Single payment validation
+      if (!amountPaid || isNaN(amountPaid) || parseFloat(amountPaid) < payableTotal) {
+        toast.warning('Please enter a valid amount that covers the total cost.');
+        setIsCheckoutProcessing(false);
+        return;
+      }
+      
+      if (paymentMethod === 'gcash' && !referenceNumber.trim()) {
+        toast.warning('Please enter GCash reference number.');
+        setIsCheckoutProcessing(false);
+        return;
+      }
     }
     
     // Calculate discount amount to ensure it's accurate BEFORE printing
@@ -3073,10 +3282,15 @@ export default function POS() {
       discountType: discountType || null,
       discountAmount: finalDiscountAmount,
       grandTotal: payableTotal,
-      paymentMethod: paymentMethod?.toUpperCase?.() || '',
+      paymentMethod: useSplitPayment ? 'SPLIT' : (paymentMethod?.toUpperCase?.() || ''),
       amountPaid: parseFloat(amountPaid),
       change: change,
-      gcashRef: paymentMethod === 'gcash' ? referenceNumber : null,
+      gcashRef: (useSplitPayment && referenceNumber) || (paymentMethod === 'gcash' ? referenceNumber : null),
+      seniorIdNumber: (discountType && String(discountType).toLowerCase().includes('senior')) ? seniorIdNumber : null,
+      seniorName: (discountType && String(discountType).toLowerCase().includes('senior')) ? seniorName : null,
+      // Split payment info
+      cashAmount: useSplitPayment ? (parseFloat(cashAmount) || 0) : null,
+      gcashAmount: useSplitPayment ? (parseFloat(gcashAmount) || 0) : null,
       printStatus: printResult?.success ? 'success' : 'failed',
       status: 'completed',
       createdAt: new Date().toISOString(),
@@ -3085,7 +3299,20 @@ export default function POS() {
 
     // Persist to backend regardless of print success
     try {
-      await persistSale({ transactionId: printResult?.transactionId, payableTotal, referenceNumber, terminalName, cart, paymentMethod, discountType, discountAmount: finalDiscountAmount });
+      await persistSale({ 
+        transactionId: printResult?.transactionId, 
+        payableTotal, 
+        referenceNumber, 
+        terminalName, 
+        cart, 
+        paymentMethod: useSplitPayment ? 'split' : paymentMethod, 
+        discountType, 
+        discountAmount: finalDiscountAmount,
+        // Split payment data
+        useSplitPayment,
+        cashAmount: useSplitPayment ? (parseFloat(cashAmount) || 0) : null,
+        gcashAmount: useSplitPayment ? (parseFloat(gcashAmount) || 0) : null
+      });
       
       // Update local product quantities after successful sale
 
@@ -3110,6 +3337,10 @@ export default function POS() {
     setReferenceNumber('');
     setPaymentMethod('');
     setShowRefInput(false);
+    // Clear split payment state
+    setUseSplitPayment(false);
+    setCashAmount('');
+    setGcashAmount('');
     setShowThankYouModal(true);
     
     // Reset discount after checkout
@@ -3368,8 +3599,8 @@ export default function POS() {
                     if (product) {
                       const input = document.getElementById(`qty-input-${product.id}`);
                       if (input) {
-                        const currentValue = parseInt(input.value) || 0;
-                        const newValue = currentValue + 1;
+                        const currentValue = parseInt(input.value) || 1;
+                        const newValue = Math.max(1, currentValue + 1);
                         input.value = newValue;
                         // Update state
                         setQuantityInputs(prev => ({
@@ -3595,15 +3826,15 @@ export default function POS() {
                         </td>
                         <td className="px-4 py-4 text-right text-gray-700 font-medium">
                           <span className={`px-2 py-1 rounded-full text-xs ${
-                            product.quantity > 10 ? 'bg-gray-200 text-gray-800' :
-                            product.quantity > 5 ? 'bg-yellow-100 text-yellow-800' :
+                            (product.quantity || 0) > 10 ? 'bg-gray-200 text-gray-800' :
+                            (product.quantity || 0) > 5 ? 'bg-yellow-100 text-yellow-800' :
                             'bg-red-100 text-red-800'
                           }`}>
-                            {product.quantity}
+                            {product.quantity || 0}
                           </span>
                         </td>
                         <td className="px-4 py-4 text-right text-gray-800 font-semibold text-lg">
-                          ₱{product.price.toFixed(2)}
+                          ₱{(product.price || 0).toFixed(2)}
                         </td>
                         <td className="px-4 py-4 text-center">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -3626,7 +3857,7 @@ export default function POS() {
                                   setQuantityInputs(prev => ({ ...prev, [product.id]: currentQty - 1 }));
                                 }
                               }}
-                              className="w-8 h-8 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-l flex items-center justify-center text-base font-bold transition-colors"
+                              className="w-8 h-8 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-l flex items-center justify-center text-base font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-200"
                               disabled={(quantityInputs[product.id] || 1) <= 1}
                             >
                               −
@@ -3634,13 +3865,30 @@ export default function POS() {
                             <input
                               type="number"
                               min="1"
-                              max={product.quantity}
+                              max={product.quantity || 9999}
                               id={`qty-input-${product.id}`}
-                              value={quantityInputs[product.id] || 1}
+                              value={quantityInputs[product.id] !== undefined ? Math.max(1, quantityInputs[product.id]) : 1}
                               onChange={(e) => {
-                                const value = parseInt(e.target.value) || 1;
-                                const clampedValue = Math.max(1, Math.min(value, product.quantity));
+                                const rawValue = e.target.value;
+                                // If empty, set to 1
+                                if (rawValue === '' || rawValue === null || rawValue === undefined) {
+                                  setQuantityInputs(prev => ({ ...prev, [product.id]: 1 }));
+                                  return;
+                                }
+                                const value = parseInt(rawValue);
+                                if (isNaN(value) || value < 1) {
+                                  setQuantityInputs(prev => ({ ...prev, [product.id]: 1 }));
+                                  return;
+                                }
+                                const clampedValue = Math.max(1, Math.min(value, product.quantity || 9999));
                                 setQuantityInputs(prev => ({ ...prev, [product.id]: clampedValue }));
+                              }}
+                              onBlur={(e) => {
+                                // On blur, ensure there's always a valid value
+                                const value = parseInt(e.target.value);
+                                if (isNaN(value) || value < 1) {
+                                  setQuantityInputs(prev => ({ ...prev, [product.id]: 1 }));
+                                }
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -3654,12 +3902,12 @@ export default function POS() {
                             <button
                               onClick={() => {
                                 const currentQty = quantityInputs[product.id] || 1;
-                                if (currentQty < product.quantity) {
+                                if (currentQty < (product.quantity || 9999)) {
                                   setQuantityInputs(prev => ({ ...prev, [product.id]: currentQty + 1 }));
                                 }
                               }}
-                              className="w-8 h-8 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-r flex items-center justify-center text-base font-bold transition-colors"
-                              disabled={(quantityInputs[product.id] || 1) >= product.quantity}
+                              className="w-8 h-8 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-r flex items-center justify-center text-base font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-200"
+                              disabled={(quantityInputs[product.id] || 1) >= (product.quantity || 9999)}
                             >
                               +
                             </button>
@@ -3741,7 +3989,7 @@ export default function POS() {
                                 className="quick-add-dropdown text-xs px-2 py-1 border border-blue-300 rounded bg-blue-50 font-semibold text-blue-700 hover:bg-blue-100 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                 onChange={(e) => {
                                   const unit = e.target.value;
-                                  const currentQty = item.quantity;
+                                  const currentQty = item.quantity || 1;
                                   let newQty = currentQty;
                                   
                                   if (unit === 'box') {
@@ -3810,31 +4058,32 @@ export default function POS() {
                             </div>
                             
                             <div className="text-sm text-gray-600">
-                              Quantity: <span className="font-bold text-blue-600">x{item.quantity} pcs</span>
+                              Quantity: <span className="font-bold text-blue-600">x{item.quantity || 1} pcs</span>
                             </div>
                             <div className="text-sm text-gray-600">
-                              Price: <span className="font-bold text-green-600">₱{item.product.price.toFixed(2)} each</span>
+                              Total: <span className="font-bold text-green-600">₱{((item.product.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <button
-                              className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => updateCartItemQuantity(item.product.id, item.quantity - 1)}
+                              className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-200"
+                              onClick={() => updateCartItemQuantity(item.product.id, (item.quantity || 1) - 1)}
+                              disabled={(item.quantity || 1) <= 1}
                             >
                               −
                             </button>
-                            <span className="text-lg font-bold text-gray-800 min-w-[80px] text-center">
-                              ₱{(item.product.price * item.quantity).toFixed(2)}
+                            <span className="text-lg font-bold text-blue-600 min-w-[60px] text-center">
+                              x{item.quantity || 1}
                             </span>
                             <button
                               className="w-8 h-8 bg-gray-200 rounded-full hover:bg-gray-300 text-gray-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => updateCartItemQuantity(item.product.id, item.quantity + 1)}
+                              onClick={() => updateCartItemQuantity(item.product.id, (item.quantity || 1) + 1)}
                             >
                               +
                             </button>
                             <button
                               className="w-8 h-8 bg-red-200 rounded-full hover:bg-red-300 text-red-700 font-bold text-lg flex items-center justify-center"
-                              onClick={() => removeFromCart(item.product.id, item.quantity)}
+                              onClick={() => removeFromCart(item.product.id, item.quantity || 1)}
                               title="Remove item"
                             >
                               ×
@@ -3876,8 +4125,119 @@ export default function POS() {
                       >
                         💰 Discount (Alt+D)
                       </button>
+                      <button
+                        type="button"
+                        className={`px-4 py-2 rounded-lg text-base font-bold transition-colors shadow-md ${
+                          useSplitPayment 
+                            ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                        onClick={() => {
+                          setUseSplitPayment(!useSplitPayment);
+                          if (!useSplitPayment) {
+                            // Switching to split payment
+                            setAmountPaid('');
+                            setCashAmount('');
+                            setGcashAmount('');
+                            setPaymentMethod('split');
+                          } else {
+                            // Switching back to single payment
+                            setCashAmount('');
+                            setGcashAmount('');
+                            setPaymentMethod('');
+                          }
+                        }}
+                      >
+                        {useSplitPayment ? '✓ Split Payment (Alt+S)' : '💳 Split Payment (Alt+S)'}
+                      </button>
                     </div>
                     
+                    {/* Split Payment Mode */}
+                    {useSplitPayment ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Cash Amount:</label>
+                          <input
+                            ref={cashAmountRef}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Enter cash amount..."
+                            value={cashAmount}
+                            onChange={e => setCashAmount(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">GCash Amount:</label>
+                          <input
+                            ref={gcashAmountRef}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="Enter GCash amount..."
+                            value={gcashAmount}
+                            onChange={e => setGcashAmount(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">GCash Reference (Optional):</label>
+                          <input
+                            type="text"
+                            placeholder="Enter GCash reference..."
+                            value={referenceNumber}
+                            onChange={e => setReferenceNumber(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                          />
+                        </div>
+                        {/* Split Payment Summary */}
+                        {(cashAmount || gcashAmount) && (
+                          <div className={`border-2 rounded-lg p-3 ${
+                            (parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal 
+                              ? 'bg-red-50 border-red-300' 
+                              : 'bg-blue-50 border-blue-300'
+                          }`}>
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-sm font-medium text-gray-700">
+                                <span>Cash:</span>
+                                <span>₱{(parseFloat(cashAmount) || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between text-sm font-medium text-gray-700">
+                                <span>GCash:</span>
+                                <span>₱{(parseFloat(gcashAmount) || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="border-t-2 border-gray-300 my-2"></div>
+                              <div className="flex justify-between text-base font-bold">
+                                <span className={(parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal ? 'text-red-600' : 'text-blue-700'}>
+                                  Total Paid:
+                                </span>
+                                <span className={(parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal ? 'text-red-600' : 'text-blue-700'}>
+                                  ₱{((parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0)).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-lg font-bold">
+                                <span className={(parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal ? 'text-red-600' : 'text-green-600'}>
+                                  {(parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal ? 'Still Needed:' : 'Change:'}
+                                </span>
+                                <span className={(parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal ? 'text-red-600' : 'text-green-600'}>
+                                  ₱{((parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal 
+                                    ? payableTotal - ((parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0))
+                                    : change
+                                  ).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                            {(parseFloat(cashAmount) || 0) + (parseFloat(gcashAmount) || 0) < payableTotal && (
+                              <div className="text-sm text-red-600 mt-2 font-medium">
+                                ⚠️ Insufficient payment! Need ₱{payableTotal.toFixed(2)} total.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                    <>
                     <div>
                       <label className="block text-sm font-semibold text-gray-700 mb-2">Amount Paid:</label>
                       <input
@@ -3890,102 +4250,33 @@ export default function POS() {
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            // Sequential navigation: Amount Paid → Payment Method
-                            setCheckoutFocusIndex(1);
-                            setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                            e.stopPropagation();
+                            // Check if payment method already selected and amount is valid
+                            if (paymentMethod && amountPaid && parseFloat(amountPaid) >= payableTotal) {
+                              // If payment method already selected and amount is valid
+                              if (paymentMethod === 'gcash' && showRefInput && !referenceNumber.trim()) {
+                                // GCash needs reference number
+                                setCheckoutFocusIndex(3);
+                                setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);
+                              } else {
+                                // All conditions met - execute checkout directly
+                                handleCheckout();
+                              }
+                            } else if (paymentMethod) {
+                              // Payment method selected but amount not valid - go to checkout button
+                              setCheckoutFocusIndex(4);
+                              setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                            } else {
+                              // No payment method yet, go to payment selection
+                              setCheckoutFocusIndex(1);
+                              setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
+                            }
                           }
                         }}
                         onBlur={() => { justBlurredAmountPaid.current = true; }}
                         className={`w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 ${checkoutFocusIndex === 0 ? 'ring-2 ring-blue-500 border-blue-500' : 'hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'}`}
                       />
                     </div>
-                    
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Method:</label>
-                      <div className="flex gap-3">
-                        <button
-                          ref={cashBtnRef}
-                          type="button"
-                          className={`flex-1 py-3 rounded-lg text-base font-bold transition-colors ${paymentMethod === 'cash' ? 'bg-gray-800 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${checkoutFocusIndex === 1 ? 'ring-2 ring-blue-500' : ''}`}
-                          onClick={() => { setPaymentMethod('cash'); setShowRefInput(false); }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              setPaymentMethod('cash');
-                              setShowRefInput(false);
-                              // Sequential navigation: Payment Method → Checkout
-                              setCheckoutFocusIndex(4);
-                              setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
-                            } else if (e.key === 'ArrowRight') {
-                              e.preventDefault();
-                              setCheckoutFocusIndex(2);
-                              setTimeout(() => { try { gcashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
-                            }
-                          }}
-                        >
-                          💵 Cash
-                        </button>
-                        <button
-                          ref={gcashBtnRef}
-                          type="button"
-                          className={`flex-1 py-3 rounded-lg text-base font-bold transition-colors ${paymentMethod === 'gcash' ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'} ${checkoutFocusIndex === 2 ? 'ring-2 ring-blue-500' : ''}`}
-                          onClick={() => { 
-                            setPaymentMethod('gcash'); 
-                            setShowRefInput(true); 
-                            // Only set default amount if empty
-                            if (!amountPaid) {
-                              setAmountPaid(payableTotal.toString());
-                            }
-                            setCheckoutFocusIndex(3); 
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              setPaymentMethod('gcash');
-                              setShowRefInput(true);
-                              // Don't auto-set amount - let user enter it to allow change
-                              if (!amountPaid) {
-                                setAmountPaid(payableTotal.toString()); // Only set if empty as a default
-                              }
-                              // Sequential navigation: Payment Method → GCash Reference
-                              setCheckoutFocusIndex(3);
-                              setTimeout(() => { try { refNumRef.current?.focus?.(); } catch (_) {} }, 0);
-                            } else if (e.key === 'ArrowLeft') {
-                              e.preventDefault();
-                              setCheckoutFocusIndex(1);
-                              setTimeout(() => { try { cashBtnRef.current?.focus?.(); } catch (_) {} }, 0);
-                            }
-                          }}
-                        >
-                          📱 GCash
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* GCash Reference Number */}
-                    {paymentMethod === 'gcash' && showRefInput && (
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">GCash Reference:</label>
-                        <input
-                          ref={refNumRef}
-                          type="text"
-                          placeholder="Enter GCash reference number..."
-                          value={referenceNumber}
-                          onChange={e => setReferenceNumber(e.target.value)}
-                          onKeyDown={e => { 
-                            if (e.key === 'Enter') { 
-                              e.preventDefault(); 
-                              // Sequential navigation: GCash Reference → Checkout
-                              if (referenceNumber.trim()) {
-                                setCheckoutFocusIndex(4);
-                                setTimeout(() => { try { checkoutBtnRef.current?.focus?.(); } catch (_) {} }, 0);
-                              }
-                            } 
-                          }}
-                          className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                        />
-                      </div>
-                    )}
                     
                     {/* Change Display */}
                     {amountPaid && !isNaN(amountPaid) && (
@@ -4011,6 +4302,8 @@ export default function POS() {
                           </div>
                         )}
                       </div>
+                    )}
+                    </>
                     )}
                   </div>
                 )}
@@ -4249,24 +4542,6 @@ export default function POS() {
           <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border-4 border-gray-800 bg-opacity-100">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-bold text-gray-900">Apply Discount</h4>
-                  <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded border-2 border-gray-600 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold"
-                  aria-label="Previous option (Left Arrow)"
-                  onClick={() => stepDiscountSelection(-1)}
-                >
-                  ◀
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-2 rounded border-2 border-gray-600 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold"
-                  aria-label="Next option (Right Arrow)"
-                  onClick={() => stepDiscountSelection(1)}
-                >
-                  ▶
-                </button>
-              </div>
             </div>
             <div className="space-y-3 mb-6">
               {discountOptions.length > 0 ? (
@@ -4274,7 +4549,9 @@ export default function POS() {
                       <button
                         key={opt.id}
                         className={`w-full py-3 px-4 rounded-lg border-2 font-bold text-lg ${discountSelection === opt.type ? 'bg-purple-600 border-purple-800 text-white' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50'}`}
-                        onClick={() => setDiscountSelection(opt.type)}
+                        onClick={() => {
+                          setDiscountSelection(opt.type);
+                        }}
                       >
                     {opt.type || (String(opt.type).toLowerCase() === 'senior' ? 'Senior Citizen' : opt.type)} - {((opt.rate > 1 ? opt.rate : opt.rate * 100) || 20).toFixed(0)}%
                       </button>
@@ -4283,13 +4560,17 @@ export default function POS() {
                     <>
               <button
                 className={`w-full py-3 px-4 rounded-lg border-2 font-bold text-lg ${discountSelection === 'PWD' ? 'bg-purple-600 border-purple-800 text-white' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50'}`}
-                onClick={() => setDiscountSelection('PWD')}
+                onClick={() => {
+                  setDiscountSelection('PWD');
+                }}
               >
                 PWD - 20%
               </button>
               <button
                     className={`w-full py-3 px-4 rounded-lg border-2 font-bold text-lg ${discountSelection === 'Senior Citizen' ? 'bg-purple-600 border-purple-800 text-white' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50'}`}
-                    onClick={() => setDiscountSelection('Senior Citizen')}
+                    onClick={() => {
+                      setDiscountSelection('Senior Citizen');
+                    }}
               >
                 Senior Citizen - 20%
               </button>
@@ -4297,21 +4578,116 @@ export default function POS() {
                   )}
               <button
                 className={`w-full py-3 px-4 rounded-lg border-2 font-bold text-lg ${discountSelection === 'None' ? 'bg-purple-600 border-purple-800 text-white' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-50'}`}
-                onClick={() => setDiscountSelection('None')}
+                onClick={() => {
+                  setDiscountSelection('None');
+                  // Clear senior info when removing discount
+                  setSeniorIdNumber('');
+                  setSeniorName('');
+                }}
               >
                 Remove Discount
               </button>
             </div>
+
+            {/* Senior Citizen Information Fields - Show when Senior is selected */}
+            {(discountSelection === 'Senior Citizen' || discountSelection === 'Senior' || String(discountSelection).toLowerCase().includes('senior')) && (
+              <div className="mb-4 p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
+                <h5 className="text-sm font-bold text-gray-800 mb-3">Senior Citizen Information (Required)</h5>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">ID Number *</label>
+                    <input
+                      ref={seniorIdInputRef}
+                      type="text"
+                      placeholder="Enter Senior Citizen ID Number"
+                      value={seniorIdNumber}
+                      onChange={(e) => setSeniorIdNumber(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          seniorNameInputRef.current?.focus();
+                        }
+                      }}
+                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                    <input
+                      ref={seniorNameInputRef}
+                      type="text"
+                      placeholder="Enter Senior Citizen Full Name"
+                      value={seniorName}
+                      onChange={(e) => setSeniorName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          // Trigger Apply button action
+                          const isSeniorDiscount = (discountSelection === 'Senior Citizen' || discountSelection === 'Senior' || String(discountSelection).toLowerCase().includes('senior'));
+                          if (isSeniorDiscount && seniorIdNumber.trim() && seniorName.trim()) {
+                            setDiscountType(discountSelection);
+                            setShowDiscountModal(false);
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3 justify-end">
-              <button className="px-6 py-3 rounded-lg bg-gray-300 border-2 border-gray-500 text-gray-800 font-bold hover:bg-gray-400" onClick={() => setShowDiscountModal(false)}>Cancel (Esc)</button>
+              <button className="px-6 py-3 rounded-lg bg-gray-300 border-2 border-gray-500 text-gray-800 font-bold hover:bg-gray-400" onClick={() => {
+                setShowDiscountModal(false);
+                // Clear senior info when canceling
+                if (discountSelection !== discountType) {
+                  setSeniorIdNumber('');
+                  setSeniorName('');
+                }
+              }}>Cancel (Esc)</button>
               <button
                 className="px-6 py-3 rounded-lg bg-gray-900 text-white font-bold border-2 border-gray-800 hover:bg-black"
-                onClick={() => { if (discountSelection === 'None') setDiscountType(null); else setDiscountType(discountSelection); setShowDiscountModal(false); }}
+                onClick={() => { 
+                  // Check if Senior discount is selected
+                  const isSeniorDiscount = (discountSelection === 'Senior Citizen' || discountSelection === 'Senior' || String(discountSelection).toLowerCase().includes('senior'));
+                  
+                  // Validate senior information if needed
+                  if (isSeniorDiscount && discountSelection !== 'None') {
+                    if (!seniorIdNumber.trim()) {
+                      toast.error('Please enter Senior Citizen ID Number');
+                      return;
+                    }
+                    if (!seniorName.trim()) {
+                      toast.error('Please enter Senior Citizen Full Name');
+                      return;
+                    }
+                  }
+                  
+                  // Apply discount
+                  if (discountSelection === 'None') {
+                    setDiscountType(null);
+                    setSeniorIdNumber('');
+                    setSeniorName('');
+                  } else {
+                    setDiscountType(discountSelection);
+                    // Clear senior info if not senior discount
+                    if (!isSeniorDiscount) {
+                      setSeniorIdNumber('');
+                      setSeniorName('');
+                    }
+                  }
+                  setShowDiscountModal(false); 
+                }}
               >
                 Apply (Enter)
               </button>
             </div>
-            <div className="text-sm text-gray-700 mt-3 font-medium">Alt+D to open. Use Left/Right to switch options. Enter to apply. Esc to close.</div>
+                <div className="text-sm text-gray-700 mt-3 font-medium">Alt+D to open. Arrow ↑/↓ to navigate. Click to select. Enter to apply. Esc to close.</div>
           </div>
         </div>
       )}
@@ -4384,7 +4760,7 @@ export default function POS() {
                     <input
                       type="number"
                       min={1}
-                      max={currentQty}
+                      max={currentQty || 9999}
                       value={adjustmentQty}
                       onChange={e => setAdjustmentQty(e.target.value)}
                       className="w-full px-3 py-2 border rounded"
@@ -4630,7 +5006,7 @@ export default function POS() {
                     <div className="space-y-3">
                       {customerReturnData.items.map((item, index) => {
                         const returnQty = returnQuantities[item.product_id] || 0;
-                        const maxQty = item.quantity;
+                        const maxQty = Number(item.quantity) || 0;
                         const itemPrice = Number(item.price || item.unit_price);
                         const returnAmount = itemPrice * returnQty;
                         
@@ -4640,7 +5016,7 @@ export default function POS() {
                               <div className="flex-1">
                                 <div className="font-semibold text-gray-800">{item.name || item.product_name}</div>
                                 <div className="text-sm text-gray-600">
-                                  Original: {item.quantity} × ₱{itemPrice.toFixed(2)} = ₱{(itemPrice * item.quantity).toFixed(2)}
+                                  Original: {maxQty} × ₱{itemPrice.toFixed(2)} = ₱{(itemPrice * maxQty).toFixed(2)}
                                 </div>
                               </div>
                             </div>
@@ -4815,6 +5191,183 @@ export default function POS() {
                 • Set quantities to return for each item (M=max quantity)<br/>
                 • Stock will be automatically updated after processing
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Method Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-[80]">
+          <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border-2 border-gray-300">
+            <h3 className="text-2xl font-bold mb-4 text-gray-800">Select Payment Method</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Grand Total:</label>
+              <div className="text-3xl font-bold text-green-600">₱{payableTotal.toFixed(2)}</div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Choose Payment Method:</label>
+              <div className="flex gap-3">
+                <button
+                  ref={paymentCashBtnRef}
+                  type="button"
+                  className={`flex-1 py-4 rounded-lg text-lg font-bold transition-colors ${paymentMethod === 'cash' ? 'bg-gray-800 text-white shadow-lg ring-2 ring-blue-500' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  onClick={() => { 
+                    setPaymentMethod('cash'); 
+                    setShowRefInput(false); 
+                    setPaymentModalFocusIndex(0);
+                    // Auto-set amount for cash if empty
+                    if (!amountPaid) {
+                      setAmountPaid(payableTotal.toString());
+                    }
+                    // Move focus to amount input
+                    setTimeout(() => paymentAmountInputRef.current?.focus(), 100);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setPaymentMethod('cash');
+                      setShowRefInput(false);
+                      if (!amountPaid) {
+                        setAmountPaid(payableTotal.toString());
+                      }
+                      // Move to amount input
+                      setTimeout(() => paymentAmountInputRef.current?.focus(), 100);
+                    } else if (e.key === 'Tab' && !e.shiftKey) {
+                      // Tab moves to amount input
+                      e.preventDefault();
+                      setTimeout(() => paymentAmountInputRef.current?.focus(), 0);
+                    } else if (e.key === 'ArrowRight') {
+                      e.preventDefault();
+                      // Move to GCash button
+                      paymentModalRefs.current[1]?.focus();
+                    }
+                  }}
+                >
+                  💵 Cash
+                </button>
+                <button
+                  ref={el => paymentModalRefs.current[1] = el}
+                  type="button"
+                  className={`flex-1 py-4 rounded-lg text-lg font-bold transition-colors ${paymentMethod === 'gcash' ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-500' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  onClick={() => { 
+                    setPaymentMethod('gcash'); 
+                    setShowRefInput(true);
+                    setPaymentModalFocusIndex(1);
+                    // Auto-set exact amount for GCash
+                    setAmountPaid(payableTotal.toString());
+                    // Move focus to amount input
+                    setTimeout(() => paymentAmountInputRef.current?.focus(), 100);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setPaymentMethod('gcash');
+                      setShowRefInput(true);
+                      setAmountPaid(payableTotal.toString());
+                      // Move to amount input
+                      setTimeout(() => paymentAmountInputRef.current?.focus(), 100);
+                    } else if (e.key === 'Tab' && !e.shiftKey) {
+                      // Tab moves to amount input
+                      e.preventDefault();
+                      setTimeout(() => paymentAmountInputRef.current?.focus(), 0);
+                    } else if (e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      // Move to Cash button
+                      paymentCashBtnRef.current?.focus();
+                    }
+                  }}
+                >
+                  📱 GCash
+                </button>
+              </div>
+            </div>
+
+            {/* Amount Paid Input */}
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Amount Paid:</label>
+              <input
+                ref={paymentAmountInputRef}
+                type="number"
+                placeholder="Enter amount..."
+                value={amountPaid}
+                onChange={e => setAmountPaid(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    // If GCash and no reference, move to ref input
+                    if (paymentMethod === 'gcash' && !referenceNumber.trim()) {
+                      paymentModalRefs.current[3]?.focus();
+                    } else if (amountPaid && parseFloat(amountPaid) >= payableTotal && 
+                               paymentMethod && (paymentMethod !== 'gcash' || referenceNumber.trim())) {
+                      // All valid, trigger confirm
+                      setShowPaymentModal(false);
+                      setTimeout(() => handleCheckout(), 100);
+                    }
+                  }
+                }}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              />
+              {amountPaid && !isNaN(amountPaid) && parseFloat(amountPaid) >= payableTotal && (
+                <div className="mt-2 text-sm">
+                  <span className="text-gray-600">Change: </span>
+                  <span className="font-bold text-green-600">₱{(parseFloat(amountPaid) - payableTotal).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* GCash Reference Number */}
+            {paymentMethod === 'gcash' && showRefInput && (
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">GCash Reference Number:</label>
+                <input
+                  ref={el => paymentModalRefs.current[3] = el}
+                  type="text"
+                  placeholder="Enter reference number..."
+                  value={referenceNumber}
+                  onChange={e => setReferenceNumber(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      // If all valid, trigger confirm
+                      if (referenceNumber.trim() && amountPaid && parseFloat(amountPaid) >= payableTotal) {
+                        setShowPaymentModal(false);
+                        setTimeout(() => handleCheckout(), 100);
+                      }
+                    }
+                  }}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-6">
+              <button
+                className="flex-1 px-4 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold"
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setPaymentMethod('');
+                  setAmountPaid('');
+                  setReferenceNumber('');
+                  setShowRefInput(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                ref={el => paymentModalRefs.current[4] = el}
+                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  // Trigger checkout after modal closes
+                  setTimeout(() => handleCheckout(), 100);
+                }}
+                disabled={!paymentMethod || !amountPaid || parseFloat(amountPaid) < payableTotal || (paymentMethod === 'gcash' && !referenceNumber.trim())}
+              >
+                Confirm & Pay
+              </button>
             </div>
           </div>
         </div>
