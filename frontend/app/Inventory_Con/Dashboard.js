@@ -56,6 +56,10 @@ function Dashboard() {
   const [pharmacyKPIs, setPharmacyKPIs] = useState({ totalProducts: 0, lowStock: 0, expiringSoon: 0 });
   const [transferKPIs, setTransferKPIs] = useState({ totalTransfers: 0, activeTransfers: 0 });
   
+  // Critical products for PO suggestions
+  const [criticalProductsForPO, setCriticalProductsForPO] = useState([]);
+  const [loadingCriticalProductsForPO, setLoadingCriticalProductsForPO] = useState(false);
+  
   // Debug state
   const [debugInfo, setDebugInfo] = useState({
     lastFetch: null,
@@ -188,7 +192,8 @@ function Dashboard() {
         fetchChartData(),
         fetchConvenienceKPIs(),
         fetchPharmacyKPIs(),
-        fetchTransferKPIs()
+        fetchTransferKPIs(),
+        fetchCriticalProductsForPO()
       ]);
       
       // Log results
@@ -771,6 +776,35 @@ function Dashboard() {
         dataSources: { ...prev.dataSources, transfers: 'error' },
         apiErrors: [...prev.apiErrors, `Transfers: ${e.message}`].slice(-5)
       }));
+    }
+  };
+
+  // Fetch critical products for PO suggestions
+  const fetchCriticalProductsForPO = async () => {
+    try {
+      setLoadingCriticalProductsForPO(true);
+      
+      // Use the purchase order API to get critical products
+      const { getApiUrl } = await import('../lib/apiConfig');
+      const poApiUrl = getApiUrl('purchase_order_api.php');
+      
+      const response = await fetch(`${poApiUrl}?action=get_critical_products_for_po`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success) {
+        setCriticalProductsForPO(data.data || []);
+      } else {
+        console.warn('⚠️ No critical products for PO found');
+        setCriticalProductsForPO([]);
+      }
+    } catch (e) {
+      console.error('❌ Error fetching critical products for PO:', e);
+      setCriticalProductsForPO([]);
+    } finally {
+      setLoadingCriticalProductsForPO(false);
     }
   };
 
@@ -1508,6 +1542,8 @@ function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Critical Products for PO Section removed as requested */}
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

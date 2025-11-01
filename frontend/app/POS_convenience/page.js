@@ -17,7 +17,6 @@ export default function POS() {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchSuggestions, setSearchSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('All');
   const [total, setTotal] = useState(0);
   const [quantityInputs, setQuantityInputs] = useState({});
   const [selectedIndex, setSelectedIndex] = useState(0); // For product grid
@@ -1109,10 +1108,9 @@ export default function POS() {
 
   };
 
-  // Filter products based on search term and selected category, then sort by EXPIRATION DATE (FIFO)
+  // Filter products based on search term, then sort by EXPIRATION DATE (FIFO)
   const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    (selectedCategory === 'All' || product.category === selectedCategory)
+    product.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
   const sortedFilteredProducts = [...filteredProducts].sort((a, b) => {
     // Sort by expiration date first (FIFO - earliest expiry first)
@@ -1153,7 +1151,7 @@ export default function POS() {
         }
       } catch (_) {}
     }
-  }, [selectedIndex, products, searchTerm, selectedCategory]);
+  }, [selectedIndex, products, searchTerm]);
 
   // Keyboard Navigation (Search, Products, Checkout)
   useEffect(() => {
@@ -1214,8 +1212,7 @@ export default function POS() {
         setNavigationIndex(1);
         setTimeout(() => {
           const filteredProducts = products.filter(product =>
-            product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-            (selectedCategory === 'All' || product.category === selectedCategory)
+            product.name.toLowerCase().includes(searchTerm.toLowerCase())
           );
           const sortedFilteredProducts = [...filteredProducts].sort((a, b) =>
             a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
@@ -1360,8 +1357,7 @@ export default function POS() {
       if (e.altKey && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
         const filteredProducts = products.filter(product =>
-          product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-          (selectedCategory === 'All' || product.category === selectedCategory)
+          product.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
         const sortedFilteredProducts = [...filteredProducts].sort((a, b) =>
           a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
@@ -1649,8 +1645,7 @@ export default function POS() {
       ) return;
 
       const filteredProducts = products.filter(product =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        (selectedCategory === 'All' || product.category === selectedCategory)
+        product.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
       const sortedFilteredProducts = [...filteredProducts].sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
@@ -1933,7 +1928,7 @@ export default function POS() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigationIndex, selectedIndex, products, searchTerm, selectedCategory, quantityInputs, cart, cartFocusIndex, showHistoryModal, salesHistory, historySelectedIndex, showDiscountModal, discountSelection, discountType, payableTotal, barcodeScannedProduct, showCustomerReturnModal, customerReturnData, returnQuantities, recentTransactions, showRecentTransactions, showCredentialsModal, showLogoutConfirm, showClearCartModal, showReturnConfirmModal, showThankYouModal]);
+  }, [navigationIndex, selectedIndex, products, searchTerm, quantityInputs, cart, cartFocusIndex, showHistoryModal, salesHistory, historySelectedIndex, showDiscountModal, discountSelection, discountType, payableTotal, barcodeScannedProduct, showCustomerReturnModal, customerReturnData, returnQuantities, recentTransactions, showRecentTransactions, showCredentialsModal, showLogoutConfirm, showClearCartModal, showReturnConfirmModal, showThankYouModal]);
 
   // Cart functions
   const updateCartItemQuantity = (productId, newQuantity) => {
@@ -3636,20 +3631,6 @@ export default function POS() {
                     {locationName} (Auto-detected)
                   </span>
                 </div>
-                <div className="mb-2 flex items-center gap-3">
-                  <label className="text-base font-semibold text-gray-800">Category:</label>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="px-3 py-2 border-2 border-gray-300 rounded-lg text-base font-medium bg-white hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  >
-                    <option value="All">All Categories</option>
-                    <option value="Medicine">Medicine</option>
-                    <option value="Beverages">Beverages</option>
-                    <option value="Snacks">Snacks</option>
-                    <option value="Dairy">Dairy</option>
-                  </select>
-                </div>
               </div>
 
               {/* Barcode Scan Success Banner */}
@@ -4357,42 +4338,42 @@ export default function POS() {
           <div className="flex gap-4 justify-start pl-2">
             <button
               type="button"
-              className="px-5 py-3 rounded bg-gray-800 text-white hover:bg-gray-900 text-base"
+              className="px-3 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-900 text-sm"
               onClick={() => { setShowHistoryModal(true); setHistoryMode('sales'); }}
             >
               History (Alt+H)
             </button>
             <button
               type="button"
-              className="px-5 py-3 rounded bg-purple-600 text-white hover:bg-purple-700 text-base"
+              className="px-3 py-1.5 rounded bg-purple-600 text-white hover:bg-purple-700 text-sm"
               onClick={() => { setDiscountSelection(discountType || 'PWD'); setShowDiscountModal(true); }}
             >
               Discount (Alt+D)
             </button>
             <button
               type="button"
-              className="px-5 py-3 rounded bg-red-600 text-white hover:bg-red-700 text-base"
+              className="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 text-sm"
               onClick={handleLogout}
             >
               Logout (Alt+L)
             </button>
             <button
               type="button"
-              className="px-5 py-3 rounded bg-green-600 text-white hover:bg-green-700 text-base"
+              className="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
               onClick={openCredentialsModal}
             >
               Update My Credentials (Alt+C)
             </button>
             <button
               type="button"
-              className="px-5 py-3 rounded bg-blue-600 text-white hover:bg-blue-700 text-base"
+              className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm"
               onClick={openCustomerReturnModal}
             >
               Customer Return (Alt+R)
             </button>
             <button
               type="button"
-              className="px-5 py-3 rounded bg-green-600 text-white hover:bg-green-700 text-base"
+              className="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
               onClick={() => {
                 setShowTotalSalesModal(true);
                 fetchTodaySales();

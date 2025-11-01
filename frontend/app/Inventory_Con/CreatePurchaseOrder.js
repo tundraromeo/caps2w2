@@ -21,6 +21,8 @@ import {
   DollarSign
 } from "lucide-react";
 import { getApiUrl } from "../lib/apiConfig";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // Define API URLs using centralized configuration
 // All functionality now merged into single purchase_order_api.php
@@ -56,7 +58,8 @@ function CreatePurchaseOrder() {
   const [formData, setFormData] = useState({
     supplier: "",
     orderDate: new Date().toISOString().split('T')[0],
-    expectedDelivery: "",
+    expectedDeliveryStart: "",
+    expectedDeliveryEnd: "",
     notes: ""
   });
      const [selectedProducts, setSelectedProducts] = useState([]);
@@ -144,6 +147,26 @@ function CreatePurchaseOrder() {
     items: []
   });
 
+  // Critical Products for PO suggestions
+  const [criticalProducts, setCriticalProducts] = useState([]);
+  const [loadingCriticalProducts, setLoadingCriticalProducts] = useState(false);
+  const [showCriticalProducts, setShowCriticalProducts] = useState(true);
+
+  // Previously Ordered Products by Supplier
+  const [selectedSupplierForHistory, setSelectedSupplierForHistory] = useState("");
+  const [previousOrderProducts, setPreviousOrderProducts] = useState([]);
+  const [loadingPreviousProducts, setLoadingPreviousProducts] = useState(false);
+
+  // Simple PO Modal states
+  const [showSimplePOModal, setShowSimplePOModal] = useState(false);
+  const [simplePOData, setSimplePOData] = useState({
+    productName: "",
+    quantity: 1,
+    unitType: "pieces",
+    srp: ""
+  });
+  const [modalProducts, setModalProducts] = useState([]);
+
   // Load current user from session on component mount
   useEffect(() => {
     const userSession = sessionStorage.getItem('user_data');
@@ -171,6 +194,7 @@ function CreatePurchaseOrder() {
      useEffect(() => {
     if (activeTab === 'create') {
       fetchSuppliers();
+      fetchCriticalProducts(); // Fetch critical products when opening create tab
     } else if (activeTab === 'list') {
       fetchPurchaseOrders(poFilter);
       fetchAllPurchaseOrders(); // Refresh counts when switching to list tab
@@ -178,6 +202,451 @@ function CreatePurchaseOrder() {
       fetchReceivingList();
     }
   }, [activeTab, poFilter]);
+
+  // Simple PO handlers
+  const openSimplePOModal = () => {
+    setSimplePOData({
+      productName: "",
+      quantity: 1,
+      unitType: "pieces",
+      srp: ""
+    });
+    setModalProducts([]);
+    setShowSimplePOModal(true);
+    // Fetch critical products when modal opens
+    fetchCriticalProducts();
+  };
+
+  const closeSimplePOModal = () => {
+    setShowSimplePOModal(false);
+    setSimplePOData({
+      productName: "",
+      quantity: 1,
+      unitType: "pieces",
+      srp: ""
+    });
+    setModalProducts([]);
+  };
+
+  const addProductToModalList = () => {
+    if (!simplePOData.productName.trim()) {
+      toast.error("Please enter a product name");
+      return;
+    }
+
+    if (!simplePOData.quantity || simplePOData.quantity <= 0) {
+      toast.error("Please enter a valid quantity");
+      return;
+    }
+
+    if (!simplePOData.srp || parseFloat(simplePOData.srp) <= 0) {
+      toast.error("Please enter a valid SRP (Suggested Retail Price)");
+      return;
+    }
+
+    // Check if product already exists in list
+    const exists = modalProducts.some(p => p.productName === simplePOData.productName);
+    if (exists) {
+      toast.warning(`${simplePOData.productName} is already in the list`);
+      return;
+    }
+
+    // Add product to list
+    const newProduct = {
+      id: Date.now(),
+      productName: simplePOData.productName,
+      productId: null, // Will be found by backend from product_name
+      quantity: parseInt(simplePOData.quantity),
+      unitType: simplePOData.unitType,
+      srp: parseFloat(simplePOData.srp) || 0
+    };
+
+    setModalProducts([...modalProducts, newProduct]);
+    
+    // Reset form
+    setSimplePOData({
+      productName: "",
+      quantity: 1,
+      unitType: "pieces",
+      srp: ""
+    });
+
+    toast.success(`"${newProduct.productName}" added to order list`);
+  };
+
+  const handleDownloadProductsPdf = async (opts = {}) => {
+    try {
+      const sourceItems = (modalProducts && modalProducts.length > 0)
+        ? modalProducts
+        : (selectedProducts || []).map(p => ({
+            productName: p.searchTerm,
+            quantity: p.quantity,
+            unitType: p.unitType || 'pieces',
+            srp: p.srp || 0
+          }));
+
+      if (!sourceItems || sourceItems.length === 0) {
+        toast.warning("No products to export");
+        return;
+      }
+
+      const doc = new jsPDF();
+      const marginLeft = 10;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let cursorY = 20;
+
+      // Colors (minimal)
+      const accent = [230, 240, 248]; // very light blue
+      const textGray = [60, 60, 60];
+      const lineGray = [200, 200, 200];
+
+      // Header - three-column layout (Address | Title | PO number)
+      const headerTop = cursorY;
+      const colPadding = 4;
+      const colW = (pageWidth - marginLeft * 2) / 3;
+
+      // Left: Address block
+      doc.setFontSize(10);
+      doc.setTextColor(200, 85, 30); // soft orange for section title
+      doc.text("Address", marginLeft, headerTop);
+      doc.setTextColor(...textGray);
+      doc.setFontSize(9);
+      const addressLines = [
+        "Lumbia",
+        "Cagayan de Oro City",
+        "Misamis Oriental"
+      ];
+      // Render a faint address placeholder; user can replace later
+      addressLines.forEach((line, idx) => {
+        if (line) doc.text(line, marginLeft, headerTop + 6 + idx * 5);
+      });
+
+
+      
+      // Try to resolve a PO number (if available)
+      let poNumber = opts.poNumber || null;
+      try {
+        if (selectedPO?.header?.po_number) {
+          poNumber = selectedPO.header.po_number;
+        } else if (selectedPOForReceive?.header?.po_number) {
+          poNumber = selectedPOForReceive.header.po_number;
+        } else if (!opts.poNumber) {
+          const guessEndpoints = [
+            `${CREATE_PO_API}?action=next_po_number`,
+            `${API_BASE}?action=next_po_number`,
+            `${API_BASE}?action=latest_po_number`,
+          ];
+          for (const url of guessEndpoints) {
+            try {
+              const res = await fetch(url);
+              if (!res.ok) continue;
+              const json = await res.json();
+              const pn = json?.po_number || json?.next_po_number || json?.data?.po_number || json?.data?.next_po_number;
+              if (pn) { poNumber = pn; break; }
+            } catch (e) { /* ignore */ }
+          }
+        }
+      } catch (e) { /* ignore */ }
+
+      // Center: Title
+      const titleCenterX = marginLeft + colW * 1.5;
+      doc.setFontSize(16);
+      doc.setTextColor(245, 85, 34); // accent similar to sample but minimal
+      doc.text("PURCHASE ORDER", titleCenterX, headerTop, { align: "center" });
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      // Removed PO number line per request
+
+      cursorY += 18;
+
+      // Info box
+      const boxX = marginLeft;
+      const boxW = pageWidth - marginLeft * 2;
+      const boxH = 44;
+      doc.setDrawColor(...lineGray);
+      doc.setFillColor(...accent);
+      doc.roundedRect(boxX, cursorY, boxW, boxH, 2, 2, "F");
+
+      const supplierId = selectedSupplierForHistory || formData.supplier || "";
+      let supplierName = suppliers.find(s => String(s.supplier_id) === String(supplierId))?.supplier_name || "-";
+      const createdDate = formData.orderDate ? new Date(formData.orderDate).toLocaleDateString() : new Date().toLocaleDateString();
+      // Show ONLY the End Date from the Expected Delivery Date Range
+      const deliveryEndRaw = formData.expectedDeliveryEnd || "";
+      const deliveryStr = deliveryEndRaw ? new Date(deliveryEndRaw).toLocaleDateString() : "-";
+
+      doc.setTextColor(...textGray);
+      doc.setFontSize(10);
+      const leftColX = boxX + 6;
+      const rightColX = boxX + boxW / 2 + 6;
+      let boxY = cursorY + 8;
+      doc.text("Supplier:", leftColX, boxY);
+      doc.setFontSize(11);
+      doc.text(supplierName, leftColX + 35, boxY);
+      // Supplier address under the supplier name (left column)
+      const supplierObj = suppliers.find(s => String(s.supplier_id) === String(supplierId));
+      // Try several possible fields and compose a readable address
+      const addressParts = [];
+      if (supplierObj) {
+        const candidates = [
+          supplierObj.supplier_address,
+          supplierObj.address,
+          supplierObj.street,
+          supplierObj.barangay || supplierObj.brgy,
+          supplierObj.city || supplierObj.municipality,
+          supplierObj.province,
+          supplierObj.zip || supplierObj.postal_code
+        ];
+        candidates.forEach(p => {
+          if (p && String(p).trim()) addressParts.push(String(p).trim());
+        });
+      }
+      // If still empty, try fetching supplier details from backend using common endpoints
+      if (addressParts.length === 0 && supplierId) {
+        const endpoints = [
+          `${CREATE_PO_API}?action=supplier_details&supplier_id=${supplierId}`,
+          `${CREATE_PO_API}?action=get_supplier&supplier_id=${supplierId}`,
+          `${CREATE_PO_API}?action=get_supplier_by_id&supplier_id=${supplierId}`,
+          `${API_BASE}?action=supplier_details&supplier_id=${supplierId}`,
+          `${API_BASE}?action=get_supplier_by_id&supplier_id=${supplierId}`
+        ];
+        for (const url of endpoints) {
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              const json = await res.json();
+              const data = json.data || json.supplier || json.result || json;
+              if (data) {
+                if (!supplierName || supplierName === '-') {
+                  supplierName = data.supplier_name || supplierName;
+                }
+                const candidates = [
+                  data.supplier_address,
+                  data.address,
+                  data.street,
+                  data.barangay || data.brgy,
+                  data.city || data.municipality,
+                  data.province,
+                  data.zip || data.postal_code
+                ];
+                candidates.forEach(p => {
+                  if (p && String(p).trim()) addressParts.push(String(p).trim());
+                });
+                if (addressParts.length > 0) break;
+              }
+            }
+          } catch (e) {
+            // ignore fetch failures, continue
+          }
+        }
+      }
+      // Fallback to the address typed in the Add Supplier modal (if recently added)
+      if (addressParts.length === 0 && supplierFormData && supplierFormData.supplier_address) {
+        addressParts.push(String(supplierFormData.supplier_address).trim());
+      }
+      const supplierAddress = addressParts.join(", ");
+      // Address label line
+      doc.setFontSize(10);
+      doc.setTextColor(...textGray);
+      doc.text("Address:", leftColX, boxY + 6);
+      if (supplierAddress) {
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        const addrLines = doc.splitTextToSize(String(supplierAddress), (boxW / 2) - 45);
+        doc.text(addrLines, leftColX + 35, boxY + 6);
+        doc.setTextColor(...textGray);
+      } else {
+        doc.setFontSize(9);
+        doc.setTextColor(150);
+        doc.text("-", leftColX + 35, boxY + 6);
+        doc.setTextColor(...textGray);
+      }
+      doc.setFontSize(10);
+      doc.text("Order date:", rightColX, boxY);
+      doc.text(createdDate, rightColX + 32, boxY);
+      boxY += 6;
+      doc.setFontSize(10);
+      doc.text("Delivery date:", rightColX, boxY);
+      doc.text(deliveryStr, rightColX + 32, boxY);
+
+      cursorY += boxH + 8;
+
+      // Table data
+      const body = sourceItems.map((p, i) => {
+        const qty = parseInt(p.quantity) || 0;
+        const rate = Number(p.srp) || 0;
+        const amount = qty * rate;
+        return [
+          String(i + 1),
+          p.productName || "",
+          String(qty),
+          p.unitType || "pcs",
+          rate > 0 ? `PHP ${rate.toFixed(2)}` : "-",
+          rate > 0 ? `PHP ${amount.toFixed(2)}` : "-",
+        ];
+      });
+
+      autoTable(doc, {
+        startY: cursorY,
+        head: [["SR.NO", "Item Description", "Qty", "Unit", "Old Rate", "Amount"]],
+        body,
+        styles: { fontSize: 10, textColor: textGray },
+        headStyles: { fillColor: [245, 247, 250], textColor: [40, 40, 40], lineWidth: 0.2, lineColor: lineGray },
+        bodyStyles: { lineWidth: 0.2, lineColor: lineGray },
+        alternateRowStyles: { fillColor: [252, 252, 252] },
+        columnStyles: {
+          0: { cellWidth: 16 },
+          1: { cellWidth: 60, overflow: "linebreak" },
+          2: { cellWidth: 16, halign: "linebreak" },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 30, halign: "linebreak" },
+          5: { cellWidth: 26, halign: "linebreak" },
+        },
+        margin: { left: marginLeft, right: marginLeft },
+      });
+
+      const tableBottomY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || cursorY;
+
+      // Totals bar
+      const subtotal = modalProducts.reduce((sum, p) => sum + ((parseInt(p.quantity) || 0) * (Number(p.srp) || 0)), 0);
+      const totalLabelW = 28;
+      const totalBarY = tableBottomY + 6;
+      const totalBarX = pageWidth - marginLeft - 28 - 26 - 2; // align with Amount col
+      doc.setFillColor(245, 85, 34); // minimal soft orange accent for total label
+      doc.setTextColor(255);
+      doc.rect(totalBarX, totalBarY, totalLabelW, 8, "F");
+      doc.setFontSize(10);
+      doc.text("Total", totalBarX + totalLabelW / 2, totalBarY + 5.5, { align: "center" });
+      doc.setTextColor(...textGray);
+      doc.setFontSize(11);
+      doc.text(`PHP ${subtotal.toFixed(2)}`, totalBarX + totalLabelW + 8, totalBarY + 5.5, { align: "left" });
+
+      // Notes
+      const notesY = totalBarY + 16;
+      if (formData.notes) {
+        doc.setFontSize(10);
+        doc.setTextColor(120);
+        doc.text("Notes", marginLeft, notesY);
+        doc.setTextColor(...textGray);
+        doc.setFontSize(10);
+        doc.text(String(formData.notes), marginLeft, notesY + 6, { maxWidth: pageWidth - marginLeft * 2 });
+      }
+
+      // Signature lines at the bottom
+      const lineLength = 70;
+      const gapFromBottom = 28;
+      const leftX = marginLeft;
+      const rightX = pageWidth - marginLeft - lineLength;
+      const lineY = pageHeight - gapFromBottom;
+
+      doc.setDrawColor(...lineGray);
+      doc.setLineWidth(0.4);
+      doc.line(leftX, lineY, leftX + lineLength, lineY);
+      doc.line(rightX, lineY, rightX + lineLength, lineY);
+
+      doc.setFontSize(10);
+      doc.setTextColor(...textGray);
+      doc.text("Supplier Signature", leftX, lineY + 6);
+      doc.text("Admin / Inventory Signature", rightX, lineY + 6);
+
+      const filename = `PO_Products_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(filename);
+      toast.success("PDF downloaded");
+    } catch (err) {
+      console.error("PDF export error:", err);
+      toast.error("Failed to generate PDF");
+    }
+  };
+
+  const removeProductFromModalList = (id) => {
+    setModalProducts(modalProducts.filter(p => p.id !== id));
+    toast.info("Product removed from list");
+  };
+
+  const handleSimplePOInputChange = (field, value) => {
+    setSimplePOData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSimplePOSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate user is logged in
+    if (!currentUser.emp_id) {
+      toast.error("No active user session. Please login again.");
+      return;
+    }
+
+    // Check if there are products in the list
+    if (modalProducts.length === 0) {
+      toast.error("Please add at least one product to the order");
+      return;
+    }
+
+    // Get supplier from Previous Orders section or check if set
+    const supplierId = selectedSupplierForHistory || formData.supplier;
+    
+    if (!supplierId) {
+      toast.error("Please select a supplier from Previous Orders section first");
+      return;
+    }
+
+    if (!formData.expectedDeliveryStart || !formData.expectedDeliveryEnd) {
+      toast.error("Please enter expected delivery date range first");
+      return;
+    }
+
+    if (new Date(formData.expectedDeliveryStart) > new Date(formData.expectedDeliveryEnd)) {
+      toast.error("Start date cannot be later than end date");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const purchaseOrderData = {
+        supplier_id: parseInt(selectedSupplierForHistory || formData.supplier),
+        expected_delivery_date: formData.expectedDeliveryEnd, // Use end date for backward compatibility
+        expected_delivery_start: formData.expectedDeliveryStart,
+        expected_delivery_end: formData.expectedDeliveryEnd,
+        created_by: currentUser.emp_id,
+        products: modalProducts.map(product => ({
+          productName: product.productName,
+          product_id: product.productId || null, // Include product_id if available
+          searchTerm: product.productName, // Keep for backward compatibility
+          quantity: parseInt(product.quantity),
+          unit_type: product.unitType,
+          srp: parseFloat(product.srp) || 0
+        }))
+      };
+
+      const response = await fetch(`${CREATE_PO_API}?action=create_purchase_order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(purchaseOrderData)
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success(`Purchase Order ${result.po_number} created successfully with ${modalProducts.length} product(s)!`);
+        // Generate PDF immediately with the actual PO number
+        try { await handleDownloadProductsPdf({ poNumber: result.po_number }); } catch (_) {}
+        closeSimplePOModal();
+        await movePOToDeliveredTable(result.po_number, result.purchase_header_id);
+      } else {
+        toast.error(result.error || "Error creating purchase order");
+      }
+    } catch (error) {
+      toast.error("Error creating purchase order");
+      console.error("Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
      // No dropdown functionality needed
 
@@ -206,6 +675,96 @@ function CreatePurchaseOrder() {
         toast.error('Cannot connect to server. Please check if the backend is running.');
       }
     }
+  };
+
+  // Fetch previous order products by supplier
+  const fetchPreviousOrderProducts = async (supplierId) => {
+    if (!supplierId || supplierId <= 0) {
+      setPreviousOrderProducts([]);
+      return;
+    }
+    
+    try {
+      setLoadingPreviousProducts(true);
+      const response = await fetch(`${API_BASE}?action=get_previous_orders_by_supplier&supplier_id=${supplierId}&_t=${Date.now()}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      if (data.success) {
+        setPreviousOrderProducts(data.data || []);
+      } else {
+        setPreviousOrderProducts([]);
+        console.error('Error fetching previous orders:', data.error);
+      }
+    } catch (error) {
+      console.error('Error fetching previous order products:', error);
+      setPreviousOrderProducts([]);
+    } finally {
+      setLoadingPreviousProducts(false);
+    }
+  };
+
+  // Handle supplier change for history
+  const handleSupplierHistoryChange = (supplierId) => {
+    setSelectedSupplierForHistory(supplierId);
+    fetchPreviousOrderProducts(supplierId);
+  };
+
+  // Fetch critical products for PO suggestions
+  const fetchCriticalProducts = async () => {
+    try {
+      setLoadingCriticalProducts(true);
+      const response = await fetch(`${API_BASE}?action=get_critical_products_for_po&_t=${Date.now()}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      console.log('Critical Products API Response:', data);
+      
+      if (data.success) {
+        const products = data.data || [];
+        console.log(`✅ Found ${products.length} critical products from warehouse`);
+        setCriticalProducts(products);
+        
+        if (products.length === 0) {
+          console.warn('⚠️ No critical products found in warehouse. Checking if there are any products with stock <= 10...');
+        }
+      } else {
+        console.warn('❌ API returned error:', data.error);
+        setCriticalProducts([]);
+        toast.warning('Could not load critical products: ' + (data.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('❌ Error fetching critical products:', error);
+      setCriticalProducts([]);
+      toast.error('Failed to load critical products from warehouse');
+    } finally {
+      setLoadingCriticalProducts(false);
+    }
+  };
+
+  // Add critical product to selected products
+  const addCriticalProductToPO = (product) => {
+    // Check if product already exists in selectedProducts
+    const exists = selectedProducts.some(p => p.searchTerm === product.product_name);
+    if (exists) {
+      toast.warning(`${product.product_name} is already in your purchase order.`);
+      return;
+    }
+
+    // Add product with suggested quantity
+    const newProduct = {
+      id: Date.now(),
+      searchTerm: product.product_name,
+      quantity: product.suggested_quantity || 20,
+      unitType: "pieces" // Default to pieces
+    };
+    
+    setSelectedProducts([...selectedProducts, newProduct]);
+    toast.success(`Added ${product.product_name} to purchase order with suggested quantity of ${newProduct.quantity}`);
   };
 
   
@@ -438,16 +997,16 @@ function CreatePurchaseOrder() {
     }
 
     // Validate expected delivery date is required
-    if (!formData.expectedDelivery) {
+    if (!formData.expectedDeliveryStart || !formData.expectedDeliveryEnd) {
       toast.error("Please enter an expected delivery date");
       return;
     }
 
     // Validate expected delivery date is not earlier than order date
     const orderDate = new Date(formData.orderDate);
-    const expectedDeliveryDate = new Date(formData.expectedDelivery);
+    const expectedDeliveryStartDate = new Date(formData.expectedDeliveryStart);
     
-    if (expectedDeliveryDate < orderDate) {
+    if (expectedDeliveryStartDate < orderDate) {
       toast.error("Expected delivery date cannot be earlier than the order date");
       return;
     }
@@ -484,7 +1043,9 @@ function CreatePurchaseOrder() {
     try {
                    const purchaseOrderData = {
          supplier_id: parseInt(formData.supplier),
-         expected_delivery_date: formData.expectedDelivery,
+         expected_delivery_date: formData.expectedDeliveryEnd,
+         expected_delivery_start: formData.expectedDeliveryStart,
+         expected_delivery_end: formData.expectedDeliveryEnd,
          created_by: currentUser.emp_id,
          products: selectedProducts.map(product => ({
            searchTerm: product.searchTerm,
@@ -506,6 +1067,8 @@ function CreatePurchaseOrder() {
         toast.success(`Purchase Order ${result.po_number} created successfully!`);
         // PO is automatically created with 'delivered' status in backend
         toast.info(`📦 Purchase Order ${result.po_number} created and automatically moved to delivered table!`);
+        // Generate PDF immediately with the actual PO number
+        try { await handleDownloadProductsPdf({ poNumber: result.po_number }); } catch (_) {}
         
         // Automatically move PO to delivered table
         await movePOToDeliveredTable(result.po_number, result.purchase_header_id);
@@ -551,13 +1114,13 @@ function CreatePurchaseOrder() {
   const getStatusBadge = (status) => {
     const statusConfig = {
       // New partial delivery status system
-      delivered: { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Delivered' },
+      delivered: { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Pending' },
       partial_delivery: { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial Delivery' },
       complete: { bgColor: 'var(--inventory-accent)', textColor: 'white', text: 'Complete' },
       return: { bgColor: 'var(--inventory-danger)', textColor: 'white', text: 'Return' },
     };
     
-    const config = statusConfig[status] || { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Delivered' };
+    const config = statusConfig[status] || { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Complete' };
     return (
       <span 
         className="px-2 py-1 rounded-full text-xs font-medium"
@@ -568,24 +1131,7 @@ function CreatePurchaseOrder() {
     );
   };
 
-  const getDeliveryStatusBadge = (status) => {
-    const statusConfig = {
-      'pending': { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Pending' },
-      'in_transit': { bgColor: 'var(--inventory-info)', textColor: 'white', text: 'To ship' },
-      'delivered': { bgColor: 'var(--inventory-success)', textColor: 'white', text: 'Shipped' },
-      'partial': { bgColor: 'var(--inventory-warning)', textColor: 'white', text: 'Partial' }
-    };
-    
-    const config = statusConfig[status] || { bgColor: 'var(--inventory-text-secondary)', textColor: 'var(--inventory-bg-primary)', text: status };
-    return (
-      <span 
-        className="px-2 py-1 rounded-full text-xs font-medium"
-        style={{ backgroundColor: config.bgColor, color: config.textColor }}
-      >
-        {config.text}
-      </span>
-    );
-  };
+
 
   // Normalize orders and get counts for all statuses
   const [allPurchaseOrders, setAllPurchaseOrders] = useState([]);
@@ -2430,7 +2976,7 @@ function CreatePurchaseOrder() {
 
       {/* Create Purchase Order Tab */}
       {activeTab === 'create' && (
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-6">
           {/* Basic Information */}
           <div className="inventory-card rounded-3xl p-6">
             <div className="flex items-center gap-3 mb-6">
@@ -2438,37 +2984,6 @@ function CreatePurchaseOrder() {
               <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>Order Information</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium inventory-muted mb-2">
-                  Supplier *
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    name="supplier"
-                    value={formData.supplier}
-                    onChange={handleInputChange}
-                    className="flex-1 px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-select"
-                    required
-                  >
-                    <option value="">Select a supplier</option>
-                    {suppliers.map(supplier => (
-                      <option key={supplier.supplier_id} value={supplier.supplier_id}>
-                        {supplier.supplier_name} - {supplier.supplier_contact}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={openSupplierModal}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                 
-                    onMouseLeave={handleMouseLeave}
-                  >
-                    <FaPlus className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
               <div>
                 <label className="block text-sm font-medium inventory-muted mb-2">
                   Order Date
@@ -2489,22 +3004,45 @@ function CreatePurchaseOrder() {
 
               <div>
                 <label className="block text-sm font-medium inventory-muted mb-2">
-                  Expected Delivery <span className="text-red-500">*</span>
+                  Expected Delivery Date Range <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="date"
-                  name="expectedDelivery"
-                  value={formData.expectedDelivery}
-                  onChange={handleInputChange}
-                  min={formData.orderDate}
-                  required
-                  className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-input"
-                  style={{
-                    backgroundColor: 'var(--inventory-bg-secondary)',
-                    color: 'var(--inventory-text-primary)',
-                    borderColor: 'var(--inventory-border)'
-                  }}
-                />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs inventory-muted mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      name="expectedDeliveryStart"
+                      value={formData.expectedDeliveryStart}
+                      onChange={handleInputChange}
+                      min={formData.orderDate}
+                      max={formData.expectedDeliveryEnd || undefined}
+                      required
+                      className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-input"
+                      style={{
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)',
+                        borderColor: 'var(--inventory-border)'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs inventory-muted mb-1">End Date</label>
+                    <input
+                      type="date"
+                      name="expectedDeliveryEnd"
+                      value={formData.expectedDeliveryEnd}
+                      onChange={handleInputChange}
+                      min={formData.expectedDeliveryStart || formData.orderDate}
+                      required
+                      className="w-full px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 inventory-input"
+                      style={{
+                        backgroundColor: 'var(--inventory-bg-secondary)',
+                        color: 'var(--inventory-text-primary)',
+                        borderColor: 'var(--inventory-border)'
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -2523,180 +3061,19 @@ function CreatePurchaseOrder() {
             </div>
           </div>
 
-          {/* Products Section */}
-          <div className="bg-white rounded-3xl shadow-xl p-6">
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center gap-3">
-                <Package className="h-6 w-6" style={{color: 'var(--inventory-success)'}} />
-                <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>Products</h3>
-              </div>
-              <button
-                type="button"
-                onClick={addProduct}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              
-                onMouseLeave={handleMouseLeave}
-              >
-                <FaPlus className="h-4 w-4" />
-                Add Product
-              </button>
-            </div>
 
-            {selectedProducts.length === 0 ? (
-              <div className="text-center py-8 inventory-muted">
-                No products added yet. Click Add `Product` to get started.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {selectedProducts.map((product, index) => (
-                  <div key={product.id} className="border rounded-xl p-6" style={{borderColor: 'var(--inventory-border)', backgroundColor: 'var(--inventory-bg-secondary)'}}>
-                                                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       <div>
-                         <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
-                           Unit Type
-                         </label>
-                         <div className="flex gap-4 mb-3">
-                           <label className="flex items-center">
-                             <input
-                               type="radio"
-                               name={`unitType-${product.id}`}
-                               value="pieces"
-                               checked={product.unitType === "pieces"}
-                               onChange={(e) => updateProduct(index, 'unitType', e.target.value)}
-                               className="mr-2 text-blue-600 focus:ring-blue-500"
-                             />
-                             <span className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>Pieces</span>
-                           </label>
-                           <label className="flex items-center">
-                             <input
-                               type="radio"
-                               name={`unitType-${product.id}`}
-                               value="bulk"
-                               checked={product.unitType === "bulk"}
-                               onChange={(e) => updateProduct(index, 'unitType', e.target.value)}
-                               className="mr-2 text-blue-600 focus:ring-blue-500"
-                             />
-                             <span className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>Bulk</span>
-                           </label>
-                         </div>
-                       </div>
-
-                       <div>
-                         <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
-                           Product
-                         </label>
-                         <div className="relative product-dropdown">
-                          <div className="relative">
-                                                         <input
-                               type="text"
-                               placeholder="Enter product name..."
-                               value={product.searchTerm || ''}
-                               onChange={(e) => updateProduct(index, 'searchTerm', e.target.value)}
-                               className="w-full px-3 py-2 pr-8 border rounded-md focus:outline-none focus:ring-2 inventory-input"
-                               style={{borderColor: 'var(--inventory-border)'}}
-                             />
+          {/* Create PO Button */}
+          <div className="flex justify-center">
                                                                                       <button
                                type="button"
-                               onClick={() => {
-                                 updateProduct(index, 'searchTerm', '');
-                                 updateProduct(index, 'unitType', 'pieces');
-                               }}
-                               className="absolute right-2 top-1/2 transform -translate-y-1/2 inventory-muted hover:inventory-muted"
-                             >
-                               <FaTimes className="h-4 w-4" />
+              onClick={openSimplePOModal}
+              className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg font-semibold shadow-lg"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              Create P.O.
                              </button>
                            </div>
-                        </div>
-                       </div>
-
-                       <div>
-                         <label className="block text-sm font-medium mb-1" style={{color: 'var(--inventory-text-primary)'}}>
-                           {product.unitType === "bulk" ? "Bulk Quantity" : "Quantity"}
-                         </label>
-                         <input
-                           type="number"
-                           min="1"
-                           value={product.quantity || ''}
-                           onChange={(e) => updateProduct(index, 'quantity', e.target.value)}
-                           className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
-                           style={{borderColor: 'var(--inventory-border)'}}
-                           placeholder={product.unitType === "bulk" ? "Enter bulk quantity" : "Enter quantity"}
-                         />
-                       </div>
-                     </div>
-
-                     <div className="flex justify-end mt-4">
-                       <button
-                         type="button"
-                         onClick={() => removeProduct(index)}
-                         className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
-                       
-                         onMouseLeave={handleMouseLeave}
-                       >
-                         <FaTrash className="h-4 w-4" />
-                         Remove
-                       </button>
-                     </div>
-                  </div>
-                ))}
               </div>
-            )}
-          </div>
-
-          {/* Order Summary */}
-          {selectedProducts.length > 0 && (
-            <div className="bg-white rounded-3xl shadow-xl p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <DollarSign className="h-6 w-6" style={{color: 'var(--inventory-success)'}} />
-                <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>Order Summary</h3>
-              </div>
-              <div className="flex justify-between items-center">
-                                 <div className="space-y-2">
-                   <p className="text-sm inventory-muted">Total Items: {selectedProducts.length}</p>
-                   <p className="text-sm inventory-muted">Total Quantity: {selectedProducts.reduce((sum, p) => sum + (p.quantity || 0), 0)}</p>
-                   <p className="text-sm inventory-muted">Unit Types: {selectedProducts.map(p => p.unitType).join(', ')}</p>
-                   <p className="text-sm inventory-muted">
-                     Products: {selectedProducts.map(() => '🆕 Custom').join(', ')}
-                   </p>
-                 </div>
-                                     {/* Total calculation removed as requested */}
-              </div>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <div className="flex justify-end space-x-4">
-            <button
-              type="button"
-              onClick={() => {
-                setFormData({
-                  supplier: "",
-                  orderDate: "",
-                  expectedDelivery: "",
-                  notes: "",
-       
-                });
-                setSelectedProducts([]);
-              }}
-              className="flex items-center gap-2 px-6 py-2 border rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500" style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
-             
-              onMouseLeave={handleMouseLeave}
-            >
-              <FaTimes className="h-4 w-4" />
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            
-              onMouseLeave={handleMouseLeave}
-            >
-              <FaCheck className="h-4 w-4" />
-              {loading ? "Creating..." : "Create Purchase Order"}
-            </button>
-          </div>
-        </form>
       )}
 
       {/* Purchase Orders List Tab */}
@@ -2714,9 +3091,9 @@ function CreatePurchaseOrder() {
           <div className="bg-white rounded-3xl shadow p-3">
             <div className="flex overflow-x-auto no-scrollbar gap-6 px-2">
               {[
-                { key: 'delivered', label: 'Delivered Products' },
+                { key: 'delivered', label: 'Pending Products' },
                 { key: 'partial', label: 'Partial Products' },
-                { key: 'complete', label: 'Complete Products' },
+                { key: 'complete', label: 'Delivered Products' },
                 { key: 'return', label: 'Returns' },
               ].map((f) => (
                 <button
@@ -2859,7 +3236,7 @@ function CreatePurchaseOrder() {
                             } else {
                               return (
                                 <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-info)', color: 'white'}}>
-                                  Delivered
+                                  Pending
                                 </span>
                               );
                             }
@@ -2984,7 +3361,7 @@ function CreatePurchaseOrder() {
                                         className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
                                         onMouseLeave={handleMouseLeave}
                                       >
-                                        Complete
+                                        Delivered
                                       </button>
                                       <button
                                         onClick={(e) => { 
@@ -3799,7 +4176,7 @@ function CreatePurchaseOrder() {
 
       {/* Add Supplier Modal */}
       {showSupplierModal && (
-        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-[60]">
           <div className="backdrop-blur-md rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] border" style={{ backgroundColor: 'white', borderColor: 'var(--inventory-border)' }}>
             <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 z-10" style={{ borderColor: 'var(--inventory-border)', backgroundColor: 'white' }}>
               <h3 className="text-lg font-semibold" style={{ color: 'var(--inventory-text-primary)' }}>Add New Supplier</h3>
@@ -3865,73 +4242,6 @@ function CreatePurchaseOrder() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Primary Phone (11 digits)</label>
-                    <input
-                      type="tel"
-                      maxLength={11}
-                      pattern="[0-9]{11}"
-                      value={supplierFormData.primary_phone || ""}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
-                        handleSupplierInputChange("primary_phone", value);
-                      }}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
-                      style={{ 
-                        borderColor: 'var(--inventory-border)', 
-                        backgroundColor: 'var(--inventory-bg-secondary)',
-                        color: 'var(--inventory-text-primary)'
-                      }}
-                      placeholder="09123456789"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Primary Email</label>
-                    <input
-                      type="email"
-                      value={supplierFormData.primary_email || ""}
-                      onChange={(e) => handleSupplierInputChange("primary_email", e.target.value)}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
-                      style={{ 
-                        borderColor: 'var(--inventory-border)', 
-                        backgroundColor: 'var(--inventory-bg-secondary)',
-                        color: 'var(--inventory-text-primary)'
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Contact Person</label>
-                    <input
-                      type="text"
-                      value={supplierFormData.contact_person || ""}
-                      onChange={(e) => handleSupplierInputChange("contact_person", e.target.value)}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
-                      style={{ 
-                        borderColor: 'var(--inventory-border)', 
-                        backgroundColor: 'var(--inventory-bg-secondary)',
-                        color: 'var(--inventory-text-primary)'
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Contact Title</label>
-                    <input
-                      type="text"
-                      value={supplierFormData.contact_title || ""}
-                      onChange={(e) => handleSupplierInputChange("contact_title", e.target.value)}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 inventory-input"
-                      style={{ 
-                        borderColor: 'var(--inventory-border)', 
-                        backgroundColor: 'var(--inventory-bg-secondary)',
-                        color: 'var(--inventory-text-primary)'
-                      }}
-                    />
-                  </div>
-
-
                   <div className="md:col-span-3">
                     <label className="block text-sm font-medium mb-1" style={{ color: 'var(--inventory-text-secondary)' }}>Address</label>
                     <textarea
@@ -3989,6 +4299,424 @@ function CreatePurchaseOrder() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simple PO Modal */}
+      {showSimplePOModal && (
+        <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
+                  Create Purchase Order
+                </h3>
+                <button
+                  onClick={closeSimplePOModal}
+                  className="inventory-muted hover:text-red-500"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Column - Form & Product List */}
+                <div>
+                  {/* Add Product Form */}
+                  <div className="mb-6 p-4 border rounded-lg" style={{borderColor: 'var(--inventory-border)', backgroundColor: 'var(--inventory-bg-secondary)'}}>
+                    <h4 className="text-md font-semibold mb-4" style={{color: 'var(--inventory-text-primary)'}}>Add Product</h4>
+                    <div className="space-y-4">
+                {/* Product Name */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                    Product Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={simplePOData.productName}
+                    onChange={(e) => handleSimplePOInputChange('productName', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 inventory-input"
+                    style={{borderColor: 'var(--inventory-border)'}}
+                    placeholder="Enter product name..."
+                    required
+                  />
+                </div>
+
+                {/* Unit Type Radio Buttons */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                    Unit Type *
+                  </label>
+                  <div className="flex gap-6">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="unitType"
+                        value="pieces"
+                        checked={simplePOData.unitType === "pieces"}
+                        onChange={(e) => handleSimplePOInputChange('unitType', e.target.value)}
+                        className="mr-2 text-blue-600 focus:ring-blue-500"
+                        required
+                      />
+                      <span className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>Pieces</span>
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        name="unitType"
+                        value="bulk"
+                        checked={simplePOData.unitType === "bulk"}
+                        onChange={(e) => handleSimplePOInputChange('unitType', e.target.value)}
+                        className="mr-2 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>Bulk</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Quantity */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                    {simplePOData.unitType === "bulk" ? "Bulk Quantity *" : "Quantity *"}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={simplePOData.quantity}
+                    onChange={(e) => handleSimplePOInputChange('quantity', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 inventory-input"
+                    style={{borderColor: 'var(--inventory-border)'}}
+                    placeholder={simplePOData.unitType === "bulk" ? "Enter bulk quantity" : "Enter quantity"}
+                    required
+                  />
+                </div>
+
+                {/* SRP */}
+                <div>
+                  <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                    SRP (Suggested Retail Price) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={simplePOData.srp}
+                    onChange={(e) => handleSimplePOInputChange('srp', e.target.value)}
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 inventory-input"
+                    style={{borderColor: 'var(--inventory-border)'}}
+                    placeholder="Enter SRP (e.g., 25.00)"
+                    required
+                  />
+                </div>
+
+                {/* Add Product Button */}
+                <button
+                  type="button"
+                  onClick={addProductToModalList}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 mt-4"
+                >
+                  <FaPlus className="h-4 w-4" />
+                  Add to Order List
+                </button>
+                    </div>
+                  </div>
+
+                  {/* Product List */}
+                  <div className="mb-6">
+                    <h4 className="text-md font-semibold mb-3" style={{color: 'var(--inventory-text-primary)'}}>
+                      Products in Order ({modalProducts.length})
+                    </h4>
+                    {modalProducts.length === 0 ? (
+                      <div className="text-center py-8 border rounded-lg inventory-muted" style={{borderColor: 'var(--inventory-border)'}}>
+                        <p className="text-sm">No products added yet</p>
+                        <p className="text-xs mt-1">Add products using the form above</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {modalProducts.map((product) => (
+                          <div
+                            key={product.id}
+                            className="p-3 border rounded-lg flex items-center justify-between"
+                            style={{borderColor: 'var(--inventory-border)', backgroundColor: 'var(--inventory-bg-secondary)'}}
+                          >
+                            <div className="flex-1">
+                              <div className="font-semibold text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                                {product.productName}
+                              </div>
+                              <div className="flex flex-wrap gap-3 text-xs inventory-muted mt-1">
+                                <span>Qty: {product.quantity} {product.unitType === "bulk" ? "bulk" : "pieces"}</span>
+                                {product.srp > 0 && (
+                                  <span className="font-semibold" style={{color: 'var(--inventory-accent)'}}>
+                                    SRP: ₱{parseFloat(product.srp).toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeProductFromModalList(product.id)}
+                              className="ml-3 p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            >
+                              <FaTrash className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Submit Form */}
+                  <form onSubmit={handleSimplePOSubmit}>
+                    <div className="flex justify-end space-x-3 pt-4 border-t" style={{borderColor: 'var(--inventory-border)'}}>
+                      <button
+                        type="button"
+                        onClick={closeSimplePOModal}
+                        className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-gray-50"
+                        style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
+                      >
+                        <FaTimes className="h-4 w-4" />
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadProductsPdf}
+                        disabled={modalProducts.length === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <FaFileAlt className="h-4 w-4" />
+                        Download PDF
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={loading || modalProducts.length === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <FaCheck className="h-4 w-4" />
+                        {loading ? "Creating..." : `Create P.O. (${modalProducts.length})`}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Right Column - Suggestions (Side by Side) */}
+                <div className="border-l pl-6" style={{borderColor: 'var(--inventory-border)'}}>
+                  <div className="flex gap-6">
+                    {/* Left Side - Critical Stock Suggestions */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="text-2xl">⚠️</span>
+                        <h4 className="text-lg font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
+                          Critical Stock
+                        </h4>
+                      </div>
+
+                      {loadingCriticalProducts ? (
+                        <div className="text-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-500 mx-auto"></div>
+                          <p className="mt-2 text-sm inventory-muted">Loading...</p>
+                        </div>
+                      ) : criticalProducts.length > 0 ? (
+                        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                          {criticalProducts.slice(0, 10).map((product, index) => {
+                        const alertColor = product.alert_level === 'Out of Stock' ? 'var(--inventory-danger)' :
+                                          product.alert_level === 'Critical' ? 'var(--inventory-warning)' :
+                                          'var(--inventory-info)';
+                        
+                        return (
+                          <div
+                            key={product.product_id || index}
+                            className="p-3 border rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                            style={{
+                              borderColor: alertColor + '40',
+                              backgroundColor: alertColor + '10'
+                            }}
+                            onClick={() => {
+                              // Check if product already in list
+                              const exists = modalProducts.some(p => p.productName === product.product_name);
+                              if (exists) {
+                                toast.warning(`${product.product_name} is already in the order list`);
+                                return;
+                              }
+
+                              // Add directly to modal products list
+                              const newProduct = {
+                                id: Date.now(),
+                                productName: product.product_name,
+                                productId: product.product_id || null, // Include product_id if available
+                                quantity: product.suggested_quantity || 20,
+                                unitType: "pieces",
+                                srp: parseFloat(product.srp) || 0
+                              };
+                              
+                              setModalProducts([...modalProducts, newProduct]);
+                              toast.success(`"${product.product_name}" added to order list`);
+                            }}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-semibold text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                                {product.product_name}
+                              </span>
+                              <span 
+                                className="px-2 py-1 rounded-full text-xs font-medium text-white"
+                                style={{backgroundColor: alertColor}}
+                              >
+                                {product.alert_level}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-3 text-xs inventory-muted">
+                              <span>Stock: <strong style={{color: alertColor}}>{product.current_quantity}</strong></span>
+                              <span>Suggest: <strong>{product.suggested_quantity}</strong></span>
+                              {product.srp > 0 && (
+                                <span className="font-semibold" style={{color: 'var(--inventory-accent)'}}>
+                                  SRP: ₱{parseFloat(product.srp).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                            {product.supplier_name && (
+                              <div className="text-xs inventory-muted mt-1">
+                                Supplier: {product.supplier_name}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                          {criticalProducts.length > 10 && (
+                            <p className="text-xs text-center inventory-muted mt-2">
+                              +{criticalProducts.length - 10} more
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 inventory-muted">
+                          <p className="text-sm mb-2">✅ Well stocked!</p>
+                          <p className="text-xs">No critical products</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right Side - Previous Orders by Supplier */}
+                    <div className="flex-1 min-w-0 border-l pl-6" style={{borderColor: 'var(--inventory-border)'}}>
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="text-2xl">📦</span>
+                        <h4 className="text-lg font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
+                          Previous Orders by Supplier
+                        </h4>
+                      </div>
+
+                      {/* Supplier Selector */}
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                          Select Supplier
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={selectedSupplierForHistory}
+                            onChange={(e) => handleSupplierHistoryChange(e.target.value)}
+                            className="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 inventory-input text-sm"
+                            style={{borderColor: 'var(--inventory-border)'}}
+                          >
+                            <option value="">-- Select --</option>
+                            {suppliers.map((supplier) => (
+                              <option key={supplier.supplier_id} value={supplier.supplier_id}>
+                                {supplier.supplier_name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={openSupplierModal}
+                            className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            title="Add Supplier"
+                          >
+                            <FaPlus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Previous Order Products List */}
+                      {loadingPreviousProducts ? (
+                        <div className="text-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                          <p className="mt-2 text-sm inventory-muted">Loading...</p>
+                        </div>
+                      ) : selectedSupplierForHistory && previousOrderProducts.length > 0 ? (
+                        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                          {previousOrderProducts.map((product, index) => {
+                            const lastOrderDate = product.last_ordered_date 
+                              ? new Date(product.last_ordered_date).toLocaleDateString()
+                              : 'N/A';
+                            
+                            return (
+                              <div
+                                key={product.product_id || product.product_name || index}
+                                className="p-3 border rounded-lg hover:shadow-md transition-shadow cursor-pointer"
+                                style={{
+                                  borderColor: 'var(--inventory-border)',
+                                  backgroundColor: 'var(--inventory-bg-secondary)'
+                                }}
+                                onClick={() => {
+                                  // Check if product already in list
+                                  const exists = modalProducts.some(p => p.productName === product.product_name);
+                                  if (exists) {
+                                    toast.warning(`${product.product_name} is already in the order list`);
+                                    return;
+                                  }
+
+                                  // Add directly to modal products list
+                                  const newProduct = {
+                                    id: Date.now(),
+                                    productName: product.product_name,
+                                    productId: product.product_id || null,
+                                    quantity: Math.round(product.avg_quantity || product.quantity || 20),
+                                    unitType: product.unit_type || "pieces",
+                                    srp: parseFloat(product.srp) || 0
+                                  };
+                                  
+                                  setModalProducts([...modalProducts, newProduct]);
+                                  toast.success(`"${product.product_name}" added to order list`);
+                                }}
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-semibold text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                                    {product.product_name}
+                                  </span>
+                                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                    {product.order_count} {product.order_count === 1 ? 'order' : 'orders'}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-3 text-xs inventory-muted">
+                                  <span>Last: <strong>{lastOrderDate}</strong></span>
+                                  <span>Qty: <strong>{Math.round(product.avg_quantity || product.quantity)}</strong> {product.unit_type || 'pieces'}</span>
+                                  {product.srp > 0 && (
+                                    <span className="font-semibold" style={{color: 'var(--inventory-accent)'}}>
+                                      SRP: ₱{parseFloat(product.srp).toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : selectedSupplierForHistory ? (
+                        <div className="text-center py-8 inventory-muted">
+                          <p className="text-sm mb-2">📭 No orders</p>
+                          <p className="text-xs">No history yet</p>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 inventory-muted">
+                          <p className="text-sm mb-2">👆 Select supplier</p>
+                          <p className="text-xs">View order history</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
