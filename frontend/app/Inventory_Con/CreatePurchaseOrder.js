@@ -29,8 +29,8 @@ import autoTable from "jspdf-autotable";
 const API_BASE = getApiUrl("purchase_order_api.php");
 const CREATE_PO_API = getApiUrl("create_purchase_order_api.php");
 
-// NOTE: Purchase Orders are automatically created with 'delivered' status
-// and moved to the delivered table upon creation for immediate processing
+// NOTE: Purchase Orders are created with 'pending' status and appear in "Pending Products" tab
+// Once receiving starts, they automatically move to "Partial Products" or "Delivered Products" tabs based on quantities
 
 function CreatePurchaseOrder() {
   // Tab stateasy
@@ -87,6 +87,9 @@ function CreatePurchaseOrder() {
   const [selectedPO, setSelectedPO] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [poFilter, setPoFilter] = useState('delivered');
+  // Return records state (for Returns tab)
+  const [returnRecords, setReturnRecords] = useState([]);
+  const [loadingReturns, setLoadingReturns] = useState(false);
   // Removed 3-dots status menu; using inline dynamic action instead
 
   // Compute the next actionable step for a PO based on its current status
@@ -147,6 +150,18 @@ function CreatePurchaseOrder() {
     items: []
   });
 
+  // Return Items Modal states (for Delivered Products tab - submitting new returns)
+  const [showReturnItemsModal, setShowReturnItemsModal] = useState(false);
+  const [selectedPOForReturn, setSelectedPOForReturn] = useState(null);
+  const [returnItemsFormData, setReturnItemsFormData] = useState({
+    return_reason: "",
+    items: []
+  });
+
+  // Return Details Modal states (for Returns tab - viewing existing returns)
+  const [showReturnDetailsModal, setShowReturnDetailsModal] = useState(false);
+  const [selectedReturnForView, setSelectedReturnForView] = useState(null);
+
   // Critical Products for PO suggestions
   const [criticalProducts, setCriticalProducts] = useState([]);
   const [loadingCriticalProducts, setLoadingCriticalProducts] = useState(false);
@@ -195,7 +210,12 @@ function CreatePurchaseOrder() {
       fetchSuppliers();
       fetchCriticalProducts(); // Fetch critical products when opening create tab
     } else if (activeTab === 'list') {
-      fetchPurchaseOrders(poFilter);
+      if (poFilter === 'return') {
+        // Fetch return records from database when Returns tab is selected
+        fetchReturnRecords();
+      } else {
+        fetchPurchaseOrders(poFilter);
+      }
       fetchAllPurchaseOrders(); // Refresh counts when switching to list tab
     } else if (activeTab === 'receive') {
       fetchReceivingList();
@@ -615,7 +635,7 @@ function CreatePurchaseOrder() {
         // Generate PDF immediately with the actual PO number
         try { await handleDownloadProductsPdf({ poNumber: result.po_number }); } catch (_) {}
         closeSimplePOModal();
-        await movePOToDeliveredTable(result.po_number, result.purchase_header_id);
+        await movePOToPendingTable(result.po_number, result.purchase_header_id);
       } else {
         toast.error(result.error || "Error creating purchase order");
       }
@@ -872,19 +892,19 @@ function CreatePurchaseOrder() {
 
   // Payment method functionality removed as requested
 
-  // Note: PO creation automatically sets status to 'delivered' in backend
+  // Note: PO creation should set status to 'pending' in backend (no items received yet)
 
-  // Function to automatically move PO to delivered table after creation
-  const movePOToDeliveredTable = async (poNumber, poId) => {
+  // Function to automatically move PO to Pending tab after creation
+  const movePOToPendingTable = async (poNumber, poId) => {
     try {
       // Switch to the Purchase Orders tab immediately
       setActiveTab('list');
-      setPoFilter('delivered'); // Show the delivered tab where the new PO should appear
+      setPoFilter('delivered'); // 'delivered' filter key shows "Pending Products" tab (new POs with no received items)
       
       // Refresh data after switching tabs
       await fetchAllPurchaseOrders();
       
-      // Force refresh the delivered tab data multiple times to ensure it loads
+      // Force refresh the pending tab data
       await fetchPurchaseOrders('delivered');
       
       // Additional refreshes to ensure data is loaded
@@ -896,59 +916,42 @@ function CreatePurchaseOrder() {
         await fetchPurchaseOrders('delivered');
       }, 1000);
       
-      // Verify the PO appears in delivered table
+      // Verify the PO appears in pending table
       setTimeout(async () => {
         await fetchPurchaseOrders('delivered');
         
-        // Check if PO is in the delivered list - use the updated filtering logic
+        // Check if PO is in the pending list - POs with no received items
         const allPOs = await fetch(`${API_BASE}?action=purchase_orders_with_products&_t=${Date.now()}&_r=${Math.random()}`);
         const allPOsData = await allPOs.json();
         
         if (allPOsData.success) {
-          const deliveredPOs = allPOsData.data.filter(po => {
-            // Include POs that have 'delivered' status in the header
-            if (po.status === 'delivered') {
-              return true;
-            }
-            
-            // Also include POs that have products with delivered status
-            const hasDeliveredProducts = po.products?.some(product => {
-              let itemStatus = product.item_status;
-              
-              // If item_status is null, undefined, or empty, calculate it
-              if (!itemStatus || itemStatus === 'null' || itemStatus === '') {
-                const receivedQty = parseInt(product.received_qty) || 0;
-                const quantity = parseInt(product.quantity) || 0;
-                
-                if (receivedQty >= quantity && quantity > 0) {
-                  itemStatus = 'complete';
-                } else if (receivedQty > 0) {
-                  itemStatus = 'partial';
-                } else {
-                  itemStatus = 'delivered';
-                }
-              }
-              
-              return itemStatus === 'delivered';
+          const pendingPOs = allPOsData.data.filter(po => {
+            // Check if PO has products that haven't been received yet
+            const hasUnreceivedProducts = po.products?.some(product => {
+              const receivedQty = parseInt(product.received_qty) || 0;
+              return receivedQty === 0; // Not received yet
             });
             
-            return hasDeliveredProducts;
+            return hasUnreceivedProducts;
           });
           
-          const foundPO = deliveredPOs.find(po => po.po_number === poNumber);
+          const foundPO = pendingPOs.find(po => po.po_number === poNumber);
           
           if (foundPO) {
-            toast.success(`✅ PO ${poNumber} is now visible in the delivered table!`);
+            toast.success(`✅ PO ${poNumber} is now visible in the Pending Products tab!`);
           } else {
             // Retry one more time
             setTimeout(async () => {
               await fetchPurchaseOrders('delivered');
-              const retryPOs = purchaseOrders.filter(po => po.status === 'delivered');
+              const retryPOs = purchaseOrders.filter(po => {
+                const products = po.products || [];
+                return products.some(p => (parseInt(p.received_qty) || 0) === 0);
+              });
               const retryFoundPO = retryPOs.find(po => po.po_number === poNumber);
               if (retryFoundPO) {
-                toast.success(`✅ PO ${poNumber} is now visible in the delivered table!`);
+                toast.success(`✅ PO ${poNumber} is now visible in the Pending Products tab!`);
               } else {
-                toast.warning(`⚠️ PO ${poNumber} created but may take a moment to appear in delivered table`);
+                toast.warning(`⚠️ PO ${poNumber} created but may take a moment to appear in Pending Products tab`);
               }
             }, 2000);
           }
@@ -956,7 +959,7 @@ function CreatePurchaseOrder() {
       }, 1500);
       
     } catch (error) {
-      console.error('Error moving PO to delivered table:', error);
+      console.error('Error moving PO to pending table:', error);
       toast.error('PO created but there was an issue updating the view');
     }
   };
@@ -1044,13 +1047,13 @@ function CreatePurchaseOrder() {
       const result = await response.json();
       if (result.success) {
         toast.success(`Purchase Order ${result.po_number} created successfully!`);
-        // PO is automatically created with 'delivered' status in backend
-        toast.info(`📦 Purchase Order ${result.po_number} created and automatically moved to delivered table!`);
+        // PO is created with 'pending' status and appears in "Pending Products" tab
+        toast.info(`📦 Purchase Order ${result.po_number} created and available in Pending Products tab!`);
         // Generate PDF immediately with the actual PO number
         try { await handleDownloadProductsPdf({ poNumber: result.po_number }); } catch (_) {}
         
-        // Automatically move PO to delivered table
-        await movePOToDeliveredTable(result.po_number, result.purchase_header_id);
+        // Automatically move PO to Pending Products tab
+        await movePOToPendingTable(result.po_number, result.purchase_header_id);
       } else {
         toast.error(result.error || "Error creating purchase order");
       }
@@ -1135,6 +1138,32 @@ function CreatePurchaseOrder() {
     }
   };
 
+  // Fetch return records from database
+  const fetchReturnRecords = async () => {
+    try {
+      setLoadingReturns(true);
+      const url = `${API_BASE}?action=get_purchase_order_returns&_t=${Date.now()}&_r=${Math.random()}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success) {
+        setReturnRecords(data.data || []);
+      } else {
+        toast.error('Failed to load return records');
+        setReturnRecords([]);
+      }
+    } catch (error) {
+      console.error('Error fetching return records:', error);
+      toast.error('Error loading return records');
+      setReturnRecords([]);
+    } finally {
+      setLoadingReturns(false);
+    }
+  };
+
   // Optimistically remove a PO from the current list view
   const removePoFromList = (poId) => {
     setPurchaseOrders((prev) => prev.filter((p) => p.purchase_header_id !== poId));
@@ -1177,6 +1206,9 @@ function CreatePurchaseOrder() {
       if (poFilter) {
         const products = po.products || [];
         
+        // For "delivered" filter, show PO if it has delivered OR complete products
+        // "Delivered Products" tab should show both pending deliveries AND completed deliveries
+        
         // NEW LOGIC: Check if ANY product in the PO has missing items
         let hasAnyMissingItems = false;
         let hasAnyReceivedItems = false;
@@ -1199,19 +1231,20 @@ function CreatePurchaseOrder() {
         const filteredProducts = products.filter(product => {
           let itemStatus = product.item_status;
           
-          // Calculate status if not available based on received quantities
-          if (!itemStatus) {
+          // Calculate status if not available or if it's null/empty string based on received quantities
+          if (!itemStatus || itemStatus === 'null' || itemStatus === '' || itemStatus === null) {
             const receivedQty = parseInt(product.received_qty) || 0;
             const quantity = parseInt(product.quantity) || 0;
             const missingQty = Math.max(0, quantity - receivedQty);
             
             if (missingQty === 0 && quantity > 0) {
-              // If ANY product in the PO has missing items, treat fully received products as "received" instead of "complete"
-              itemStatus = hasAnyMissingItems ? 'received' : 'complete';
+              // All items received - complete
+              itemStatus = 'complete';
             } else if (receivedQty > 0) {
-              // Products with missing quantities stay as "partial"
-              itemStatus = 'partial';
+              // Some items received but not all - partial
+              itemStatus = 'partial_delivery';
             } else {
+              // No items received yet - delivered/pending
               itemStatus = 'delivered';
              }
           }
@@ -1226,7 +1259,7 @@ function CreatePurchaseOrder() {
           // Check if status matches the current filter
           if (poFilter === 'delivered' && itemStatus === 'delivered') return true;
           if (poFilter === 'partial' && itemStatus === 'partial') return true;
-          if (poFilter === 'complete' && itemStatus === 'complete') return true;
+          if (poFilter === 'complete' && (itemStatus === 'complete' || itemStatus === 'partial')) return true; // "Delivered Products" tab shows ALL delivered POs (complete or partial)
           if (poFilter === 'received' && itemStatus === 'received') return true;
           if (poFilter === 'return' && itemStatus === 'returned') return true;
           
@@ -1237,9 +1270,11 @@ function CreatePurchaseOrder() {
         if (filteredProducts.length === 0) continue;
         
         // Create a modified PO with only the filtered products
+        // Store original products list for status calculation
         rows.push({
           ...po,
-          products: filteredProducts, // Only include products that match the current filter
+          products: filteredProducts, // Only include products that match the current filter for display
+          allProducts: products, // Store original full product list for overall status calculation
           delivery_status: po.delivery_status || 'pending',
           status: po.status || 'delivered',
         });
@@ -1247,6 +1282,7 @@ function CreatePurchaseOrder() {
         // No filter active, include the PO as-is
         rows.push({
           ...po,
+          allProducts: products, // Store original product list for status calculation
           delivery_status: po.delivery_status || 'pending',
           status: po.status || 'delivered',
         });
@@ -1262,7 +1298,7 @@ function CreatePurchaseOrder() {
       partial: new Set(),
       complete: new Set(),
       received: new Set(),
-      return: new Set(),
+      // Note: 'return' count comes from returnRecords.length (database records), not from purchase orders
     };
     
     // Count POs from all purchase orders based on their individual product statuses
@@ -1274,25 +1310,64 @@ function CreatePurchaseOrder() {
       
       const products = po.products || [];
       
-      // Check if PO has any returned products
-      const hasReturnedProducts = products.some(product => product.item_status === 'returned');
-      
-      // Check if PO has any products with specific statuses
-      const hasCompleteProducts = products.some(product => product.item_status === 'complete');
-      const hasPartialProducts = products.some(product => product.item_status === 'partial' || product.item_status === 'partial_delivery');
-      const hasDeliveredProducts = products.some(product => {
-        const status = product.item_status;
-        return !status || status === 'pending' || status === 'delivered';
+      // CRITICAL: Check if ANY product has been received (received_qty > 0)
+      // If ANY product has been received, PO should NOT be counted in "delivered"
+      const hasAnyReceivedProducts = products.some(product => {
+        const receivedQty = parseInt(product.received_qty) || 0;
+        return receivedQty > 0;
       });
       
-      if (hasReturnedProducts) {
-        counts['return'].add(po.purchase_header_id);
-      } else if (hasCompleteProducts && !hasPartialProducts) {
-        counts['complete'].add(po.purchase_header_id);
-      } else if (hasPartialProducts) {
-        counts['partial'].add(po.purchase_header_id);
-      } else if (hasDeliveredProducts) {
+      // Note: We don't count returned products here - returns are counted from database records
+      
+      // Check if PO has any products with specific statuses
+      // Complete = all items received (received_qty >= quantity and quantity > 0)
+      const hasCompleteProducts = products.some(product => {
+        const receivedQty = parseInt(product.received_qty) || 0;
+        const quantity = parseInt(product.quantity) || 0;
+        const missingQty = Math.max(0, quantity - receivedQty);
+        return product.item_status === 'complete' || (missingQty === 0 && quantity > 0 && receivedQty > 0);
+      });
+      // Partial = some items received but not all (received_qty > 0 but received_qty < quantity)
+      const hasPartialProducts = products.some(product => {
+        const receivedQty = parseInt(product.received_qty) || 0;
+        const quantity = parseInt(product.quantity) || 0;
+        const missingQty = Math.max(0, quantity - receivedQty);
+        return product.item_status === 'partial' || 
+               product.item_status === 'partial_delivery' || 
+               (receivedQty > 0 && missingQty > 0);
+      });
+      
+      // Check if PO has delivered products (products that haven't been received at all - received_qty = 0)
+      // PO should be counted in "Delivered Products" if ANY product has NOT been received yet
+      const hasDeliveredProducts = products.some(product => {
+        const receivedQty = parseInt(product.received_qty) || 0;
+        return receivedQty === 0; // Not received yet
+      });
+      
+      if (hasDeliveredProducts) {
+        // If ANY product has NOT been received yet, count as delivered (Pending Products tab)
         counts['delivered'].add(po.purchase_header_id);
+        
+        // Also count in partial or complete tabs if those products exist
+        if (hasCompleteProducts && !hasPartialProducts) {
+          counts['complete'].add(po.purchase_header_id); // Complete products also go to "Delivered Products" tab
+        } else if (hasPartialProducts) {
+          counts['partial'].add(po.purchase_header_id);
+          counts['complete'].add(po.purchase_header_id); // Partial products also go to "Delivered Products" tab
+        } else if (hasCompleteProducts && hasPartialProducts) {
+          // PO has both complete and partial products
+          counts['partial'].add(po.purchase_header_id);
+          counts['complete'].add(po.purchase_header_id);
+        }
+      } else if (hasAnyReceivedProducts) {
+        // ALL products have been received - categorize based on status
+        if (hasCompleteProducts && !hasPartialProducts) {
+          counts['complete'].add(po.purchase_header_id); // Complete POs go to "Delivered Products" tab
+        } else if (hasPartialProducts) {
+          counts['partial'].add(po.purchase_header_id);
+          // Partial POs also go to "Delivered Products" tab (all delivered items should be there)
+          counts['complete'].add(po.purchase_header_id);
+        }
       }
     });
     
@@ -1302,12 +1377,12 @@ function CreatePurchaseOrder() {
       partial: counts.partial.size,
       complete: counts.complete.size,
       received: counts.received.size,
-      return: counts.return.size,
+      return: returnRecords.length, // Use return records count from database
     };
     
     // Debug logging
     return result;
-  }, [allPurchaseOrders]);
+  }, [allPurchaseOrders, returnRecords]);
 
   // Removed activeMenuPO memo (no 3-dots menu)
 
@@ -1655,9 +1730,9 @@ function CreatePurchaseOrder() {
           setPurchaseOrders((prev) => prev.filter((po) => po.purchase_header_id !== poId));
           
           if (poStatus === 'partial_delivery') {
-            toast.success(`✅ ${completeProducts.length} complete product(s) received! PO remains in Partial Products tab due to missing items.`);
+            toast.success(`✅ ${completeProducts.length} complete product(s) received! PO remains in Partial Products tab due to missing items. Receiving record created in Receive Item Logs.`);
           } else {
-            toast.success(`✅ ${completeProducts.length} complete product(s) received! PO moved to received status.`);
+            toast.success(`✅ ${completeProducts.length} complete product(s) received! PO moved to received status. Receiving record created in Receive Item Logs.`);
           }
           
           // Refresh all lists
@@ -1768,117 +1843,132 @@ function CreatePurchaseOrder() {
   };
 
   // Function to return all complete items in a PO
-  const handleReturnCompleteItems = async (poId) => {
+  // Open Return Items Modal (for Delivered Products tab)
+  const handleOpenReturnModal = async (poId) => {
     try {
-      // Get PO details first
-      const url = `${API_BASE}?action=purchase_order_details&po_id=${poId}`;
-      // Add timeout and better error handling for fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const response = await fetch(`${API_BASE}?action=purchase_order_details&po_id=${poId}`);
+      const data = await response.json();
       
-      const response = await fetch(url, {
-        method: 'GET',
+      if (data.success) {
+        // Show all products (user can select which ones to return)
+        setSelectedPOForReturn(data);
+        setReturnItemsFormData({
+          return_reason: "",
+          items: data.details.map(detail => ({
+            purchase_dtl_id: detail.purchase_dtl_id,
+            product_id: detail.product_id,
+            product_name: detail.product_name,
+            received_qty: parseInt(detail.received_qty) || 0,
+            return_qty: 0, // User will select quantity to return
+            unit_type: detail.unit_type || 'pieces'
+          }))
+        });
+        setShowReturnItemsModal(true);
+      } else {
+        toast.error('Failed to load PO details');
+      }
+    } catch (error) {
+      console.error('Error fetching PO details:', error);
+      toast.error('Error loading purchase order details');
+    }
+  };
+
+  // Handle return quantity change
+  const handleReturnQtyChange = (index, value) => {
+    const updatedItems = [...returnItemsFormData.items];
+    const maxQty = updatedItems[index].received_qty;
+    const qty = Math.min(Math.max(0, parseInt(value) || 0), maxQty);
+    updatedItems[index].return_qty = qty;
+    setReturnItemsFormData(prev => ({
+      ...prev,
+      items: updatedItems
+    }));
+  };
+
+  // Handle return reason change
+  const handleReturnReasonChange = (value) => {
+    setReturnItemsFormData(prev => ({
+      ...prev,
+      return_reason: value
+    }));
+  };
+
+  // Submit return items
+  const handleSubmitReturnItems = async (e) => {
+    e.preventDefault();
+    
+    // Validate return reason
+    if (!returnItemsFormData.return_reason.trim()) {
+      toast.error("Please enter a return reason");
+      return;
+    }
+
+    // Validate that at least one item has return quantity > 0
+    const selectedItems = returnItemsFormData.items.filter(item => item.return_qty > 0);
+    if (selectedItems.length === 0) {
+      toast.error("Please select at least one item to return");
+      return;
+    }
+
+    try {
+      const returnData = {
+        purchase_header_id: selectedPOForReturn.header.purchase_header_id,
+        po_number: selectedPOForReturn.header.po_number,
+        return_reason: returnItemsFormData.return_reason,
+        returned_by: currentUser.emp_id,
+        returned_by_name: currentUser.full_name,
+        items: selectedItems.map(item => ({
+          purchase_dtl_id: item.purchase_dtl_id,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          return_qty: item.return_qty,
+          received_qty: item.received_qty,
+          unit_type: item.unit_type
+        }))
+      };
+
+      const response = await fetch(`${API_BASE}?action=create_purchase_order_return`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        signal: controller.signal
+        body: JSON.stringify(returnData)
       });
+
+      const result = await response.json();
       
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      if (data.success) {
-        // Filter only complete products
-        const completeProducts = data.details.filter(detail => {
-          const missingQty = detail.missing_qty ?? (detail.quantity - (detail.received_qty || 0));
-          return missingQty === 0;
+      if (result.success) {
+        toast.success(`✅ Return record created successfully! Return Number: ${result.return_number || result.return_id || 'N/A'}`);
+        
+        // Close modal and reset form
+        setShowReturnItemsModal(false);
+        setSelectedPOForReturn(null);
+        setReturnItemsFormData({
+          return_reason: "",
+          items: []
         });
-
-        if (completeProducts.length === 0) {
-          toast.warning("No complete products found in this PO to return.");
-          return;
-        }
-
-        // Confirm return action
-        const shouldReturn = confirmReturn(completeProducts.length, data.header.po_number);
         
-        if (!shouldReturn) {
-          return;
-        }
-
-        // Update all complete products to 'returned' status
-        let successCount = 0;
-        let errorCount = 0;
-        
-        for (const product of completeProducts) {
-          try {
-            const updateResponse = await fetch(`${API_BASE}?action=update_product_status`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                purchase_dtl_id: product.purchase_dtl_id,
-                item_status: 'returned'
-              })
-            });
-            
-            const updateResult = await updateResponse.json();
-            
-            if (updateResult.success) {
-              successCount++;
-            } else {
-              errorCount++;
-              console.error(`Failed to update ${product.product_name}:`, updateResult.error);
-            }
-          } catch (error) {
-            errorCount++;
-            console.error(`Error updating product ${product.product_name} status:`, error);
-          }
-        }
-
-        // Refresh data
+        // PO status remains "Complete" - no need to update it
+        // Refresh data to show updated information
         await fetchPurchaseOrders(poFilter);
         await fetchAllPurchaseOrders();
-        
-        if (successCount > 0) {
-          toast.success(`✅ ${successCount} product(s) returned successfully!`);
-        }
-        if (errorCount > 0) {
-          toast.warning(`⚠️ ${errorCount} product(s) failed to return.`);
+        // Refresh return records if in Returns tab
+        if (poFilter === 'return') {
+          await fetchReturnRecords();
         }
       } else {
-        toast.error('Failed to load PO details: ' + (data.error || 'Unknown error'));
+        toast.error(result.error || 'Failed to create return record');
       }
     } catch (error) {
-      console.error('Error returning complete items:', error);
-      console.error('Error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
-      
-      // Provide more specific error messages
-      if (error.message.includes('Failed to fetch') || error.name === 'AbortError') {
-        toast.error('❌ Cannot connect to server. Please check if XAMPP is running and the backend is accessible.');
-        console.error('🔧 Troubleshooting steps:');
-        console.error('1. Make sure XAMPP is running');
-        console.error('2. Check if Apache is started');
-        console.error('3. Verify the URL:', API_BASE);
-        console.error('4. Try accessing the URL directly in browser');
-        console.error('5. Check if the backend file exists:', `${API_BASE}`);
-        
-        // Offer to test the URL manually
-        const testUrl = `${API_BASE}?action=purchase_order_details&po_id=${poId}`;
-        console.error('6. Test this URL in browser:', testUrl);
-        
-      } else if (error.message.includes('HTTP error')) {
-        toast.error('❌ Server error: ' + error.message);
-      } else {
-        toast.error('❌ Error returning items: ' + error.message);
-      }
+      console.error('Error creating return record:', error);
+      toast.error('Error creating return record');
     }
+  };
+
+  // Keep old function for backward compatibility (used by other parts)
+  const handleReturnCompleteItems = async (poId) => {
+    // For Complete status in Delivered Products tab, open modal instead
+    await handleOpenReturnModal(poId);
   };
 
   // Function to return partial products from a PO
@@ -2178,7 +2268,7 @@ function CreatePurchaseOrder() {
       }
 
       if (result.success) {
-        toast.success(`✅ ${product.product_name} received successfully! Check Receive Items tab.`);
+        toast.success(`✅ ${product.product_name} received successfully! Check Received Item Logs tab.`);
         
         // Update the product status to 'received' in the backend
         try {
@@ -2199,7 +2289,7 @@ function CreatePurchaseOrder() {
         await fetchAllPurchaseOrders();
         await fetchReceivingList();
         
-        // Switch to Receive Items tab to show the newly received item
+        // Switch to Received Item Logs tab to show the newly received item
         setActiveTab('receive');
         
       } else {
@@ -2313,7 +2403,7 @@ function CreatePurchaseOrder() {
       }
       
       if (result.success) {
-        toast.success(`Items received successfully! Receiving ID: ${result.receiving_id}`);
+        toast.success(`Items received successfully! Receiving ID: ${result.receiving_id || 'Recorded'}. Receiving record created in Receive Item Logs.`);
         setShowReceiveForm(false);
         setSelectedPO(null);
         setReceiveFormData({
@@ -2322,22 +2412,26 @@ function CreatePurchaseOrder() {
           items: []
         });
         
-        // Update PO status to 'received' and remove from Complete list
+        // Update PO status based on received quantities and move to appropriate tab
         try {
-          await updatePOStatus(receiveData.purchase_header_id, 'received');
-          // Optimistically remove from the current Complete list
+          // Determine status based on what was received
+          const allComplete = receiveData.items.every(item => {
+            // Check if all items are fully received
+            const originalItem = receiveFormData.items.find(i => i.purchase_dtl_id === item.purchase_dtl_id);
+            return originalItem && item.received_qty >= originalItem.ordered_qty;
+          });
+          
+          const finalStatus = allComplete ? 'received' : 'partial_delivery';
+          await updatePOStatus(receiveData.purchase_header_id, finalStatus);
+          
+          // Optimistically remove from the current list
           setPurchaseOrders((prev) => prev.filter((po) => po.purchase_header_id !== receiveData.purchase_header_id));
           
           // Force refresh all lists
           await fetchPurchaseOrders(poFilter);
           await fetchAllPurchaseOrders();
           
-          // If we're on the Complete tab, force refresh it specifically
-          if (poFilter === 'complete') {
-            await fetchPurchaseOrders('complete');
-          }
-          
-          toast.success('Purchase order moved to Received tab!');
+          toast.success(`Purchase order updated! Check Receive Item Logs for details.`);
         } catch (err) {
           console.warn('Could not update PO status after receiving:', err);
           // Still refresh the lists even if status update fails
@@ -2345,7 +2439,7 @@ function CreatePurchaseOrder() {
           await fetchAllPurchaseOrders();
         }
         
-        // Move to Receive Items page and refresh lists
+        // Move to Received Item Logs page and refresh lists
         setActiveTab('receive');
         fetchReceivingList();
       } else {
@@ -2705,35 +2799,150 @@ function CreatePurchaseOrder() {
           toast.error(result.error || 'Failed to update received quantities');
         }
       } else {
-        // Initial receiving from Delivered - just update quantities locally, don't save to database yet
-        // Determine overall PO status based on individual product statuses
-        let overallStatus = 'complete';
+        // Initial receiving from Pending tab - ALWAYS create receiving record in Receive Item Logs
+        // Then update status based on quantities received (Partial or Complete)
         
-        if (categorized.partial.length > 0 || categorized.delivered.length > 0) {
-          overallStatus = 'partial_delivery';
+        // ALWAYS create receiving record using receive_items API for tracking
+        const receiveItemsData = {
+          purchase_header_id: selectedPOForReceive.header.purchase_header_id,
+          received_by: currentUser.emp_id,
+          delivery_receipt_no: `RCV-${Date.now()}`,
+          notes: 'Items received from Pending Products tab',
+          items: itemsWithQuantities
+            .filter(item => (parseInt(item.received_qty) || 0) > 0)
+            .map(item => ({
+              purchase_dtl_id: item.purchase_dtl_id,
+              product_id: item.product_id,
+              received_qty: parseInt(item.received_qty) || 0
+            }))
+        };
+        
+        // Ensure we always create a receiving record - this is required for tracking
+        let receiveResult;
+        try {
+          const receiveResponse = await fetch(`${API_BASE}?action=receive_items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(receiveItemsData)
+          });
+          
+          try {
+            receiveResult = await receiveResponse.clone().json();
+          } catch (parseErr) {
+            // If receive_items fails, fallback to update_received_quantities (but still try to log)
+            console.warn('receive_items API failed, using fallback');
+            const fallbackResponse = await fetch(`${API_BASE}?action=update_received_quantities`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(receiveData)
+            });
+            receiveResult = await fallbackResponse.json();
+            
+            // Still try to create a receiving record for logging purposes
+            try {
+              await fetch(`${API_BASE}?action=receive_items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(receiveItemsData)
+              });
+            } catch (logError) {
+              console.warn('Could not create receiving log record:', logError);
+            }
+          }
+        } catch (error) {
+          // Fallback to update_received_quantities if receive_items completely fails
+          console.warn('receive_items API error, using update_received_quantities:', error);
+          const fallbackResponse = await fetch(`${API_BASE}?action=update_received_quantities`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(receiveData)
+          });
+          receiveResult = await fallbackResponse.json();
+          
+          // Still try to create a receiving record for logging purposes
+          try {
+            await fetch(`${API_BASE}?action=receive_items`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(receiveItemsData)
+            });
+          } catch (logError) {
+            console.warn('Could not create receiving log record:', logError);
+          }
         }
+        
+        if (receiveResult.success) {
+          // Check if there are still any products with pending status (not received at all)
+          const stillHasPendingProducts = categorized.delivered.length > 0;
+          
+          // Receiving record already created above with all received items (complete + partial)
+          // This single record tracks all items received in this action in Receive Item Logs
+          
+          // Update PO status based on remaining products
+          // Automatically move between tabs:
+          // - If all products are complete → "Delivered Products" tab (complete)
+          // - If some products are partial → "Partial Products" tab (partial_delivery)
+          // - If some products still pending → remain in "Pending Products" tab
+          let finalPOStatus;
+          if (categorized.complete.length > 0 && categorized.partial.length === 0 && categorized.delivered.length === 0) {
+            // All products fully received → Complete tab
+            finalPOStatus = 'complete';
+          } else if (categorized.partial.length > 0 || (categorized.complete.length > 0 && categorized.delivered.length > 0)) {
+            // Some products partial or mix → Partial tab
+            finalPOStatus = 'partial_delivery';
+          } else {
+            // Still has pending products → stay in Pending tab
+            finalPOStatus = 'delivered'; // This maps to "Pending Products" tab
+          }
+          
+          try {
+            await updatePOStatus(receiveData.purchase_header_id, finalPOStatus);
+          } catch (statusError) {
+            console.warn('Could not update PO status:', statusError);
+          }
+          
+          // Show detailed toast based on categorization and tab movement
+          if (categorized.complete.length > 0 && categorized.partial.length > 0) {
+            const missingMsg = stillHasPendingProducts ? ` ${categorized.delivered.length} product(s) still pending.` : '';
+            toast.success(`✅ ${categorized.complete.length} complete product(s) → Delivered Products tab. ${categorized.partial.length} partial product(s) → Partial Products tab. Receiving record created in Receive Item Logs.${missingMsg}`);
+          } else if (categorized.complete.length > 0) {
+            const missingMsg = stillHasPendingProducts ? ` ${categorized.delivered.length} product(s) still pending.` : '';
+            toast.success(`✅ ${categorized.complete.length} complete product(s) received! PO moved to Delivered Products tab. Receiving record created in Receive Item Logs.${missingMsg}`);
+          } else if (categorized.partial.length > 0) {
+            const missingMsg = stillHasPendingProducts ? ` ${categorized.delivered.length} product(s) still pending.` : '';
+            const partialMissing = categorized.partial.reduce((sum, p) => sum + (p.missing_qty || 0), 0);
+            toast.success(`✅ ${categorized.partial.length} partial product(s) received! PO moved to Partial Products tab. ${partialMissing} items still missing. Receiving record created in Receive Item Logs.${missingMsg}`);
+          } else {
+            toast.success(`✅ Items received! Receiving record created in Receive Item Logs.${stillHasPendingProducts ? ` ${categorized.delivered.length} product(s) still pending.` : ''}`);
+          }
 
-        // Show detailed toast based on categorization
-        if (overallStatus === 'complete') {
-          toast.success(`✅ All ${categorized.complete.length} product(s) marked as complete! Ready for final receiving.`);
-        } else if (categorized.partial.length > 0) {
-          toast.warning(`⚠️ Mixed delivery! ${categorized.complete.length} complete, ${categorized.partial.length} partial product(s).`);
+          setShowReceiveItemsForm(false);
+          setSelectedPOForReceive(null);
+          setReceiveItemsFormData({});
+          
+          // Refresh all data first
+          await fetchAllPurchaseOrders();
+          
+          // Switch to appropriate tab based on final status
+          if (finalPOStatus === 'complete') {
+            // All products complete → switch to "Delivered Products" tab
+            setPoFilter('complete');
+            await fetchPurchaseOrders('complete');
+          } else if (finalPOStatus === 'partial_delivery') {
+            // Has partial products → switch to "Partial Products" tab
+            setPoFilter('partial');
+            await fetchPurchaseOrders('partial');
+          } else {
+            // Still has pending products → stay in current tab or switch to "Pending Products"
+            setPoFilter('delivered');
+            await fetchPurchaseOrders('delivered');
+          }
+          
+          // Refresh receiving list to show the complete products
+          await fetchReceivingList();
         } else {
-          toast.info('📦 No items received yet.');
+          toast.error(receiveResult.error || 'Failed to receive items');
         }
-
-        // For non-final receiving, update individual product statuses but DON'T update PO header status
-        // The PO header status should remain as 'delivered' until ALL products are received
-        // Individual product statuses are tracked via item_status column
-        
-        toast.success('Individual product statuses updated! Check Complete/Partial tabs.');
-        setShowReceiveItemsForm(false);
-        setSelectedPOForReceive(null);
-        setReceiveItemsFormData({});
-        
-        // Update current view - refresh all data to ensure partial products don't reappear
-        await fetchPurchaseOrders(poFilter);
-        await fetchAllPurchaseOrders();
       }
     } catch (error) {
       console.error('Error updating received quantities:', error);
@@ -2851,22 +3060,36 @@ function CreatePurchaseOrder() {
         setSelectedPOForPartialDelivery(null);
         setPartialDeliveryFormData({ items: [] });
         
-        // Remove PO from current view optimistically
-        setPurchaseOrders((prev) => prev.filter((po) => po.purchase_header_id !== partialDeliveryData.purchase_header_id));
-        
-        // Refresh all purchase orders
-        await fetchPurchaseOrders(poFilter);
+        // Refresh all purchase orders first
         await fetchAllPurchaseOrders();
         
-        // AUTO-MOVE TO RECEIVED STATUS if all items are now complete
-        if (overallStatus === 'complete') {
-          // Update PO status directly to 'received' instead of 'complete'
-          try {
-            await updatePOStatus(partialDeliveryData.purchase_header_id, 'received');
-            toast.success(`📦 All items completed! Purchase Order moved to received status.`);
-          } catch (statusError) {
-            console.warn('Could not update PO status to received:', statusError);
-            toast.warning('Items updated but could not change PO status');
+        // Refresh current tab to reflect updated status
+        // If updating from Delivered Products tab, keep it there if status is still partial or complete
+        const shouldStayInDeliveredTab = (overallStatus === 'complete' || overallStatus === 'partial_delivery') && poFilter === 'complete';
+        
+        if (shouldStayInDeliveredTab) {
+          // Stay in Delivered Products tab - just refresh
+          await fetchPurchaseOrders('complete');
+        } else {
+          // Refresh based on the new overall status
+          if (overallStatus === 'complete') {
+            // All items complete → stay/switch to Delivered Products tab
+            setPoFilter('complete');
+            await fetchPurchaseOrders('complete');
+            toast.info(`📦 All items completed! Purchase Order remains in Delivered Products tab.`);
+          } else if (overallStatus === 'partial_delivery') {
+            // Still partial → stay/switch to appropriate tab based on current tab
+            if (poFilter === 'complete') {
+              // Already in Delivered Products tab - stay here (partial POs are shown here)
+              await fetchPurchaseOrders('complete');
+            } else {
+              // Switch to Partial Products tab if not already in Delivered Products
+              setPoFilter('partial');
+              await fetchPurchaseOrders('partial');
+            }
+          } else {
+            // Refresh current tab
+            await fetchPurchaseOrders(poFilter);
           }
         }
       } else {
@@ -2947,7 +3170,7 @@ function CreatePurchaseOrder() {
               }}
             >
               <Package className="h-4 w-4" />
-              Receive Items
+              Received Item Logs
             </button>
           </nav>
         </div>
@@ -3106,7 +3329,7 @@ function CreatePurchaseOrder() {
                 <thead className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                      PO Number
+                      {poFilter === 'return' ? 'Return Number' : 'PO Number'}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
                       Product
@@ -3115,13 +3338,18 @@ function CreatePurchaseOrder() {
                       Supplier
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                      Ordered Qty
+                      {poFilter === 'return' ? 'Received Qty' : 'Ordered Qty'}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                      Received Qty
+                      {poFilter === 'return' ? 'Return Qty' : 'Received Qty'}
                     </th>
+                    {poFilter !== 'return' && (
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
+                        Return Qty
+                      </th>
+                    )}
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
-                      Missing Qty
+                      {poFilter === 'return' ? 'Remaining Qty' : 'Missing Qty'}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--inventory-text-primary)' }}>
                       Status
@@ -3132,27 +3360,140 @@ function CreatePurchaseOrder() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {filteredPurchaseOrders.map((po) => {
+                  {poFilter === 'return' ? (
+                    // Display return records from database
+                    loadingReturns ? (
+                      <tr>
+                        <td colSpan="8" className="px-6 py-8 text-center inventory-muted">
+                          Loading return records...
+                        </td>
+                      </tr>
+                    ) : returnRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" className="px-6 py-8 text-center inventory-muted">
+                          No return records found
+                        </td>
+                      </tr>
+                    ) : (
+                      returnRecords.map((returnRecord) => (
+                        <tr
+                          key={returnRecord.return_header_id}
+                          className="hover:bg-gray-50 group transition-all duration-200 hover:shadow-sm"
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <div className="flex items-center gap-2">
+                              <span className="group-hover:!text-gray-900">{returnRecord.return_number}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <div className="flex flex-col">
+                              <span className="group-hover:!text-gray-900">{returnRecord.total_items || 0} item{(returnRecord.total_items || 0) !== 1 ? 's' : ''}</span>
+                              <span className="text-xs inventory-muted group-hover:!text-gray-600">
+                                {returnRecord.details?.map(d => d.product_name).join(', ') || 'No items'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">{returnRecord.supplier_name || 'N/A'}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">
+                              {returnRecord.details?.reduce((sum, d) => sum + (d.received_qty || 0), 0) || 0}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">
+                              {returnRecord.total_return_qty || 0}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900">
+                              {returnRecord.details?.reduce((sum, d) => sum + ((d.received_qty || 0) - (d.return_qty || 0)), 0) || 0}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {/* Always show "Returned" status for all return records */}
+                            <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: 'var(--inventory-accent)', color: 'white'}}>
+                              Returned
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // View return details (read-only)
+                                  setSelectedReturnForView(returnRecord);
+                                  setShowReturnDetailsModal(true);
+                                }}
+                                className="inline-flex items-center justify-center h-8 w-8 rounded-md bg-blue-100 text-blue-600 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                                onMouseLeave={handleMouseLeave}
+                              >
+                                <FaEye className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )
+                  ) : (
+                    // Display purchase orders (existing code)
+                    filteredPurchaseOrders.map((po) => {
                     // Calculate summary for this PO
-                    const products = po.products || [];
+                    // Use allProducts if available (for accurate status calculation), otherwise use filtered products
+                    const allProducts = po.allProducts || po.products || [];
+                    const products = po.products || []; // Filtered products for display
                     const totalProducts = products.length;
                     const deliveredProducts = products.filter(p => {
-                      const itemStatus = p.item_status || 'delivered';
-                      return itemStatus === 'delivered';
+                      const receivedQty = parseInt(p.received_qty) || 0;
+                      const quantity = parseInt(p.quantity) || 0;
+                      return receivedQty === 0 && quantity > 0;
                     }).length;
                     const partialProducts = products.filter(p => {
-                      const itemStatus = p.item_status || 'delivered';
-                      return itemStatus === 'partial';
+                      const receivedQty = parseInt(p.received_qty) || 0;
+                      const quantity = parseInt(p.quantity) || 0;
+                      const missingQty = p.missing_qty ?? (quantity - receivedQty);
+                      // Partial = has received some items but still has missing items
+                      return receivedQty > 0 && missingQty > 0;
                     }).length;
                     const completeProducts = products.filter(p => {
-                      const itemStatus = p.item_status || 'delivered';
-                      return itemStatus === 'complete';
+                      const receivedQty = parseInt(p.received_qty) || 0;
+                      const quantity = parseInt(p.quantity) || 0;
+                      const missingQty = p.missing_qty ?? (quantity - receivedQty);
+                      // Complete = all items received (no missing quantity)
+                      return missingQty === 0 && quantity > 0 && receivedQty > 0;
                     }).length;
 
                     // Determine overall PO status based on product mix
+                    // IMPORTANT: Check ALL products (allProducts), not just filtered ones, for accurate status
+                    
+                    // Check if ANY product has been received
+                    const hasAnyReceivedProducts = allProducts.some(p => {
+                      const receivedQty = parseInt(p.received_qty) || 0;
+                      return receivedQty > 0;
+                    });
+                    
+                    // Check if ANY product has missing quantity (and has been received)
+                    const hasAnyMissingQty = allProducts.some(p => {
+                      const receivedQty = parseInt(p.received_qty) || 0;
+                      const quantity = parseInt(p.quantity) || 0;
+                      const missingQty = p.missing_qty ?? (quantity - receivedQty);
+                      return missingQty > 0 && receivedQty > 0; // Only missing if something was received
+                    });
+
                     let overallStatus = 'complete';
-                    if (deliveredProducts > 0 || partialProducts > 0) {
-                      overallStatus = partialProducts > 0 ? 'partial' : 'delivered';
+                    if (!hasAnyReceivedProducts) {
+                      // Nothing received yet = Pending
+                      overallStatus = 'pending';
+                    } else if (hasAnyMissingQty) {
+                      // Some received but still missing = Partial
+                      overallStatus = 'partial';
+                    } else if (partialProducts > 0) {
+                      // Has partial products = Partial
+                      overallStatus = 'partial';
+                    } else {
+                      // All received = Complete
+                      overallStatus = 'complete';
                     }
 
                     return (
@@ -3187,13 +3528,34 @@ function CreatePurchaseOrder() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
                           <span className="group-hover:!text-gray-900">
-                            {products.reduce((sum, p) => sum + (p.received_qty || 0), 0)}
+                            {products.reduce((sum, p) => {
+                              const returnedQty = p.returned_qty || 0;
+                              const receivedQty = p.received_qty || 0;
+                              const currentQty = p.current_qty !== undefined ? p.current_qty : (receivedQty - returnedQty);
+                              return sum + Math.max(0, currentQty);
+                            }, 0)}
                           </span>
                         </td>
+                        {poFilter !== 'return' && (
+                          <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
+                            <span className="group-hover:!text-gray-900" style={{ color: 'var(--inventory-error)' }}>
+                              {products.reduce((sum, p) => sum + (p.returned_qty || 0), 0) > 0 ? (
+                                <span style={{ color: 'var(--inventory-error)' }}>
+                                  {products.reduce((sum, p) => sum + (p.returned_qty || 0), 0)}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--inventory-text-primary)' }}>0</span>
+                              )}
+                            </span>
+                          </td>
+                        )}
                         <td className="px-6 py-4 whitespace-nowrap text-sm group-hover:!text-gray-900" style={{ color: 'var(--inventory-text-primary)' }}>
                           <span className="group-hover:!text-gray-900">
                             {products.reduce((sum, p) => {
-                              const missingQty = p.missing_qty ?? (p.quantity - (p.received_qty || 0));
+                              const orderedQty = p.quantity || 0;
+                              const receivedQty = p.received_qty || 0;
+                              // Missing qty = ordered - received (only items never received, not returned items)
+                              const missingQty = Math.max(0, orderedQty - receivedQty);
                               return sum + missingQty;
                             }, 0)}
                           </span>
@@ -3254,23 +3616,41 @@ function CreatePurchaseOrder() {
                                     </button>
                                   );
                                 } else {
-                                  // Normal complete products - show both Received and Return buttons
+                                  // Normal complete products in Delivered Products tab - show only Return button
+                                  // Received button removed per user request
+                                  return (
+                                    <button
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleReturnCompleteItems(po.purchase_header_id); 
+                                      }}
+                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-xs"
+                                      onMouseLeave={handleMouseLeave}
+                                    >
+                                      Return
+                                    </button>
+                                  );
+                                }
+                              } else if (overallStatus === 'partial') {
+                                // Partial status - behavior differs based on which tab we're in
+                                if (poFilter === 'partial') {
+                                  // In Partial Products tab - show Update and Return buttons
                                   return (
                                     <div className="flex items-center gap-2">
                                       <button
                                         onClick={(e) => { 
                                           e.stopPropagation(); 
-                                          handleReceiveCompleteItems(po.purchase_header_id); 
+                                          handleUpdatePartialDelivery(po.purchase_header_id); 
                                         }}
-                                        className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-green-600 text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-xs"
+                                        className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-yellow-600 text-white hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 text-xs"
                                         onMouseLeave={handleMouseLeave}
                                       >
-                                        Received
+                                        Update
                                       </button>
                                       <button
                                         onClick={(e) => { 
                                           e.stopPropagation(); 
-                                          handleReturnCompleteItems(po.purchase_header_id); 
+                                          handleReturnPartialProducts(po.purchase_header_id); 
                                         }}
                                         className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-xs"
                                         onMouseLeave={handleMouseLeave}
@@ -3279,20 +3659,10 @@ function CreatePurchaseOrder() {
                                       </button>
                                     </div>
                                   );
-                                }
-                              } else if (overallStatus === 'partial') {
-                                return (
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        handleUpdatePartialDelivery(po.purchase_header_id); 
-                                      }}
-                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-yellow-600 text-white hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 text-xs"
-                                      onMouseLeave={handleMouseLeave}
-                                    >
-                                      Update
-                                    </button>
+                                } else {
+                                  // In Delivered Products tab (or other tabs) - show Return button only
+                                  // Partial status - walang Update button, pero may Return button
+                                  return (
                                     <button
                                       onClick={(e) => { 
                                         e.stopPropagation(); 
@@ -3303,17 +3673,10 @@ function CreatePurchaseOrder() {
                                     >
                                       Return
                                     </button>
-                                  </div>
-                                );
+                                  );
+                                }
                               } else {
                                 // Check if this PO is in the Returns tab (poFilter === 'return')
-                                const isInReturnsTab = poFilter === 'return';
-                                
-                                // Also check if this PO has any returned products
-                                const hasReturnedProducts = products.some(product => product.item_status === 'returned');
-                                
-                                // Debug: Log the detection
-                                // Force hide Received button if we're in Returns tab
                                 if (poFilter === 'return') {
                                   // For returned POs or POs in Returns tab, only show Return button (no Received button)
                                   return (
@@ -3328,8 +3691,22 @@ function CreatePurchaseOrder() {
                                       Return
                                     </button>
                                   );
+                                } else if (overallStatus === 'pending') {
+                                  // For pending POs (nothing received yet), show Mark as Delivered button
+                                  return (
+                                    <button
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleReceiveItems(po.purchase_header_id); 
+                                      }}
+                                      className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                                      onMouseLeave={handleMouseLeave}
+                                    >
+                                      Mark as Delivered
+                                    </button>
+                                  );
                                 } else {
-                                  // For non-returned POs, show both Complete and Return buttons
+                                  // For other statuses (partial), show both Received and Return buttons
                                   return (
                                     <div className="flex items-center gap-2">
                                       <button
@@ -3340,7 +3717,7 @@ function CreatePurchaseOrder() {
                                         className="inline-flex items-center gap-2 h-8 px-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
                                         onMouseLeave={handleMouseLeave}
                                       >
-                                        Delivered
+                                        Received
                                       </button>
                                       <button
                                         onClick={(e) => { 
@@ -3361,7 +3738,8 @@ function CreatePurchaseOrder() {
                         </td>
                       </tr>
                     );
-                  })}
+                  }))
+                }
                 </tbody>
               </table>
             </div>
@@ -3369,18 +3747,18 @@ function CreatePurchaseOrder() {
         </div>
       )}
 
-      {/* Receive Items Tab */}
+      {/* Received Item Logs Tab */}
       {activeTab === 'receive' && (
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <Package className="h-8 w-8" style={{color: 'var(--inventory-success)'}} />
-              <h2 className="text-2xl font-bold" style={{color: 'var(--inventory-text-primary)'}}>Receive Items</h2>
+              <h2 className="text-2xl font-bold" style={{color: 'var(--inventory-text-primary)'}}>Received Item Logs</h2>
             </div>
 
           </div>
 
-          {/* Receiving List Table */}
+          {/* Received Item Logs Table */}
           <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
             <div className="overflow-x-auto max-h-96">
               <table className="w-full min-w-max">
@@ -3558,22 +3936,33 @@ function CreatePurchaseOrder() {
                 <h4 className="text-md font-medium mb-3" style={{color: 'var(--inventory-text-primary)'}}>Order Items</h4>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                                         <thead className="bg-gray-50">
-                       <tr>
-                         <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Product</th>
-                         <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Ordered Qty</th>
-                         <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Received Qty</th>
-                         <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Missing Qty</th>
-                         <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Status</th>
-                       </tr>
-                     </thead>
-                     <tbody className="bg-white divide-y divide-gray-200">
-                       {selectedPO.details.map((item, index) => (
-                         <tr key={index}>
-                           <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
-                           <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.quantity}</td>
-                           <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.received_qty || 0}</td>
-                           <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.missing_qty ?? (item.quantity - (item.received_qty || 0))}</td>
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Product</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Ordered Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Received Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Returned Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Current Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Missing Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {selectedPO.details.map((item, index) => {
+                        const returnedQty = item.returned_qty || 0;
+                        const currentQty = item.current_qty !== undefined ? item.current_qty : ((item.received_qty || 0) - returnedQty);
+                        return (
+                        <tr key={index}>
+                          <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.product_name}</td>
+                          <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.quantity}</td>
+                          <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.received_qty || 0}</td>
+                          <td className="px-4 py-2 text-sm" style={{color: returnedQty > 0 ? 'var(--inventory-error)' : 'var(--inventory-text-primary)'}}>
+                            {returnedQty > 0 ? returnedQty : 0}
+                          </td>
+                          <td className="px-4 py-2 text-sm font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                            {Math.max(0, currentQty)}
+                          </td>
+                          <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>{item.missing_qty ?? (item.quantity - (item.received_qty || 0))}</td>
                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
                              {(() => {
                                const missingQty = item.missing_qty ?? (item.quantity - (item.received_qty || 0));
@@ -3601,7 +3990,8 @@ function CreatePurchaseOrder() {
                              })()}
                            </td>
                          </tr>
-                       ))}
+                        );
+                      })}
                      </tbody>
                   </table>
                 </div>
@@ -3656,14 +4046,14 @@ function CreatePurchaseOrder() {
         </div>
       )}
 
-      {/* Receive Items Modal */}
+      {/* Received Item Logs Modal */}
       {showReceiveForm && selectedPO && (
         <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
           <div className="bg-white rounded-3xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
-                  Receive Items - {selectedPO.header.po_number}
+                  Received Item Logs - {selectedPO.header.po_number}
                 </h3>
                 <button
                   onClick={() => setShowReceiveForm(false)}
@@ -3761,7 +4151,7 @@ function CreatePurchaseOrder() {
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
               >
                 <FaCheck className="h-4 w-4" />
-                Receive Items
+                Log Items
               </button>
             </div>
           </div>
@@ -3770,14 +4160,14 @@ function CreatePurchaseOrder() {
 
 
 
-      {/* Receive Items Modal */}
+      {/* Received Item Logs Modal */}
       {showReceiveItemsForm && selectedPOForReceive && (
         <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
           <div className="bg-white rounded-3xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex justify-between items-center">
                 <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
-                  Receive Items - {selectedPOForReceive.header.po_number}
+                  Received Item Logs - {selectedPOForReceive.header.po_number}
                 </h3>
                 <button
                   onClick={() => setShowReceiveItemsForm(false)}
@@ -3875,7 +4265,7 @@ function CreatePurchaseOrder() {
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <FaCheck className="h-4 w-4" />
-                    {selectedPOForReceive?.header?.status === 'delivered' ? "Mark as Complete" : "Receive Items"}
+                    {selectedPOForReceive?.header?.status === 'delivered' ? "Mark as Complete" : "Log Items"}
                   </button>
                 </div>
               </form>
@@ -3957,6 +4347,278 @@ function CreatePurchaseOrder() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Items Modal (for Delivered Products tab) */}
+      {showReturnItemsModal && selectedPOForReturn && (
+        <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
+                  Return Items - {selectedPOForReturn.header.po_number}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowReturnItemsModal(false);
+                    setSelectedPOForReturn(null);
+                    setReturnItemsFormData({ return_reason: "", items: [] });
+                  }}
+                  className="inventory-muted hover:text-red-500"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleSubmitReturnItems} className="space-y-4">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                    Return Reason *
+                  </label>
+                  <textarea
+                    value={returnItemsFormData.return_reason}
+                    onChange={(e) => handleReturnReasonChange(e.target.value)}
+                    rows="3"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 inventory-textarea"
+                    style={{borderColor: 'var(--inventory-border)'}}
+                    placeholder="Enter reason for return..."
+                    required
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <h4 className="text-md font-medium mb-3" style={{color: 'var(--inventory-text-primary)'}}>
+                    Select Items to Return
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Product</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Received Qty</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Return Qty</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Unit</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {returnItemsFormData.items.map((item, index) => (
+                          <tr key={item.purchase_dtl_id}>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                              {item.product_name}
+                            </td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                              {item.received_qty}
+                            </td>
+                            <td className="px-4 py-2">
+                              <input
+                                type="number"
+                                min="0"
+                                max={item.received_qty}
+                                value={item.return_qty || 0}
+                                onChange={(e) => handleReturnQtyChange(index, e.target.value)}
+                                className="w-20 px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                                style={{borderColor: 'var(--inventory-border)'}}
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-sm inventory-muted">
+                              {item.unit_type || 'pieces'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs inventory-muted mt-2">
+                    * Select the quantity to return for each item. Maximum return quantity cannot exceed received quantity.
+                  </p>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowReturnItemsModal(false);
+                      setSelectedPOForReturn(null);
+                      setReturnItemsFormData({ return_reason: "", items: [] });
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-gray-50"
+                    style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
+                  >
+                    <FaTimes className="h-4 w-4" />
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <FaCheck className="h-4 w-4" />
+                    Submit Return
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Details Modal (for Returns tab - viewing existing returns) */}
+      {showReturnDetailsModal && selectedReturnForView && (
+        <div className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-semibold" style={{color: 'var(--inventory-text-primary)'}}>
+                  Return Details - {selectedReturnForView.return_number}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowReturnDetailsModal(false);
+                    setSelectedReturnForView(null);
+                  }}
+                  className="inventory-muted hover:text-red-500"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {/* Return Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <p className="text-sm inventory-muted">Return Number</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReturnForView.return_number}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">PO Number</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReturnForView.po_number}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Supplier</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReturnForView.supplier_name || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Status</p>
+                  <p className="font-medium">
+                    {(() => {
+                              const statusColors = {
+                                pending: { bg: 'var(--inventory-warning)', text: 'Pending' },
+                                approved: { bg: 'var(--inventory-success)', text: 'Approved' },
+                                rejected: { bg: 'var(--inventory-error)', text: 'Rejected' },
+                                completed: { bg: 'var(--inventory-accent)', text: 'Returned' },
+                                cancelled: { bg: 'gray', text: 'Cancelled' }
+                              };
+                              const status = statusColors[selectedReturnForView.status] || statusColors.pending;
+                      return (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium" style={{backgroundColor: status.bg, color: 'white'}}>
+                          {status.text}
+                        </span>
+                      );
+                    })()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Return Date</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReturnForView.return_date ? new Date(selectedReturnForView.return_date).toLocaleDateString() : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm inventory-muted">Returned By</p>
+                  <p className="font-medium" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReturnForView.returned_by_name || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Return Reason */}
+              <div className="mb-6">
+                <p className="text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
+                  Return Reason
+                </p>
+                <div className="p-3 border rounded-md" style={{borderColor: 'var(--inventory-border)', backgroundColor: 'var(--inventory-bg-secondary)'}}>
+                  <p className="text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                    {selectedReturnForView.return_reason || 'No reason provided'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Returned Items */}
+              <div className="mb-6">
+                <h4 className="text-md font-medium mb-3" style={{color: 'var(--inventory-text-primary)'}}>
+                  Returned Items
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Product</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Received Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Return Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Remaining Qty</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium uppercase inventory-muted">Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {selectedReturnForView.details && selectedReturnForView.details.length > 0 ? (
+                        selectedReturnForView.details.map((item) => (
+                          <tr key={item.return_dtl_id}>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                              {item.product_name}
+                            </td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                              {item.received_qty || 0}
+                            </td>
+                            <td className="px-4 py-2 text-sm font-medium" style={{color: 'var(--inventory-error)'}}>
+                              {item.return_qty || 0}
+                            </td>
+                            <td className="px-4 py-2 text-sm" style={{color: 'var(--inventory-text-primary)'}}>
+                              {(item.received_qty || 0) - (item.return_qty || 0)}
+                            </td>
+                            <td className="px-4 py-2 text-sm inventory-muted">
+                              {item.unit_type || 'pieces'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="5" className="px-4 py-4 text-center text-sm inventory-muted">
+                            No items found
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowReturnDetailsModal(false);
+                    setSelectedReturnForView(null);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-gray-50"
+                  style={{borderColor: 'var(--inventory-border)', color: 'var(--inventory-text-primary)'}}
+                >
+                  <FaTimes className="h-4 w-4" />
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

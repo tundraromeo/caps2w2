@@ -76,6 +76,12 @@ try {
         case 'get_previous_orders_by_supplier':
             getPreviousOrdersBySupplier($conn);
             break;
+        case 'create_purchase_order_return':
+            createPurchaseOrderReturn($conn);
+            break;
+        case 'get_purchase_order_returns':
+            getPurchaseOrderReturns($conn);
+            break;
         default:
             echo json_encode(['success' => false, 'error' => 'Invalid action: ' . $action]);
             break;
@@ -553,14 +559,30 @@ function getPurchaseOrdersWithProducts($conn) {
             $productsStmt->execute([$po['purchase_header_id']]);
             $po['products'] = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
             
-            // Re-evaluate item_status based on received_qty vs quantity, but preserve 'returned' status
+            // Re-evaluate item_status and calculate returned quantities
             foreach ($po['products'] as &$product) {
+                $purchaseDtlId = $product['purchase_dtl_id'];
+                
+                // Calculate total returned quantity for this item
+                $returnQuery = "SELECT COALESCE(SUM(rd.return_qty), 0) as total_returned
+                               FROM tbl_return_dtl rd
+                               JOIN tbl_return_header rh ON rd.return_header_id = rh.return_header_id
+                               WHERE rd.purchase_dtl_id = ? AND rh.purchase_header_id = ?";
+                $returnStmt = $conn->prepare($returnQuery);
+                $returnStmt->execute([$purchaseDtlId, $po['purchase_header_id']]);
+                $returnData = $returnStmt->fetch(PDO::FETCH_ASSOC);
+                $totalReturned = intval($returnData['total_returned'] ?? 0);
+                
+                // Calculate current quantity (received - returned)
+                $receivedQty = intval($product['received_qty'] ?? 0);
+                $product['returned_qty'] = $totalReturned;
+                $product['current_qty'] = max(0, $receivedQty - $totalReturned);
+                
                 // Don't overwrite returned status - it's manually set and should persist
                 if ($product['item_status'] === 'returned') {
                     continue;
                 }
                 
-                $receivedQty = intval($product['received_qty'] ?? 0);
                 $quantity = intval($product['quantity'] ?? 0);
                 
                 // Re-calculate item_status based on actual quantities
@@ -616,14 +638,30 @@ function getPurchaseOrderDetails($conn) {
         $detailStmt->execute([$poId]);
         $details = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
         
-        // Re-evaluate item_status based on received_qty vs quantity, but preserve 'returned' status
+        // Get returned quantities for each purchase detail
         foreach ($details as &$detail) {
-            // Don't overwrite returned status - it's manually set and should persist
+            $purchaseDtlId = $detail['purchase_dtl_id'];
+            
+            // Calculate total returned quantity for this item
+            $returnQuery = "SELECT COALESCE(SUM(rd.return_qty), 0) as total_returned
+                           FROM tbl_return_dtl rd
+                           JOIN tbl_return_header rh ON rd.return_header_id = rh.return_header_id
+                           WHERE rd.purchase_dtl_id = ? AND rh.purchase_header_id = ?";
+            $returnStmt = $conn->prepare($returnQuery);
+            $returnStmt->execute([$purchaseDtlId, $poId]);
+            $returnData = $returnStmt->fetch(PDO::FETCH_ASSOC);
+            $totalReturned = intval($returnData['total_returned'] ?? 0);
+            
+            // Calculate current quantity (received - returned)
+            $receivedQty = intval($detail['received_qty'] ?? 0);
+            $detail['returned_qty'] = $totalReturned;
+            $detail['current_qty'] = max(0, $receivedQty - $totalReturned);
+            
+            // Re-evaluate item_status based on received_qty vs quantity, but preserve 'returned' status
             if ($detail['item_status'] === 'returned') {
                 continue;
             }
             
-            $receivedQty = intval($detail['received_qty'] ?? 0);
             $quantity = intval($detail['quantity'] ?? 0);
             
             // Re-calculate item_status based on actual quantities
@@ -1726,6 +1764,174 @@ function getPreviousOrdersBySupplier($conn) {
             'success' => false,
             'error' => 'Database error: ' . $e->getMessage(),
             'data' => []
+        ]);
+    }
+}
+
+function createPurchaseOrderReturn($conn) {
+    try {
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
+        
+        if (!$data) {
+            echo json_encode(['success' => false, 'error' => 'Invalid JSON data']);
+            return;
+        }
+        
+        $purchase_header_id = $data['purchase_header_id'] ?? null;
+        $po_number = $data['po_number'] ?? '';
+        $return_reason = $data['return_reason'] ?? '';
+        $returned_by = $data['returned_by'] ?? null;
+        $returned_by_name = $data['returned_by_name'] ?? '';
+        $items = $data['items'] ?? [];
+        
+        if (!$purchase_header_id || empty($return_reason) || empty($items)) {
+            echo json_encode(['success' => false, 'error' => 'Missing required fields: purchase_header_id, return_reason, and items are required']);
+            return;
+        }
+        
+        // Filter items that have return_qty > 0
+        $itemsToReturn = array_filter($items, function($item) {
+            return isset($item['return_qty']) && intval($item['return_qty']) > 0;
+        });
+        
+        if (empty($itemsToReturn)) {
+            echo json_encode(['success' => false, 'error' => 'No items selected for return']);
+            return;
+        }
+        
+        $conn->beginTransaction();
+        
+        // Generate return number
+        $returnNumber = 'RET-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+        
+        // Check if return number already exists
+        $checkStmt = $conn->prepare("SELECT return_number FROM tbl_return_header WHERE return_number = ?");
+        $checkStmt->execute([$returnNumber]);
+        if ($checkStmt->fetch()) {
+            // Regenerate if exists
+            $returnNumber = 'RET-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+        }
+        
+        // Insert into tbl_return_header
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_return_header 
+            (return_number, purchase_header_id, po_number, return_date, return_reason, returned_by, returned_by_name, status, created_at)
+            VALUES (?, ?, ?, NOW(), ?, ?, ?, 'completed', NOW())
+        ");
+        
+        $stmt->execute([
+            $returnNumber,
+            $purchase_header_id,
+            $po_number,
+            $return_reason,
+            $returned_by,
+            $returned_by_name
+        ]);
+        
+        $return_header_id = $conn->lastInsertId();
+        
+        // Insert into tbl_return_dtl for each item
+        $detailStmt = $conn->prepare("
+            INSERT INTO tbl_return_dtl
+            (return_header_id, purchase_dtl_id, product_id, product_name, return_qty, received_qty, unit_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+        ");
+        
+        foreach ($itemsToReturn as $item) {
+            $detailStmt->execute([
+                $return_header_id,
+                $item['purchase_dtl_id'] ?? null,
+                $item['product_id'] ?? null,
+                $item['product_name'] ?? '',
+                intval($item['return_qty']),
+                intval($item['received_qty'] ?? 0),
+                $item['unit_type'] ?? 'pieces'
+            ]);
+        }
+        
+        $conn->commit();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Return record created successfully',
+            'return_id' => $return_header_id,
+            'return_number' => $returnNumber
+        ]);
+        
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        echo json_encode([
+            'success' => false,
+            'error' => 'Database error: ' . $e->getMessage()
+        ]);
+    }
+}
+
+function getPurchaseOrderReturns($conn) {
+    try {
+        // Get all return records from tbl_return_header with their details
+        $query = "
+            SELECT 
+                rh.return_header_id,
+                rh.return_number,
+                rh.purchase_header_id,
+                rh.po_number,
+                rh.return_date,
+                rh.return_reason,
+                rh.returned_by,
+                rh.returned_by_name,
+                rh.status,
+                rh.created_at,
+                rh.updated_at,
+                po.supplier_id,
+                s.supplier_name,
+                po.date as po_date,
+                po.status as po_status
+            FROM tbl_return_header rh
+            LEFT JOIN tbl_purchase_order_header po ON rh.purchase_header_id = po.purchase_header_id
+            LEFT JOIN tbl_supplier s ON po.supplier_id = s.supplier_id
+            ORDER BY rh.created_at DESC
+        ";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->execute();
+        $returns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Get return details for each return
+        foreach ($returns as &$return) {
+            $detailsQuery = "
+                SELECT 
+                    rd.return_dtl_id,
+                    rd.purchase_dtl_id,
+                    rd.product_id,
+                    rd.product_name,
+                    rd.return_qty,
+                    rd.received_qty,
+                    rd.unit_type,
+                    rd.created_at
+                FROM tbl_return_dtl rd
+                WHERE rd.return_header_id = ?
+                ORDER BY rd.created_at
+            ";
+            
+            $detailsStmt = $conn->prepare($detailsQuery);
+            $detailsStmt->execute([$return['return_header_id']]);
+            $return['details'] = $detailsStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Calculate summary
+            $return['total_items'] = count($return['details']);
+            $return['total_return_qty'] = array_sum(array_column($return['details'], 'return_qty'));
+        }
+        
+        echo json_encode(['success' => true, 'data' => $returns]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Database error: ' . $e->getMessage()
         ]);
     }
 }
