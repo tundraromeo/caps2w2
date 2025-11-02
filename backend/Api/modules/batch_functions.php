@@ -45,7 +45,7 @@ function getTransferBatchDetails($conn, $data) {
                     tbd.quantity as batch_quantity,
                     tbd.srp as batch_srp,
                     tbd.expiration_date,
-                    'Consumed' as status,
+                        'Done' as status,
                     th.date as transfer_date,
                     p.product_name,
                     p.barcode,
@@ -78,7 +78,7 @@ function getTransferBatchDetails($conn, $data) {
                 return $item['status'] === 'Available';
             }));
             $consumed_batches = count(array_filter($batch_details, function($item) {
-                return $item['status'] === 'Consumed';
+                return $item['status'] === 'Done';
             }));
             
             // Get unique SRP

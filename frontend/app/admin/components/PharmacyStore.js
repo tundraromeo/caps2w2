@@ -1062,7 +1062,7 @@ const PharmacyStore = () => {
                                   isExpiringSoon ? 'bg-orange-100 text-orange-800' :
                                   'bg-gray-100 text-gray-800'
                                 }`}>
-                                  {isConsumed ? 'Consumed' : 
+                                  {isConsumed ? 'Done' : 
                                    isExpired ? 'Expired' :
                                    isExpiringSoon ? 'Expiring Soon' :
                                    'Available'}

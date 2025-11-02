@@ -279,7 +279,7 @@ function Warehouse() {
       return 'in stock';
     }
   };
-    // State Management
+    // State Managementdapat
     const [scannerStatusMessage, setScannerStatusMessage] = useState("🔍 Scanner is ready and active - Scan any barcode to continue");
     const [scanTimeout, setScanTimeout] = useState(null);
     
@@ -375,6 +375,7 @@ function Warehouse() {
     const [newProductForm, setNewProductForm] = useState({
       product_name: "",
       category_id: "",
+      category_search: "",
       product_type: "", // Medicine or Non-Medicine
       configMode: "bulk", // Default to bulk mode
       barcode: "",
@@ -953,28 +954,38 @@ calculateLowStockAndExpiring(activeProducts);
               // "📦 Categories API response:", response);
               // "📦 Categories response.data:", response.data);
               let categoriesArray = []
-  
-              if (Array.isArray(response.data)) {
+
+              // Handle different possible response structures
+              if (Array.isArray(response)) {
+                categoriesArray = response
+              } else if (Array.isArray(response.data)) {
                 categoriesArray = response.data
-                // "✅ Categories loaded from response.data array:", categoriesArray);
               } else if (response.data && Array.isArray(response.data.data)) {
                 categoriesArray = response.data.data
-                // "✅ Categories loaded from response.data.data array:", categoriesArray);
+              } else if (response.success && Array.isArray(response.data)) {
+                categoriesArray = response.data
+              } else if (response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
+                // Try to extract array from response.data object
+                const possibleArrays = Object.values(response.data).filter(v => Array.isArray(v));
+                if (possibleArrays.length > 0) {
+                  categoriesArray = possibleArrays[0];
+                }
               } else {
                 console.warn("⚠️ Unexpected categories response format:", response);
               }
-  
+
               // "🔍 Final categoriesArray before setting:", categoriesArray);
               // "🔍 categoriesArray.length:", categoriesArray.length);
               // "🔍 categoriesArray content:", JSON.stringify(categoriesArray, null, 2));
               
-              setCategoriesData(categoriesArray)
+              setCategoriesData(categoriesArray || [])
               // "✅ Categories loaded successfully:", categoriesArray.length, "categories");
               // "📋 Categories data:", categoriesArray);
             })
             .catch((error) => {
-              safeToast("error", "❌ Error loading categories:", error)
+              console.error("❌ Error loading categories:", error);
               safeToast("error", "Failed to load categories from database")
+              setCategoriesData([])
             })
           break
   
@@ -1758,6 +1769,7 @@ calculateLowStockAndExpiring(activeProducts);
       setNewProductForm({
         product_name: "",
         category_id: "",
+        category_search: "",
         product_type: "",
         configMode: "bulk", // Reset to default
         barcode: "",
@@ -2462,7 +2474,7 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
       // "🔍 Brand search from form:", newProductForm.brand_search);
       
       // Basic required fields validation
-      if (!newProductForm.product_name || !newProductForm.category_id || !newProductForm.product_type || !newProductForm.srp) {
+      if (!newProductForm.product_name || (!newProductForm.category_id && !newProductForm.category_search) || !newProductForm.product_type || !newProductForm.srp) {
         safeToast("error", "Please fill in all required fields (Product Name, Category, Product Type, SRP)");
         // "❌ Basic validation failed - missing required fields");
         return;
@@ -2517,6 +2529,9 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
       // Add to temporary storage instead of database
       const tempProduct = {
         ...newProductForm,
+        // Ensure category_search is preserved even if category_id is empty
+        category_search: newProductForm.category_search || "",
+        category_id: newProductForm.category_id || "",
         batch: currentBatchNumber, // Use the same batch number for all products
         temp_id: Date.now(), // Unique temporary ID
         status: "pending",
@@ -2530,6 +2545,7 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
       setNewProductForm({
         product_name: "",
         category_id: "",
+        category_search: "",
         product_type: "",
         configMode: newProductForm.configMode || "bulk", // Preserve configuration mode
         barcode: "", // No auto-generated barcode
@@ -2541,7 +2557,7 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
         expiration: "",
         date_added: new Date().toISOString().split('T')[0],
         batch: newProductForm.batch || currentBatchNumber, // Keep user's batch input or current batch
-        order_number: "",
+        order_number: newProductForm.order_number || "", // Preserve P.O. Number when continuing to add
         prescription: 0,
         bulk: 0,
         // Medicine fields
@@ -2660,36 +2676,48 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
             location: "Warehouse",
             entry_by: currentUser,
             status: "active",
-            products: newProducts.map(product => ({
-              product_name: product.product_name,
-              category_id: product.category_id,
-              product_type: product.product_type,
-              configMode: product.configMode || "bulk",
-              barcode: product.barcode,
-              description: product.description,
-              unit_price: parseFloat(product.srp), // For FIFO batch entry
-              srp: parseFloat(product.srp || 0), // For FIFO batch entry - NOT stored in tbl_product
-              brand_id: product.brand_id || null, // Don't default to 1, let backend handle it
-              brand_name: product.brand_search || null, // Pass brand name for new brand creation
-              quantity: (() => {
-                // For FIFO batch entry - NOT stored in tbl_product
-                const qty = product.product_type === "Medicine" 
-                  ? parseInt(product.total_tablets || 0)
-                  : parseInt(product.total_pieces || 0);
-                // Ensure quantity is a valid positive number
-                return isNaN(qty) || qty <= 0 ? 1 : qty;
-              })(),
-              supplier_id: product.supplier_id || 1,
-              expiration: product.expiration || null, // REQUIRED for FIFO batch entry
-              prescription: product.prescription,
-              bulk: product.bulk,
-              boxes: product.boxes || null,
-              strips_per_box: product.strips_per_box || null,
-              tablets_per_strip: product.tablets_per_strip || null,
-              total_tablets: product.total_tablets || null,
-              pieces_per_pack: product.pieces_per_pack || null,
-              total_pieces: product.total_pieces || null
-            }))
+            products: newProducts.map(product => {
+              // Ensure category_name is passed if category_id is not set (for new category creation)
+              // If category_id exists, don't pass category_name
+              // If category_id is empty/null but category_search exists, pass category_name for backend to create
+              const hasCategoryId = product.category_id && product.category_id !== "" && product.category_id !== null && product.category_id !== undefined;
+              const categorySearchValue = (product.category_search || "").trim();
+              const categoryName = !hasCategoryId && categorySearchValue.length > 0 
+                ? categorySearchValue 
+                : null;
+              
+              return {
+                product_name: product.product_name,
+                category_id: hasCategoryId ? product.category_id : null,
+                category_name: categoryName, // Pass category name for new category creation (only if no category_id)
+                product_type: product.product_type,
+                configMode: product.configMode || "bulk",
+                barcode: product.barcode,
+                description: product.description,
+                unit_price: parseFloat(product.srp), // For FIFO batch entry
+                srp: parseFloat(product.srp || 0), // For FIFO batch entry - NOT stored in tbl_product
+                brand_id: product.brand_id || null, // Don't default to 1, let backend handle it
+                brand_name: product.brand_search || null, // Pass brand name for new brand creation
+                quantity: (() => {
+                  // For FIFO batch entry - NOT stored in tbl_product
+                  const qty = product.product_type === "Medicine" 
+                    ? parseInt(product.total_tablets || 0)
+                    : parseInt(product.total_pieces || 0);
+                  // Ensure quantity is a valid positive number
+                  return isNaN(qty) || qty <= 0 ? 1 : qty;
+                })(),
+                supplier_id: product.supplier_id || 1,
+                expiration: product.expiration || null, // REQUIRED for FIFO batch entry
+                prescription: product.prescription,
+                bulk: product.bulk,
+                boxes: product.boxes || null,
+                strips_per_box: product.strips_per_box || null,
+                tablets_per_strip: product.tablets_per_strip || null,
+                total_tablets: product.total_tablets || null,
+                pieces_per_pack: product.pieces_per_pack || null,
+                total_pieces: product.total_pieces || null
+              };
+            })
           };
           const response = await handleApiCall("add_batch_entry", batchData);
           
@@ -2940,6 +2968,14 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
       setScannerActive(settings.barcodeScanning);
       setScannerStatusMessage(settings.barcodeScanning ? "🔍 Scanner is ready and active - Scan any barcode to continue" : "🔍 Barcode scanning is disabled in settings");
     }, [])
+
+    // Load categories when modal opens
+    useEffect(() => {
+      if (showNewProductModal) {
+        // Always reload categories when modal opens to ensure fresh data
+        loadData("categories");
+      }
+    }, [showNewProductModal]);
 
     // Auto-refresh for notifications (every 30 seconds for warehouse)
     useEffect(() => {
@@ -5691,32 +5727,86 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Category *</label>
-              <select
-                required
-                value={newProductForm.category_id || ""}
-                onChange={(e) => {
-                  handleNewProductInputChange("category_id", e.target.value);
-                }}
-                className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
-                style={{ 
-                  borderColor: theme.border.default,
-                  backgroundColor: theme.bg.secondary,
-                  color: theme.text.primary,
-                  focusRingColor: theme.colors.accent
-                }}
-              >
-                <option value="">Select Category</option>
-                {categoriesData.map((category) => (
-                  <option key={category.category_id} value={category.category_id}>
-                    {category.category_name}
-                  </option>
-                ))}
-              </select>
-              <p 
-                className="text-xs mt-1"
-                style={{ color: theme.text.muted }}
-              >
-                Available categories: {categoriesData.length}
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  placeholder="Type category name or enter new category..."
+                  value={newProductForm.category_search || ""}
+                  onChange={(e) => {
+                    const searchTerm = e.target.value;
+                    handleNewProductInputChange("category_search", searchTerm);
+                    
+                    // Auto-select category if exact match found
+                    const matchingCategory = categoriesData.find(cat => 
+                      (cat.category_name || cat.category || "").toLowerCase() === searchTerm.toLowerCase()
+                    );
+                    if (matchingCategory) {
+                      handleNewProductInputChange("category_id", matchingCategory.category_id || matchingCategory.id);
+                    } else {
+                      // Clear category_id to indicate this will be a new category if no match
+                      handleNewProductInputChange("category_id", "");
+                    }
+                  }}
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
+                  style={{ 
+                    borderColor: theme.border.default,
+                    backgroundColor: theme.bg.secondary,
+                    color: theme.text.primary,
+                    focusRingColor: theme.colors.accent
+                  }}
+                />
+                {/* Suggestions dropdown */}
+                {newProductForm.category_search && (
+                  <div className="absolute z-10 w-full mt-1 rounded-md shadow-lg max-h-40 overflow-y-auto" style={{ backgroundColor: theme.bg.card, borderColor: theme.border.default, border: `1px solid ${theme.border.default}` }}>
+                    {/* Show existing category suggestions */}
+                    {categoriesData
+                      .filter(category => 
+                        (category.category_name || category.category || "").toLowerCase().includes((newProductForm.category_search || "").toLowerCase())
+                      )
+                      .map((category) => (
+                        <div
+                          key={category.category_id || category.id || Math.random()}
+                          className="px-3 py-2 cursor-pointer"
+                          style={{ 
+                            color: theme.text.primary,
+                            ':hover': { backgroundColor: theme.bg.hover }
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bg.hover}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          onClick={() => {
+                            handleNewProductInputChange("category_search", category.category_name || category.category);
+                            handleNewProductInputChange("category_id", category.category_id || category.id);
+                          }}
+                        >
+                          {category.category_name || category.category}
+                        </div>
+                      ))}
+                    {/* Show option to create new category if no exact match */}
+                    {!categoriesData.find(category => 
+                      (category.category_name || category.category || "").toLowerCase() === (newProductForm.category_search || "").toLowerCase()
+                    ) && newProductForm.category_search.trim() && (
+                      <div
+                        className="px-3 py-2 cursor-pointer border-t"
+                        style={{ 
+                          color: theme.text.primary,
+                          backgroundColor: theme.colors.success + '20',
+                          borderColor: theme.border.default
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.colors.success + '30'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.colors.success + '20'}
+                        onClick={() => {
+                          handleNewProductInputChange("category_id", ""); // Clear category_id to indicate new category
+                        }}
+                      >
+                        ➕ Create new category: &ldquo;{newProductForm.category_search}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs mt-1" style={{ color: theme.text.muted }}>
+                Type to see suggestions or enter a new category name to create it automatically.
               </p>
             </div>
             <div>
@@ -6287,12 +6377,12 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>Order Number</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: theme.text.secondary }}>P.O. Number</label>
               <input
                 type="text"
                 value={newProductForm.order_number || ""}
                 onChange={(e) => handleNewProductInputChange("order_number", e.target.value)}
-                placeholder="Enter order number"
+                placeholder="Enter P.O. number"
                 className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2"
                 style={{ 
                   borderColor: theme.border.default,
@@ -6498,8 +6588,9 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
               <button
                 type="submit"
                 disabled={loading || (() => {
-                  // Basic required fields
-                  if (!newProductForm.product_name || !newProductForm.category_id || !newProductForm.product_type || !newProductForm.srp) {
+                  // Basic required fields - accept either category_id or category_search for new categories
+                  const hasCategory = newProductForm.category_id || (newProductForm.category_search && newProductForm.category_search.trim());
+                  if (!newProductForm.product_name || !hasCategory || !newProductForm.product_type || !newProductForm.srp) {
                     return true;
                   }
                   
@@ -6524,7 +6615,8 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
                 style={{ backgroundColor: theme.colors.success }}
                 title={(() => {
                   if (!newProductForm.product_name) return "Please enter product name";
-                  if (!newProductForm.category_id) return "Please select category";
+                  const hasCategory = newProductForm.category_id || (newProductForm.category_search && newProductForm.category_search.trim());
+                  if (!hasCategory) return "Please enter or select category";
                   if (!newProductForm.product_type) return "Please select product type";
                   if (!newProductForm.srp) return "Please enter SRP";
                   
@@ -7460,10 +7552,16 @@ const response = await handleApiCall("get_product_quantities", { location_id: lo
                               <td className="border px-3 py-2" style={{ borderColor: theme.border.default }}>
                                 <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full" style={{ backgroundColor: theme.bg.hover, color: theme.text.primary }}>
                                   {(() => {
-                                    // Get category name from category_id
+                                    // Priority: category_search (new category typed by user), then category_id lookup, then fallback
+                                    if (product.category_search && product.category_search.trim()) {
+                                      return product.category_search.trim();
+                                    }
+                                    // Get category name from category_id if exists
                                     if (product.category_id && categoriesData.length > 0) {
                                       const category = categoriesData.find(cat => cat.category_id == product.category_id);
-                                      return category ? category.category_name : `Category ID: ${product.category_id}`;
+                                      if (category) {
+                                        return category.category_name || category.category || `Category ID: ${product.category_id}`;
+                                      }
                                     }
                                     // Fallback to product.category or product.category_name if available
                                     return product.category || product.category_name || "No Category";

@@ -113,7 +113,18 @@ try {
                     ) as total_batches,
                     MAX(p.status) as status,
                     s.supplier_name,
-                    MAX(p.expiration) as expiration,
+                    -- Use transfer expiration if available, otherwise product expiration
+                    COALESCE(
+                        (SELECT tbd_exp.expiration_date 
+                         FROM tbl_transfer_batch_details tbd_exp 
+                         WHERE tbd_exp.product_id = p.product_id 
+                         AND tbd_exp.location_id = (
+                             SELECT l_exp.location_id FROM tbl_location l_exp WHERE l_exp.location_name LIKE '%convenience%' LIMIT 1
+                         )
+                         ORDER BY tbd_exp.expiration_date ASC, tbd_exp.id ASC 
+                         LIMIT 1),
+                        MAX(p.expiration)
+                    ) as expiration,
                     l.location_name,
                     (SELECT tbd2.srp 
                      FROM tbl_transfer_batch_details tbd2 
@@ -295,7 +306,18 @@ try {
                     ) as total_quantity,
                     MAX(p.status) as status,
                     s.supplier_name,
-                    MAX(p.expiration) as expiration,
+                    -- Use transfer expiration if available, otherwise product expiration
+                    COALESCE(
+                        (SELECT tbd_exp.expiration_date 
+                         FROM tbl_transfer_batch_details tbd_exp 
+                         WHERE tbd_exp.product_id = p.product_id 
+                         AND tbd_exp.location_id = (
+                             SELECT l_exp.location_id FROM tbl_location l_exp WHERE l_exp.location_name LIKE '%convenience%' LIMIT 1
+                         )
+                         ORDER BY tbd_exp.expiration_date ASC, tbd_exp.id ASC 
+                         LIMIT 1),
+                        MAX(p.expiration)
+                    ) as expiration,
                     l.location_name,
                     (SELECT tbd2.srp 
                      FROM tbl_transfer_batch_details tbd2 
@@ -421,7 +443,18 @@ try {
                     ) as total_quantity,
                     MAX(p.status) as status,
                     s.supplier_name,
-                    MAX(p.expiration) as expiration,
+                    -- Use transfer expiration if available, otherwise product expiration
+                    COALESCE(
+                        (SELECT tbd_exp.expiration_date 
+                         FROM tbl_transfer_batch_details tbd_exp 
+                         WHERE tbd_exp.product_id = p.product_id 
+                         AND tbd_exp.location_id = (
+                             SELECT l_exp.location_id FROM tbl_location l_exp WHERE l_exp.location_name LIKE '%convenience%' LIMIT 1
+                         )
+                         ORDER BY tbd_exp.expiration_date ASC, tbd_exp.id ASC 
+                         LIMIT 1),
+                        MAX(p.expiration)
+                    ) as expiration,
                     l.location_name,
                     (SELECT tbd2.srp 
                      FROM tbl_transfer_batch_details tbd2 
@@ -567,7 +600,7 @@ try {
                     btd.created_at as transfer_date,
                     CONCAT('TR-', btd.id) as transfer_id,
                     CASE 
-                        WHEN btd.quantity > 0 THEN 'Consumed'
+                        WHEN btd.quantity > 0 THEN 'Done'
                         ELSE 'Available'
                     END as status,
                     p.product_name,
@@ -774,7 +807,7 @@ try {
                         tbd.quantity as batch_quantity,
                         tbd.srp as batch_srp,
                         tbd.expiration_date,
-                        'Consumed' as status,
+                        'Done' as status,
                         th.date as transfer_date,
                         th.transfer_header_id,
                         p.product_name,
@@ -809,7 +842,7 @@ try {
                     return $item['status'] === 'Available';
                 }));
                 $consumed_batches = count(array_filter($batch_details, function($item) {
-                    return $item['status'] === 'Consumed';
+                    return $item['status'] === 'Done';
                 }));
                 
                 // Get unique SRP
@@ -1185,7 +1218,16 @@ try {
                     COALESCE(SUM(ss.total_quantity), 0) as total_quantity,
                     p.status,
                     s.supplier_name,
-                    p.expiration,
+                    -- Use transfer expiration if available, otherwise product expiration
+                    COALESCE(
+                        (SELECT tbd_exp.expiration_date 
+                         FROM tbl_transfer_batch_details tbd_exp 
+                         WHERE tbd_exp.product_id = p.product_id 
+                         AND tbd_exp.location_id = tbd.location_id
+                         ORDER BY tbd_exp.expiration_date ASC, tbd_exp.id ASC 
+                         LIMIT 1),
+                        p.expiration
+                    ) as expiration,
                     l.location_name,
                     ss.batch_reference,
                     ss.expiration_date,

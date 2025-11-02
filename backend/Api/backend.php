@@ -2635,19 +2635,45 @@ case 'get_products_oldest_batch_for_transfer':
 
     case 'get_categories':
         try {
-            $stmt = $conn->prepare("SELECT * FROM tbl_category ORDER BY category_id");
+            // Check if table exists first
+            $checkTable = $conn->prepare("SHOW TABLES LIKE 'tbl_category'");
+            $checkTable->execute();
+            $tableExists = $checkTable->fetch();
+            
+            if (!$tableExists) {
+                echo json_encode([
+                    "success" => false,
+                    "message" => "Table tbl_category does not exist",
+                    "data" => []
+                ]);
+                break;
+            }
+            
+            $stmt = $conn->prepare("SELECT category_id, category_name FROM tbl_category ORDER BY category_name ASC");
             $stmt->execute();
             $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            echo json_encode([
-                "success" => true,
-                "data" => $categories
-            ]);
+            // If no categories found, return empty array but still success
+            if (empty($categories)) {
+                echo json_encode([
+                    "success" => true,
+                    "message" => "No categories found in database",
+                    "data" => [],
+                    "count" => 0
+                ]);
+            } else {
+                echo json_encode([
+                    "success" => true,
+                    "data" => $categories,
+                    "count" => count($categories)
+                ]);
+            }
         } catch (Exception $e) {
             echo json_encode([
                 "success" => false,
                 "message" => "Database error: " . $e->getMessage(),
-                "data" => []
+                "data" => [],
+                "error" => $e->getMessage()
             ]);
         }
         break;
@@ -8966,10 +8992,11 @@ case 'get_products_oldest_batch_for_transfer':
                     break 2; // Break out of both loops
                 }
                 
-                if (empty($product['category_id'])) {
+                // Validate category - can be category_id or category_name
+                if (empty($product['category_id']) && empty($product['category_name'])) {
                     echo json_encode([
                         "success" => false,
-                        "message" => "Category ID is required for product '{$product['product_name']}'"
+                        "message" => "Category (ID or name) is required for product '{$product['product_name']}'"
                     ]);
                     break 2;
                 }
@@ -9074,8 +9101,16 @@ case 'get_products_oldest_batch_for_transfer':
                 foreach ($products as $product) {
                     try {
                         // Validate required fields
-                        if (empty($product['product_name']) || empty($product['category_id']) || empty($product['barcode'])) {
-                            throw new Exception("Missing required product fields: product_name, category_id, or barcode");
+                        if (empty($product['product_name']) || empty($product['barcode'])) {
+                            throw new Exception("Missing required product fields: product_name or barcode");
+                        }
+                        
+                        // Validate category - must have either category_id or category_name
+                        $hasCategoryId = !empty($product['category_id']);
+                        $hasCategoryName = !empty($product['category_name']) && trim($product['category_name']) !== '';
+                        
+                        if (!$hasCategoryId && !$hasCategoryName) {
+                            throw new Exception("Missing required category (ID or name) for product: " . $product['product_name']);
                         }
                         
                         if (!isset($product['quantity']) || $product['quantity'] <= 0) {
@@ -9084,6 +9119,85 @@ case 'get_products_oldest_batch_for_transfer':
                         
                         if (!isset($product['srp']) || $product['srp'] < 0) {
                             throw new Exception("Invalid SRP for product: " . $product['product_name']);
+                        }
+                        
+                        // Handle category creation if category_id is not provided but category_name is
+                        $category_id = $product['category_id'] ?? null;
+                        $category_name = isset($product['category_name']) ? trim($product['category_name']) : '';
+                        
+                        // Debug logging
+                        error_log("🔍 Processing category for product '{$product['product_name']}': category_id=" . ($category_id ?? 'null') . ", category_name='" . ($category_name ?: 'empty') . "'");
+                        
+                        // If no category_id but we have category_name, create or find category
+                        if ((!$category_id || $category_id === "" || $category_id === null || $category_id === 0) && !empty($category_name)) {
+                            error_log("✅ Will create/find category: '{$category_name}'");
+                            try {
+                                // Check if category already exists (case-insensitive)
+                                $categoryCheckStmt = $conn->prepare("SELECT category_id FROM tbl_category WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(?))");
+                                $categoryCheckStmt->execute([$category_name]);
+                                $existingCategoryId = $categoryCheckStmt->fetchColumn();
+                                
+                                if ($existingCategoryId) {
+                                    $category_id = $existingCategoryId;
+                                    error_log("Found existing category: {$category_name} with ID: $category_id");
+                                } else {
+                                    // Create new category - ensure table exists first
+                                    try {
+                                        // Check if table exists
+                                        $checkTableStmt = $conn->query("SHOW TABLES LIKE 'tbl_category'");
+                                        $tableExists = $checkTableStmt->rowCount() > 0;
+                                        
+                                        if (!$tableExists) {
+                                            // Create table if it doesn't exist
+                                            $createTableStmt = $conn->prepare("
+                                                CREATE TABLE IF NOT EXISTS tbl_category (
+                                                    category_id INT AUTO_INCREMENT PRIMARY KEY,
+                                                    category_name VARCHAR(255) NOT NULL UNIQUE,
+                                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                                )
+                                            ");
+                                            $createTableStmt->execute();
+                                            error_log("✅ Created tbl_category table");
+                                        }
+                                        
+                                        // Insert new category
+                                        $categoryInsertStmt = $conn->prepare("INSERT INTO tbl_category (category_name) VALUES (?)");
+                                        $categoryInsertStmt->execute([$category_name]);
+                                        $category_id = $conn->lastInsertId();
+                                        
+                                        if ($category_id) {
+                                            error_log("✅ Successfully created new category: '{$category_name}' with ID: $category_id");
+                                        } else {
+                                            error_log("❌ Failed to create category: '{$category_name}' - lastInsertId returned false");
+                                            throw new Exception("Failed to create category: '{$category_name}'. Check database permissions.");
+                                        }
+                                    } catch (PDOException $e) {
+                                        error_log("❌ Database error creating category '{$category_name}': " . $e->getMessage());
+                                        // If duplicate entry error, try to find it again
+                                        if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate') !== false) {
+                                            $categoryCheckStmt = $conn->prepare("SELECT category_id FROM tbl_category WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(?))");
+                                            $categoryCheckStmt->execute([$category_name]);
+                                            $existingCategoryId = $categoryCheckStmt->fetchColumn();
+                                            if ($existingCategoryId) {
+                                                $category_id = $existingCategoryId;
+                                                error_log("✅ Found category after duplicate error: '{$category_name}' with ID: $category_id");
+                                            } else {
+                                                throw new Exception("Category '{$category_name}' already exists but could not be retrieved: " . $e->getMessage());
+                                            }
+                                        } else {
+                                            throw new Exception("Database error creating category '{$category_name}': " . $e->getMessage());
+                                        }
+                                    }
+                                }
+                            } catch (Exception $e) {
+                                error_log("❌ Error creating category '{$category_name}': " . $e->getMessage());
+                                throw new Exception("Error creating category '{$category_name}': " . $e->getMessage());
+                            }
+                        }
+                        
+                        // If still no category_id after processing, log warning
+                        if (!$category_id || $category_id === "" || $category_id === null) {
+                            error_log("⚠️ Warning: No category_id available for product '{$product['product_name']}'. category_name: " . ($category_name ?: 'empty'));
                         }
                         
                         // Handle brand creation if brand_id is not provided but brand_name is
@@ -9118,7 +9232,7 @@ case 'get_products_oldest_batch_for_transfer':
                         // NO quantity/srp in tbl_product - they go ONLY to tbl_fifo_stock!
                         $productParams = [
                             $product['product_name'],
-                            $product['category_id'],
+                            $category_id, // Use the resolved category_id (may have been created)
                             $product['barcode'],
                             $product['description'] ?? '',
                             $brand_id,

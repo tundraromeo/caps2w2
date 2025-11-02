@@ -162,8 +162,7 @@ function CreatePurchaseOrder() {
   const [simplePOData, setSimplePOData] = useState({
     productName: "",
     quantity: 1,
-    unitType: "pieces",
-    srp: ""
+    unitType: "pieces"
   });
   const [modalProducts, setModalProducts] = useState([]);
 
@@ -208,8 +207,7 @@ function CreatePurchaseOrder() {
     setSimplePOData({
       productName: "",
       quantity: 1,
-      unitType: "pieces",
-      srp: ""
+      unitType: "pieces"
     });
     setModalProducts([]);
     setShowSimplePOModal(true);
@@ -222,8 +220,7 @@ function CreatePurchaseOrder() {
     setSimplePOData({
       productName: "",
       quantity: 1,
-      unitType: "pieces",
-      srp: ""
+      unitType: "pieces"
     });
     setModalProducts([]);
   };
@@ -236,11 +233,6 @@ function CreatePurchaseOrder() {
 
     if (!simplePOData.quantity || simplePOData.quantity <= 0) {
       toast.error("Please enter a valid quantity");
-      return;
-    }
-
-    if (!simplePOData.srp || parseFloat(simplePOData.srp) <= 0) {
-      toast.error("Please enter a valid SRP (Suggested Retail Price)");
       return;
     }
 
@@ -257,8 +249,7 @@ function CreatePurchaseOrder() {
       productName: simplePOData.productName,
       productId: null, // Will be found by backend from product_name
       quantity: parseInt(simplePOData.quantity),
-      unitType: simplePOData.unitType,
-      srp: parseFloat(simplePOData.srp) || 0
+      unitType: simplePOData.unitType
     };
 
     setModalProducts([...modalProducts, newProduct]);
@@ -267,8 +258,7 @@ function CreatePurchaseOrder() {
     setSimplePOData({
       productName: "",
       quantity: 1,
-      unitType: "pieces",
-      srp: ""
+      unitType: "pieces"
     });
 
     toast.success(`"${newProduct.productName}" added to order list`);
@@ -281,8 +271,7 @@ function CreatePurchaseOrder() {
         : (selectedProducts || []).map(p => ({
             productName: p.searchTerm,
             quantity: p.quantity,
-            unitType: p.unitType || 'pieces',
-            srp: p.srp || 0
+            unitType: p.unitType || 'pieces'
           }));
 
       if (!sourceItems || sourceItems.length === 0) {
@@ -474,21 +463,17 @@ function CreatePurchaseOrder() {
       // Table data
       const body = sourceItems.map((p, i) => {
         const qty = parseInt(p.quantity) || 0;
-        const rate = Number(p.srp) || 0;
-        const amount = qty * rate;
         return [
           String(i + 1),
           p.productName || "",
           String(qty),
-          p.unitType || "pcs",
-          rate > 0 ? `PHP ${rate.toFixed(2)}` : "-",
-          rate > 0 ? `PHP ${amount.toFixed(2)}` : "-",
+          p.unitType || "pcs"
         ];
       });
 
       autoTable(doc, {
         startY: cursorY,
-        head: [["SR.NO", "Item Description", "Qty", "Unit", "Old Rate", "Amount"]],
+        head: [["SR.NO", "Item Description", "Qty", "Unit"]],
         body,
         styles: { fontSize: 10, textColor: textGray },
         headStyles: { fillColor: [245, 247, 250], textColor: [40, 40, 40], lineWidth: 0.2, lineColor: lineGray },
@@ -496,33 +481,17 @@ function CreatePurchaseOrder() {
         alternateRowStyles: { fillColor: [252, 252, 252] },
         columnStyles: {
           0: { cellWidth: 16 },
-          1: { cellWidth: 60, overflow: "linebreak" },
-          2: { cellWidth: 16, halign: "linebreak" },
-          3: { cellWidth: 18 },
-          4: { cellWidth: 30, halign: "linebreak" },
-          5: { cellWidth: 26, halign: "linebreak" },
+          1: { cellWidth: 80, overflow: "linebreak" },
+          2: { cellWidth: 20, halign: "linebreak" },
+          3: { cellWidth: 25 },
         },
         margin: { left: marginLeft, right: marginLeft },
       });
 
       const tableBottomY = (doc.lastAutoTable && doc.lastAutoTable.finalY) || cursorY;
 
-      // Totals bar
-      const subtotal = modalProducts.reduce((sum, p) => sum + ((parseInt(p.quantity) || 0) * (Number(p.srp) || 0)), 0);
-      const totalLabelW = 28;
-      const totalBarY = tableBottomY + 6;
-      const totalBarX = pageWidth - marginLeft - 28 - 26 - 2; // align with Amount col
-      doc.setFillColor(245, 85, 34); // minimal soft orange accent for total label
-      doc.setTextColor(255);
-      doc.rect(totalBarX, totalBarY, totalLabelW, 8, "F");
-      doc.setFontSize(10);
-      doc.text("Total", totalBarX + totalLabelW / 2, totalBarY + 5.5, { align: "center" });
-      doc.setTextColor(...textGray);
-      doc.setFontSize(11);
-      doc.text(`PHP ${subtotal.toFixed(2)}`, totalBarX + totalLabelW + 8, totalBarY + 5.5, { align: "left" });
-
       // Notes
-      const notesY = totalBarY + 16;
+      const notesY = tableBottomY + 16;
       if (formData.notes) {
         doc.setFontSize(10);
         doc.setTextColor(120);
@@ -561,6 +530,17 @@ function CreatePurchaseOrder() {
   const removeProductFromModalList = (id) => {
     setModalProducts(modalProducts.filter(p => p.id !== id));
     toast.info("Product removed from list");
+  };
+
+  const updateProductQuantityInModalList = (id, newQuantity) => {
+    const quantity = parseInt(newQuantity);
+    // Allow empty or 0 while typing, but validate on blur
+    if (isNaN(quantity) || quantity < 1) {
+      return; // Don't update if invalid, but don't show error yet
+    }
+    setModalProducts(modalProducts.map(p => 
+      p.id === id ? { ...p, quantity: quantity } : p
+    ));
   };
 
   const handleSimplePOInputChange = (field, value) => {
@@ -617,8 +597,7 @@ function CreatePurchaseOrder() {
           product_id: product.productId || null, // Include product_id if available
           searchTerm: product.productName, // Keep for backward compatibility
           quantity: parseInt(product.quantity),
-          unit_type: product.unitType,
-          srp: parseFloat(product.srp) || 0
+          unit_type: product.unitType
         }))
       };
 
@@ -4396,24 +4375,6 @@ function CreatePurchaseOrder() {
                   />
                 </div>
 
-                {/* SRP */}
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{color: 'var(--inventory-text-primary)'}}>
-                    SRP (Suggested Retail Price) *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={simplePOData.srp}
-                    onChange={(e) => handleSimplePOInputChange('srp', e.target.value)}
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 inventory-input"
-                    style={{borderColor: 'var(--inventory-border)'}}
-                    placeholder="Enter SRP (e.g., 25.00)"
-                    required
-                  />
-                </div>
-
                 {/* Add Product Button */}
                 <button
                   type="button"
@@ -4441,26 +4402,47 @@ function CreatePurchaseOrder() {
                         {modalProducts.map((product) => (
                           <div
                             key={product.id}
-                            className="p-3 border rounded-lg flex items-center justify-between"
+                            className="p-3 border rounded-lg flex items-center justify-between gap-3"
                             style={{borderColor: 'var(--inventory-border)', backgroundColor: 'var(--inventory-bg-secondary)'}}
                           >
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <div className="font-semibold text-sm" style={{color: 'var(--inventory-text-primary)'}}>
                                 {product.productName}
                               </div>
-                              <div className="flex flex-wrap gap-3 text-xs inventory-muted mt-1">
-                                <span>Qty: {product.quantity} {product.unitType === "bulk" ? "bulk" : "pieces"}</span>
-                                {product.srp > 0 && (
-                                  <span className="font-semibold" style={{color: 'var(--inventory-accent)'}}>
-                                    SRP: ₱{parseFloat(product.srp).toFixed(2)}
-                                  </span>
-                                )}
+                              <div className="flex items-center gap-2 mt-2">
+                                <label className="text-xs inventory-muted whitespace-nowrap">Qty:</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={product.quantity}
+                                  onChange={(e) => updateProductQuantityInModalList(product.id, e.target.value)}
+                                  onBlur={(e) => {
+                                    const qty = parseInt(e.target.value);
+                                    if (isNaN(qty) || qty < 1) {
+                                      toast.warning("Quantity must be at least 1");
+                                      // Force update to 1 if invalid
+                                      setModalProducts(modalProducts.map(p => 
+                                        p.id === product.id ? { ...p, quantity: 1 } : p
+                                      ));
+                                    }
+                                  }}
+                                  className="w-20 px-2 py-1 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 inventory-input"
+                                  style={{
+                                    borderColor: 'var(--inventory-border)',
+                                    backgroundColor: 'white',
+                                    color: 'var(--inventory-text-primary)'
+                                  }}
+                                />
+                                <span className="text-xs inventory-muted whitespace-nowrap">
+                                  {product.unitType === "bulk" ? "bulk" : "pieces"}
+                                </span>
                               </div>
                             </div>
                             <button
                               type="button"
                               onClick={() => removeProductFromModalList(product.id)}
-                              className="ml-3 p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              className="ml-2 p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
+                              title="Remove product"
                             >
                               <FaTrash className="h-4 w-4" />
                             </button>
@@ -4549,8 +4531,7 @@ function CreatePurchaseOrder() {
                                 productName: product.product_name,
                                 productId: product.product_id || null, // Include product_id if available
                                 quantity: product.suggested_quantity || 20,
-                                unitType: "pieces",
-                                srp: parseFloat(product.srp) || 0
+                                unitType: "pieces"
                               };
                               
                               setModalProducts([...modalProducts, newProduct]);
@@ -4571,11 +4552,6 @@ function CreatePurchaseOrder() {
                             <div className="flex flex-wrap gap-3 text-xs inventory-muted">
                               <span>Stock: <strong style={{color: alertColor}}>{product.current_quantity}</strong></span>
                               <span>Suggest: <strong>{product.suggested_quantity}</strong></span>
-                              {product.srp > 0 && (
-                                <span className="font-semibold" style={{color: 'var(--inventory-accent)'}}>
-                                  SRP: ₱{parseFloat(product.srp).toFixed(2)}
-                                </span>
-                              )}
                             </div>
                             {product.supplier_name && (
                               <div className="text-xs inventory-muted mt-1">
@@ -4673,8 +4649,7 @@ function CreatePurchaseOrder() {
                                     productName: product.product_name,
                                     productId: product.product_id || null,
                                     quantity: Math.round(product.avg_quantity || product.quantity || 20),
-                                    unitType: product.unit_type || "pieces",
-                                    srp: parseFloat(product.srp) || 0
+                                    unitType: product.unit_type || "pieces"
                                   };
                                   
                                   setModalProducts([...modalProducts, newProduct]);
@@ -4692,11 +4667,6 @@ function CreatePurchaseOrder() {
                                 <div className="flex flex-wrap gap-3 text-xs inventory-muted">
                                   <span>Last: <strong>{lastOrderDate}</strong></span>
                                   <span>Qty: <strong>{Math.round(product.avg_quantity || product.quantity)}</strong> {product.unit_type || 'pieces'}</span>
-                                  {product.srp > 0 && (
-                                    <span className="font-semibold" style={{color: 'var(--inventory-accent)'}}>
-                                      SRP: ₱{parseFloat(product.srp).toFixed(2)}
-                                    </span>
-                                  )}
                                 </div>
                               </div>
                             );

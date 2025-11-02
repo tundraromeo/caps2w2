@@ -108,7 +108,8 @@ try {
                     ) as total_quantity,
                     p.status,
                     s.supplier_name,
-                    p.expiration,
+                    -- Use transfer expiration if available, otherwise product expiration
+                    COALESCE(tbd.expiration_date, p.expiration) as expiration,
                     l.location_name,
                     COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_srp_value,
                     tbd.srp as transfer_srp,
@@ -193,7 +194,8 @@ try {
                     ) as total_quantity,
                     p.status,
                     s.supplier_name,
-                    p.expiration,
+                    -- Use transfer expiration if available, otherwise product expiration
+                    COALESCE(tbd.expiration_date, p.expiration) as expiration,
                     l.location_name,
                     COALESCE(SUM(fs.available_quantity * fs.srp), 0) as total_srp_value,
                     tbd.srp as transfer_srp,
@@ -534,7 +536,7 @@ try {
                     btd.created_at as transfer_date,
                     CONCAT('TR-', btd.id) as transfer_id,
                     CASE 
-                        WHEN btd.quantity > 0 THEN 'Consumed'
+                        WHEN btd.quantity > 0 THEN 'Done'
                         ELSE 'Available'
                     END as status,
                     p.product_name,
@@ -697,7 +699,7 @@ try {
                         tbd.quantity as batch_quantity,
                         tbd.srp as batch_srp,
                         tbd.expiration_date,
-                        'Consumed' as status,
+                        'Done' as status,
                         th.date as transfer_date,
                         th.transfer_header_id,
                         p.product_name,
@@ -731,7 +733,7 @@ try {
                     return $item['status'] === 'Available';
                 }));
                 $consumed_batches = count(array_filter($batch_details, function($item) {
-                    return $item['status'] === 'Consumed';
+                    return $item['status'] === 'Done';
                 }));
                 
                 // Get unique SRP
@@ -816,7 +818,7 @@ try {
                             $updateBatchStmt = $conn->prepare("
                                 UPDATE tbl_batch_transfer_details 
                                 SET status = CASE 
-                                    WHEN batch_quantity <= ? THEN 'Consumed'
+                                    WHEN batch_quantity <= ? THEN 'Done'
                                     ELSE 'Partially Consumed'
                                 END
                                 WHERE batch_id = ? AND destination_location_id = ?

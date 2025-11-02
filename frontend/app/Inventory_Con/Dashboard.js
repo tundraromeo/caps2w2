@@ -107,9 +107,9 @@ function Dashboard() {
   // Time period is automatically set to monthly
   // No user interaction needed for time period selection
 
-  // Default filter values (no UI controls for product and location)
+  // Default filter values
   const selectedProduct = "All";
-  const selectedLocation = "Warehouse";
+  const [selectedLocation, setSelectedLocation] = useState("Warehouse");
 
   // Retry function
   const retryFetch = () => {
@@ -229,7 +229,7 @@ function Dashboard() {
   // Fetch data from database (monthly view only)
   useEffect(() => {
     fetchAllData();
-  }, [retryCount]);
+  }, [retryCount, selectedLocation]);
 
 
   const fetchWarehouseData = async () => {
@@ -497,35 +497,150 @@ function Dashboard() {
       if (criticalStockResult.status === 'fulfilled' && criticalStockResult.value?.success) {
         const data = criticalStockResult.value.data || [];
         
-        // If no critical alerts, use sample data for demonstration
+        // Use actual data from API - don't use fallback sample data
         let processedData = Array.isArray(data) ? data : [];
         
+        // If API returned empty data, try to fetch products for the location and calculate critical alerts
         if (processedData.length === 0) {
-          processedData = [
-            { product: 'Lava Cake', quantity: 0 },
-            { product: 'Hot&Spicy Ketchup', quantity: 8 },
-            { product: 'Pinoy Spicy', quantity: 10 },
-            { product: 'Choco Loco', quantity: 5 },
-            { product: 'Spicy Noodles', quantity: 3 }
-          ];
+          try {
+            let locationProducts = [];
+            
+            // Fetch products based on selected location
+            if (selectedLocation === 'Convenience Store') {
+              const convenienceRes = await apiHandler.getConvenienceProductsFIFO({
+                location_name: 'convenience',
+                search: '',
+                category: 'all',
+                product_type: 'all'
+              });
+              if (convenienceRes && convenienceRes.success) {
+                locationProducts = convenienceRes.data || [];
+              }
+            } else if (selectedLocation === 'Pharmacy') {
+              const pharmacyRes = await apiHandler.getPharmacyProductsFixed({
+                search: '',
+                category: 'all'
+              });
+              if (pharmacyRes && pharmacyRes.success) {
+                locationProducts = pharmacyRes.data || [];
+              }
+            } else if (selectedLocation === 'Warehouse') {
+              const warehouseRes = await apiHandler.callAPI('backend.php', 'get_products', {
+                location_name: 'warehouse'
+              });
+              if (warehouseRes && warehouseRes.success) {
+                locationProducts = warehouseRes.data || [];
+              }
+            }
+            
+            // Filter products with critical alerts (low stock or expiring soon)
+            const now = new Date();
+            const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            
+            processedData = locationProducts
+              .filter(product => {
+                const quantity = parseInt(product.total_quantity || product.quantity || 0);
+                const isLowStock = quantity > 0 && quantity <= 10;
+                const isExpiringSoon = product.expiration_date || product.expiration 
+                  ? new Date(product.expiration_date || product.expiration) <= thirtyDaysFromNow && 
+                    new Date(product.expiration_date || product.expiration) >= now
+                  : false;
+                
+                return isLowStock || isExpiringSoon;
+              })
+              .map(product => ({
+                product: product.product_name || product.name || 'Unknown Product',
+                quantity: parseInt(product.total_quantity || product.quantity || 0),
+                type: (() => {
+                  const qty = parseInt(product.total_quantity || product.quantity || 0);
+                  const expiring = product.expiration_date || product.expiration 
+                    ? new Date(product.expiration_date || product.expiration) <= thirtyDaysFromNow && 
+                      new Date(product.expiration_date || product.expiration) >= now
+                    : false;
+                  if (qty > 0 && qty <= 10 && expiring) return 'Low Stock & Expiring';
+                  if (qty > 0 && qty <= 10) return 'Low Stock';
+                  if (expiring) return 'Expiring Soon';
+                  return 'Critical';
+                })()
+              }))
+              .slice(0, 10); // Limit to top 10 critical alerts
+          } catch (fetchError) {
+            console.warn('⚠️ Failed to fetch products for critical alerts:', fetchError);
+          }
         }
         
         setCriticalStockAlerts(processedData);
-        if (processedData.length > 0) {
-        }
       } else {
-        console.warn('⚠️ Critical stock alerts failed, using sample data:', criticalStockResult.reason || criticalStockResult.value?.message);
+        console.warn('⚠️ Critical stock alerts failed for location:', selectedLocation, criticalStockResult.reason || criticalStockResult.value?.message);
         
-        // Fallback sample data
-        const sampleData = [
-          { product: 'Lava Cake', quantity: 0 },
-          { product: 'Hot&Spicy Ketchup', quantity: 8 },
-          { product: 'Pinoy Spicy', quantity: 10 },
-          { product: 'Choco Loco', quantity: 5 },
-          { product: 'Spicy Noodles', quantity: 3 }
-        ];
-        
-        setCriticalStockAlerts(sampleData);
+        // Try to fetch products directly for the location
+        try {
+          let locationProducts = [];
+          
+          if (selectedLocation === 'Convenience Store') {
+            const convenienceRes = await apiHandler.getConvenienceProductsFIFO({
+              location_name: 'convenience',
+              search: '',
+              category: 'all',
+              product_type: 'all'
+            });
+            if (convenienceRes && convenienceRes.success) {
+              locationProducts = convenienceRes.data || [];
+            }
+          } else if (selectedLocation === 'Pharmacy') {
+            const pharmacyRes = await apiHandler.getPharmacyProductsFixed({
+              search: '',
+              category: 'all'
+            });
+            if (pharmacyRes && pharmacyRes.success) {
+              locationProducts = pharmacyRes.data || [];
+            }
+          } else if (selectedLocation === 'Warehouse') {
+            const warehouseRes = await apiHandler.callAPI('backend.php', 'get_products', {
+              location_name: 'warehouse'
+            });
+            if (warehouseRes && warehouseRes.success) {
+              locationProducts = warehouseRes.data || [];
+            }
+          }
+          
+          // Filter products with critical alerts
+          const now = new Date();
+          const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+          
+          const processedData = locationProducts
+            .filter(product => {
+              const quantity = parseInt(product.total_quantity || product.quantity || 0);
+              const isLowStock = quantity > 0 && quantity <= 10;
+              const isExpiringSoon = product.expiration_date || product.expiration 
+                ? new Date(product.expiration_date || product.expiration) <= thirtyDaysFromNow && 
+                  new Date(product.expiration_date || product.expiration) >= now
+                : false;
+              
+              return isLowStock || isExpiringSoon;
+            })
+            .map(product => ({
+              product: product.product_name || product.name || 'Unknown Product',
+              quantity: parseInt(product.total_quantity || product.quantity || 0),
+              type: (() => {
+                const qty = parseInt(product.total_quantity || product.quantity || 0);
+                const expiring = product.expiration_date || product.expiration 
+                  ? new Date(product.expiration_date || product.expiration) <= thirtyDaysFromNow && 
+                    new Date(product.expiration_date || product.expiration) >= now
+                  : false;
+                if (qty > 0 && qty <= 10 && expiring) return 'Low Stock & Expiring';
+                if (qty > 0 && qty <= 10) return 'Low Stock';
+                if (expiring) return 'Expiring Soon';
+                return 'Critical';
+              })()
+            }))
+            .slice(0, 10);
+          
+          setCriticalStockAlerts(processedData);
+        } catch (fetchError) {
+          console.error('❌ Failed to fetch products for critical alerts:', fetchError);
+          setCriticalStockAlerts([]);
+        }
       }
       
       // Update debug info
@@ -1310,9 +1425,33 @@ function Dashboard() {
   };
 
   const renderGauge = (data, title) => {
-    const criticalLevel = data.length;
+    // Calculate total critical alerts based on selected location
+    const apiCriticalCount = data.length; // From API (specific critical stock alerts)
+    const locationCriticalCount = getCriticalAlertsCount(selectedLocation); // From KPIs (lowStock + expiringSoon)
+    
+    // Use the higher count or combine both for comprehensive view
+    const criticalLevel = Math.max(apiCriticalCount, locationCriticalCount);
     const maxCritical = 20; // Maximum critical level
     const percentage = Math.min((criticalLevel / maxCritical) * 100, 100);
+    
+    // Get breakdown for selected location
+    let lowStockCount = 0;
+    let expiringCount = 0;
+    
+    switch(selectedLocation) {
+      case 'Warehouse':
+        lowStockCount = warehouseData.lowStockItems || 0;
+        expiringCount = warehouseData.expiringSoon || 0;
+        break;
+      case 'Convenience Store':
+        lowStockCount = convenienceKPIs.lowStock || 0;
+        expiringCount = convenienceKPIs.expiringSoon || 0;
+        break;
+      case 'Pharmacy':
+        lowStockCount = pharmacyKPIs.lowStock || 0;
+        expiringCount = pharmacyKPIs.expiringSoon || 0;
+        break;
+    }
     
     return (
       <div className="p-4 sm:p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 min-h-[400px] flex flex-col" style={{ backgroundColor: theme.bg.card, boxShadow: `0 10px 25px ${theme.shadow}` }}>
@@ -1340,16 +1479,54 @@ function Dashboard() {
           </div>
         </div>
         
+        {/* Breakdown Summary */}
+        {(lowStockCount > 0 || expiringCount > 0) && (
+          <div className="mb-4 p-3 rounded-lg" style={{ backgroundColor: theme.bg.hover }}>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-medium" style={{ color: theme.text.secondary }}>Low Stock:</span>
+              <span className="text-sm font-bold" style={{ color: theme.colors.warning }}>{lowStockCount} items</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-medium" style={{ color: theme.text.secondary }}>Expiring Soon:</span>
+              <span className="text-sm font-bold" style={{ color: theme.colors.danger }}>{expiringCount} items</span>
+            </div>
+          </div>
+        )}
+        
         {/* Improved List */}
         <div className="space-y-2 flex-1 overflow-hidden">
           {data.length > 0 ? (
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {data.slice(0, 5).map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-2 rounded-md min-h-[40px]" style={{ backgroundColor: theme.colors.danger + '20', borderColor: theme.colors.danger + '40', border: '1px solid' }}>
-                  <span className="text-sm font-medium truncate flex-1 pr-2" style={{ color: theme.colors.danger }}>{item.product}</span>
-                  <span className="text-sm font-bold flex-shrink-0" style={{ color: theme.colors.danger }}>{item.quantity}</span>
+              {data.slice(0, 10).map((item, index) => (
+                <div key={index} className="flex flex-col p-2 rounded-md min-h-[50px]" style={{ backgroundColor: theme.colors.danger + '20', borderColor: theme.colors.danger + '40', border: '1px solid' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium truncate flex-1 pr-2" style={{ color: theme.colors.danger }}>
+                      {item.product || item.product_name || 'Unknown Product'}
+                    </span>
+                    <span className="text-sm font-bold flex-shrink-0" style={{ color: theme.colors.danger }}>
+                      {item.quantity || 0}
+                    </span>
+                  </div>
+                  {item.type && (
+                    <span className="text-xs px-2 py-0.5 rounded-full inline-block" style={{ 
+                      backgroundColor: item.type.includes('Expiring') ? theme.colors.warning + '40' : theme.colors.danger + '40',
+                      color: item.type.includes('Expiring') ? theme.colors.warning : theme.colors.danger
+                    }}>
+                      {item.type}
+                    </span>
+                  )}
                 </div>
               ))}
+            </div>
+          ) : criticalLevel > 0 ? (
+            <div className="text-center py-4">
+              <div className="text-sm font-medium mb-2" style={{ color: theme.colors.warning }}>
+                {criticalLevel} critical alert{criticalLevel !== 1 ? 's' : ''} detected
+              </div>
+              <div className="text-xs space-y-1" style={{ color: theme.text.muted }}>
+                {lowStockCount > 0 && <div>⚠️ {lowStockCount} item{lowStockCount !== 1 ? 's' : ''} with low stock</div>}
+                {expiringCount > 0 && <div>⏰ {expiringCount} item{expiringCount !== 1 ? 's' : ''} expiring soon</div>}
+              </div>
             </div>
           ) : (
             <div className="text-center py-4">
@@ -1461,11 +1638,102 @@ function Dashboard() {
     );
   }
 
+  // Calculate critical alerts for each location
+  const getCriticalAlertsCount = (location) => {
+    switch(location) {
+      case 'Warehouse':
+        return warehouseData.lowStockItems + warehouseData.expiringSoon;
+      case 'Convenience Store':
+        return convenienceKPIs.lowStock + convenienceKPIs.expiringSoon;
+      case 'Pharmacy':
+        return pharmacyKPIs.lowStock + pharmacyKPIs.expiringSoon;
+      default:
+        return 0;
+    }
+  };
+
+  const warehouseCriticalCount = getCriticalAlertsCount('Warehouse');
+  const convenienceCriticalCount = getCriticalAlertsCount('Convenience Store');
+  const pharmacyCriticalCount = getCriticalAlertsCount('Pharmacy');
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg.primary }}>
       {/* Header */}
       <div className="p-4" style={{ backgroundColor: theme.bg.secondary }}>
-        <h1 className="text-2xl font-bold" style={{ color: theme.text.primary }}>Dashboard</h1>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h1 className="text-2xl font-bold" style={{ color: theme.text.primary }}>Dashboard</h1>
+          
+          {/* Location Filter Dropdown */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="location-select" className="text-sm font-medium" style={{ color: theme.text.secondary }}>
+              Filter by Location:
+            </label>
+            <div className="relative flex items-center gap-2">
+              <select
+                id="location-select"
+                value={selectedLocation}
+                onChange={(e) => setSelectedLocation(e.target.value)}
+                className="px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                style={{
+                  backgroundColor: theme.bg.card,
+                  color: theme.text.primary,
+                  borderColor: getCriticalAlertsCount(selectedLocation) > 0 ? theme.colors.danger : theme.border.default,
+                  cursor: 'pointer',
+                  borderWidth: getCriticalAlertsCount(selectedLocation) > 0 ? '2px' : '1px'
+                }}
+              >
+                <option value="Warehouse">
+                  Warehouse
+                </option>
+                <option value="Convenience Store">
+                  Convenience Store
+                </option>
+                <option value="Pharmacy">
+                  Pharmacy
+                </option>
+              </select>
+              {/* Critical Alert Badge Indicator */}
+              {getCriticalAlertsCount(selectedLocation) > 0 && (
+                <div 
+                  className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold animate-pulse"
+                  style={{
+                    backgroundColor: theme.colors.danger,
+                    color: 'white'
+                  }}
+                  title={`${getCriticalAlertsCount(selectedLocation)} critical alerts (Low Stock + Expiring Soon)`}
+                >
+                  <span>⚠️</span>
+                  <span>{getCriticalAlertsCount(selectedLocation)}</span>
+                  <span className="text-[10px] opacity-90">alerts</span>
+                </div>
+              )}
+              {/* Show indicator for other locations in tooltip/hint */}
+              <div className="flex gap-1">
+                {warehouseCriticalCount > 0 && selectedLocation !== 'Warehouse' && (
+                  <div 
+                    className="w-2 h-2 rounded-full animate-pulse"
+                    style={{ backgroundColor: theme.colors.danger }}
+                    title={`Warehouse has ${warehouseCriticalCount} critical alerts`}
+                  />
+                )}
+                {convenienceCriticalCount > 0 && selectedLocation !== 'Convenience Store' && (
+                  <div 
+                    className="w-2 h-2 rounded-full animate-pulse"
+                    style={{ backgroundColor: theme.colors.danger }}
+                    title={`Convenience Store has ${convenienceCriticalCount} critical alerts`}
+                  />
+                )}
+                {pharmacyCriticalCount > 0 && selectedLocation !== 'Pharmacy' && (
+                  <div 
+                    className="w-2 h-2 rounded-full animate-pulse"
+                    style={{ backgroundColor: theme.colors.danger }}
+                    title={`Pharmacy has ${pharmacyCriticalCount} critical alerts`}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Warehouse KPIs Section */}
@@ -1548,7 +1816,7 @@ function Dashboard() {
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {/* Fast-moving items trend chart */}
-          {renderFastMovingTrendChart(fastMovingItemsTrend, "Fast-Moving Items")}
+          {renderFastMovingTrendChart(fastMovingItemsTrend, `Fast-Moving Items (${selectedLocation})`)}
           
           {/* Pie Chart - Stock distribution by location */}
           {renderPieChart(stockDistributionByCategory, "Stock Distribution")}
@@ -1557,10 +1825,10 @@ function Dashboard() {
         {/* Charts Section - Second Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {/* Bar Chart - Top 10 products by quantity */}
-          {renderBarChart(topProductsByQuantity, "Top Products by Quantity")}
+          {renderBarChart(topProductsByQuantity, `Top Products by Quantity (${selectedLocation})`)}
           
           {/* Gauge - Critical stock alerts */}
-          {renderGauge(criticalStockAlerts, "Critical Stock Alerts")}
+          {renderGauge(criticalStockAlerts, `Critical Stock Alerts (${selectedLocation})`)}
         </div>
       </div>
     </div>

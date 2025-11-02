@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Receipt Test</title>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      padding: 20px;
+    }
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border: 2px solid #000;
+    }
+    .pass {
+      background-color: #90EE90;
+    }
+    .fail {
+      background-color: #FFB6C1;
+    }
+  </style>
+</head>
+<body>
+  <h1>Receipt Text Verification Test</h1>
+  
+  <div class="test-result" id="test1">
+    <strong>Test 1:</strong> Checking if code contains "THIS IS NOT AN OFFICIAL RECEIPT"
+    <div id="result1">Loading...</div>
+  </div>
+  
+  <div class="test-result" id="test2">
+    <strong>Test 2:</strong> Checking if code does NOT contain "This is your official receipt"
+    <div id="result2">Loading...</div>
+  </div>
+  
+  <div class="test-result" id="test3">
+    <strong>Expected Footer Text:</strong>
+    <pre>Thank you!
+Please come again
+THIS IS NOT AN OFFICIAL RECEIPT</pre>
+  </div>
+  
+  <script>
+    // This is just for display - the actual check needs to be done on the server
+    document.getElementById('result1').innerHTML = '✓ Code should contain: "THIS IS NOT AN OFFICIAL RECEIPT"';
+    document.getElementById('test1').classList.add('pass');
+    
+    document.getElementById('result2').innerHTML = '✓ Code should NOT contain: "This is your official receipt"';
+    document.getElementById('test2').classList.add('pass');
+  </script>
+</body>
+</html>

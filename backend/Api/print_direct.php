@@ -50,7 +50,9 @@ $receipt .= $escDoubleStrikeOn; // Enable double-strike for darker text
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
 // Use storeName from receiptData, fallback to defaults
 $storeName = $receiptData['storeName'] ?? "ENGUIO'S PHARMACY";
-$receipt .= $storeName . "\n";
+$receipt .= $escCenter . $storeName . $escLeft . "\n";
+// Add address for all stores
+$receipt .= $escCenter . "Z1 Lumbia, Cagayan De Oro" . $escLeft . "\n";
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
 $receipt .= $escDoubleStrikeOff; // Disable for normal text
 $receipt .= 'Date: ' . ($receiptData['date'] ?? date('Y-m-d')) . "\n";
@@ -119,10 +121,25 @@ if ($pmLower === 'cash') {
     $receipt .= 'CHANGE: ' . number_format((float)($receiptData['change'] ?? 0), 2) . "\n";
 }
 
+// Dashed line separator
+$receipt .= str_repeat('-', $receiptWidth) . "\n";
+
+// VAT/Tax Breakdown Section
+$vatableSale = (float)($receiptData['vatableSale'] ?? 0);
+$vatExemptSale = (float)($receiptData['vatExemptSale'] ?? 0);
+$vatZeroRated = (float)($receiptData['vatZeroRated'] ?? 0);
+$vat12 = (float)($receiptData['vat12'] ?? 0);
+
+$receipt .= formatPriceLine("VATable Sale:", $vatableSale, $receiptWidth) . "\n";
+$receipt .= formatPriceLine("VAT Exempt Sale:", $vatExemptSale, $receiptWidth) . "\n";
+$receipt .= formatPriceLine("VAT Zero-Rated:", $vatZeroRated, $receiptWidth) . "\n";
+$receipt .= formatPriceLine("VAT 12%:", $vat12, $receiptWidth) . "\n";
+
+// Footer Section
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
 $receipt .= 'Thank you!' . "\n";
 $receipt .= 'Please come again' . "\n";
-$receipt .= 'This is your official receipt' . "\n";
+$receipt .= 'THIS IS NOT AN OFFICIAL RECEIPT' . "\n";
 $receipt .= str_repeat('=', $receiptWidth) . "\n";
 $receipt .= "\n\n\n"; // Feed lines
 

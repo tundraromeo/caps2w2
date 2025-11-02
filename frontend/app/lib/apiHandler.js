@@ -623,6 +623,7 @@ export const getApiEndpointForAction = (action) => {
     get_purchase_orders: 'purchase_order_api.php',
     update_purchase_order: 'purchase_order_api.php',
     delete_purchase_order: 'purchase_order_api.php',
+    get_critical_products_for_po: 'purchase_order_api.php',
 
     // ============= ADMIN/DEBUG =============
     test_connection: 'backend.php',

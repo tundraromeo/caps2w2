@@ -9,7 +9,12 @@ import { getApiUrl, getApiConfigStatus } from './lib/apiConfig';
 
 const API_BASE_URL = getApiUrl('login.php');
 
-// Debug logging
+// Debug logging in development
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  console.log('API Base URL for login:', API_BASE_URL);
+  const configStatus = getApiConfigStatus();
+  console.log('API Config Status:', configStatus);
+}
 
 export default function LoginForm() {
   const [username, setUsername] = useState("");
@@ -33,8 +38,13 @@ export default function LoginForm() {
 
   const generateCaptcha = async () => {
     try {
-
       let responseData = null;
+      
+      // Validate API URL before making request
+      if (!API_BASE_URL || API_BASE_URL.trim() === '') {
+        console.warn('API_BASE_URL is not configured, using fallback captcha');
+        throw new Error('API URL not configured');
+      }
       
       // Try axios first
       try {
@@ -48,7 +58,10 @@ export default function LoginForm() {
         });
         responseData = response.data;
       } catch (axiosError) {
-        console.warn('Axios failed, trying fetch:', axiosError.message);
+        // Log in development only
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Axios failed, trying fetch:', axiosError.message);
+        }
         
         // Fallback to fetch API
         try {
@@ -58,24 +71,38 @@ export default function LoginForm() {
               'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
-            body: JSON.stringify({ action: "generate_captcha" })
+            body: JSON.stringify({ action: "generate_captcha" }),
+            // Add mode and credentials for CORS
+            mode: 'cors',
+            credentials: 'omit'
           });
           
           if (!fetchResponse.ok) {
-            throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
-          }
-          
-          const textResponse = await fetchResponse.text();
-
-          // Try to parse as JSON
-          if (textResponse && textResponse.trim() !== '') {
-            responseData = JSON.parse(textResponse);
+            // Don't throw, just set responseData to null
+            responseData = null;
           } else {
-            throw new Error('Empty response from server');
+            const textResponse = await fetchResponse.text();
+
+            // Try to parse as JSON
+            if (textResponse && textResponse.trim() !== '') {
+              try {
+                responseData = JSON.parse(textResponse);
+              } catch (parseError) {
+                // Invalid JSON, use fallback
+                responseData = null;
+              }
+            } else {
+              // Empty response, use fallback
+              responseData = null;
+            }
           }
         } catch (fetchError) {
-          console.error('Fetch also failed:', fetchError);
-          throw fetchError;
+          // Log in development only, then use fallback
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Fetch failed, using fallback captcha:', fetchError.message);
+          }
+          // Set responseData to null to trigger fallback
+          responseData = null;
         }
       }
 
@@ -83,25 +110,40 @@ export default function LoginForm() {
       if (responseData && typeof responseData === 'object' && responseData.success === true) {
         setCaptchaQuestion(responseData.question);
         setCaptchaAnswer(responseData.answer.toString());
-
       } else {
-        console.warn('Captcha API returned invalid response, using fallback');
-        // Use fallback if API returns success: false or invalid response
+        // Use fallback if API returns success: false, invalid response, or null
+        if (process.env.NODE_ENV === 'development') {
+          if (responseData) {
+            // Log more details about why the response is invalid
+            console.warn('Captcha API returned invalid response:', {
+              hasSuccess: 'success' in responseData,
+              successValue: responseData.success,
+              hasQuestion: 'question' in responseData,
+              hasAnswer: 'answer' in responseData,
+              message: responseData.message || 'No error message',
+              responseData: responseData
+            });
+          } else {
+            console.warn('Captcha API returned null/empty response, using fallback');
+          }
+        }
         const num1 = Math.floor(Math.random() * 10) + 1;
         const num2 = Math.floor(Math.random() * 10) + 1;
         setCaptchaQuestion(`What is ${num1} + ${num2}?`);
         setCaptchaAnswer((num1 + num2).toString());
-
       }
     } catch (err) {
-      console.error('Captcha generation error:', err);
+      // Final safety net - catch any unexpected errors and use fallback
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Unexpected captcha error, using fallback:', err.message);
+      }
       
       // Fallback captcha if API fails completely
       const num1 = Math.floor(Math.random() * 10) + 1;
       const num2 = Math.floor(Math.random() * 10) + 1;
       setCaptchaQuestion(`What is ${num1} + ${num2}?`);
       setCaptchaAnswer((num1 + num2).toString());
-
     }
   };
 

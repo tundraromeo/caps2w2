@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'conn.php';
 
 // Get action from query parameter
-$action = $_GET['action'] ?? '';
+$action = trim($_GET['action'] ?? '');
 
 try {
     switch ($action) {

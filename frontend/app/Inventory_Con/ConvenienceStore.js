@@ -1328,7 +1328,7 @@ function ConvenienceInventory() {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isConsumed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                                  {isConsumed ? 'Consumed' : 'Available'}
+                                  {isConsumed ? 'Done' : 'Available'}
                                 </span>
                               </td>
                             </tr>
@@ -1514,7 +1514,7 @@ function ConvenienceInventory() {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${isConsumed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                                  {isConsumed ? 'Consumed' : 'Available'}
+                                  {isConsumed ? 'Done' : 'Available'}
                                 </span>
                               </td>
                             </tr>
@@ -1821,11 +1821,11 @@ function ConvenienceInventory() {
                                   className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
                                   style={{
                                     backgroundColor: transfer.status === 'Available' ? theme.colors.success + '20' :
-                                                    transfer.status === 'Consumed' ? theme.colors.danger + '20' :
+                                                    transfer.status === 'Done' ? theme.colors.danger + '20' :
                                                     transfer.status === 'Expired' ? theme.bg.hover :
                                                     theme.colors.warning + '20',
                                     color: transfer.status === 'Available' ? theme.colors.success :
-                                           transfer.status === 'Consumed' ? theme.colors.danger :
+                                           transfer.status === 'Done' ? theme.colors.danger :
                                            transfer.status === 'Expired' ? theme.text.muted :
                                            theme.colors.warning
                                   }}

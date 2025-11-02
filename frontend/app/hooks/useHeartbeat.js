@@ -15,6 +15,11 @@ export function useHeartbeat() {
         // Get user data from sessionStorage to pass emp_id as fallback
         const userData = JSON.parse(sessionStorage.getItem('user_data') || '{}');
         
+        // Skip heartbeat if no user data (user not logged in)
+        if (!userData.user_id && !userData.emp_id) {
+          return;
+        }
+        
         const response = await fetch(`${API_BASE_URL}/backend.php`, {
           method: 'POST',
           headers: {
@@ -27,17 +32,41 @@ export function useHeartbeat() {
           credentials: 'include' // Include session cookies
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success) {
+        // Parse response even if status is not ok (backend might return JSON error with 200)
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (parseError) {
+          // If response is not JSON, it's likely a server error
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('⚠️ Heartbeat: Invalid JSON response:', text);
+          }
+          return;
+        }
+
+        if (data.success) {
+          // Only log in development to reduce console noise
+          if (process.env.NODE_ENV === 'development') {
             console.log('✅ Heartbeat successful');
+          }
+        } else {
+          // Check for database connection errors specifically
+          const errorMessage = data.message || 'Unknown error';
+          if (errorMessage.includes('Database connection failed')) {
+            console.error('❌ Heartbeat failed: Database connection failed. Please check your database configuration and ensure MySQL is running.');
           } else {
-            console.log('❌ Heartbeat failed:', data.message);
+            // Other errors (like "No active login record found") are less critical
+            if (process.env.NODE_ENV === 'development') {
+              console.log('❌ Heartbeat failed:', errorMessage);
+            }
           }
         }
       } catch (error) {
-        // Silently fail - heartbeat is not critical
-        console.log('⚠️ Heartbeat error:', error.message);
+        // Network errors and other exceptions
+        if (process.env.NODE_ENV === 'development') {
+          console.log('⚠️ Heartbeat error:', error.message);
+        }
       }
     };
 

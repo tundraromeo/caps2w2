@@ -80,7 +80,6 @@ function InventoryTransfer() {
   // Step 2: Transfer Information
   const [transferInfo, setTransferInfo] = useState({
     transferredBy: "",
-    receivedBy: "",
     deliveryDate: new Date().toISOString().split('T')[0], // Automatically set to today's date
   })
 
@@ -1050,7 +1049,6 @@ function InventoryTransfer() {
       status: 'approved',
       products: transferProducts,
       transferred_by: transferInfo.transferredBy,
-      received_by: transferInfo.receivedBy || null,
       delivery_date: transferInfo.deliveryDate,
     };
 
@@ -1114,7 +1112,6 @@ function InventoryTransfer() {
     });
     setTransferInfo({
       transferredBy: currentUser?.full_name || currentUser?.username || transferInfo.transferredBy,
-      receivedBy: "",
       deliveryDate: new Date().toISOString().split('T')[0],
     });
     setSelectedProducts([]);
@@ -2097,23 +2094,6 @@ function InventoryTransfer() {
                       : "No active login session - using staff member from inventory team. Login to track transfers to your account."
                     }
                   </p>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
-                    Received by (Destination Store)
-                  </label>
-                  <select
-                    value={transferInfo.receivedBy}
-                    onChange={(e) => setTransferInfo((prev) => ({ ...prev, receivedBy: e.target.value }))}
-                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'border-slate-500 bg-slate-700 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-                  >
-                    <option value="">Select staff member</option>
-                    {staff.map((member) => (
-                      <option key={member.emp_id} value={member.name}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 <div>
                   <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>Delivery Date</label>

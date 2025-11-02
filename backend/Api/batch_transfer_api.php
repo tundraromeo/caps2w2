@@ -99,7 +99,7 @@ function getBatchTransferDetails($data) {
             return $item['status'] === 'Available';
         }));
         $consumed_batches = count(array_filter($batch_details, function($item) {
-            return $item['status'] === 'Consumed';
+                return $item['status'] === 'Done';
         }));
         
         echo json_encode([
@@ -328,7 +328,7 @@ function consumeBatchStock($data) {
         }
         
         $new_quantity = $batch['quantity_used'] - $quantity_to_consume;
-        $new_status = $new_quantity <= 0 ? 'Consumed' : 'Available';
+        $new_status = $new_quantity <= 0 ? 'Done' : 'Available';
         
         // Update batch
         $update_stmt = $conn->prepare("
@@ -369,7 +369,7 @@ function getBatchSummary($data) {
             SELECT 
                 COUNT(*) as total_batches,
                 SUM(CASE WHEN status = 'Available' THEN 1 ELSE 0 END) as available_batches,
-                SUM(CASE WHEN status = 'Consumed' THEN 1 ELSE 0 END) as consumed_batches,
+                SUM(CASE WHEN status = 'Done' THEN 1 ELSE 0 END) as consumed_batches,
                 SUM(CASE WHEN status = 'Expired' THEN 1 ELSE 0 END) as expired_batches,
                 SUM(quantity_used) as total_quantity,
                 SUM(CASE WHEN status = 'Available' THEN quantity_used ELSE 0 END) as available_quantity,

@@ -8,7 +8,6 @@ import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import apiHandler, { getApiEndpointForAction } from '../lib/apiHandler';
 import { getApiUrl } from '../lib/apiConfig';
-import './online-printing.js'; // Simple browser print only
 
 export default function POS() {
   const router = useRouter();
@@ -91,9 +90,7 @@ export default function POS() {
   const credentialsRefs = useRef([]);
 
   // Printing integration state
-  const [onlinePrinting, setOnlinePrinting] = useState(null);
   const [printerStatus, setPrinterStatus] = useState('ready'); // 'ready', 'testing'
-  const [printingMethod, setPrintingMethod] = useState('browser'); // browser only
   const [isTestingPrinter, setIsTestingPrinter] = useState(false);
 
   // Payment method modal state
@@ -103,27 +100,6 @@ export default function POS() {
   const paymentCashBtnRef = useRef(null);
   const paymentAmountInputRef = useRef(null);
 
-
-  // Initialize printing integration - Browser print only
-  useEffect(() => {
-    const initializePrinting = async () => {
-      try {
-        // Initialize Online Printing only
-        if (typeof window !== 'undefined' && window.OnlinePrinting) {
-          const onlinePrint = new window.OnlinePrinting();
-          await onlinePrint.initialize();
-            setOnlinePrinting(onlinePrint);
-
-          setPrinterStatus('ready');
-        }
-      } catch (error) {
-        console.error('❌ Printing initialization failed:', error);
-        setPrinterStatus('error');
-      }
-    };
-
-    initializePrinting();
-  }, []);
 
   // Auto-focus Transaction ID field when modal opens
   useEffect(() => {
@@ -1969,18 +1945,18 @@ export default function POS() {
       return `${label}${padding}${amountStr}`;
     };
     
-    const centerText = (text) => {
-      const padding = Math.floor((receiptWidth - text.length) / 2);
-      return ' '.repeat(Math.max(0, padding)) + text;
-    };
-    
     let content = '';
     
-    // Header
+    // Header - centered
     content += '='.repeat(receiptWidth) + '\n';
-    content += `${data.storeName || "ENGUIO'S PHARMACY"}\n`;
-    content += '='.repeat(receiptWidth) + '\n';
+    const storeName = data.storeName || "ENGUIO'S CONVENIENCE STORE";
     
+    // Always center store name - add markdown to indicate it should be centered by CSS
+    content += 'CENTER:' + storeName + '\n';
+    
+    
+    content += 'CENTER:Z1 Lumbia, Cagayan De Oro\n';
+    content += '='.repeat(receiptWidth) + '\n';
     // Receipt info
     content += `Date: ${data.date || new Date().toLocaleDateString()}\n`;
     content += `Time: ${data.time || new Date().toLocaleTimeString()}\n`;
@@ -2104,11 +2080,12 @@ export default function POS() {
       content += `VAT 12%: ${vatAmount.toFixed(2)}\n`;
     }
     
-    // Footer
+    // Footer - Force update to ensure correct text
     content += '='.repeat(receiptWidth) + '\n';
     content += 'Thank you!\n';
     content += 'Please come again\n';
-    content += 'This is your official receipt\n';
+    // IMPORTANT: This must be "THIS IS NOT AN OFFICIAL RECEIPT" (not "This is your official receipt")
+    content += 'THIS IS NOT AN OFFICIAL RECEIPT\n';
     content += '='.repeat(receiptWidth) + '\n';
     
     return `<!DOCTYPE html>
@@ -2134,27 +2111,71 @@ export default function POS() {
       padding: 3mm;
       color: #000;
       background: #fff;
-      text-align: center;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      overflow: visible;
+      min-height: 100vh;
     }
     
     .line { 
-      white-space: pre; 
+      white-space: pre;
       font-family: 'Courier New', monospace; 
       font-weight: 700;
       color: #000;
       text-align: left;
+      margin: 0;
+      padding: 0;
+      display: block;
     }
     
     .line.text-center {
       text-align: center;
     }
+    
+    .header-line {
+      text-align: center !important;
+      white-space: pre;
+      display: block;
+    }
+    
+    .receipt {
+      width: 100%;
+      overflow: visible;
+    }
   </style>
 </head>
 <body>
   <div class="receipt">
-    ${content.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
+    ${content.split('\n').map((line, index) => {
+      const trimmed = line.trim();
+      
+      // Find the first and last separator lines (===)
+      const lines = content.split('\n');
+      let firstSeparatorIndex = -1;
+      let lastSeparatorIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === '='.repeat(receiptWidth)) {
+          if (firstSeparatorIndex === -1) firstSeparatorIndex = i;
+          lastSeparatorIndex = i;
+        }
+      }
+      
+      // Header section is between first separator and last separator
+      const isStoreName = trimmed.includes("ENGUIO") && (trimmed.includes("STORE") || trimmed.includes("PHARMACY"));
+      const isAddress = trimmed.includes("Lumbia") || trimmed.includes("Cagayan") || trimmed.includes("Z1");
+      const isHeaderContent = firstSeparatorIndex >= 0 && lastSeparatorIndex >= 0 && 
+                              index > firstSeparatorIndex && index < lastSeparatorIndex;
+      const hasLeadingSpaces = line.length > trimmed.length && line.startsWith(' ');
+      
+      // Check if line should be centered (has CENTER: prefix or is header content)
+      const shouldCenter = trimmed.startsWith('CENTER:') || trimmed.length > 0 && (isHeaderContent || isStoreName || isAddress || hasLeadingSpaces);
+      const className = shouldCenter ? 'line header-line' : 'line';
+      
+      // Remove CENTER: prefix if present, otherwise use trimmed line
+      const displayLine = trimmed.startsWith('CENTER:') ? trimmed.substring(7) : trimmed;
+      
+      return `<div class="${className}">${displayLine || ' '}</div>`;
+    }).join('')}
   </div>
 </body>
 </html>`;
@@ -2171,7 +2192,7 @@ export default function POS() {
     const sessionUser = (typeof window !== 'undefined') ? JSON.parse(sessionStorage.getItem('user_data') || '{}') : {};
     
     // Determine store name based on locationName or terminalName
-    let storeName = "ENGUIO'S CONVENIENCE STORE"; // Default
+    let storeName = "ENGUIO'S CONVENIENCE STORE";
     
     // Check if it's pharmacy based on terminal name or location
     if (terminalName.toLowerCase().includes('pharmacy') || 
@@ -2269,6 +2290,7 @@ export default function POS() {
 
       // Generate HTML receipt
       const htmlReceipt = generateHTMLReceipt(receiptData);
+      
       
       // Create print window
       const printWindow = window.open('', '_blank', 'width=400,height=600');
